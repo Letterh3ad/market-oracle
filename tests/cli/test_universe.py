@@ -45,3 +45,34 @@ def test_a_failed_refresh_is_an_error_without_a_traceback(run):
     assert code == 1
     assert "404" in err
     assert "Traceback" not in err
+
+
+def test_search_prints_one_row_per_company(run):
+    run("universe", "refresh")
+    code, out, _ = run("universe", "search", "apple")
+    assert code == 0
+    rows = [line for line in out.splitlines()[1:] if line.strip()]
+    assert len(rows) == 1
+    assert rows[0].split()[0] == "AAPL"
+    assert "+2 listings" in rows[0]
+
+
+def test_search_flags_reach_the_service(run):
+    run("universe", "refresh")
+    _, out, _ = run("universe", "search", "apple", "--all-listings", "--limit", "2")
+    assert len([line for line in out.splitlines()[1:] if line.strip()]) == 2
+    _, out, _ = run("universe", "search", "oldco", "--include-delisted")
+    assert "OLD.F" in out and "delisted" in out
+
+
+def test_search_with_no_hits_says_so(run):
+    run("universe", "refresh")
+    code, out, _ = run("universe", "search", "zzzz")
+    assert code == 0
+    assert "no matches" in out
+
+
+def test_search_before_a_refresh_is_an_error_saying_how_to_load(run):
+    code, _, err = run("universe", "search", "apple")
+    assert code == 1
+    assert "oracle universe refresh" in err

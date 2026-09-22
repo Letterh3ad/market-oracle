@@ -64,3 +64,16 @@ class FakeFinanceDatabase:
                 return httpx.Response(body)
             return httpx.Response(200, content=body)
         return httpx.Response(404)
+
+
+# BASIC plus rows that exercise search: similar names, punctuation, a symbol that is
+# also a name prefix.
+UNIVERSE = BASIC + [
+    equity("APLE", "Apple Hospitality REIT, Inc.", sector="Real Estate", market_cap="Small Cap"),
+    equity("T", "AT&T Inc.", sector="Communication Services", market_cap="Large Cap"),
+    equity("KO", "The Coca-Cola Company", exchange="NYQ", market_cap="Mega Cap"),
+    equity("QQQ.L", '"Quotes" Ltd', "United Kingdom", "LSE"),
+    equity("X.TO", "TMX Group Limited", "Canada", "TOR"),
+    equity("SSNLF", "Samsung C&T Corp", "South Korea", "PNK"),
+    equity("005930.KS", "Samsung Electronics Co., Ltd.", "South Korea", "KSC", market_cap="Mega Cap"),
+]

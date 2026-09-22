@@ -11,6 +11,9 @@ from oracle.universe.exchanges import exchange_country, exchange_rank
 # FinanceDatabase's placeholders and misassigned ISINs run from 34 to 96.
 MAX_LINES_PER_EXCHANGE = 30
 
+# FinanceDatabase's bands, largest first.
+MARKET_CAP_BANDS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap")
+
 
 @dataclass(frozen=True)
 class Listing:

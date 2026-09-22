@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from datetime import datetime
 
 from oracle.jobs import JobBusy, JobLock
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.services.context import AppContext
-from oracle.services.errors import JobAlreadyRunning, UniverseUnavailable
+from oracle.services.errors import JobAlreadyRunning, UniverseNotLoaded, UniverseUnavailable
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.meta import MetaRepo
-from oracle.store.universe import UniverseRepo
+from oracle.store.universe import SearchHit, UniverseRepo
 from oracle.universe import financedatabase
 from oracle.universe.listings import group_companies
 
@@ -43,6 +44,29 @@ def universe_status(ctx: AppContext) -> UniverseStatus:
         delisted=counts.delisted,
         source_commit=meta.get(_COMMIT),
         refreshed_at=datetime.fromisoformat(refreshed) if refreshed else None,
+    )
+
+
+def search_universe(
+    ctx: AppContext,
+    query: str,
+    *,
+    all_listings: bool = False,
+    include_delisted: bool = False,
+    limit: int = 20,
+) -> list[SearchHit]:
+    """Companies whose name or symbol words start with every word of `query`, best
+    first. An exact symbol match leads and is shown as that listing."""
+    if MetaRepo(ctx.conn).get(_REFRESHED) is None:
+        raise UniverseNotLoaded()
+    # Only word characters reach FTS5, each as a quoted prefix term, so no user input
+    # can form FTS syntax.
+    words = re.findall(r"\w+", query)
+    if not words:
+        return []
+    match = " ".join(f'"{w}"*' for w in words)
+    return UniverseRepo(ctx.conn).search(
+        match, query, all_listings=all_listings, include_delisted=include_delisted, limit=limit
     )
 
 
