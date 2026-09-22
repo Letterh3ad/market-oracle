@@ -19,12 +19,21 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | Package | License | Use |
 |---|---|---|
 | httpx | BSD-3-Clause | async HTTP (`oracle/net/client.py`) |
+| tzdata | Apache-2.0 | IANA time zones on Windows, for exchange-local bar dates |
 
 ## Data
 
 | Dataset | License | Use |
 |---|---|---|
 | [FinanceDatabase](https://github.com/JerBouma/FinanceDatabase) (compressed CSVs, fetched at a pinned commit) | MIT | offline universe: names, classification, exchanges (`oracle/universe/financedatabase.py`) |
+
+## Services
+
+Called over HTTP, not redistributed.
+
+| Service | Terms | Use |
+|---|---|---|
+| Yahoo Finance chart API (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars (`oracle/market/yahoo.py`) |
 
 ## Dev dependencies
 

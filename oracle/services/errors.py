@@ -45,3 +45,7 @@ class InvalidWatchlistName(ServiceError):
 
 class InvalidQuery(ServiceError, ValueError):
     pass
+
+
+class PriceUnavailable(ServiceError):
+    pass

@@ -11,14 +11,14 @@ def _load(tmp_path, text):
 
 def test_sources_default_to_the_built_in_set(tmp_path):
     config, _ = load_config(None, cwd=tmp_path)
-    assert {"yfinance", "stooq", "gdelt", "google_news", "ddgs", "sec_edgar"} <= set(config.sources)
+    assert {"yahoo", "gdelt", "google_news", "ddgs", "sec_edgar"} <= set(config.sources)
 
 
 def test_a_source_override_changes_only_what_it_sets(tmp_path):
     config = _load(tmp_path, "[sources.gdelt]\nrate_per_second = 0.1\n")
     assert config.sources["gdelt"].rate_per_second == 0.1
     assert config.sources["gdelt"].cooldown_s == 900.0
-    assert config.sources["yfinance"].rate_per_second == 0.5
+    assert config.sources["yahoo"].rate_per_second == 0.5
 
 
 def test_a_new_source_needs_a_rate(tmp_path):

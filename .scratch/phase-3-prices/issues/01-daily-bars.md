@@ -4,12 +4,12 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] First fetch stores ~5y of bars; a re-run fetches and stores only newer ones
-- [ ] London prices in pence are stored in pounds; the stored currency is GBP
-- [ ] A bar's date is the exchange's local trading date, across DST changes
-- [ ] Adjusted close stored alongside close
-- [ ] A symbol Yahoo does not know, or an HTTP failure, is a clear error that stores nothing
-- [ ] Symbols not in the universe are refused with suggestions
-- [ ] `tzdata` recorded in THIRD_PARTY.md
+- [x] First fetch stores ~5y of bars; a re-run fetches and stores only newer ones
+- [x] London prices in pence are stored in pounds; the stored currency is GBP
+- [x] A bar's date is the exchange's local trading date, across DST changes
+- [x] Adjusted close stored alongside close
+- [x] A symbol Yahoo does not know, or an HTTP failure, is a clear error that stores nothing
+- [x] Symbols not in the universe are refused with suggestions
+- [x] `tzdata` recorded in THIRD_PARTY.md

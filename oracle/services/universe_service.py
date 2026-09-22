@@ -6,8 +6,8 @@ from datetime import datetime
 
 from oracle.jobs import JobBusy, JobLock
 from oracle.net.client import RateLimitedClient
-from oracle.net.gate import SourceGate
 from oracle.services.context import AppContext
+from oracle.services.http import open_client
 from oracle.services.suggest import closest, hint
 from oracle.services.errors import (
     InvalidQuery,
@@ -34,7 +34,6 @@ __all__ = [
 JOB = "universe_refresh"
 # Far longer than a refresh takes; a crashed holder is freed by the pid check instead.
 LEASE_S = 1800.0
-USER_AGENT = "market-oracle/0.1 (personal research tool)"
 MAX_LIMIT = 500
 _COMMIT = "universe_commit"
 _REFRESHED = "universe_refreshed_at"
@@ -193,8 +192,11 @@ async def refresh_universe(ctx: AppContext) -> UniverseStatus:
 
 
 async def _download(ctx: AppContext) -> tuple[str, list[Listing]]:
-    gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-    client = RateLimitedClient(gate, ctx.clock, USER_AGENT, transport=ctx.transport)
+    async with open_client(ctx) as client:
+        return await _fetch(client)
+
+
+async def _fetch(client: RateLimitedClient) -> tuple[str, list[Listing]]:
     try:
         sha = await financedatabase.latest_commit(client)
         equities = financedatabase.parse_equities(await financedatabase.download(client, sha, "equities.bz2"))
@@ -204,5 +206,3 @@ async def _download(ctx: AppContext) -> tuple[str, list[Listing]]:
         return sha, equities + [x for x in etfs if x.symbol not in taken]
     except financedatabase.Unavailable as exc:
         raise UniverseUnavailable(str(exc)) from exc
-    finally:
-        await client.aclose()

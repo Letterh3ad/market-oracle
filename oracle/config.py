@@ -22,8 +22,7 @@ class SourceConfig:
 # Conservative on purpose: most of these are unofficial or unmetered-but-watched, and
 # an IP block costs far more than a slow tick. Reasons in DECISIONS.md.
 DEFAULT_SOURCES: dict[str, SourceConfig] = {
-    "yfinance": SourceConfig(rate_per_second=0.5),
-    "stooq": SourceConfig(rate_per_second=0.5),
+    "yahoo": SourceConfig(rate_per_second=0.5),
     "gdelt": SourceConfig(rate_per_second=0.2),
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
@@ -32,11 +31,21 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
 }
 
 
+PRICE_SOURCES = ("yahoo",)
+
+
+@dataclass(frozen=True)
+class PricesConfig:
+    sources: tuple[str, ...] = ("yahoo",)
+    """Tried in order for each listing until one has data."""
+
+
 @dataclass(frozen=True)
 class Config:
     db_path: Path = Path("oracle.db")
     base_currency: str = "GBP"
     sources: dict[str, SourceConfig] = field(default_factory=lambda: dict(DEFAULT_SOURCES))
+    prices: PricesConfig = field(default_factory=PricesConfig)
 
 
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
@@ -66,6 +75,9 @@ def _apply(raw: dict) -> Config:
         if name == "sources":
             values[name] = _sources(value)
             continue
+        if name == "prices":
+            values[name] = PricesConfig(sources=_source_list(value, "prices", PRICE_SOURCES))
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -78,6 +90,19 @@ def _apply(raw: dict) -> Config:
     if not re.fullmatch(r"[A-Z]{3}", config.base_currency):
         raise ConfigError(f"base_currency must be an ISO 4217 code like GBP, got {config.base_currency!r}")
     return config
+
+
+def _source_list(raw: object, section: str, known: tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{section} must be a [{section}] table")
+    _reject_unknown(raw, PricesConfig, f"[{section}]")
+    names = raw.get("sources", [])
+    if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
+        raise ConfigError(f"{section}.sources must be a non-empty list of names")
+    unknown = [n for n in names if n not in known]
+    if unknown:
+        raise ConfigError(f"{section}.sources: unknown {', '.join(unknown)}; known: {', '.join(known)}")
+    return tuple(names)
 
 
 def _sources(raw: object) -> dict[str, SourceConfig]:
