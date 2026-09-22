@@ -4,7 +4,7 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
-from oracle.services.fx_service import fx_history, update_fx
+from oracle.services.fx_service import attributions, fx_history, update_fx
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -41,4 +41,6 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     print(f"{'date':<12}{args.currency.upper() + ' per ' + ctx.config.base_currency:>14}  source")
     for r in rates:
         print(f"{r.date.isoformat():<12}{r.units_per_base:>14.4f}  {r.source}")
+    for credit in attributions(rates):
+        print(credit)
     return 0

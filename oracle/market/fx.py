@@ -131,6 +131,10 @@ class FrankfurterFx:
             raise SourceFailed(f"unreadable response ({type(exc).__name__})") from None
 
 
+# Required by its free tier wherever its rates are displayed.
+OPEN_ER_ATTRIBUTION = "Rates By Exchange Rate API (https://www.exchangerate-api.com)"
+
+
 class OpenErFx:
     """Today's rate only, ~160 currencies. One call answers every currency, so it is
     made once per instance (one update run)."""

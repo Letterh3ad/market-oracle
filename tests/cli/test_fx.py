@@ -56,3 +56,21 @@ def test_a_currency_without_a_source_fails_the_update(run):
     # With every FX source failing, the command reports it and exits non-zero.
     code, out, _ = run("fx", "update", "--source", "open_er_api")
     assert code == 1 and "USD: no rates" in out
+
+
+def test_open_er_api_rates_carry_its_attribution(tmp_path, capsys, monkeypatch):
+    from tests.fakes.fx import FakeOpenEr, noon
+
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
+    yahoo = FakeYahoo()
+    yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 232.0)])
+    open_er = FakeOpenEr(noon("2026-09-22"))
+    open_er.rates = {"USD": 1.37}
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, open_er)
+    monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
+    for argv in (["universe", "refresh"], ["prices", "update", "AAPL"], ["fx", "update", "--source", "open_er_api"]):
+        cli_main.main(["--config", str(cfg), *argv])
+    capsys.readouterr()
+    cli_main.main(["--config", str(cfg), "fx", "show", "USD"])
+    assert "Rates By Exchange Rate API" in capsys.readouterr().out

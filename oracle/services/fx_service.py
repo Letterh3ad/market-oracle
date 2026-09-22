@@ -4,7 +4,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from oracle.market.fx import EcbFx, EodhdFx, FrankfurterFx, FxRate, FxSource, OpenErFx, YahooFx
+from oracle.market.fx import (
+    OPEN_ER_ATTRIBUTION,
+    EcbFx,
+    EodhdFx,
+    FrankfurterFx,
+    FxRate,
+    FxSource,
+    OpenErFx,
+    YahooFx,
+)
 from oracle.market.sources import NoData, SourceFailed
 from oracle.net.client import RateLimitedClient
 from oracle.config import FX_SOURCES
@@ -16,7 +25,7 @@ from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
 
-__all__ = ["FxRate", "FxUpdate", "fx_history", "update_fx"]
+__all__ = ["FxRate", "FxUpdate", "attributions", "fx_history", "update_fx"]
 
 OVERLAP = timedelta(days=7)
 
@@ -53,6 +62,11 @@ async def update_fx(ctx: AppContext, sources: Sequence[str] | None = None) -> li
 
 def fx_history(ctx: AppContext, currency: str, days: int | None = None) -> list[FxRate]:
     return FxRepo(ctx.conn, ctx.config.base_currency).history(currency.upper(), days)
+
+
+def attributions(rates: list[FxRate]) -> list[str]:
+    """Credits the sources behind `rates` require wherever they are shown."""
+    return [OPEN_ER_ATTRIBUTION] if any(r.source == OpenErFx.name for r in rates) else []
 
 
 async def _first_with_rates(ctx, chain: list[FxSource], base: str, currency: str, since: date | None):
