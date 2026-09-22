@@ -4,15 +4,25 @@ import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from oracle.clock import Clock
+from oracle.clock import Clock, epoch
 from oracle.config import SourceConfig
 from oracle.net.errors import CircuitOpen
 from oracle.store.db import transaction
 from oracle.store.sources import SourceState, SourceStateRepo
 
-MAX_429_RUN = 3
-MAX_403_RUN = 3
-MAX_5XX_RUN = 5
+
+@dataclass(frozen=True)
+class _Run:
+    field: str
+    limit: int
+    what: str
+
+
+RUN_429 = _Run("run_429", 3, "consecutive 429 responses")
+# A run of 403s is what an IP restriction looks like from here.
+RUN_403 = _Run("run_403", 3, "consecutive 403 responses")
+RUN_5XX = _Run("run_5xx", 5, "consecutive 5xx or transport failures")
+RUNS = (RUN_429, RUN_403, RUN_5XX)
 
 
 @dataclass(frozen=True)
@@ -22,7 +32,7 @@ class SourceStatus:
     requests_last_hour: int
     open_until: float | None
     reason: str
-    deferred_s: float
+    next_slot_in_s: float
 
 
 class SourceGate:
@@ -50,8 +60,10 @@ class SourceGate:
 
     async def acquire(self, source: str) -> None:
         cfg = self.config(source)
-        now = self._now()
         with transaction(self._conn):
+            # Read under the write lock: BEGIN IMMEDIATE can wait out another process,
+            # and a stale `now` would claim a slot already in the past.
+            now = epoch(self._clock)
             state = self._repo.load(source)
             self._check_breaker(state, cfg, now)
             slot = max(now, state.next_allowed)
@@ -62,74 +74,81 @@ class SourceGate:
             await self._clock.sleep(slot - now)
 
     def defer(self, source: str, seconds: float) -> None:
-        self.config(source)
-        now = self._now()
+        self._require(source)
         with transaction(self._conn):
             state = self._repo.load(source)
-            state.next_allowed = max(state.next_allowed, now + seconds)
+            state.next_allowed = max(state.next_allowed, epoch(self._clock) + seconds)
             self._repo.save(state)
 
     def record(self, source: str, status: int) -> None:
         if status == 429:
-            self._bump(source, "run_429", MAX_429_RUN, "consecutive 429 responses")
+            self._bump(source, RUN_429)
         elif status == 403:
-            # A run of 403s is what an IP restriction looks like from here.
-            self._bump(source, "run_403", MAX_403_RUN, "consecutive 403 responses")
+            self._bump(source, RUN_403)
         elif status >= 500:
-            self.record_transport_error(source)
+            self._bump(source, RUN_5XX)
         else:
-            self._reset_runs(source)
+            self._require(source)
+            with transaction(self._conn):
+                state = self._repo.load(source)
+                _clear_runs(state)
+                self._repo.save(state)
 
     def record_transport_error(self, source: str) -> None:
-        self._bump(source, "run_5xx", MAX_5XX_RUN, "consecutive 5xx or transport failures")
+        self._bump(source, RUN_5XX)
 
     def status(self, source: str) -> SourceStatus:
         cfg = self.config(source)
-        now = self._now()
+        now = epoch(self._clock)
         state = self._repo.load(source)
-        open_until = None
-        if state.tripped_at is not None and now < state.tripped_at + cfg.cooldown_s:
-            open_until = state.tripped_at + cfg.cooldown_s
+        until = _open_until(state, cfg)
+        is_open = until is not None and now < until
         return SourceStatus(
             source=source,
             rate_per_second=cfg.rate_per_second,
             requests_last_hour=self._repo.recent_requests(source, now),
-            open_until=open_until,
-            reason=state.reason if open_until else "",
-            deferred_s=max(0.0, state.next_allowed - now - 1.0 / cfg.rate_per_second),
+            open_until=until if is_open else None,
+            reason=state.reason if is_open else "",
+            next_slot_in_s=max(0.0, state.next_allowed - now),
         )
 
-    def _bump(self, source: str, run: str, limit: int, what: str) -> None:
-        self.config(source)
-        now = self._now()
+    def _bump(self, source: str, run: _Run) -> None:
+        self._require(source)
         with transaction(self._conn):
+            now = epoch(self._clock)
             state = self._repo.load(source)
             # Each run counts independently: zeroing the others let a server alternating
             # between rate limiting and failing never trip anything.
-            count = getattr(state, run) + 1
-            setattr(state, run, count)
+            count = getattr(state, run.field) + 1
+            setattr(state, run.field, count)
             # Responses in flight when the breaker opened must not push the cooldown back.
-            if count >= limit and state.tripped_at is None:
+            if count >= run.limit and state.tripped_at is None:
                 state.tripped_at = now
-                state.reason = f"{count} {what}"
-            self._repo.save(state)
-
-    def _reset_runs(self, source: str) -> None:
-        self.config(source)
-        with transaction(self._conn):
-            state = self._repo.load(source)
-            state.run_429 = state.run_5xx = state.run_403 = 0
+                state.reason = f"{count} {run.what}"
             self._repo.save(state)
 
     def _check_breaker(self, state: SourceState, cfg: SourceConfig, now: float) -> None:
-        if state.tripped_at is None:
+        until = _open_until(state, cfg)
+        if until is None:
             return
-        retry_at = state.tripped_at + cfg.cooldown_s
-        if now < retry_at:
-            raise CircuitOpen(state.source, state.reason, retry_at)
+        if now < until:
+            raise CircuitOpen(state.source, state.reason, until)
+        # Half-open: leave the tripping run one short of its limit, so the first probe
+        # that fails again re-opens the breaker instead of spending a whole new run
+        # against a block that is still in place. A success clears it fully.
         state.tripped_at = None
         state.reason = ""
-        state.run_429 = state.run_5xx = state.run_403 = 0
+        for run in RUNS:
+            setattr(state, run.field, min(getattr(state, run.field), run.limit - 1))
 
-    def _now(self) -> float:
-        return self._clock.utcnow().timestamp()
+    def _require(self, source: str) -> None:
+        self.config(source)
+
+
+def _open_until(state: SourceState, cfg: SourceConfig) -> float | None:
+    return None if state.tripped_at is None else state.tripped_at + cfg.cooldown_s
+
+
+def _clear_runs(state: SourceState) -> None:
+    for run in RUNS:
+        setattr(state, run.field, 0)

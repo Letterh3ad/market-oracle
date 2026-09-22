@@ -52,11 +52,14 @@ def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Pat
     return _resolve(_apply(raw), path.parent), path
 
 
-def _apply(raw: dict) -> Config:
-    known = {f.name: f for f in fields(Config)}
-    unknown = sorted(set(raw) - set(known))
+def _reject_unknown(raw: dict, cls: type, where: str) -> None:
+    unknown = sorted(set(raw) - {f.name for f in fields(cls)})
     if unknown:
-        raise ConfigError(f"unknown config key(s): {', '.join(unknown)}")
+        raise ConfigError(f"unknown key(s) in {where}: {', '.join(unknown)}")
+
+
+def _apply(raw: dict) -> Config:
+    _reject_unknown(raw, Config, "oracle.toml")
     values = {}
     for name, value in raw.items():
         if name == "sources":
@@ -80,21 +83,20 @@ def _sources(raw: object) -> dict[str, SourceConfig]:
     if not isinstance(raw, dict):
         raise ConfigError("sources must be a table of [sources.<name>] sections")
     merged = dict(DEFAULT_SOURCES)
-    known = {f.name: f for f in fields(SourceConfig)}
     for name, table in raw.items():
         if not isinstance(table, dict):
             raise ConfigError(f"sources.{name} must be a table")
-        unknown = sorted(set(table) - set(known))
-        if unknown:
-            raise ConfigError(f"unknown key(s) in sources.{name}: {', '.join(unknown)}")
+        _reject_unknown(table, SourceConfig, f"sources.{name}")
         base = merged.get(name)
         if base is None and "rate_per_second" not in table:
             raise ConfigError(f"sources.{name} is new and needs rate_per_second")
         values = {}
         for key, value in table.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-                raise ConfigError(f"sources.{name}.{key} must be a positive number, got {value!r}")
-            values[key] = int(value) if key == "max_retries" else float(value)
+            wanted = int if key == "max_retries" else (int, float)
+            if isinstance(value, bool) or not isinstance(value, wanted) or value <= 0:
+                kind = "a positive whole number" if key == "max_retries" else "a positive number"
+                raise ConfigError(f"sources.{name}.{key} must be {kind}, got {value!r}")
+            values[key] = value if key == "max_retries" else float(value)
         merged[name] = replace(base, **values) if base else SourceConfig(**values)
     return merged
 

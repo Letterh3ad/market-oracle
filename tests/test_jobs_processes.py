@@ -1,11 +1,14 @@
+import asyncio
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from oracle.clock import SystemClock
-from oracle.jobs import JobLock, pid_alive
+from oracle.jobs import JobBusy, JobLock, pid_alive
 from oracle.store.db import connect
 from oracle.store.migrate import migrate
 
@@ -44,3 +47,31 @@ def test_a_hard_killed_holder_is_taken_over_without_waiting_for_its_lease(tmp_pa
         if child.poll() is None:
             child.kill()
         conn.close()
+
+
+async def test_a_job_outliving_its_lease_is_kept_alive_by_holding(tmp_path):
+    conn = connect(tmp_path / "jobs.db")
+    migrate(conn)
+    holder = JobLock(conn, SystemClock())
+    async with holder.holding("tick", lease_s=0.3) as held:
+        await asyncio.sleep(1.0)
+        with pytest.raises(JobBusy):
+            JobLock(conn, SystemClock(), pid=os.getpid() + 1).acquire("tick", lease_s=0.3)
+        assert not held.lost
+
+
+async def test_holding_reports_a_lost_lock(tmp_path):
+    conn = connect(tmp_path / "jobs.db")
+    migrate(conn)
+    holder = JobLock(conn, SystemClock())
+    async with holder.holding("tick", lease_s=0.3) as held:
+        holder.release(held.handle)
+        await asyncio.sleep(0.5)
+        assert held.lost
+
+
+@pytest.mark.skipif(os.name != "nt", reason="pid 4 is the Windows System process")
+def test_a_process_we_may_not_open_counts_as_alive():
+    # Unelevated, OpenProcess on System fails with ACCESS_DENIED; elevated, it opens.
+    # Alive either way: only a missing process may have its lock taken.
+    assert pid_alive(4)

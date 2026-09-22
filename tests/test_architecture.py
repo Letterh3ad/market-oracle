@@ -6,7 +6,7 @@ import pytest
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "oracle"
 FRONTENDS = ("cli", "gui")
 # An allowlist, so a package added later is off limits to frontends by default.
-FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.config", "oracle.clock", "oracle.cli", "oracle.gui")
+FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.cli", "oracle.gui")
 SERVICES_MAY_NOT_IMPORT = ("oracle.gui", "oracle.cli")
 
 
@@ -67,3 +67,9 @@ def test_checker_catches_a_service_importing_the_gui(tmp_path):
 
 def test_there_are_modules_to_check():
     assert _modules("cli") and _modules("services")
+
+
+def test_checker_catches_a_frontend_reaching_config_directly(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("from oracle.config import load_config\n")
+    assert frontend_violations(bad) == {"oracle.config"}

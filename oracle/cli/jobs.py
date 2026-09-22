@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import argparse
 
+from oracle.cli.common import add_status_command
 from oracle.services.context import AppContext
 from oracle.services.jobs_service import job_statuses
 
 
 def register(parser: argparse.ArgumentParser) -> None:
-    sub = parser.add_subparsers(dest="jobs_command", required=True)
-    sub.add_parser("status", help="who holds each job lock, and whether it is stale").set_defaults(
-        handler=status
-    )
+    add_status_command(parser, "jobs_command", status, "who holds each job lock, and whether it is stale")
 
 
 def status(ctx: AppContext, args: argparse.Namespace) -> int:

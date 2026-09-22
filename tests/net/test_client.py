@@ -107,3 +107,32 @@ async def test_persistent_transport_errors_raise_request_failed(conn, clock):
     with pytest.raises(RequestFailed) as err:
         await client.get("src", URL)
     assert err.value.status is None
+
+
+async def test_retry_after_zero_retries_at_the_next_normal_slot(conn, clock):
+    client = _client(conn, clock, [(429, {"Retry-After": "0"}), 200])
+    await client.get("src", URL)
+    assert clock.sleeps == [pytest.approx(0.1)]
+
+
+async def test_retry_after_on_a_503_is_honoured(conn, clock):
+    client = _client(conn, clock, [(503, {"Retry-After": "9"}), 200])
+    await client.get("src", URL)
+    assert clock.sleeps == [pytest.approx(9.0)]
+
+
+async def test_retry_after_with_an_unknown_zone_is_read_as_utc(conn, clock):
+    client = _client(conn, clock, [(429, {"Retry-After": "Tue, 22 Sep 2026 12:00:30 -0000"}), 200])
+    await client.get("src", URL)
+    assert clock.sleeps == [pytest.approx(30.0)]
+
+
+async def test_a_huge_retry_after_fails_now_but_still_holds_back_the_source(conn, clock):
+    seen = []
+    client = _client(conn, clock, [(429, {"Retry-After": "3600"}), 200], seen)
+    with pytest.raises(RequestFailed, match="3600"):
+        await client.get("src", URL)
+    assert len(seen) == 1
+    assert clock.sleeps == []
+    await client.get("src", URL)
+    assert clock.sleeps == [pytest.approx(3600.0)]

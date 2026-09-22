@@ -94,12 +94,12 @@ def test_release_by_a_former_holder_is_a_no_op(conn, clock, pids):
     assert err.value.pid == 200
 
 
-def test_held_releases_on_exit_and_on_error(conn, clock, pids):
+async def test_holding_releases_on_exit_and_on_error(conn, clock, pids):
     holder = _lock(conn, clock, pids, 100)
     with pytest.raises(RuntimeError):
-        with holder.held("tick", lease_s=60):
+        async with holder.holding("tick", lease_s=60):
             raise RuntimeError("boom")
-    with holder.held("tick", lease_s=60):
+    async with holder.holding("tick", lease_s=60):
         pass
     _lock(conn, clock, pids, 200).acquire("tick", lease_s=60)
 

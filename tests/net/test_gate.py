@@ -119,3 +119,24 @@ async def test_breaker_and_deferral_survive_a_new_process(tmp_path, clock):
     await restarted.acquire("slow")
     assert clock.sleeps == [pytest.approx(100.0)]
     second.close()
+
+
+async def test_after_cooldown_one_failed_probe_reopens_the_breaker(gate, clock):
+    for _ in range(3):
+        gate.record("fast", 403)
+    clock.advance(60)
+    await gate.acquire("fast")
+    gate.record("fast", 403)
+    with pytest.raises(CircuitOpen):
+        await gate.acquire("fast")
+
+
+async def test_after_cooldown_a_successful_probe_fully_closes_the_breaker(gate, clock):
+    for _ in range(3):
+        gate.record("fast", 403)
+    clock.advance(60)
+    await gate.acquire("fast")
+    gate.record("fast", 200)
+    for _ in range(2):
+        gate.record("fast", 403)
+    await gate.acquire("fast")

@@ -25,3 +25,8 @@ class SystemClock:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
+
+
+def epoch(clock: Clock) -> float:
+    """Wall-clock seconds, for timestamps shared between processes via the database."""
+    return clock.utcnow().timestamp()

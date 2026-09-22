@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 import httpx
@@ -11,6 +11,9 @@ from oracle.net.gate import SourceGate
 
 BACKOFF_BASE_S = 2.0
 BACKOFF_CAP_S = 60.0
+# Longer waits are not slept through in-call: the caller gets a failure now, and the
+# source's shared slot still moves back by the full wait so no process ignores it.
+MAX_IN_CALL_WAIT_S = 120.0
 
 
 class RateLimitedClient:
@@ -60,15 +63,17 @@ class RateLimitedClient:
                 continue
 
             self._gate.record(source, resp.status_code)
-            if resp.status_code == 429:
-                delay = self._retry_after(resp) or _backoff(attempt)
-            elif resp.status_code >= 500:
-                delay = _backoff(attempt)
-            else:
+            if resp.status_code != 429 and resp.status_code < 500:
                 return resp
+            asked = self._retry_after(resp)
+            delay = _backoff(attempt) if asked is None else asked
+            self._gate.defer(source, delay)
+            if delay > MAX_IN_CALL_WAIT_S:
+                raise RequestFailed(
+                    source, resp.status_code, f"HTTP {resp.status_code}, Retry-After {delay:.0f}s"
+                )
             if last:
                 raise RequestFailed(source, resp.status_code, f"HTTP {resp.status_code}")
-            self._gate.defer(source, delay)
         raise AssertionError("unreachable")
 
     async def aclose(self) -> None:
@@ -83,9 +88,11 @@ class RateLimitedClient:
         except ValueError:
             pass
         try:
-            when: datetime = parsedate_to_datetime(value)
+            when = parsedate_to_datetime(value)
         except (TypeError, ValueError):
             return None
+        if when.tzinfo is None:  # "-0000" means UTC with no stated origin (RFC 5322)
+            when = when.replace(tzinfo=timezone.utc)
         return max(0.0, (when - self._clock.utcnow()).total_seconds())
 
 

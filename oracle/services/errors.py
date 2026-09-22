@@ -4,3 +4,7 @@ class ServiceError(Exception):
 
 class DatabaseTooNew(ServiceError):
     pass
+
+
+class ConfigInvalid(ServiceError):
+    pass

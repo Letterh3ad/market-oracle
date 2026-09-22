@@ -6,9 +6,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from oracle.cli import jobs, net, status
-from oracle.config import ConfigError, load_config
-from oracle.services.context import open_context
-from oracle.services.errors import ServiceError
+from oracle.services.context import load_settings, open_context
+from oracle.services.errors import ConfigInvalid, ServiceError
 
 SUBCOMMANDS: list[tuple[str, Callable]] = [
     ("status", status.register),
@@ -33,8 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_usage()
         return 2
     try:
-        config, source = load_config(args.config)
-    except ConfigError as exc:
+        config, source = load_settings(args.config)
+    except ConfigInvalid as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
     try:

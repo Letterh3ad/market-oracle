@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import socket
 import sqlite3
 import uuid
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 
-from oracle.clock import Clock
+from oracle.clock import Clock, epoch
 from oracle.store.db import transaction
 from oracle.store.jobs import JobLockRepo, LockRow
 
@@ -19,15 +20,18 @@ def pid_alive(pid: int) -> bool:
     if os.name == "nt":
         import ctypes
 
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
         if not handle:
-            return False
+            # Access denied means it exists but belongs to someone else (an elevated
+            # scheduled tick, say). Only a missing process counts as gone.
+            return ctypes.get_last_error() == 5  # ERROR_ACCESS_DENIED
         try:
             # OpenProcess still succeeds on an exited process while anyone holds a handle
             # to it (a parent that spawned it, say), so the exit code is the real answer.
             code = ctypes.c_ulong()
-            kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True  # unknown: never steal a lock on a guess
             return code.value == 259  # STILL_ACTIVE
         finally:
             kernel32.CloseHandle(handle)
@@ -55,6 +59,12 @@ class LockHandle:
     job: str
     token: str
     pid: int
+
+
+@dataclass
+class HeldJob:
+    handle: LockHandle
+    lost: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,8 +101,9 @@ class JobLock:
         self._repo = JobLockRepo(conn)
 
     def acquire(self, job: str, lease_s: float) -> LockHandle:
-        now = self._now()
         with transaction(self._conn):
+            # Read under the write lock: BEGIN IMMEDIATE can wait out another process.
+            now = epoch(self._clock)
             current = self._repo.get(job)
             if current is not None and self._stale_reason(current, now) is None:
                 raise JobBusy(job, current.pid, current.host, now - current.acquired_at)
@@ -103,22 +114,35 @@ class JobLock:
     def heartbeat(self, handle: LockHandle) -> bool:
         """False means the lock was taken over and the caller should stop."""
         with transaction(self._conn):
-            return self._repo.touch(handle.job, handle.token, self._now())
+            return self._repo.touch(handle.job, handle.token, epoch(self._clock))
 
     def release(self, handle: LockHandle) -> None:
         with transaction(self._conn):
             self._repo.delete(handle.job, handle.token)
 
-    @contextmanager
-    def held(self, job: str, lease_s: float) -> Iterator[LockHandle]:
-        handle = self.acquire(job, lease_s)
+    @asynccontextmanager
+    async def holding(self, job: str, lease_s: float) -> AsyncIterator[HeldJob]:
+        """Hold a job for as long as the block runs, heartbeating so a long job outlives
+        its lease. `lost` turns True if the lock is taken away; long jobs should check it."""
+        held = HeldJob(self.acquire(job, lease_s))
+        beat = asyncio.create_task(self._keep_alive(held, lease_s))
         try:
-            yield handle
+            yield held
         finally:
-            self.release(handle)
+            beat.cancel()
+            with suppress(asyncio.CancelledError):
+                await beat
+            self.release(held.handle)
+
+    async def _keep_alive(self, held: HeldJob, lease_s: float) -> None:
+        while True:
+            await self._clock.sleep(lease_s / 3)
+            if not self.heartbeat(held.handle):
+                held.lost = True
+                return
 
     def statuses(self) -> list[JobStatus]:
-        now = self._now()
+        now = epoch(self._clock)
         return [
             JobStatus(
                 job=r.job,
@@ -137,6 +161,3 @@ class JobLock:
         if row.host == self._host and not self._pid_alive(row.pid):
             return "holder process is gone"
         return None
-
-    def _now(self) -> float:
-        return self._clock.utcnow().timestamp()

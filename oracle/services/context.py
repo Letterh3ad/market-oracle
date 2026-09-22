@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Iterator
 
 from oracle.clock import Clock, SystemClock
-from oracle.config import Config
-from oracle.services.errors import DatabaseTooNew
+from oracle.config import Config, ConfigError, load_config
+from oracle.services.errors import ConfigInvalid, DatabaseTooNew
 from oracle.store.db import connect, to_utc_iso
 from oracle.store.meta import MetaRepo
 from oracle.store.migrate import SchemaTooNew, migrate
@@ -20,6 +20,13 @@ class AppContext:
     config_source: Path | None
     conn: sqlite3.Connection
     clock: Clock
+
+
+def load_settings(path: Path | None) -> tuple[Config, Path | None]:
+    try:
+        return load_config(path)
+    except ConfigError as exc:
+        raise ConfigInvalid(str(exc)) from exc
 
 
 @contextmanager

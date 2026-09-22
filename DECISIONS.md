@@ -115,3 +115,25 @@ killed process alive while any handle to it is open, confirmed by a negative con
 **Alternatives:** Lease only (rejected: a crash blocks the job for a whole lease). Pid
 only (rejected: pid reuse and other hosts). OS file locks (rejected: behave differently
 across platforms and say nothing about staleness).
+
+## 2026-09-22 - Phase 1 review fixes: half-open breaker, Retry-After ceiling, heartbeating holds
+
+**Context:** The two-axis review of phase 1 found real defects in the shared-state code.
+**Decision:**
+- Migrations re-read `user_version` under `BEGIN IMMEDIATE`; six processes racing a fresh
+  DB reproduced `table meta already exists` before the fix.
+- The breaker is half-open after cooldown: the tripping run is left one short of its
+  limit, so one failed probe re-opens it instead of spending a full run against a live
+  block. A success clears it.
+- Retry-After is honoured on 503 as well as 429, `0` means "next slot", a zone-less date
+  is UTC. A wait over 120s fails the call at once but still moves the shared slot by the
+  full wait.
+- `JobLock.holding()` heartbeats every lease/3 and exposes `lost`, so a long job keeps its
+  lock and learns if it was taken.
+- Windows `ACCESS_DENIED` from `OpenProcess` means alive (an elevated tick), and an
+  unreadable exit code is treated as alive: a lock is only stolen from a provably dead pid.
+- Every shared timestamp is read inside the transaction, after the write lock is held.
+- Frontends import only `oracle.services`; config loading moved behind
+  `services.context.load_settings`, and the allowlist was narrowed back to the rule.
+**Alternatives:** Cap Retry-After silently (rejected: disobeys the server). Sync `held()`
+without heartbeats (rejected: a job longer than its lease would run twice).

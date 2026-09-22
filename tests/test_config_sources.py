@@ -34,3 +34,8 @@ def test_a_non_positive_rate_is_rejected(tmp_path):
 def test_an_unknown_source_key_is_rejected(tmp_path):
     with pytest.raises(ConfigError, match="rate"):
         _load(tmp_path, "[sources.gdelt]\nrate = 1\n")
+
+
+def test_a_fractional_retry_count_is_rejected(tmp_path):
+    with pytest.raises(ConfigError, match="max_retries"):
+        _load(tmp_path, "[sources.gdelt]\nmax_retries = 2.5\n")
