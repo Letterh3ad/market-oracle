@@ -12,14 +12,13 @@ import sys, time
 from oracle.store.db import connect
 from oracle.store.migrate import migrate
 db, start_at = sys.argv[1], float(sys.argv[2])
-conn = connect(db)
 time.sleep(max(0.0, start_at - time.time()))
-migrate(conn)
+migrate(connect(db))
 """
 
 
 def test_processes_racing_to_migrate_a_fresh_database_all_succeed(tmp_path):
-    for attempt in range(3):
+    for attempt in range(4):
         db = tmp_path / f"race{attempt}.db"
         start_at = time.time() + 2.0
         procs = [
@@ -27,7 +26,7 @@ def test_processes_racing_to_migrate_a_fresh_database_all_succeed(tmp_path):
                 [sys.executable, "-c", BODY, str(db), repr(start_at)],
                 cwd=ROOT, stderr=subprocess.PIPE, text=True,
             )
-            for _ in range(6)
+            for _ in range(10)
         ]
         errors = [p.communicate(timeout=60)[1] for p in procs]
         assert all(p.returncode == 0 for p in procs), "\n".join(e for e in errors if e)

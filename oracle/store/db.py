@@ -2,22 +2,42 @@ from __future__ import annotations
 
 import itertools
 import sqlite3
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+BUSY_TIMEOUT_S = 30.0
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
     path = Path(path)
     if str(path.parent) not in ("", "."):
         path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, isolation_level=None, timeout=30.0)
+    conn = sqlite3.connect(path, isolation_level=None, timeout=BUSY_TIMEOUT_S)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    _enable_wal(conn)
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    # Switching a fresh database to WAL needs an exclusive lock, and SQLite can report
+    # "locked" immediately instead of waiting on the busy handler, so several processes
+    # opening a new database at once need their own retry.
+    deadline = time.monotonic() + BUSY_TIMEOUT_S
+    delay = 0.01
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 0.5)
 
 
 _savepoints = itertools.count()

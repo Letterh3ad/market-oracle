@@ -137,3 +137,16 @@ across platforms and say nothing about staleness).
   `services.context.load_settings`, and the allowlist was narrowed back to the rule.
 **Alternatives:** Cap Retry-After silently (rejected: disobeys the server). Sync `held()`
 without heartbeats (rejected: a job longer than its lease would run twice).
+
+## 2026-09-22 - Retry the WAL switch on a fresh database
+
+**Context:** After the phase 1 merge a race test failed about 1 run in 20. A stress run
+(10 processes x 8 fresh DBs) showed 5 of 80 processes dying on `PRAGMA journal_mode=WAL`
+with "database is locked": the switch needs an exclusive lock and SQLite can refuse it
+immediately rather than via the busy handler. The code came from the stalker, which has
+the same latent race.
+**Decision:** `connect()` retries the WAL switch with capped exponential backoff until the
+same 30s deadline as the busy timeout. The race test now starts `connect()` behind the
+barrier with 10 processes, which reproduced the failure every run before the fix.
+**Alternatives:** Serialise first open with a file lock (rejected: more moving parts for a
+one-line retry).
