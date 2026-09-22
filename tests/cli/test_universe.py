@@ -163,7 +163,7 @@ def test_watch_commands_round_trip(run):
     code, _, _ = run("watch", "add", "TM", "--list", "income")
     assert code == 0
     _, out, _ = run("watch", "show")
-    assert _symbols(out) == ["APC.DE"] and "EUR" in out
+    assert _symbols(out) == ["APC.DE"] and "not priced" in out
     _, out, _ = run("watch", "lists")
     assert [line.split()[:2] for line in out.splitlines()] == [["income", "1"], ["main", "1"]]
     code, _, _ = run("watch", "remove", "APC.DE")

@@ -27,6 +27,7 @@ def run(tmp_path, capsys, monkeypatch):
         out, err = capsys.readouterr()
         return code, out, err
 
+    _run.yahoo = yahoo
     _run("universe", "refresh")
     _run("prices", "update", "AAPL")
     return _run
@@ -74,3 +75,28 @@ def test_open_er_api_rates_carry_its_attribution(tmp_path, capsys, monkeypatch):
     capsys.readouterr()
     cli_main.main(["--config", str(cfg), "fx", "show", "USD"])
     assert "Rates By Exchange Rate API" in capsys.readouterr().out
+
+
+def test_prices_update_without_a_symbol_updates_the_watchlist(run):
+    run("watch", "add", "AAPL")
+    code, out, _ = run("prices", "update")
+    assert code == 0
+    assert "AAPL: 0 new bars" in out  # already fetched by the fixture
+    assert "USD: 2 new rates from yahoo" in out
+
+
+def test_a_failed_watched_listing_makes_the_update_exit_non_zero(run):
+    run("watch", "add", "AAPL")
+    run.yahoo.fail["AAPL"] = 404
+    code, out, _ = run("prices", "update")
+    assert code == 1
+    assert "AAPL: FAILED" in out
+
+
+def test_watch_show_prints_prices(run):
+    run("watch", "add", "AAPL")
+    run("fx", "update")
+    _, out, _ = run("watch", "show")
+    header, row = out.splitlines()[:2]
+    assert "close" in header and "GBP" in header
+    assert row.split()[0] == "AAPL" and "232.00 USD" in row and f"{232.0 / 1.36:.2f}" in row and "+0.43%" in row

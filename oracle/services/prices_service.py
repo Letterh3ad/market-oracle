@@ -11,18 +11,24 @@ from oracle.market.sources import Instrument, NoData, PriceSource, SourceFailed
 from oracle.market.yahoo import YahooPrices
 from oracle.net.client import RateLimitedClient
 from oracle.services.context import AppContext
-from oracle.services.errors import PriceUnavailable
+from oracle.services.errors import PriceUnavailable, UnknownSymbol
+from oracle.services.fx_service import FxUpdate, update_fx
 from oracle.services.http import open_client
+from oracle.services.jobs_service import single_flight
 from oracle.services.sources import missing_key
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.fx import FxRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.store.db import to_utc_iso
 
 __all__ = [
-    "Bar", "ConvertedBar", "PriceUpdate", "SourceInfo",
-    "price_history", "price_history_in_base", "price_sources", "update_listing",
+    "Bar", "ConvertedBar", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
+    "price_history", "price_history_in_base", "price_sources", "update_listing", "update_watched",
 ]
+
+JOB = "prices_update"
+LEASE_S = 1800.0
 
 # Re-fetched on every update, so a bar stored mid-session is replaced by the final one.
 OVERLAP = timedelta(days=7)
@@ -56,15 +62,56 @@ class PriceUpdate:
     source: str
 
 
+@dataclass(frozen=True)
+class ListingOutcome:
+    symbol: str
+    added: int
+    source: str | None
+    error: str | None
+
+
+@dataclass(frozen=True)
+class WatchedUpdate:
+    listings: list[ListingOutcome]
+    fx: list[FxUpdate]
+
+    @property
+    def failed(self) -> list[ListingOutcome]:
+        return [o for o in self.listings if o.error is not None]
+
+
 async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
     """Fetch new daily bars for one listing from the first configured source that has
     them. Nothing is stored unless a source succeeds."""
+    async with open_client(ctx) as client:
+        return await _update(ctx, client, symbol)
+
+
+async def update_watched(ctx: AppContext) -> WatchedUpdate:
+    """Every watched listing once, then the FX their currencies need, in one process at
+    a time. A listing that fails is reported and the rest carry on."""
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        outcomes = []
+        async with open_client(ctx) as client:
+            for symbol in WatchlistRepo(ctx.conn).all_symbols():
+                held.check()
+                try:
+                    r = await _update(ctx, client, symbol)
+                except (PriceUnavailable, UnknownSymbol) as exc:
+                    outcomes.append(ListingOutcome(symbol, 0, None, str(exc)))
+                else:
+                    outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
+        held.check()
+        fx = await update_fx(ctx) if outcomes else []
+    return WatchedUpdate(outcomes, fx)
+
+
+async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> PriceUpdate:
     listing = resolve_symbol(ctx, symbol)
     repo = BarRepo(ctx.conn)
     last = repo.last_date(listing.symbol)
     since = None if last is None else last - OVERLAP
-    async with open_client(ctx) as client:
-        bars, source = await _first_with_data(ctx, client, Instrument(listing.symbol, listing.currency), since)
+    bars, source = await _first_with_data(ctx, client, Instrument(listing.symbol, listing.currency), since)
     added = repo.upsert(bars, to_utc_iso(ctx.clock.utcnow()))
     return PriceUpdate(listing.symbol, added, repo.last_date(listing.symbol), source)
 

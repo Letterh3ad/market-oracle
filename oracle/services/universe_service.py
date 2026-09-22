@@ -4,14 +4,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
-from oracle.jobs import JobBusy, JobLock
 from oracle.net.client import RateLimitedClient
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
+from oracle.services.jobs_service import single_flight
 from oracle.services.suggest import closest, hint
 from oracle.services.errors import (
     InvalidQuery,
-    JobAlreadyRunning,
     UniverseNotLoaded,
     UniverseUnavailable,
     UnknownFilterValue,
@@ -171,23 +170,15 @@ def _band_key(value: str) -> str:
 async def refresh_universe(ctx: AppContext) -> UniverseStatus:
     """Download FinanceDatabase and swap it in whole: a failure anywhere leaves the
     previous universe untouched."""
-    lock = JobLock(ctx.conn, ctx.clock)
-    try:
-        handle = lock.acquire(JOB, LEASE_S)
-    except JobBusy as exc:
-        raise JobAlreadyRunning(str(exc)) from exc
-    try:
+    with single_flight(ctx, JOB, LEASE_S) as held:
         sha, listings = await _download(ctx)
         grouped = group_companies(listings)
-        if not lock.heartbeat(handle):
-            raise JobAlreadyRunning(f"{JOB} was taken over by another process; not saving")
+        held.check()
         with transaction(ctx.conn):
             UniverseRepo(ctx.conn).replace_all(grouped)
             meta = MetaRepo(ctx.conn)
             meta.set(_COMMIT, sha)
             meta.set(_REFRESHED, to_utc_iso(ctx.clock.utcnow()))
-    finally:
-        lock.release(handle)
     return universe_status(ctx)
 
 

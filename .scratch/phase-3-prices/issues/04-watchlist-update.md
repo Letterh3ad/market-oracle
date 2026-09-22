@@ -4,9 +4,13 @@
 
 **Blocked by:** 01, 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Updates every listing on every watchlist once, even if on several lists
-- [ ] A failing symbol does not stop the others; the summary names it and why
-- [ ] Two updates at once: the second reports the lock holder
-- [ ] `watch show` prices in native currency and GBP, with day change and staleness
+- [x] Updates every listing on every watchlist once, even if on several lists
+- [x] A failing symbol does not stop the others; the summary names it and why
+- [x] Two updates at once: the second reports the lock holder
+- [x] `watch show` prices in native currency and GBP, with day change and staleness
+
+## Comments
+
+The lock is tested at the service seam with a foreign holder, not with two processes: the same JobLock already has process-level tests from phases 1 and 2.

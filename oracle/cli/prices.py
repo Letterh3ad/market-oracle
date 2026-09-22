@@ -4,13 +4,19 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
-from oracle.services.prices_service import price_history, price_history_in_base, price_sources, update_listing
+from oracle.services.prices_service import (
+    price_history,
+    price_history_in_base,
+    price_sources,
+    update_listing,
+    update_watched,
+)
 
 
 def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="prices_command", required=True)
-    update = sub.add_parser("update", help="fetch new daily bars for a listing")
-    update.add_argument("symbol")
+    update = sub.add_parser("update", help="fetch new daily bars: one listing, or every watched one plus FX")
+    update.add_argument("symbol", nargs="?", help="omit to update every watchlist")
     update.set_defaults(handler=update_cmd)
     show = sub.add_parser("show", help="stored daily bars for a listing")
     show.add_argument("symbol")
@@ -21,9 +27,19 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 
 def update_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    r = asyncio.run(update_listing(ctx, args.symbol))
-    print(f"{r.symbol}: {r.added} new bars, last {r.last_date} (from {r.source})")
-    return 0
+    if args.symbol:
+        r = asyncio.run(update_listing(ctx, args.symbol))
+        print(f"{r.symbol}: {r.added} new bars, last {r.last_date} (from {r.source})")
+        return 0
+    run = asyncio.run(update_watched(ctx))
+    if not run.listings:
+        print("nothing watched: add listings with `oracle watch add SYMBOL`")
+        return 0
+    for o in run.listings:
+        print(f"{o.symbol}: FAILED ({o.error})" if o.error else f"{o.symbol}: {o.added} new bars (from {o.source})")
+    for f in run.fx:
+        print(f"{f.currency}: no rates ({f.error})" if f.source is None else f"{f.currency}: {f.added} new rates from {f.source}")
+    return 1 if run.failed or any(f.source is None for f in run.fx) else 0
 
 
 def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:

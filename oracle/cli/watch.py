@@ -43,14 +43,21 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if not items:
         print(f"{args.list} is empty: add with `oracle watch add SYMBOL`")
         return 0
-    print(f"{'symbol':<12}{'name':<32}{'exch':<6}{'ccy':<5}country")
+    base = ctx.config.base_currency
+    print(f"{'symbol':<12}{'name':<28}{'exch':<6}{'last close':>16}{'in ' + base:>12}{'day':>9}  date")
     for i in items:
         if i.missing:
             print(f"{i.symbol:<12}MISSING: no longer in the universe (remove, or refresh again later)")
             continue
-        delisted = "  delisted" if i.delisted else ""
-        print(f"{i.symbol:<12}{cut(i.name, 31):<32}{i.exchange or '':<6}{i.currency or '':<5}"
-              f"{i.country or ''}{delisted}")
+        close = f"{i.last_close:.2f} {i.price_currency}" if i.last_close is not None else "not priced"
+        in_base = f"{i.close_base:.2f}" if i.close_base is not None else "n/a"
+        day = f"{i.change_pct:+.2f}%" if i.change_pct is not None else ""
+        notes = "  ".join(n for n in (
+            i.last_date.isoformat() if i.last_date else "",
+            "STALE" if i.stale else "",
+            "delisted" if i.delisted else "",
+        ) if n)
+        print(f"{i.symbol:<12}{cut(i.name, 27):<28}{i.exchange or '':<6}{close:>16}{in_base:>12}{day:>9}  {notes}".rstrip())
     return 0
 
 

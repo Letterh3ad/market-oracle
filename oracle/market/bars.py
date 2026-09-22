@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 # Quotes in a currency's minor unit: London in pence, Johannesburg in cents, Tel Aviv
@@ -33,3 +33,14 @@ def major_unit(currency: str) -> tuple[str, int]:
 
 def local_date(epoch_s: float, tz_name: str) -> date:
     return datetime.fromtimestamp(epoch_s, timezone.utc).astimezone(ZoneInfo(tz_name)).date()
+
+
+# Weekdays a last bar may trail today before it counts as stale. Holidays are not
+# modelled, so this absorbs a long weekend; a week-long closure (Golden Week) will
+# briefly show stale.
+STALE_AFTER_WEEKDAYS = 3
+
+
+def is_stale(last: date, today: date) -> bool:
+    weekdays = sum(1 for n in range(1, (today - last).days + 1) if (last + timedelta(days=n)).weekday() < 5)
+    return weekdays > STALE_AFTER_WEEKDAYS
