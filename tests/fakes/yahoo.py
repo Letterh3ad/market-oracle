@@ -19,17 +19,36 @@ class Series:
 
 
 class FakeYahoo:
-    hosts = {"query1.finance.yahoo.com", "query2.finance.yahoo.com"}
+    hosts = {"query1.finance.yahoo.com", "query2.finance.yahoo.com", "fc.yahoo.com"}
 
     def __init__(self) -> None:
         self.series: dict[str, Series] = {}
         self.fail: dict[str, int] = {}
         """symbol -> HTTP status to answer with instead."""
+        self.summaries: dict[str, dict] = {}
+        """symbol -> quoteSummary modules, values as {"raw": v} like the real API."""
+        self.crumb = "crumb-1"
+        self.crumb_status = 200
+        self.crumbs_issued = 0
+        self.expire_crumb_after_issue = False
+        """The next quoteSummary rejects the crumb just issued (it expired)."""
+        self.crumb_user_agents: list[str] = []
 
     def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
         self.series[symbol] = Series(currency, tz, bars, open_at)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "fc.yahoo.com":
+            return httpx.Response(404, headers={"set-cookie": "A3=cookie; Domain=.yahoo.com; Path=/"})
+        if request.url.path == "/v1/test/getcrumb":
+            self.crumb_user_agents.append(request.headers.get("user-agent", ""))
+            if self.crumb_status != 200:
+                return httpx.Response(self.crumb_status, text="Too Many Requests")
+            self.crumbs_issued += 1
+            self.crumb = f"crumb-{self.crumbs_issued}"
+            return httpx.Response(200, text=self.crumb)
+        if request.url.path.startswith("/v10/finance/quoteSummary/"):
+            return self._summary(request)
         prefix = "/v8/finance/chart/"
         if not request.url.path.startswith(prefix):
             return httpx.Response(404)
@@ -59,6 +78,22 @@ class FakeYahoo:
             },
         }]}})
 
+    def _summary(self, request: httpx.Request) -> httpx.Response:
+        unauthorised = httpx.Response(401, json={"finance": {"result": None, "error": {
+            "code": "Unauthorized", "description": "Invalid Crumb"}}})
+        if "A3=" not in request.headers.get("cookie", "") or request.url.params.get("crumb") != self.crumb:
+            return unauthorised
+        if self.expire_crumb_after_issue:
+            self.expire_crumb_after_issue = False
+            self.crumb = "expired"
+            return unauthorised
+        symbol = request.url.path.rsplit("/", 1)[1]
+        modules = self.summaries.get(symbol)
+        if modules is None:
+            return httpx.Response(404, json={"quoteSummary": {"result": None, "error": {
+                "code": "Not Found", "description": "Quote not found for symbol"}}})
+        return httpx.Response(200, json={"quoteSummary": {"result": [modules], "error": None}})
+
     @staticmethod
     def _stamp(day: date, s: Series) -> int:
         local = datetime.combine(day, s.open_at, tzinfo=ZoneInfo(s.tz))
@@ -68,3 +103,18 @@ class FakeYahoo:
 def bar(day: str, close: float, adj: float | None = None, volume: int = 1000) -> tuple:
     d = date.fromisoformat(day)
     return (d, close, close, close, close, close if adj is None else adj, volume)
+
+
+def summary(currency: str, market_cap=None, **figures) -> dict:
+    """quoteSummary modules as Yahoo nests them; figure names are Yahoo's."""
+    where = {
+        "trailingPE": "summaryDetail", "forwardPE": "summaryDetail", "dividendYield": "summaryDetail",
+        "beta": "summaryDetail", "priceToBook": "defaultKeyStatistics", "profitMargins": "financialData",
+        "returnOnEquity": "financialData", "revenueGrowth": "financialData", "debtToEquity": "financialData",
+    }
+    modules = {"price": {"currency": currency}, "summaryDetail": {}, "defaultKeyStatistics": {}, "financialData": {}}
+    if market_cap is not None:
+        modules["price"]["marketCap"] = {"raw": market_cap, "fmt": "x"}
+    for name, value in figures.items():
+        modules[where[name]][name] = {"raw": value, "fmt": "x"}
+    return modules

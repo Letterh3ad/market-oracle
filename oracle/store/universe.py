@@ -109,6 +109,22 @@ class UniverseRepo:
         }
         return UniverseCounts(*row, by_type)
 
+    def profile(self, symbol: str) -> dict | None:
+        """The listing asked for, its company's primary listing and how many active
+        listings the company has."""
+        row = self._conn.execute(
+            """SELECT l.symbol, l.company_key, l.exchange, l.currency AS listing_currency,
+                      p.symbol AS primary_symbol, p.currency AS primary_currency,
+                      COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, p.country, p.sector,
+                      p.industry, p.website, p.summary, p.category, p.family,
+                      (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key AND x.delisted = 0)
+                        AS listings
+               FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
+               WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
+            {"s": symbol.strip()},
+        ).fetchone()
+        return dict(row) if row else None
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]

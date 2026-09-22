@@ -100,3 +100,24 @@ def test_watch_show_prints_prices(run):
     header, row = out.splitlines()[:2]
     assert "close" in header and "GBP" in header
     assert row.split()[0] == "AAPL" and "232.00 USD" in row and f"{232.0 / 1.36:.2f}" in row and "+0.43%" in row
+
+
+def test_company_shows_profile_price_and_explained_figures(run):
+    from tests.fakes.yahoo import summary
+
+    run.yahoo.summaries["AAPL"] = summary("USD", market_cap=4.0e12, trailingPE=39.0, dividendYield=0.0032)
+    run("fx", "update")
+    code, out, _ = run("company", "aapl")
+    assert code == 0
+    assert "Apple Inc. (AAPL)" in out
+    assert "232.00 USD" in out and f"{232.0 / 1.36:.2f} GBP" in out
+    assert "P/E" in out and "39.00" in out and "years of current profit" in out
+    assert "0.32%" in out  # dividend yield as a percentage
+    assert "Beta" in out and "n/a" in out
+    assert "GBP 2.94T" in out  # market cap in base currency
+
+
+def test_company_says_why_fundamentals_are_missing(run):
+    code, out, _ = run("company", "AAPL")
+    assert code == 0
+    assert "no fundamentals" in out

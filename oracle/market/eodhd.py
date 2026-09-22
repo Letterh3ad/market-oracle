@@ -56,9 +56,14 @@ class EodhdPrices:
     async def eod(self, code: str, since: date | None, now: datetime) -> list[dict]:
         """Raw daily rows for an EODHD code (`AAPL.US`, `GBPUSD.FOREX`)."""
         start = since if since is not None else now.date() - HISTORY
-        params = {"api_token": self._key, "fmt": "json", "from": start.isoformat()}
+        rows = await self.get_json(EOD_URL.format(code=code), {"from": start.isoformat()}, code)
+        if not isinstance(rows, list):
+            raise SourceFailed("unreadable response")
+        return rows
+
+    async def get_json(self, url: str, params: dict, code: str):
         try:
-            resp = await self._client.get(SOURCE, EOD_URL.format(code=code), params=params)
+            resp = await self._client.get(SOURCE, url, params={"api_token": self._key, "fmt": "json", **params})
         except (RequestFailed, CircuitOpen) as exc:
             raise SourceFailed(self._redact(str(exc).removeprefix(f"{SOURCE}: "))) from None
         if resp.status_code in (401, 403):
@@ -68,12 +73,9 @@ class EodhdPrices:
         if resp.status_code != 200:
             raise SourceFailed(f"HTTP {resp.status_code}")
         try:
-            rows = resp.json()
+            return resp.json()
         except ValueError:
             raise SourceFailed("unreadable response") from None
-        if not isinstance(rows, list):
-            raise SourceFailed("unreadable response")
-        return rows
 
     def _redact(self, text: str) -> str:
         # The key travels in the query string, so any message quoting a URL carries it.

@@ -249,3 +249,16 @@ exchange's local date on Windows.
 **Alternatives:** yfinance (rejected: heavy deps, bypasses the shared gate). No fallback
 price source (rejected: user asked for paid options wired and testable). If Yahoo starts
 fingerprint-blocking httpx, a curl_cffi transport can slot under the same client.
+
+## 2026-09-22 - Yahoo fundamentals present a browser user agent for the crumb
+
+**Context:** quoteSummary needs a session cookie plus a crumb. Yahoo answered the crumb
+endpoint with 429 to our honest `market-oracle/0.1` user agent and 200 to a browser one
+seconds later, so the filter is on the user agent, not the rate.
+**Decision:** Only the three fundamentals calls (fc.yahoo.com, getcrumb, quoteSummary) send
+a browser user agent, as yfinance does; the chart endpoint keeps the honest one. They go
+through the shared `yahoo` gate, so a run of 429s trips the same breaker as prices and
+backs every Yahoo call off. Snapshots are refreshed at most daily, for the company's
+primary listing; a failed refresh shows the last snapshot with its date.
+**Alternatives:** EODHD only for fundamentals (rejected: paid). curl_cffi browser
+impersonation (not needed: a header is enough today).

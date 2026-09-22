@@ -4,10 +4,14 @@
 
 **Blocked by:** 01, 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] First view fetches and stores a snapshot; a second view the same day makes no request
-- [ ] An expired crumb is refreshed once, then the call fails clearly
-- [ ] Missing figures show as "n/a", never as 0
-- [ ] With Yahoo failing and a key set, EODHD fills the snapshot
-- [ ] Each figure has a plain-English explanation line
+- [x] First view fetches and stores a snapshot; a second view the same day makes no request
+- [x] An expired crumb is refreshed once, then the call fails clearly
+- [x] Missing figures show as "n/a", never as 0
+- [x] With Yahoo failing and a key set, EODHD fills the snapshot
+- [x] Each figure has a plain-English explanation line
+
+## Comments
+
+Fundamentals are fetched for the company's primary listing. EODHD has no debt/equity figure, so it shows n/a from that source. The crumb calls use a browser user agent (see DECISIONS.md).

@@ -15,6 +15,8 @@ class FakeEodhd:
         self.eod: dict[str, list[dict]] = {}
         """EODHD code (AAPL.US) -> rows."""
         self.explode_with: Exception | None = None
+        self.fundamentals: dict[str, dict] = {}
+        """EODHD code -> {section: {field: value}}."""
 
     def add(self, code: str, rows: list[tuple]) -> None:
         """rows: (date, close, adjusted_close, volume)."""
@@ -28,6 +30,12 @@ class FakeEodhd:
             raise self.explode_with
         if request.url.params.get("api_token") != self.key:
             return httpx.Response(401, text="Unauthenticated")
+        if request.url.path.startswith("/api/fundamentals/"):
+            sections = self.fundamentals.get(request.url.path.rsplit("/", 1)[1])
+            if sections is None:
+                return httpx.Response(404, text="Ticker Not Found.")
+            wanted = request.url.params.get("filter", "").split(",")
+            return httpx.Response(200, json={k: v for k, v in sections.items() if k in wanted})
         prefix = "/api/eod/"
         if not request.url.path.startswith(prefix):
             return httpx.Response(404)

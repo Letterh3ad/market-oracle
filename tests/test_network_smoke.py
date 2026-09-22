@@ -78,3 +78,17 @@ async def test_real_fx_sources(tmp_path, source, currency):
     assert rates and all(r.source == source and r.units_per_base > 0 for r in rates)
     sane = {"USD": (1.0, 2.0), "EUR": (1.0, 1.5), "JPY": (120, 260), "TWD": (30, 60)}[currency]
     assert sane[0] < rates[-1].units_per_base < sane[1]
+
+
+async def test_real_yahoo_fundamentals_via_the_crumb():
+    from datetime import date
+
+    from oracle.market.fundamentals import YahooFundamentals
+    from oracle.market.sources import Instrument
+    from oracle.services.http import open_client
+
+    with open_context(Config(db_path=":memory:"), None) as ctx:
+        async with open_client(ctx) as client:
+            f = await YahooFundamentals(client).fundamentals(Instrument("BP.L", "GBP"), date.today())
+    assert f.currency == "GBP" and f.market_cap and 1e10 < f.market_cap < 1e12  # pounds, not pence
+    assert f.pe is None or 0 < f.pe < 500
