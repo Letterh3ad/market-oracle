@@ -150,3 +150,85 @@ same 30s deadline as the busy timeout. The race test now starts `connect()` behi
 barrier with 10 processes, which reproduced the failure every run before the fix.
 **Alternatives:** Serialise first open with a file lock (rejected: more moving parts for a
 one-line retry).
+
+## 2026-09-22 - Universe: FinanceDatabase data files loaded into SQLite, no library
+
+**Context:** The `financedatabase` package pulls in pandas and downloads the same `.bz2`
+files from GitHub on use. Equities alone are 112,707 rows (93MB CSV); loading that per
+command is slow, and tags and watchlists need to join against it.
+**Decision:** Fetch the equities and ETF `.bz2` files ourselves through the gate (source
+`financedatabase`), pinned to a resolved commit SHA, and load them into SQLite with
+stdlib `bz2`/`csv` in one atomic swap. Name and symbol search uses FTS5. Delisted rows
+(10,404) are kept but hidden by default.
+**Alternatives:** The library with pandas in-memory filtering (rejected: heavy dependency,
+seconds per query, no joins). Funds, indices, currencies and crypto (deferred: not needed
+for a stock tool yet).
+
+## 2026-09-22 - One row per company by default; tags on companies, watchlists on listings
+
+**Context:** The same company lists on many exchanges (Apple has 19 rows: AAPL, APC.DE,
+AAPL.MI...), so raw search results are mostly duplicates. Only 27% of rows carry an ISIN.
+**Decision:** Listings sharing an ISIN or a normalised name plus country are one company,
+transitively. Neither alone works: most listings carry no ISIN, and some carry another
+line's (German Siemens Healthineers listings hold the US ADR's ISIN). A name or ISIN on
+more than 30 lines of one exchange links nothing: real companies peak around 25
+(Freddie Mac preferreds), while placeholders (96 OTC funds named "ISHARES") and parents'
+ISINs on subsidiaries (POSCO) run 34 to 96. Result on real data: 112,705 listings, 64,422
+companies. Each company has one primary listing: active before delisted, then an
+exchange in its home country (the country most of its listings give), then exchange
+tier and market depth, then symbol. Search shows primaries unless `--all-listings`.
+Tagging writes a row for every listing of the company, each noting the symbol tagged
+(`via`); a company reads the tags of any of its listings, so a tag survives a refresh
+that regroups companies or drops one listing, and is orphaned only when every listing
+from that tagging has left the universe. Watchlists hold listings,
+since a listing is what gets priced (phase 3). Both survive a refresh and flag members
+that vanished rather than dropping them.
+**Alternatives:** Show every listing (rejected: noise). Group by composite FIGI (rejected:
+sparser than ISIN here). Tags on listings (rejected: tagging APC.DE should tag Apple).
+
+## 2026-09-22 - yfinance enrichment moves to phase 3
+
+**Context:** Enriching opened or watched companies needs the PriceSource plumbing.
+**Decision:** Phase 2 is the offline universe only; enrichment ships with phase 3.
+**Alternatives:** A thin yfinance call in phase 2 (rejected: built twice).
+
+## 2026-09-22 - Universe refresh holds its job lock without a heartbeat task
+
+**Context:** `JobLock.holding()` heartbeats on `clock.sleep`, which under a fake clock
+spins and drags fake time forward during every await.
+**Decision:** Refresh takes the lock with a 30-minute lease, heartbeats once before it
+writes (aborting if the lock was taken), and releases in `finally`. A hard kill is still
+freed at once by the pid check. The whole swap is one transaction, so readers see the old
+universe or the new one, never a mix.
+**Alternatives:** `holding()` (rejected: nondeterministic under the fake clock for no gain
+on a job this short).
+
+## 2026-09-22 - Universe filters: company fields from the primary, size-first ranking
+
+**Context:** FinanceDatabase repeats company fields on every listing, not always
+consistently (Siemens' Indian listings say India), and bm25 alone ranked junk lines
+("NVIDIA CORP NVIDIA ORD" on the LSE's OTC board) above NVDA.
+**Decision:** Country, sector, industry and market cap filter and sort on the company's
+primary listing; exchange filters the listing, and the row shown is that exchange's
+line. Values match case-insensitively; an unknown value fails with the closest real
+ones. Text search ranks exact symbol, then market-cap band, then bm25. No text means
+browse, biggest first. Blanks sort last in both directions. When nothing can select a
+non-primary line, the query reads primaries only (browse ~1s to ~150ms on real data).
+**Alternatives:** Per-listing company fields (rejected: Siemens would count as Indian).
+Pure bm25 (rejected: ranks short junk names first).
+
+## 2026-09-22 - Phase 2 review fixes
+
+**Context:** The two-axis review of phase 2 found spec gaps and a few risks.
+**Decision:**
+- Tags: a row per listing (see the universe decision above); `tag remove` on an unknown
+  symbol suggests real ones; `tag list <symbol>` works for orphaned symbols; `add_tag`
+  checks and writes in one transaction.
+- `watch show` marks listings delisted since they were added.
+- ISIN links are typed like name links, so a fund never merges with a company.
+- SQL field names are checked with a real `ValueError`, not `assert` (stripped by -O).
+- Reversing relevance is refused rather than ignored; `--limit` is capped at 500.
+- `--sort market-cap --desc` stays smallest first, like every other reversed sort;
+  biggest first is already the default.
+**Alternatives:** A per-field spec map for the market cap and exchange special cases
+(deferred: three call sites, revisit if a fourth appears).

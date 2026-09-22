@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+import httpx
+
 from oracle.clock import Clock, SystemClock
 from oracle.config import Config, ConfigError, load_config
 from oracle.services.errors import ConfigInvalid, DatabaseTooNew
@@ -20,6 +22,8 @@ class AppContext:
     config_source: Path | None
     conn: sqlite3.Connection
     clock: Clock
+    # None means the real network; tests pass an httpx.MockTransport.
+    transport: httpx.AsyncBaseTransport | None = None
 
 
 def load_settings(path: Path | None) -> tuple[Config, Path | None]:
@@ -31,7 +35,10 @@ def load_settings(path: Path | None) -> tuple[Config, Path | None]:
 
 @contextmanager
 def open_context(
-    config: Config, config_source: Path | None, clock: Clock | None = None
+    config: Config,
+    config_source: Path | None,
+    clock: Clock | None = None,
+    transport: httpx.AsyncBaseTransport | None = None,
 ) -> Iterator[AppContext]:
     clock = clock or SystemClock()
     conn = connect(config.db_path)
@@ -41,6 +48,6 @@ def open_context(
         except SchemaTooNew as exc:
             raise DatabaseTooNew(str(exc)) from exc
         MetaRepo(conn).setdefault("created_at", to_utc_iso(clock.utcnow()))
-        yield AppContext(config, config_source, conn, clock)
+        yield AppContext(config, config_source, conn, clock, transport)
     finally:
         conn.close()

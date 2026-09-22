@@ -20,6 +20,12 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 |---|---|---|
 | httpx | BSD-3-Clause | async HTTP (`oracle/net/client.py`) |
 
+## Data
+
+| Dataset | License | Use |
+|---|---|---|
+| [FinanceDatabase](https://github.com/JerBouma/FinanceDatabase) (compressed CSVs, fetched at a pinned commit) | MIT | offline universe: names, classification, exchanges (`oracle/universe/financedatabase.py`) |
+
 ## Dev dependencies
 
 | Package | License |

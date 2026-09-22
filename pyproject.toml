@@ -23,3 +23,5 @@ include = ["oracle*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-m 'not network'"
+markers = ["network: hits real third-party services; run with -m network"]
