@@ -7,7 +7,9 @@ from oracle.services.analysis_service import analyse, signal_history
 from oracle.services.context import open_context
 from oracle.services.errors import NoPrices, UnknownSymbol
 from oracle.services.prices_service import update_listing
+from oracle.services.fx_service import update_fx
 from oracle.services.universe_service import refresh_universe
+from oracle.services.watch_service import watch
 from tests.analysts.bars import geometric, weekdays
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
@@ -24,6 +26,8 @@ PEERS = ["DELL", "HPQ", "HPE", "LOGI", "NTAP"]
 def yahoo():
     y = FakeYahoo()
     y.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, geometric(300, 0.001))])
+    y.add("GBPUSD=X", "USD", "Europe/London", [bar(d.isoformat(), 1.25) for d in DAYS])
+    y.add("DELL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, geometric(300, 0.002))])
     y.add("NOSECT", "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in DAYS])
     y.summaries["AAPL"] = summary("USD", market_cap=3e12, trailingPE=10.0, profitMargins=0.3, revenueGrowth=0.05)
     for i, peer in enumerate(PEERS):
@@ -98,3 +102,17 @@ async def test_factors_without_peers_are_skipped_with_the_reason(ctx):
     result = await analyse(ctx, "NOSECT")
     skipped = {k.analyst: k.reason for k in result.skipped}
     assert set(skipped) >= {"value", "quality", "growth"} and "no sector" in skipped["value"]
+
+
+async def test_risk_sizes_in_base_currency_and_compares_with_other_watched_listings(ctx):
+    await update_listing(ctx, "DELL")
+    await update_fx(ctx)
+    watch(ctx, "AAPL")
+    watch(ctx, "DELL")
+    risk = {s.analyst: s for s in (await analyse(ctx, "AAPL")).signals}["risk"]
+    assert "corr_DELL" in dict(risk.figures) and "£" in risk.reason
+
+
+async def test_risk_without_exchange_rates_says_how_to_get_them(ctx):
+    skipped = {k.analyst: k.reason for k in (await analyse(ctx, "AAPL")).skipped}
+    assert "oracle fx update" in skipped["risk"]

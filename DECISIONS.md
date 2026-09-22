@@ -364,3 +364,18 @@ dividend yield. Quality: profit margin, ROE, debt to equity. Growth: revenue gro
 the company's fundamentals (daily) and its peers' (weekly).
 **Alternatives:** Z-scores (rejected: one outlier peer distorts a 20-company group).
 Sector-median comparison only (rejected: says less than a rank).
+
+## 2026-09-22 - Per-listing risk in the base currency
+
+**Context:** Ticket 05, before any ledger exists.
+**Decision:** Risk works on adjusted closes converted to the base currency (the risk a
+GBP holder carries, currency moves included); days without a rate are left out, and
+with no rates at all risk is skipped with "run `oracle fx update`". Size = account x
+max_position x min(1, target_volatility / yearly volatility), never above account x (1 -
+cash_floor). Yearly volatility uses up to 252 daily returns; correlation needs 60 shared
+trading days. The risk signal has no direction (score 0). The sizing rules are a
+`[risk]` config section (10,000 account, 10% cap, 20% cash floor, 20% target volatility)
+that the phase 5 paper broker will share.
+**Alternatives:** Native-currency volatility (rejected: hides FX risk for a GBP account).
+Fixed-fraction sizing (rejected: a volatile small cap would get the same stake as a
+utility).

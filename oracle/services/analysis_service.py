@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 
 from oracle.analysts import factors
+from oracle.analysts.risk import Series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
 from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
 from oracle.analysts.trend import trend
@@ -11,11 +12,13 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices
 from oracle.services.fundamentals_service import fetch_fundamentals
 from oracle.services.peers_service import peer_group
+from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 
 __all__ = ["Analysis", "AnalystSignal", "Direction", "Skipped", "analyse", "signal_history"]
 
@@ -39,6 +42,7 @@ async def analyse(ctx: AppContext, symbol: str) -> Analysis:
         raise NoPrices(f"no prices stored for {listing}: run `oracle prices update {listing}`")
     results = [f(bars) for f in (trend, rsi_signal, macd_signal, volatility_signal)]
     results.append(combine([r for r in results if isinstance(r, AnalystSignal)]))
+    results.append(_risk(ctx, listing))
     results += await _factors(ctx, listing)
     signals = tuple(r for r in results if isinstance(r, AnalystSignal))
     SignalRepo(ctx.conn).save(list(signals), to_utc_iso(ctx.clock.utcnow()))
@@ -62,6 +66,22 @@ async def _factors(ctx: AppContext, listing: str) -> list[AnalystSignal | Skippe
     # Stored under the listing analysed, like every other signal.
     company = replace(company, symbol=listing)
     return [f(company, peers, group.basis) for f in FACTOR_ANALYSTS]
+
+
+def _risk(ctx: AppContext, listing: str) -> AnalystSignal | Skipped:
+    mine = _base_series(ctx, listing)
+    if not mine:
+        return Skipped("risk", listing, "no exchange rates for its prices yet: run `oracle fx update`")
+    others = {s: _base_series(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols() if s != listing}
+    return risk(listing, mine, others, **asdict(ctx.config.risk))
+
+
+def _base_series(ctx: AppContext, symbol: str) -> Series:
+    """Adjusted closes in the base currency; days without a rate are left out."""
+    return [
+        (c.bar.date, (c.bar.adj_close if c.bar.adj_close is not None else c.bar.close) / c.rate)
+        for c in price_history_in_base(ctx, symbol) if c.rate
+    ]
 
 
 def signal_history(ctx: AppContext, symbol: str, analyst: str) -> list[AnalystSignal]:

@@ -4,10 +4,10 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Size halves when volatility doubles, and never exceeds the cap
-- [ ] Max drawdown matches a hand-built series, with its peak and trough dates
-- [ ] Correlation uses only days both listings traded, in GBP
-- [ ] A watchlist with one listing gives no correlation and says why
-- [ ] Every default (target volatility, cap, cash floor) is a documented config value
+- [x] Size halves when volatility doubles, and never exceeds the cap
+- [x] Max drawdown matches a hand-built series, with its peak and trough dates
+- [x] Correlation uses only days both listings traded, in GBP
+- [x] A watchlist with one listing gives no correlation and says why
+- [x] Every default (target volatility, cap, cash floor) is a documented config value

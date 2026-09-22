@@ -64,6 +64,24 @@ class AnalystsConfig:
 PEERS_RANGE = (5, 100)
 
 
+@dataclass(frozen=True)
+class RiskConfig:
+    """Paper-account sizing rules; the design's conservative defaults."""
+
+    account: float = 10_000.0
+    """Paper account size, in the base currency."""
+    max_position: float = 0.10
+    """Largest share of the account one position may take."""
+    cash_floor: float = 0.20
+    """Share of the account always kept in cash."""
+    target_volatility: float = 0.20
+    """Yearly price swing at which a position gets the full `max_position`."""
+
+
+# Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
+_RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
+
+
 class Keys:
     """API keys for paid sources. Never shown: repr lists names only."""
 
@@ -91,6 +109,7 @@ class Config:
     prices: PricesConfig = field(default_factory=PricesConfig)
     fx: FxConfig = field(default_factory=FxConfig)
     analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
+    risk: RiskConfig = field(default_factory=RiskConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -143,6 +162,9 @@ def _apply(raw: dict) -> Config:
         if name == "analysts":
             values[name] = _analysts(value)
             continue
+        if name == "risk":
+            values[name] = _risk(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -166,6 +188,20 @@ def _analysts(raw: object) -> AnalystsConfig:
     if isinstance(peers, bool) or not isinstance(peers, int) or not low <= peers <= high:
         raise ConfigError(f"analysts.peers must be a whole number from {low} to {high}, got {peers!r}")
     return AnalystsConfig(peers=peers)
+
+
+def _risk(raw: object) -> RiskConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("risk must be a [risk] table")
+    _reject_unknown(raw, RiskConfig, "[risk]")
+    for key, value in raw.items():
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+        if key in _RISK_SHARES:
+            ok = ok and value < 1
+        if not ok:
+            wanted = "a share above 0 and below 1" if key in _RISK_SHARES else "a positive number"
+            raise ConfigError(f"risk.{key} must be {wanted}, got {value!r}")
+    return RiskConfig(**{k: float(v) for k, v in raw.items()})
 
 
 def _keys(raw: object) -> Keys:
