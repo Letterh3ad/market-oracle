@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from oracle.cli.common import cut
+from oracle.services.analysis_service import StoredSignal
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, unwatch, watch, watchlists
@@ -57,14 +58,30 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
             i.last_date.isoformat() if i.last_date else "",
             "STALE" if i.stale else "",
             "delisted" if i.delisted else "",
+            _signals(i.signals),
         ) if n)
         print(
             f"{i.symbol:<12}{cut(i.name, 25):<26}{i.exchange or '':<6}{cut(i.country, 14):<15}"
             f"{close:>16}{in_base:>12}{day:>9}  {notes}".rstrip()
         )
+    if any(i.signals for i in items):
+        print("signals: + bullish, - bearish, = neutral, * out of date; `oracle company SYMBOL` explains them")
+    if any(i.last_close is not None and not i.signals for i in items):
+        print("some listings have no signals yet: run `oracle analyse`")
     for credit in credits(i.rate_source for i in items):
         print(credit)
     return 0
+
+
+_SHORT = {"technicals": "tech", "value": "val", "quality": "qual", "growth": "grow"}
+_MARK = {"bullish": "+", "bearish": "-", "neutral": "="}
+
+
+def _signals(stored: tuple[StoredSignal, ...]) -> str:
+    return " ".join(
+        f"{_SHORT[s.signal.analyst]}{_MARK[s.signal.direction.value]}{'*' if s.stale else ''}"
+        for s in stored if s.signal.analyst in _SHORT
+    )
 
 
 def lists_cmd(ctx: AppContext, args: argparse.Namespace) -> int:

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import textwrap
 
+from oracle.cli.common import print_signal
 from oracle.services.company_service import FIGURES, company_view
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
@@ -46,6 +47,14 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
         for fig in FIGURES:
             value = _money(view.market_cap_base, base) if fig.name == "market_cap" else _format(getattr(f, fig.name), fig.kind)
             print(f"  {fig.label:<18}{value:>12}  {textwrap.shorten(fig.meaning, 200)}")
+
+    print()
+    if not view.signals:
+        print(f"  no analyst signals yet: run `oracle analyse {p.symbol}`")
+    else:
+        print(f"  Analysts (refresh with `oracle analyse {p.symbol}`)")
+        for stored in view.signals:
+            print_signal(stored.signal, 4, "  OUT OF DATE" if stored.stale else "")
 
     for credit in credits([view.market_cap_rate_source, view.price.rate_source if view.price else None]):
         print(credit)

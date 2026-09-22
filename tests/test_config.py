@@ -69,3 +69,35 @@ def test_an_oracle_toml_in_the_cwd_is_found_without_a_path(tmp_path):
     config, source = load_config(None, cwd=tmp_path)
     assert source == path
     assert config.base_currency == "USD"
+
+
+def test_analysts_peers_defaults_to_20_and_can_be_changed(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].analysts.peers == 20
+    path = tmp_path / "oracle.toml"
+    path.write_text("[analysts]\npeers = 40\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].analysts.peers == 40
+
+
+@pytest.mark.parametrize("value", ["4", "101", "20.5", '"20"', "true"])
+def test_analysts_peers_outside_5_to_100_is_refused(tmp_path, value):
+    path = tmp_path / "oracle.toml"
+    path.write_text(f"[analysts]\npeers = {value}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="analysts.peers"):
+        load_config(path, cwd=tmp_path)
+
+
+def test_risk_defaults_are_the_design_rules_and_can_be_changed(tmp_path):
+    risk = load_config(None, cwd=tmp_path)[0].risk
+    assert (risk.account, risk.max_position, risk.cash_floor, risk.target_volatility) == (10_000.0, 0.10, 0.20, 0.20)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[risk]\nmax_position = 0.05\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].risk.max_position == 0.05
+
+
+@pytest.mark.parametrize("line", ["max_position = 0", "cash_floor = 1.0", "target_volatility = -0.1", "account = 0",
+                                  'account = "lots"'])
+def test_risk_values_out_of_range_are_refused(tmp_path, line):
+    path = tmp_path / "oracle.toml"
+    path.write_text(f"[risk]\n{line}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="risk."):
+        load_config(path, cwd=tmp_path)

@@ -125,7 +125,10 @@ def test_values_converted_with_open_er_api_rates_carry_its_credit(tmp_path, caps
     from tests.fakes.fx import FakeOpenEr, noon
 
     cfg = tmp_path / "oracle.toml"
-    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
+    cfg.write_text(
+        "[sources.financedatabase]\nrate_per_second = 1000\n[sources.yahoo]\nrate_per_second = 1000\n",
+        encoding="utf-8",
+    )
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-22", 232.0)])
     yahoo.summaries["AAPL"] = summary("USD", market_cap=4.0e12)

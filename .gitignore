@@ -7,3 +7,8 @@ __pycache__/
 *.db-*
 oracle.toml
 models/
+
+# Planning stays local; DECISIONS.md and README.md are the tracked record.
+/CLAUDE.md
+/.scratch/
+/docs/

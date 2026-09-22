@@ -8,6 +8,8 @@ FRONTENDS = ("cli", "gui")
 # An allowlist, so a package added later is off limits to frontends by default.
 FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.cli", "oracle.gui")
 SERVICES_MAY_NOT_IMPORT = ("oracle.gui", "oracle.cli")
+# Analysts are pure: data in, signals out. Loading and storing is the services' job.
+ANALYSTS_MAY_IMPORT = ("oracle.analysts", "oracle.market.bars", "oracle.market.fundamentals")
 
 
 def _imports(path: Path) -> set[str]:
@@ -53,6 +55,21 @@ def test_services_never_import_a_frontend(path):
     assert service_violations(path) == set()
 
 
+def analyst_violations(path: Path) -> set[str]:
+    return {n for n in _imports(path) if _under(n, ("oracle",)) and not _under(n, ANALYSTS_MAY_IMPORT)}
+
+
+@pytest.mark.parametrize("path", _modules("analysts"), ids=lambda p: p.name)
+def test_analysts_stay_pure(path):
+    assert analyst_violations(path) == set(), "Analysts take data and return signals; services load and store."
+
+
+def test_checker_catches_an_analyst_reaching_the_store(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("from oracle.store.bars import BarRepo\nfrom oracle.market.bars import Bar\n")
+    assert analyst_violations(bad) == {"oracle.store.bars"}
+
+
 def test_checker_catches_a_frontend_reaching_the_store(tmp_path):
     bad = tmp_path / "bad.py"
     bad.write_text("from oracle.store.db import connect\nimport oracle.services.context\n")
@@ -66,7 +83,7 @@ def test_checker_catches_a_service_importing_the_gui(tmp_path):
 
 
 def test_there_are_modules_to_check():
-    assert _modules("cli") and _modules("services")
+    assert _modules("cli") and _modules("services") and _modules("analysts")
 
 
 def test_checker_catches_a_frontend_reaching_config_directly(tmp_path):

@@ -1,7 +1,7 @@
 # Decisions
 
-Design and architecture decisions made on the user's behalf. Full design:
-`docs/design/2026-09-22-market-oracle-design.md`.
+Design and architecture decisions made on the user's behalf. The full design and
+tickets are planning notes kept locally, outside the repo.
 
 ## 2026-09-22 - A new repo, borrowing from the stalker rather than sharing a package
 
@@ -295,3 +295,126 @@ Inferring "filled" from the stored
 Kept as is: `CompanyProfile` extending the store's `ListingProfile` (small, read-only);
 `first_success` treating any parse error as that source failing (a parser bug then shows
 as "unreadable response", not a crash).
+
+## 2026-09-22 - Phase 4 analysts: peers, risk scope, stored signals
+
+**Context:** Factor scores need peer fundamentals, which are fetched per company on
+demand; there is no portfolio until phase 5; the lean report and Laya need signal history.
+**Decision:** Peers are the biggest companies in the same industry group (sector when too
+few), `[analysts] peers` = 20 by default, adjustable later from the GUI; peer fundamentals
+are reused for 7 days. Risk is per listing in phase 4 (volatility-scaled size, max
+drawdown, correlation with the watchlist); portfolio risk waits for the ledgers. Every
+`AnalystSignal` is stored per symbol, analyst and date; a same-day rerun replaces it.
+**Alternatives:** Only already-stored peers (rejected: thin or missing scores). 50 peers
+(rejected: more traffic and crumb 429 risk). A hypothetical equal-weight watchlist
+portfolio (rejected: rebuilt once real ledgers exist). Recompute on demand (rejected:
+history and Laya need storage).
+
+## 2026-09-22 - Signal shape and trend defaults
+
+**Context:** Every analyst needs one output shape the lean report and Laya can read.
+**Decision:** `AnalystSignal`: score -1..1, confidence 0..1 (how far the analyst's own
+inputs agree), one plain-English reason, named figures; direction is derived from the
+score (neutral inside +/-0.2), never stored separately. Keyed by data date, not run date.
+An analyst that cannot judge returns `Skipped` with a reason, never a guess. Trend: close
+against the 200-day average, 50-day against 200-day, and the 12-1 month return (full
+strength at +/-20%); within 1% of an average counts as on it. Needs 253 bars. Uses
+adjusted closes so dividends and splits do not read as drops. Analysts may import only
+data types; the architecture test enforces it.
+**Alternatives:** Direction as its own field (rejected: can contradict the score).
+Confidence from signal strength (rejected: that double-counts the score).
+
+## 2026-09-22 - Technical analyst defaults
+
+**Context:** Ticket 02 needs RSI, MACD and volatility signals and one combined line.
+**Decision:** RSI (Wilder, 14): outside 30..70 is a mean-reversion hint worded "may
+bounce / may pull back", never an instruction; score 0.5..1 by how far out; confidence
+is how many of the last 5 readings share the zone. MACD (12/26/9): the histogram's sign
+counts twice, the line's once (the crossover leads, the side of zero confirms); reports
+the crossover's age. Volatility (20-day, annualised) never gives a direction; against
+its median over the past year it cuts the combined confidence (swings 2x usual halve
+it). The combined `technicals` signal is the confidence-weighted average of trend, RSI
+and MACD. RSI, MACD and volatility need 60 bars.
+**Alternatives:** RSI as a trend-follower (overbought = strong; rejected: conflicts with
+the trend analyst, which already covers direction). Volatility as bearish (rejected:
+high volatility says risk, not direction).
+
+## 2026-09-22 - Peer ordering and the shared fundamentals fetch
+
+**Context:** FinanceDatabase gives market cap only as a band (Mega, Large, ...), so
+"biggest 20" needs a tie-break; peers and the company view both fetch fundamentals.
+**Decision:** Peers are active equity companies (primary listing) in the same industry
+group, ordered by band, then by how many active listings the company has (a proxy for
+global prominence), then by name. Fewer than 5 in the industry group falls back to the
+sector. `fundamentals_service.fetch_fundamentals` is the one fetch path, with a maximum
+age: today for the company itself, 7 days for peers; one client and crumb per run.
+**Alternatives:** Ordering by fetched market cap (rejected: needs every candidate's
+fundamentals before choosing, far more traffic).
+
+## 2026-09-22 - Factor scoring rules
+
+**Context:** Ticket 04 turns peer comparisons into value, quality and growth signals.
+**Decision:** Each figure is a percentile (share of reporting peers beaten, ties half);
+a factor averages its figures' percentiles and maps 0..1 to -1..1. Negative P/E, forward
+P/E, P/B and debt to equity (losses or negative equity) rank as the worst, never the
+cheapest. Confidence is the share of figures agreeing with the factor's direction times
+a thinness penalty (reporting peers / 5, capped at 1). Value: P/E, forward P/E, P/B,
+dividend yield. Quality: profit margin, ROE, debt to equity. Growth: revenue growth
+(the only growth figure the sources give today). `analyse` is now async: it fetches
+the company's fundamentals (daily) and its peers' (weekly).
+**Alternatives:** Z-scores (rejected: one outlier peer distorts a 20-company group).
+Sector-median comparison only (rejected: says less than a rank).
+
+## 2026-09-22 - Per-listing risk in the base currency
+
+**Context:** Ticket 05, before any ledger exists.
+**Decision:** Risk works on adjusted closes converted to the base currency (the risk a
+GBP holder carries, currency moves included); days without a rate are left out, and
+with no rates at all risk is skipped with "run `oracle fx update`". Size = account x
+max_position x min(1, target_volatility / yearly volatility), never above account x (1 -
+cash_floor). Yearly volatility uses up to 252 daily returns; correlation needs 60 shared
+trading days. The risk signal has no direction (score 0). The sizing rules are a
+`[risk]` config section (10,000 account, 10% cap, 20% cash floor, 20% target volatility)
+that the phase 5 paper broker will share.
+**Alternatives:** Native-currency volatility (rejected: hides FX risk for a GBP account).
+Fixed-fraction sizing (rejected: a volatile small cap would get the same stake as a
+utility).
+
+## 2026-09-22 - When a stored signal is out of date
+
+**Context:** Ticket 06 shows stored signals in `watch show` and `company` without
+recomputing them, so readers need to know when one is old.
+**Decision:** Price-based signals (trend, RSI, MACD, volatility, technicals, risk) are
+out of date once a bar newer than their data date is stored. Factor signals are dated
+by their fundamentals and are out of date once those are more than a week old (the peer
+reuse window). `watch show` summarises technicals and the three factors as short marks
+(`tech+ val- qual= grow+`, `*` when out of date); `company` prints the full breakdown.
+**Alternatives:** Comparing run time with bar fetch time (rejected: every `prices update`
+refetches the last week, so everything would read stale after each update).
+
+## 2026-09-22 - Phase 4 review round 1
+
+**Context:** Two-axis review of phase 4 against `main`.
+**Decision:**
+- Momentum is part of trend (the 12-1 month return), not its own analyst: the design's
+  list names what technicals cover, and a separate momentum signal would double-count
+  the same return inside the combined line.
+- Risk skips watched symbols gone from the universe (they broke every analysis); its
+  text uses the configured base currency, not a hardcoded pound sign.
+- MACD with no crossover in the data says how long it has been on one side, never an
+  invented crossover (`days_since_cross` = -1).
+- `analyse` fetches the company's and its peers' fundamentals in one call, one crumb.
+**Alternatives:** Kept as is: the analyst name lists (display order, combined inputs,
+watch marks) live beside their use; one registry would be premature with nine analysts.
+Risk shows out of date when FX lags the last bar by more than 5 days: honest, since its
+series really ends earlier.
+
+## 2026-09-22 - Planning files stay out of the repo
+
+**Context:** The user asked for CLAUDE.md, `.scratch/` and other planning files to be
+ignored, keeping DECISIONS.md and README.md as the tracked record.
+**Decision:** `/CLAUDE.md`, `/.scratch/` and `/docs/` (design doc, agent conventions) are
+gitignored and untracked; local copies stay. THIRD_PARTY.md stays tracked: it is the
+license record, not planning. Earlier commits still hold those files; history is not
+rewritten.
+**Alternatives:** Rewriting history to purge them (declined: private repo, force-push).
