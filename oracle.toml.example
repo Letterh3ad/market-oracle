@@ -1,0 +1,15 @@
+# Copy to oracle.toml. Every key is optional; these are the defaults.
+# Relative paths resolve against this file's folder.
+
+db_path = "oracle.db"
+
+# ISO 4217 code. Every price, position and P&L is converted to this.
+base_currency = "GBP"
+
+# Per-source request pacing, shared by every oracle process on this database.
+# Override any field of a built-in source, or add a new one (rate_per_second required).
+# Built-ins: yfinance 0.5, stooq 0.5, gdelt 0.2, google_news 0.5, ddgs 0.2, sec_edgar 5.0
+[sources.gdelt]
+rate_per_second = 0.2   # GDELT asks for at most one request every 5 seconds
+cooldown_s = 900        # how long a tripped breaker stays open
+max_retries = 3         # retries on 429/5xx before giving up

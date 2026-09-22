@@ -1,0 +1,75 @@
+import ast
+from pathlib import Path
+
+import pytest
+
+SOURCE_ROOT = Path(__file__).resolve().parents[1] / "oracle"
+FRONTENDS = ("cli", "gui")
+# An allowlist, so a package added later is off limits to frontends by default.
+FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.cli", "oracle.gui")
+SERVICES_MAY_NOT_IMPORT = ("oracle.gui", "oracle.cli")
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            names.add(node.module)
+    return names
+
+
+def _under(name: str, prefixes: tuple[str, ...]) -> bool:
+    return any(name == p or name.startswith(p + ".") for p in prefixes)
+
+
+def frontend_violations(path: Path) -> set[str]:
+    return {
+        n for n in _imports(path)
+        if _under(n, ("oracle",)) and not _under(n, FRONTEND_MAY_IMPORT)
+    }
+
+
+def service_violations(path: Path) -> set[str]:
+    return {n for n in _imports(path) if _under(n, SERVICES_MAY_NOT_IMPORT)}
+
+
+def _modules(*packages: str) -> list[Path]:
+    return sorted(p for pkg in packages for p in (SOURCE_ROOT / pkg).rglob("*.py"))
+
+
+@pytest.mark.parametrize("path", _modules(*FRONTENDS), ids=lambda p: p.name)
+def test_frontends_only_reach_services(path):
+    assert frontend_violations(path) == set(), (
+        "Frontends call oracle.services and nothing else, so the GUI and CLI stay "
+        "thin and interchangeable."
+    )
+
+
+@pytest.mark.parametrize("path", _modules("services"), ids=lambda p: p.name)
+def test_services_never_import_a_frontend(path):
+    assert service_violations(path) == set()
+
+
+def test_checker_catches_a_frontend_reaching_the_store(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("from oracle.store.db import connect\nimport oracle.services.context\n")
+    assert frontend_violations(bad) == {"oracle.store.db"}
+
+
+def test_checker_catches_a_service_importing_the_gui(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("import oracle.gui.app\n")
+    assert service_violations(bad) == {"oracle.gui.app"}
+
+
+def test_there_are_modules_to_check():
+    assert _modules("cli") and _modules("services")
+
+
+def test_checker_catches_a_frontend_reaching_config_directly(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("from oracle.config import load_config\n")
+    assert frontend_violations(bad) == {"oracle.config"}

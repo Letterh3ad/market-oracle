@@ -78,3 +78,62 @@ the default).
 slippage, FX spread, exchange hours and 0.5% LSE stamp duty. No shorting until v2. IBKR
 paper via `ib_async` in phase 12, the only free option covering global markets.
 **Alternatives:** Alpaca paper (rejected as the target: US stocks and crypto only).
+
+## 2026-09-22 - Rate limits are per source, held in SQLite, paced by wall-clock slots
+
+**Context:** The stalker had one API and one process, so an in-memory token bucket was
+enough. Here a scheduled tick and the GUI run as separate processes against many sources.
+**Decision:** `source_state` holds each source's next free slot as epoch seconds.
+`SourceGate.acquire` claims a slot inside `BEGIN IMMEDIATE` (which serialises processes)
+and sleeps outside it; idle time banks no burst. Backoff and Retry-After move the shared
+slot, so they slow every process. Breaker runs (429 x3, 403 x3, 5xx/transport x5) and
+the trip persist, so a restart does not reset a block. Verified by a two-subprocess test
+with a negative control. Library-based sources (yfinance) call the gate directly.
+**Alternatives:** Per-process buckets (rejected: two processes double the real rate).
+A monotonic clock (rejected: not comparable across processes). A lock-server process
+(rejected: another thing to keep alive for no gain over SQLite).
+
+## 2026-09-22 - Conservative default source rates
+
+**Context:** Most data sources here are unofficial or unmetered but watched; an IP block
+costs far more than a slow tick, and ticks run only ~3 times a day.
+**Decision:** yfinance 0.5/s, Stooq 0.5/s, GDELT 0.2/s (GDELT's own ask: one request
+per 5s), Google News 0.5/s, ddgs 0.2/s, SEC EDGAR 5/s (half SEC's published 10/s).
+Overridable per source in `oracle.toml`.
+**Alternatives:** Tune rates by probing (rejected: probing is how blocks happen).
+
+## 2026-09-22 - Job locks: lease plus pid, with a real Windows liveness check
+
+**Context:** A scheduled tick and the GUI must never run the same job twice, and the
+stalker showed a hard-killed process leaves state claiming it still runs.
+**Decision:** `job_locks` rows carry a token, pid, host and lease. A holder is stale when
+its lease lapses without a heartbeat, or, on this host, when its pid is dead; stale locks
+are taken over, and a former holder's release or heartbeat is a no-op (heartbeat returns
+False so it can stop). On Windows liveness is `OpenProcess` plus
+`GetExitCodeProcess == STILL_ACTIVE`: `OpenProcess` alone (the stalker's check) reports a
+killed process alive while any handle to it is open, confirmed by a negative control.
+**Alternatives:** Lease only (rejected: a crash blocks the job for a whole lease). Pid
+only (rejected: pid reuse and other hosts). OS file locks (rejected: behave differently
+across platforms and say nothing about staleness).
+
+## 2026-09-22 - Phase 1 review fixes: half-open breaker, Retry-After ceiling, heartbeating holds
+
+**Context:** The two-axis review of phase 1 found real defects in the shared-state code.
+**Decision:**
+- Migrations re-read `user_version` under `BEGIN IMMEDIATE`; six processes racing a fresh
+  DB reproduced `table meta already exists` before the fix.
+- The breaker is half-open after cooldown: the tripping run is left one short of its
+  limit, so one failed probe re-opens it instead of spending a full run against a live
+  block. A success clears it.
+- Retry-After is honoured on 503 as well as 429, `0` means "next slot", a zone-less date
+  is UTC. A wait over 120s fails the call at once but still moves the shared slot by the
+  full wait.
+- `JobLock.holding()` heartbeats every lease/3 and exposes `lost`, so a long job keeps its
+  lock and learns if it was taken.
+- Windows `ACCESS_DENIED` from `OpenProcess` means alive (an elevated tick), and an
+  unreadable exit code is treated as alive: a lock is only stolen from a provably dead pid.
+- Every shared timestamp is read inside the transaction, after the write lock is held.
+- Frontends import only `oracle.services`; config loading moved behind
+  `services.context.load_settings`, and the allowlist was narrowed back to the rule.
+**Alternatives:** Cap Retry-After silently (rejected: disobeys the server). Sync `held()`
+without heartbeats (rejected: a job longer than its lease would run twice).
