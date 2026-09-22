@@ -309,3 +309,17 @@ drawdown, correlation with the watchlist); portfolio risk waits for the ledgers.
 (rejected: more traffic and crumb 429 risk). A hypothetical equal-weight watchlist
 portfolio (rejected: rebuilt once real ledgers exist). Recompute on demand (rejected:
 history and Laya need storage).
+
+## 2026-09-22 - Signal shape and trend defaults
+
+**Context:** Every analyst needs one output shape the lean report and Laya can read.
+**Decision:** `AnalystSignal`: score -1..1, confidence 0..1 (how far the analyst's own
+inputs agree), one plain-English reason, named figures; direction is derived from the
+score (neutral inside +/-0.2), never stored separately. Keyed by data date, not run date.
+An analyst that cannot judge returns `Skipped` with a reason, never a guess. Trend: close
+against the 200-day average, 50-day against 200-day, and the 12-1 month return (full
+strength at +/-20%); within 1% of an average counts as on it. Needs 253 bars. Uses
+adjusted closes so dividends and splits do not read as drops. Analysts may import only
+data types; the architecture test enforces it.
+**Alternatives:** Direction as its own field (rejected: can contradict the score).
+Confidence from signal strength (rejected: that double-counts the score).

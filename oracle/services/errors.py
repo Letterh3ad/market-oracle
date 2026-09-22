@@ -49,3 +49,7 @@ class InvalidQuery(ServiceError, ValueError):
 
 class PriceUnavailable(ServiceError):
     pass
+
+
+class NoPrices(ServiceError):
+    pass

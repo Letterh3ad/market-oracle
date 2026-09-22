@@ -33,6 +33,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0010_fx_rates,
     m0011_fundamentals,
     m0012_fx_history,
+    m0013_signals,
 )
 
 MIGRATIONS = [
@@ -48,4 +49,5 @@ MIGRATIONS = [
     m0010_fx_rates,
     m0011_fundamentals,
     m0012_fx_history,
+    m0013_signals,
 ]
