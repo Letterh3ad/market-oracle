@@ -6,7 +6,7 @@ from oracle.analysts.risk import correlation, max_drawdown, risk, suggested_size
 from oracle.analysts.signals import Direction, Skipped
 from tests.analysts.bars import weekdays
 
-SETTINGS = dict(account=10_000.0, max_position=0.10, cash_floor=0.20, target_volatility=0.20)
+SETTINGS = dict(currency="EUR", account=10_000.0, max_position=0.10, cash_floor=0.20, target_volatility=0.20)
 
 
 def alternating(n, move):
@@ -19,9 +19,10 @@ def dated(closes, start=0):
 
 
 def test_size_halves_when_volatility_doubles_and_never_exceeds_the_cap():
-    assert suggested_size(0.40, **SETTINGS) == pytest.approx(500.0)
-    assert suggested_size(0.80, **SETTINGS) == pytest.approx(250.0)
-    assert suggested_size(0.05, **SETTINGS) == 1000.0  # calm, but capped at 10% of 10,000
+    sizing = {k: v for k, v in SETTINGS.items() if k != "currency"}
+    assert suggested_size(0.40, **sizing) == pytest.approx(500.0)
+    assert suggested_size(0.80, **sizing) == pytest.approx(250.0)
+    assert suggested_size(0.05, **sizing) == 1000.0  # calm, but capped at 10% of 10,000
 
 
 def test_max_drawdown_by_hand_with_its_dates():
@@ -47,7 +48,7 @@ def test_risk_signal_has_no_direction_and_explains_size_drawdown_and_correlation
     f = dict(s.figures)
     vol = 0.02 * math.sqrt(252 * 252 / 251)
     assert f["volatility"] == pytest.approx(vol, rel=1e-3) and f["size"] == pytest.approx(1000 * 0.20 / vol, rel=1e-3)
-    assert "PEER" in s.reason and "£" in s.reason and "worst fall" in s.reason.lower()
+    assert "PEER" in s.reason and "EUR 629" in s.reason and "worst fall" in s.reason.lower()
 
 
 def test_a_watchlist_of_one_gives_no_correlation_and_says_why():

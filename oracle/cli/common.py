@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import textwrap
 from collections.abc import Callable
+
+from oracle.services.analysis_service import AnalystSignal
 
 
 def add_status_command(
@@ -15,3 +18,10 @@ def cut(text: str | None, width: int) -> str:
     """Fit a column: truncated with a trailing ~."""
     text = text or ""
     return text if len(text) <= width else text[: width - 1] + "~"
+
+
+def print_signal(s: AnalystSignal, indent: int, note: str = "") -> None:
+    """One analyst's signal: a summary line, then its reason wrapped beneath."""
+    print(f"{' ' * indent}{s.analyst:<12}{s.direction.value:<9}score {s.score:+.2f}  confidence {s.confidence:.0%}"
+          f"  {s.as_of.isoformat()}{note}")
+    print(textwrap.fill(s.reason, 88, initial_indent=" " * (indent + 2), subsequent_indent=" " * (indent + 2)))

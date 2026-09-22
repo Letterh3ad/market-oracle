@@ -391,3 +391,20 @@ reuse window). `watch show` summarises technicals and the three factors as short
 (`tech+ val- qual= grow+`, `*` when out of date); `company` prints the full breakdown.
 **Alternatives:** Comparing run time with bar fetch time (rejected: every `prices update`
 refetches the last week, so everything would read stale after each update).
+
+## 2026-09-22 - Phase 4 review round 1
+
+**Context:** Two-axis review of phase 4 against `main`.
+**Decision:**
+- Momentum is part of trend (the 12-1 month return), not its own analyst: the design's
+  list names what technicals cover, and a separate momentum signal would double-count
+  the same return inside the combined line.
+- Risk skips watched symbols gone from the universe (they broke every analysis); its
+  text uses the configured base currency, not a hardcoded pound sign.
+- MACD with no crossover in the data says how long it has been on one side, never an
+  invented crossover (`days_since_cross` = -1).
+- `analyse` fetches the company's and its peers' fundamentals in one call, one crumb.
+**Alternatives:** Kept as is: the analyst name lists (display order, combined inputs,
+watch marks) live beside their use; one registry would be premature with nine analysts.
+Risk shows out of date when FX lags the last bar by more than 5 days: honest, since its
+series really ends earlier.

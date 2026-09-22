@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import timedelta
 
 from oracle.market.fundamentals import FIGURES, Figure, Fundamentals
 from oracle.market.fx import pick_rate
@@ -66,7 +67,7 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
 
 async def _fundamentals(ctx: AppContext, instrument: Instrument, refresh: bool) -> tuple[Fundamentals | None, str | None]:
     if refresh:
-        return (await fetch_fundamentals(ctx, [instrument]))[instrument.symbol]
+        return (await fetch_fundamentals(ctx, {instrument: timedelta(0)}))[instrument.symbol]
     stored = FundamentalsRepo(ctx.conn).latest(instrument.symbol)
     return (stored, None) if stored is not None else (None, "fundamentals not fetched yet (refresh off)")
 

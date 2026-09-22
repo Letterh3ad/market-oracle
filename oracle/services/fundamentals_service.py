@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping
 from datetime import timedelta
 
 from oracle.market import registry
@@ -16,16 +16,16 @@ PEER_MAX_AGE = timedelta(days=7)
 
 
 async def fetch_fundamentals(
-    ctx: AppContext, instruments: Sequence[Instrument], max_age: timedelta = timedelta(0)
+    ctx: AppContext, wanted: Mapping[Instrument, timedelta]
 ) -> dict[str, tuple[Fundamentals | None, str | None]]:
-    """(snapshot, note) per symbol: the stored one while younger than `max_age` (0 means
-    fetched today), else a fresh one. A failed fetch falls back to the stored snapshot and
+    """(snapshot, note) per symbol: the stored one while younger than its maximum age (0
+    means fetched today), else a fresh one. A failed fetch falls back to the stored snapshot and
     says so; one failure never stops the rest. One client and crumb serve them all."""
     repo = FundamentalsRepo(ctx.conn)
     today = ctx.clock.utcnow().date()
     out: dict[str, tuple[Fundamentals | None, str | None]] = {}
     due = []
-    for instrument in instruments:
+    for instrument, max_age in wanted.items():
         stored = repo.latest(instrument.symbol)
         if stored is not None and today - stored.as_of <= max_age:
             out[instrument.symbol] = (stored, None)

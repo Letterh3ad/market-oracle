@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import textwrap
 
+from oracle.cli.common import print_signal
 from oracle.services.analysis_service import Analysis, analyse, analyse_watched
 from oracle.services.context import AppContext
 
@@ -32,8 +32,6 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
 def _print(result: Analysis) -> None:
     print(result.symbol)
     for s in result.signals:
-        print(f"  {s.analyst:<12}{s.direction.value:<9}score {s.score:+.2f}  confidence {s.confidence:.0%}"
-              f"  (data to {s.as_of.isoformat()})")
-        print(textwrap.fill(s.reason, width=88, initial_indent=" " * 4, subsequent_indent=" " * 4))
+        print_signal(s, 2)
     for k in result.skipped:
         print(f"  {k.analyst:<12}no signal: {k.reason}")

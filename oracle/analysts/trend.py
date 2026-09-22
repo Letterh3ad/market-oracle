@@ -5,12 +5,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from oracle.analysts.indicators import closes, mean
+from oracle.analysts.indicators import YEAR, closes, mean
 from oracle.analysts.signals import AnalystSignal, Skipped
 from oracle.market.bars import Bar
 
 NAME = "trend"
-YEAR = 252
 MONTH = 21
 # A 12-1 return this large, either way, counts as a full-strength move.
 FULL_MOMENTUM = 0.20

@@ -8,6 +8,11 @@ from collections.abc import Sequence
 
 from oracle.market.bars import Bar
 
+YEAR = 252
+"""Trading days in a year."""
+MIN_BARS = 60
+"""Enough history for the averages inside RSI, MACD and volatility to settle."""
+
 
 def closes(bars: Sequence[Bar]) -> list[float]:
     """Adjusted where known, so dividends and splits do not read as price drops."""
@@ -42,7 +47,8 @@ def _rsi(gain: float, loss: float) -> float:
 
 
 def ema(values: Sequence[float | None], period: int) -> list[float | None]:
-    """Seeded with the simple average of the first `period` values present."""
+    """Seeded with the simple average of the first `period` values present. Leading
+    Nones (a series not yet defined) are skipped; none may follow the first value."""
     out: list[float | None] = [None] * len(values)
     start = next((i for i, v in enumerate(values) if v is not None), len(values))
     if len(values) - start < period:

@@ -55,10 +55,20 @@ def test_combined_technicals_weight_by_confidence_and_damp_for_volatility():
     # (0.9 * 1.0 + -0.5 * 0.5 + 0.6 * 0.5) / (1.0 + 0.5 + 0.5) = 0.475; mean confidence
     # 2/3, cut by 1 / 2 (swings twice usual) to 1/3.
     s = combine([_sig("trend", 0.9, 1.0), _sig("rsi", -0.5, 0.5), _sig("macd", 0.6, 0.5),
-                 _sig("volatility", 0.0, 1.0, ratio=2.0)])
+                 _sig("volatility", 0.0, 1.0, ratio=2.0)], "T")
     assert (s.analyst, s.score, s.confidence) == ("technicals", 0.475, round(1 / 3, 4))
     assert "trend, RSI and MACD" in s.reason and "2.0x their usual size" in s.reason
 
 
 def test_combined_with_nothing_to_combine_is_skipped():
-    assert isinstance(combine([]), Skipped)
+    assert isinstance(combine([], "T"), Skipped)
+
+
+def test_macd_without_a_crossover_in_the_data_does_not_invent_one():
+    s = macd_signal(series(geometric(80, 0.01)))
+    assert "crossed" not in s.reason and "since the data starts" in s.reason
+    assert dict(s.figures)["days_since_cross"] == -1
+
+
+def test_combined_skip_names_the_symbol():
+    assert combine([], "ME").symbol == "ME"

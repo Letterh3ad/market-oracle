@@ -114,7 +114,7 @@ async def test_risk_sizes_in_base_currency_and_compares_with_other_watched_listi
     watch(ctx, "AAPL")
     watch(ctx, "DELL")
     risk = {s.analyst: s for s in (await analyse(ctx, "AAPL")).signals}["risk"]
-    assert "corr_DELL" in dict(risk.figures) and "£" in risk.reason
+    assert "corr_DELL" in dict(risk.figures) and "GBP 1,000" in risk.reason
 
 
 async def test_risk_without_exchange_rates_says_how_to_get_them(ctx):
@@ -155,3 +155,20 @@ async def test_watch_lines_and_the_company_view_carry_the_latest_signals(ctx):
     assert {s.signal.analyst for s in line.signals} >= {"technicals", "value"}
     view = await company_view(ctx, "AAPL", refresh=False)
     assert [s.signal.analyst for s in view.signals][0] == "technicals"
+
+
+async def test_a_watched_symbol_gone_from_the_universe_never_breaks_analysis(ctx):
+    from oracle.store.watchlists import WatchlistRepo
+
+    await update_fx(ctx)
+    watch(ctx, "AAPL")
+    WatchlistRepo(ctx.conn).add("main", "GONE", "2026-09-01T00:00:00Z")
+    risk = {s.analyst: s for s in (await analyse(ctx, "AAPL")).signals}["risk"]
+    assert "GONE" not in dict(risk.figures)
+    runs = {r.symbol: r.error for r in await analyse_watched(ctx)}
+    assert runs["AAPL"] is None and "GONE" in runs
+
+
+async def test_analyse_fetches_company_and_peer_fundamentals_with_one_crumb(ctx, yahoo):
+    await analyse(ctx, "AAPL")
+    assert yahoo.crumbs_issued == 1

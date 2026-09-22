@@ -52,16 +52,19 @@ def percentile(value: float, others: Sequence[float], higher_is_better: bool) ->
     return (beats + ties / 2) / len(others)
 
 
+_BY_NAME = {f.name: f for f in FACTORS}
+
+
 def value(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(FACTORS[0], company, peers, basis)
+    return _score(_BY_NAME["value"], company, peers, basis)
 
 
 def quality(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(FACTORS[1], company, peers, basis)
+    return _score(_BY_NAME["quality"], company, peers, basis)
 
 
 def growth(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(FACTORS[2], company, peers, basis)
+    return _score(_BY_NAME["growth"], company, peers, basis)
 
 
 def _score(factor: Factor, company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
@@ -80,7 +83,7 @@ def _score(factor: Factor, company: Fundamentals, peers: Sequence[Fundamentals],
     score = 2 * average - 1
     agree = sum(1 for _, p, _ in rows if (p - 0.5) * score > 0) / len(rows) if score else 0.0
     thin = sum(min(1.0, n / ENOUGH_PEERS) for _, _, n in rows) / len(rows)
-    parts = [f"{_count(p * n)} of {n}{' peers' if i == 0 else ''} on {m.label}" for i, (m, p, n) in enumerate(rows)]
+    parts = [f"{p * n:g} of {n}{' peers' if i == 0 else ''} on {m.label}" for i, (m, p, n) in enumerate(rows)]
     reason = f"{factor.name.capitalize()} against {basis}: {factor.verb} {', '.join(parts)}."
     weak = [f"only {n} peers report {m.label}" for m, _, n in rows if n < ENOUGH_PEERS]
     if weak:
@@ -95,7 +98,3 @@ def _comparable(m: Metric):
         return lambda v: v
     worst = float("-inf") if m.higher_is_better else float("inf")
     return lambda v: worst if v < 0 else v
-
-
-def _count(x: float) -> str:
-    return f"{x:g}"

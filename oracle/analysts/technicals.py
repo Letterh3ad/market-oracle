@@ -5,14 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from statistics import median
 
-from oracle.analysts.indicators import closes, macd, rsi, volatility
+from oracle.analysts.indicators import MIN_BARS, YEAR, closes, macd, rsi, volatility
 from oracle.analysts.signals import AnalystSignal, Skipped
 from oracle.market.bars import Bar
 
 OVERBOUGHT, OVERSOLD = 70.0, 30.0
-# Enough history for the averages inside RSI and MACD to settle.
-MIN_BARS = 60
-YEAR = 252
 COMBINED = ("trend", "rsi", "macd")
 _LABELS = {"trend": "trend", "rsi": "RSI", "macd": "MACD"}
 
@@ -43,15 +40,20 @@ def macd_signal(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
         return short
     line, _, hist = macd(closes(bars))
     signs = [_sign(h) for h in hist if h is not None]
-    days = next((i for i, (a, b) in enumerate(zip(reversed(signs), reversed(signs[:-1]))) if a != b), len(signs) - 1)
+    # Bars since the histogram last changed sign; -1 when it never did in the data.
+    days = next((i for i, (a, b) in enumerate(zip(reversed(signs), reversed(signs[:-1]))) if a != b), -1)
     # The crossover (histogram) leads; which side of zero the line is on confirms.
     score = (2 * signs[-1] + _sign(line[-1])) / 3
     confidence = (1.0 if signs[-1] == _sign(line[-1]) else 0.5) if score else 0.0
-    side = "above" if signs[-1] > 0 else "below"
-    trend_word = "rising" if line[-1] > 0 else "falling"
-    reason = (f"Short-term momentum crossed {side} its own average {days} trading day{'s' if days != 1 else ''} "
-              f"ago; the 12-day price average is {'above' if line[-1] > 0 else 'below'} the 26-day, "
-              f"so the broader move is {trend_word}.")
+    side = {1: "above", -1: "below", 0: "level with"}[signs[-1]]
+    if days < 0:
+        when = f"has been {side} its own average since the data starts"
+    else:
+        when = f"crossed {side} its own average {days} trading day{'s' if days != 1 else ''} ago"
+    broader = {1: "above the 26-day, so the broader move is rising",
+               -1: "below the 26-day, so the broader move is falling",
+               0: "level with the 26-day, so the broader move is flat"}[_sign(line[-1])]
+    reason = f"Short-term momentum {when}; the 12-day price average is {broader}."
     return _signal("macd", bars, score, confidence, reason, macd=line[-1], histogram=hist[-1], days_since_cross=days)
 
 
@@ -67,12 +69,12 @@ def volatility_signal(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
     return _signal("volatility", bars, 0.0, 1.0, reason, volatility=now, usual=usual, ratio=ratio)
 
 
-def combine(signals: Sequence[AnalystSignal]) -> AnalystSignal | Skipped:
+def combine(signals: Sequence[AnalystSignal], symbol: str) -> AnalystSignal | Skipped:
     """Confidence-weighted average of trend, RSI and MACD, with confidence cut when
     price swings are bigger than usual."""
     parts = [s for s in signals if s.analyst in COMBINED]
     if not parts:
-        return Skipped("technicals", "", "no technical signals to combine")
+        return Skipped("technicals", symbol, "no technical signals to combine")
     weight = sum(s.confidence for s in parts)
     score = sum(s.score * s.confidence for s in parts) / weight if weight else 0.0
     confidence = weight / len(parts)
