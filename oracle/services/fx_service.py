@@ -6,7 +6,7 @@ from datetime import date
 
 from oracle.config import FX_SOURCES
 from oracle.market import registry
-from oracle.market.fx import MAX_RATE_AGE, OPEN_ER_ATTRIBUTION, FxRate, OpenErFx
+from oracle.market.fx import OPEN_ER_ATTRIBUTION, FxRate, OpenErFx
 from oracle.market.sources import REFETCH_OVERLAP, AllFailed, first_success
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -44,7 +44,7 @@ async def update_fx(
     async with open_client(ctx) as client:
         chain = registry.fx_sources(sources or ctx.config.fx.sources, client, ctx.config.keys)
         for currency in [c for c in wanted if c != base]:
-            since = _since(repo, bars, currency)
+            since = _since(repo, currency)
             now = ctx.clock.utcnow()
             try:
                 rates, source = await first_success(
@@ -67,13 +67,10 @@ def credits(sources: Iterable[str | None]) -> list[str]:
     return [OPEN_ER_ATTRIBUTION] if OpenErFx.name in set(sources) else []
 
 
-def _since(repo: FxRepo, bars: BarRepo, currency: str) -> date | None:
-    """Where to resume; None (full history) also when stored rates do not reach back to
-    the oldest bar, as after a first run served by a today-only source."""
+def _since(repo: FxRepo, currency: str) -> date | None:
+    """Where to resume; None (full history) until a history-capable source has stored
+    rates, so a run served only by today-only open.er-api is backfilled later."""
     last = repo.last_date(currency)
-    if last is None:
-        return None
-    first_rate, first_bar = repo.first_date(currency), bars.first_date_in(currency)
-    if first_bar is not None and first_rate - first_bar > MAX_RATE_AGE:
+    if last is None or repo.sources(currency) <= {OpenErFx.name}:
         return None
     return last - REFETCH_OVERLAP
