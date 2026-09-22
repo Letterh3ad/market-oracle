@@ -108,3 +108,25 @@ def test_an_unknown_symbol_is_refused_with_suggestions(ctx):
 def test_a_bad_tag_is_refused(ctx, bad):
     with pytest.raises(InvalidTag):
         add_tag(ctx, "AAPL", bad)
+
+
+async def test_a_tag_survives_while_any_of_the_companys_listings_does(ctx, fdb):
+    add_tag(ctx, "APC.DE", "ai")
+    fdb.sha = "def456"
+    fdb.files["equities.bz2"] = bz2_csv([r for r in UNIVERSE if r["symbol"] != "APC.DE"])
+    await refresh_universe(ctx)
+    assert tagged(ctx, "ai") == ["AAPL"]
+    assert list_tags(ctx)[0].orphaned == ()
+
+
+async def test_an_orphaned_symbols_tags_can_still_be_listed(ctx, fdb):
+    add_tag(ctx, "KO", "drinks")
+    fdb.sha = "def456"
+    fdb.files["equities.bz2"] = bz2_csv([r for r in UNIVERSE if r["symbol"] != "KO"])
+    await refresh_universe(ctx)
+    assert tags_of(ctx, "ko") == ["drinks"]
+
+
+def test_removing_from_an_unknown_symbol_suggests_real_ones(ctx):
+    with pytest.raises(UnknownSymbol, match="AAPL"):
+        remove_tag(ctx, "APPL", "ai")

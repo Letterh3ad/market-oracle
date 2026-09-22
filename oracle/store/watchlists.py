@@ -14,6 +14,7 @@ class WatchItem:
     currency: str | None
     country: str | None
     added_at: str
+    delisted: bool
     missing: bool
     """No longer in the universe since a refresh."""
 
@@ -58,7 +59,8 @@ class WatchlistRepo:
     def items(self, watchlist: str) -> list[WatchItem]:
         rows = self._conn.execute(
             """SELECT i.symbol, COALESCE(NULLIF(p.name, ''), NULLIF(l.name, '')) AS name,
-                      l.exchange, l.currency, p.country, i.added_at, l.symbol IS NULL AS missing
+                      l.exchange, l.currency, p.country, i.added_at,
+                      COALESCE(l.delisted, 0) AS delisted, l.symbol IS NULL AS missing
                FROM watchlist_items i
                LEFT JOIN listings l ON l.symbol = i.symbol
                LEFT JOIN listings p ON p.company_key = l.company_key AND p.is_primary
@@ -66,7 +68,7 @@ class WatchlistRepo:
                ORDER BY i.rowid""",
             (watchlist,),
         )
-        return [WatchItem(*r[:6], missing=bool(r[6])) for r in rows]
+        return [WatchItem(*r[:6], delisted=bool(r[6]), missing=bool(r[7])) for r in rows]
 
     def summaries(self) -> list[WatchlistSummary]:
         rows = self._conn.execute(

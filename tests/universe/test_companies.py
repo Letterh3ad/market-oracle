@@ -153,3 +153,10 @@ def test_company_keys_do_not_depend_on_input_order():
     forward = {x.symbol: x.company_key for x in group_companies(rows)}
     backward = {x.symbol: x.company_key for x in group_companies(list(reversed(rows)))}
     assert forward == backward
+
+
+def test_a_shared_isin_never_merges_a_fund_with_a_company():
+    assert companies([
+        L("ABC", "Acme Corp", "United States", "NYQ", "US0000000001"),
+        L("ABCF.L", "Acme Tracker", None, "LSE", "US0000000001", type="etf"),
+    ]) == {"ABC": {"ABC"}, "ABCF.L": {"ABCF.L"}}

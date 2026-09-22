@@ -41,3 +41,7 @@ class UnknownWatchlist(ServiceError):
 
 class InvalidWatchlistName(ServiceError):
     pass
+
+
+class InvalidQuery(ServiceError, ValueError):
+    pass

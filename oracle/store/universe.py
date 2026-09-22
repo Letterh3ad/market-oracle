@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
-from oracle.store.tags import TagRepo
 from oracle.universe.listings import MARKET_CAP_BANDS, Listing
 from oracle.universe.query import COMPANY_FIELDS, FILTER_FIELDS, UniverseQuery, fts_match
 
@@ -30,6 +29,12 @@ _RANKED = """
 _ALONE = "SELECT *, 1 AS rn, score AS best, exact AS any_exact FROM candidates"
 
 
+def _require_field(name: str) -> None:
+    # Field names are interpolated into SQL, so this is a real check, not an assert.
+    if name not in FILTER_FIELDS:
+        raise ValueError(f"not a universe field: {name!r}")
+
+
 def _column(name: str) -> str:
     return f"p.{name}" if name in COMPANY_FIELDS else f"l.{name}"
 
@@ -52,6 +57,7 @@ class Facet:
 @dataclass(frozen=True)
 class SearchHit:
     symbol: str
+    company_key: str
     name: str
     type: str
     country: str | None
@@ -102,6 +108,10 @@ class UniverseRepo:
         }
         return UniverseCounts(*row, by_type)
 
+    def company_symbols(self, company_key: str) -> list[str]:
+        rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
+        return [r[0] for r in rows]
+
     def resolve(self, symbol: str) -> Resolved | None:
         """A symbol in any case, as stored, with its company; None if not listed."""
         row = self._conn.execute(
@@ -118,7 +128,7 @@ class UniverseRepo:
         }
         where = ["(:delisted OR l.delisted = 0)"]
         for name, values in q.filters.items():
-            assert name in FILTER_FIELDS, name
+            _require_field(name)
             keys = []
             for i, value in enumerate(values):
                 params[f"{name}_{i}"] = value
@@ -168,18 +178,15 @@ class UniverseRepo:
             {"" if q.all_listings else "WHERE r.rn = 1"}
             ORDER BY {self._order(q, bool(match))}
             LIMIT :limit OFFSET :offset"""
-        rows = self._conn.execute(sql, params).fetchall()
-        # Fetched per page, not per candidate row: most rows never reach the page.
-        tags = TagRepo(self._conn).of_companies(list({r["company_key"] for r in rows}))
         return [
             SearchHit(
-                symbol=r["symbol"], name=r["name"] or r["symbol"], type=r["type"],
+                symbol=r["symbol"], company_key=r["company_key"], name=r["name"] or r["symbol"], type=r["type"],
                 country=r["country"], exchange=r["exchange"], currency=r["currency"],
                 sector=r["sector"], industry=r["industry"], market_cap=r["market_cap"],
                 category_group=r["category_group"], category=r["category"], family=r["family"],
-                delisted=bool(r["delisted"]), listings=r["n"], tags=tags.get(r["company_key"], ()),
+                delisted=bool(r["delisted"]), listings=r["n"],
             )
-            for r in rows
+            for r in self._conn.execute(sql, params)
         ]
 
     @staticmethod
@@ -205,7 +212,7 @@ class UniverseRepo:
 
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""
-        assert name in FILTER_FIELDS, name
+        _require_field(name)
         if name == "exchange":
             sql = """SELECT l.exchange AS value, COUNT(DISTINCT l.company_key) AS n,
                             MAX(l.market) AS label
@@ -224,6 +231,6 @@ class UniverseRepo:
         return sorted(rows, key=lambda f: (-f.companies, f.value))
 
     def values(self, name: str) -> list[str]:
-        assert name in FILTER_FIELDS, name
+        _require_field(name)
         sql = f"SELECT DISTINCT {name} FROM listings WHERE {name} IS NOT NULL"
         return [r[0] for r in self._conn.execute(sql)]

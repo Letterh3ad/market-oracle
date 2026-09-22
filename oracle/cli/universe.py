@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 
+from oracle.cli.common import cut
 from oracle.services.context import AppContext
 from oracle.services.universe_service import (
     FILTER_FIELDS,
@@ -35,11 +36,11 @@ def register(parser: argparse.ArgumentParser) -> None:
         help="repeat to require every tag",
     )
     search.add_argument("--sort", choices=[_flag(s) for s in SORTS], help="default: relevance, or size when browsing")
-    search.add_argument("--desc", action="store_true", help="reverse the sort")
+    search.add_argument("--desc", action="store_true", help="reverse the sort (not relevance)")
     search.add_argument("--offset", type=int, default=0)
     search.add_argument("--all-listings", action="store_true", help="every exchange listing, not one per company")
     search.add_argument("--include-delisted", action="store_true")
-    search.add_argument("--limit", type=int, default=20)
+    search.add_argument("--limit", type=int, default=20, help="at most 500")
     search.set_defaults(handler=search_cmd)
     facet = sub.add_parser("facets", help="the values a filter accepts, with company counts")
     facet.add_argument("field", choices=[_flag(f) for f in FILTER_FIELDS])
@@ -78,8 +79,8 @@ def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         ) if n]
         size = (h.market_cap or "?").removesuffix(" Cap")
         print(
-            f"{h.symbol:<12}{_cut(h.name, 31):<32}{_cut(h.country, 15):<16}{h.exchange or '':<6}"
-            f"{_cut(h.sector or h.category, 23):<24}{size:<7}{'  '.join(notes)}".rstrip()
+            f"{h.symbol:<12}{cut(h.name, 31):<32}{cut(h.country, 15):<16}{h.exchange or '':<6}"
+            f"{cut(h.sector or h.category, 23):<24}{size:<7}{'  '.join(notes)}".rstrip()
         )
     return 0
 
@@ -103,11 +104,6 @@ def _field(flag: str) -> str:
 
 def _others(n: int) -> str:
     return f"+{n} listing" + ("s" if n > 1 else "")
-
-
-def _cut(text: str | None, width: int) -> str:
-    text = text or ""
-    return text if len(text) <= width else text[: width - 1] + "~"
 
 
 def _print(s: UniverseStatus) -> None:

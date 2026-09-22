@@ -141,3 +141,8 @@ def test_market_cap_facets_come_in_band_order(ctx):
 def test_facets_before_a_refresh_say_how_to_load(empty_ctx):
     with pytest.raises(UniverseNotLoaded):
         facets(empty_ctx, "country")
+
+
+def test_relevance_cannot_be_reversed(ctx):
+    with pytest.raises(ValueError):
+        search_universe(ctx, "apple", sort="relevance", descending=True)

@@ -2,17 +2,18 @@ from __future__ import annotations
 
 import argparse
 
+from oracle.cli.common import cut
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, unwatch, watch, watchlists
 
 
 def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="watch_command", required=True)
-    for verb, handler, help in (
+    for verb, handler, summary in (
         ("add", add_cmd, "watch one listing (the line that gets priced)"),
         ("remove", remove_cmd, "stop watching a listing"),
     ):
-        p = sub.add_parser(verb, help=help)
+        p = sub.add_parser(verb, help=summary)
         p.add_argument("symbol")
         p.add_argument("--list", default=DEFAULT_LIST, help=f"watchlist name (default {DEFAULT_LIST})")
         p.set_defaults(handler=handler)
@@ -47,8 +48,9 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         if i.missing:
             print(f"{i.symbol:<12}MISSING: no longer in the universe (remove, or refresh again later)")
             continue
-        name = (i.name or "")[:31]
-        print(f"{i.symbol:<12}{name:<32}{i.exchange or '':<6}{i.currency or '':<5}{i.country or ''}")
+        delisted = "  delisted" if i.delisted else ""
+        print(f"{i.symbol:<12}{cut(i.name, 31):<32}{i.exchange or '':<6}{i.currency or '':<5}"
+              f"{i.country or ''}{delisted}")
     return 0
 
 

@@ -104,3 +104,14 @@ def test_an_unknown_symbol_is_refused_with_suggestions(ctx):
 def test_a_bad_list_name_is_refused(ctx, bad):
     with pytest.raises(InvalidWatchlistName):
         watch(ctx, "AAPL", bad)
+
+
+async def test_a_listing_delisted_after_a_refresh_is_marked(ctx, fdb):
+    watch(ctx, "KO")
+    fdb.sha = "def456"
+    fdb.files["equities.bz2"] = bz2_csv(
+        [dict(r, delisted="True") if r["symbol"] == "KO" else r for r in UNIVERSE]
+    )
+    await refresh_universe(ctx)
+    [item] = show_watchlist(ctx)
+    assert (item.delisted, item.missing) == (True, False)

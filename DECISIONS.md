@@ -177,8 +177,10 @@ ISINs on subsidiaries (POSCO) run 34 to 96. Result on real data: 112,705 listing
 companies. Each company has one primary listing: active before delisted, then an
 exchange in its home country (the country most of its listings give), then exchange
 tier and market depth, then symbol. Search shows primaries unless `--all-listings`.
-Tags are stored against the symbol tagged and read through that listing's current
-company, so they cover every listing and survive a refresh that regroups companies. Watchlists hold listings,
+Tagging writes a row for every listing of the company, each noting the symbol tagged
+(`via`); a company reads the tags of any of its listings, so a tag survives a refresh
+that regroups companies or drops one listing, and is orphaned only when every listing
+from that tagging has left the universe. Watchlists hold listings,
 since a listing is what gets priced (phase 3). Both survive a refresh and flag members
 that vanished rather than dropping them.
 **Alternatives:** Show every listing (rejected: noise). Group by composite FIGI (rejected:
@@ -214,3 +216,19 @@ browse, biggest first. Blanks sort last in both directions. When nothing can sel
 non-primary line, the query reads primaries only (browse ~1s to ~150ms on real data).
 **Alternatives:** Per-listing company fields (rejected: Siemens would count as Indian).
 Pure bm25 (rejected: ranks short junk names first).
+
+## 2026-09-22 - Phase 2 review fixes
+
+**Context:** The two-axis review of phase 2 found spec gaps and a few risks.
+**Decision:**
+- Tags: a row per listing (see the universe decision above); `tag remove` on an unknown
+  symbol suggests real ones; `tag list <symbol>` works for orphaned symbols; `add_tag`
+  checks and writes in one transaction.
+- `watch show` marks listings delisted since they were added.
+- ISIN links are typed like name links, so a fund never merges with a company.
+- SQL field names are checked with a real `ValueError`, not `assert` (stripped by -O).
+- Reversing relevance is refused rather than ignored; `--limit` is capped at 500.
+- `--sort market-cap --desc` stays smallest first, like every other reversed sort;
+  biggest first is already the default.
+**Alternatives:** A per-field spec map for the market cap and exchange special cases
+(deferred: three call sites, revisit if a fourth appears).
