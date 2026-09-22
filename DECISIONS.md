@@ -232,3 +232,20 @@ Pure bm25 (rejected: ranks short junk names first).
   biggest first is already the default.
 **Alternatives:** A per-field spec map for the market cap and exchange special cases
 (deferred: three call sites, revisit if a fourth appears).
+
+## 2026-09-22 - Prices from Yahoo directly; paid and backup sources as ordered chains
+
+**Context:** The design named yfinance with a Stooq fallback. Probing showed Yahoo's chart
+and quoteSummary (cookie plus crumb) endpoints answer a plain httpx client, so yfinance
+would add pandas and curl_cffi for nothing; Stooq now serves a JavaScript bot wall.
+**Decision:** An in-house Yahoo client through the shared gate (source `yahoo`, replacing
+`yfinance`; `stooq` dropped). Prices and FX each come from an ordered source list in
+`oracle.toml` (`[prices] sources`, `[fx] sources`), tried in turn. Paid sources are wired
+but enabled only by a key (`[keys]` or `ORACLE_<NAME>_KEY`): EODHD for prices, FX and
+fundamentals, verified against its public demo key. Free FX backups: ECB SDMX, Frankfurter
+and open.er-api (today only). Every stored bar and rate records its source. History: 5
+years of daily bars on first fetch, then incremental. `tzdata` so bars carry the
+exchange's local date on Windows.
+**Alternatives:** yfinance (rejected: heavy deps, bypasses the shared gate). No fallback
+price source (rejected: user asked for paid options wired and testable). If Yahoo starts
+fingerprint-blocking httpx, a curl_cffi transport can slot under the same client.
