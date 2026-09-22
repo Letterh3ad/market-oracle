@@ -4,9 +4,9 @@
 
 **Blocked by:** 02, 04, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One listing failing never stops the rest; the command exits non-zero and names it
-- [ ] Stale signals (older than the latest bar) are marked
-- [ ] `company` with no stored signals says how to create them
-- [ ] Reads make no requests; only `analyse` fetches peer fundamentals
+- [x] One listing failing never stops the rest; the command exits non-zero and names it
+- [x] Stale signals (older than the latest bar) are marked
+- [x] `company` with no stored signals says how to create them
+- [x] Reads make no requests; only `analyse` fetches peer fundamentals

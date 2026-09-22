@@ -47,6 +47,18 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
             value = _money(view.market_cap_base, base) if fig.name == "market_cap" else _format(getattr(f, fig.name), fig.kind)
             print(f"  {fig.label:<18}{value:>12}  {textwrap.shorten(fig.meaning, 200)}")
 
+    print()
+    if not view.signals:
+        print(f"  no analyst signals yet: run `oracle analyse {p.symbol}`")
+    else:
+        print(f"  Analysts (refresh with `oracle analyse {p.symbol}`)")
+        for stored in view.signals:
+            s = stored.signal
+            old = "  OUT OF DATE" if stored.stale else ""
+            print(f"    {s.analyst:<12}{s.direction.value:<9}score {s.score:+.2f}  confidence {s.confidence:.0%}"
+                  f"  {s.as_of.isoformat()}{old}")
+            print(textwrap.fill(s.reason, 88, initial_indent=" " * 6, subsequent_indent=" " * 6))
+
     for credit in credits([view.market_cap_rate_source, view.price.rate_source if view.price else None]):
         print(credit)
     if p.summary:

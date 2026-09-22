@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from functools import partial
 
@@ -22,7 +23,8 @@ def run(tmp_path, capsys, monkeypatch):
     days = weekdays(300, date(2025, 7, 1))
     yahoo.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(days, geometric(300, -0.001))])
     yahoo.add("NEW", "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in days[-30:]])
-    universe = [equity("AAPL", "Apple Inc.", currency="USD"), equity("NEW", "New Co", currency="USD")]
+    universe = [equity("AAPL", "Apple Inc.", currency="USD"), equity("NEW", "New Co", currency="USD"),
+                equity("NOBARS", "No Bars Co", currency="USD")]
     web = FakeWeb(FakeFinanceDatabase(universe), yahoo)
     monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
 
@@ -53,3 +55,33 @@ def test_a_skipped_analyst_says_why(run):
 def test_an_unknown_symbol_is_an_error(run):
     code, _, err = run("analyse", "MSFT")
     assert code == 1 and "no listing" in err
+
+
+def test_analyse_without_a_symbol_runs_the_watchlist_and_names_failures(run):
+    run("watch", "add", "AAPL")
+    run("watch", "add", "NOBARS")
+    code, out, _ = run("analyse")
+    assert code == 1
+    assert "AAPL" in out and "NOBARS: FAILED" in out and "prices update" in out
+
+
+def test_analyse_with_nothing_watched_says_how_to_watch(run):
+    code, out, _ = run("analyse")
+    assert code == 0 and "oracle watch add" in out
+
+
+def test_watch_show_summarises_signals_once_analysed(run):
+    run("watch", "add", "AAPL")
+    _, out, _ = run("watch", "show")
+    assert "run `oracle analyse`" in out
+    run("analyse", "AAPL")
+    _, out, _ = run("watch", "show")
+    assert re.search(r"tech[+=-]", out) and "signals:" in out
+
+
+def test_company_shows_the_analyst_breakdown_or_how_to_get_it(run):
+    _, out, _ = run("company", "AAPL")
+    assert "oracle analyse AAPL" in out
+    run("analyse", "AAPL")
+    _, out, _ = run("company", "AAPL")
+    assert "Analysts" in out and "technicals" in out and "below its 200-day average" in out

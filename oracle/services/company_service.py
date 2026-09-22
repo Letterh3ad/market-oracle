@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass
 from oracle.market.fundamentals import FIGURES, Figure, Fundamentals
 from oracle.market.fx import pick_rate
 from oracle.market.sources import Instrument
+from oracle.services.analysis_service import StoredSignal, latest_signals
 from oracle.services.context import AppContext
 from oracle.services.fundamentals_service import fetch_fundamentals
 from oracle.services.fx_service import update_fx
@@ -15,7 +16,7 @@ from oracle.store.fx import FxRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 
-__all__ = ["FIGURES", "CompanyProfile", "CompanyView", "Figure", "Fundamentals", "company_view"]
+__all__ = ["FIGURES", "CompanyProfile", "CompanyView", "Figure", "Fundamentals", "StoredSignal", "company_view"]
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,8 @@ class CompanyView:
     market_cap_base: float | None
     market_cap_rate_source: str | None
     """Where the rate converting market cap came from, for attribution."""
+    signals: tuple[StoredSignal, ...] = ()
+    """Each analyst's latest stored signal; empty until `oracle analyse`."""
 
 
 async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> CompanyView:
@@ -57,6 +60,7 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
         fundamentals_note=note,
         market_cap_base=market_cap,
         market_cap_rate_source=rate_source,
+        signals=tuple(latest_signals(ctx, listing.symbol)),
     )
 
 

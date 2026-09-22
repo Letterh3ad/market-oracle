@@ -379,3 +379,15 @@ that the phase 5 paper broker will share.
 **Alternatives:** Native-currency volatility (rejected: hides FX risk for a GBP account).
 Fixed-fraction sizing (rejected: a volatile small cap would get the same stake as a
 utility).
+
+## 2026-09-22 - When a stored signal is out of date
+
+**Context:** Ticket 06 shows stored signals in `watch show` and `company` without
+recomputing them, so readers need to know when one is old.
+**Decision:** Price-based signals (trend, RSI, MACD, volatility, technicals, risk) are
+out of date once a bar newer than their data date is stored. Factor signals are dated
+by their fundamentals and are out of date once those are more than a week old (the peer
+reuse window). `watch show` summarises technicals and the three factors as short marks
+(`tech+ val- qual= grow+`, `*` when out of date); `company` prints the full breakdown.
+**Alternatives:** Comparing run time with bar fetch time (rejected: every `prices update`
+refetches the last week, so everything would read stale after each update).

@@ -27,8 +27,18 @@ class SignalRepo:
         rows = self._conn.execute(
             f"SELECT {', '.join(_COLUMNS)} FROM signals WHERE symbol = ? AND analyst = ? ORDER BY as_of",
             (symbol, analyst),
-        ).fetchall()
-        return [
-            AnalystSignal(r[0], r[1], date.fromisoformat(r[2]), r[3], r[4], r[5], tuple(tuple(f) for f in json.loads(r[6])))
-            for r in rows
-        ]
+        )
+        return [_signal(r) for r in rows]
+
+    def latest(self, symbol: str) -> list[AnalystSignal]:
+        """Each analyst's most recent signal for the listing."""
+        rows = self._conn.execute(
+            f"""SELECT {', '.join(_COLUMNS)} FROM signals s WHERE symbol = ?
+                AND as_of = (SELECT MAX(as_of) FROM signals WHERE symbol = s.symbol AND analyst = s.analyst)""",
+            (symbol,),
+        )
+        return [_signal(r) for r in rows]
+
+
+def _signal(r) -> AnalystSignal:
+    return AnalystSignal(r[0], r[1], date.fromisoformat(r[2]), r[3], r[4], r[5], tuple(tuple(f) for f in json.loads(r[6])))

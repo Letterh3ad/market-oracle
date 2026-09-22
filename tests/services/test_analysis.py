@@ -3,7 +3,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from oracle.config import Config
-from oracle.services.analysis_service import analyse, signal_history
+from oracle.services.analysis_service import analyse, analyse_watched, latest_signals, signal_history
 from oracle.services.context import open_context
 from oracle.services.errors import NoPrices, UnknownSymbol
 from oracle.services.prices_service import update_listing
@@ -41,11 +41,15 @@ def clock():
 
 
 @pytest.fixture
-async def ctx(tmp_path, yahoo, clock):
+def web(yahoo):
     universe = [equity("AAPL", "Apple Inc.", market_cap="Mega Cap", **HARDWARE),
                 equity("MSFT", "Microsoft", currency="USD"), equity("NOSECT", "No Sector Co", currency="USD")]
     universe += [equity(p, f"{p} Inc.", market_cap="Large Cap", **HARDWARE) for p in PEERS]
-    web = FakeWeb(FakeFinanceDatabase(universe), yahoo)
+    return FakeWeb(FakeFinanceDatabase(universe), yahoo)
+
+
+@pytest.fixture
+async def ctx(tmp_path, web, clock):
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, clock, web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -116,3 +120,38 @@ async def test_risk_sizes_in_base_currency_and_compares_with_other_watched_listi
 async def test_risk_without_exchange_rates_says_how_to_get_them(ctx):
     skipped = {k.analyst: k.reason for k in (await analyse(ctx, "AAPL")).skipped}
     assert "oracle fx update" in skipped["risk"]
+
+
+async def test_analysing_the_watchlist_reports_each_failure_and_carries_on(ctx):
+    watch(ctx, "MSFT")  # no prices stored
+    watch(ctx, "AAPL")
+    runs = {r.symbol: r for r in await analyse_watched(ctx)}
+    assert runs["AAPL"].analysis is not None and runs["AAPL"].error is None
+    assert runs["MSFT"].analysis is None and "prices update" in runs["MSFT"].error
+
+
+async def test_latest_signals_read_without_requests_and_mark_stale_ones(ctx, yahoo, clock, web):
+    await analyse(ctx, "AAPL")
+    before = len(web.requests)
+    latest = {s.signal.analyst: s for s in latest_signals(ctx, "AAPL")}
+    assert len(web.requests) == before
+    assert not latest["trend"].stale and not latest["value"].stale
+    next_day = weekdays(301, date(2025, 7, 1))[-1]
+    yahoo.series["AAPL"].bars.append(bar(next_day.isoformat(), 200.0))
+    clock.advance(8 * 86400)
+    await update_listing(ctx, "AAPL")
+    latest = {s.signal.analyst: s for s in latest_signals(ctx, "AAPL")}
+    assert latest["trend"].stale and latest["value"].stale
+
+
+async def test_watch_lines_and_the_company_view_carry_the_latest_signals(ctx):
+    from oracle.services.company_service import company_view
+    from oracle.services.watch_service import show_watchlist
+
+    watch(ctx, "AAPL")
+    assert show_watchlist(ctx)[0].signals == ()
+    await analyse(ctx, "AAPL")
+    line = show_watchlist(ctx)[0]
+    assert {s.signal.analyst for s in line.signals} >= {"technicals", "value"}
+    view = await company_view(ctx, "AAPL", refresh=False)
+    assert [s.signal.analyst for s in view.signals][0] == "technicals"

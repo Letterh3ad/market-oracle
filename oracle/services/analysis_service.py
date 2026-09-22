@@ -9,8 +9,8 @@ from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatil
 from oracle.analysts.trend import trend
 from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, NoPrices
-from oracle.services.fundamentals_service import fetch_fundamentals
+from oracle.services.errors import InvalidQuery, NoPrices, ServiceError
+from oracle.services.fundamentals_service import PEER_MAX_AGE, fetch_fundamentals
 from oracle.services.peers_service import peer_group
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
@@ -20,9 +20,15 @@ from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 
-__all__ = ["Analysis", "AnalystSignal", "Direction", "Skipped", "analyse", "signal_history"]
+__all__ = [
+    "Analysis", "AnalystSignal", "Direction", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
+    "analyse_watched", "latest_signals", "signal_history",
+]
 
 FACTOR_ANALYSTS = (factors.value, factors.quality, factors.growth)
+# Display order: price-based first, then the peer comparisons.
+ORDER = ("technicals", "trend", "rsi", "macd", "volatility", "risk", "value", "quality", "growth")
+FACTOR_NAMES = frozenset(f.__name__ for f in FACTOR_ANALYSTS)
 
 
 @dataclass(frozen=True)
@@ -30,6 +36,20 @@ class Analysis:
     symbol: str
     signals: tuple[AnalystSignal, ...]
     skipped: tuple[Skipped, ...]
+
+
+@dataclass(frozen=True)
+class StoredSignal:
+    signal: AnalystSignal
+    stale: bool
+    """Price-based: a newer bar is stored. Factors: their fundamentals are over a week old."""
+
+
+@dataclass(frozen=True)
+class WatchedAnalysis:
+    symbol: str
+    analysis: Analysis | None
+    error: str | None
 
 
 async def analyse(ctx: AppContext, symbol: str) -> Analysis:
@@ -82,6 +102,32 @@ def _base_series(ctx: AppContext, symbol: str) -> Series:
         (c.bar.date, (c.bar.adj_close if c.bar.adj_close is not None else c.bar.close) / c.rate)
         for c in price_history_in_base(ctx, symbol) if c.rate
     ]
+
+
+async def analyse_watched(ctx: AppContext) -> list[WatchedAnalysis]:
+    """Every watched listing; one failing never stops the rest."""
+    out = []
+    for symbol in WatchlistRepo(ctx.conn).all_symbols():
+        try:
+            out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
+        except ServiceError as exc:
+            out.append(WatchedAnalysis(symbol, None, str(exc)))
+    return out
+
+
+def latest_signals(ctx: AppContext, symbol: str) -> list[StoredSignal]:
+    """Each analyst's most recent stored signal, in display order. Reads only."""
+    listing = resolve_symbol(ctx, symbol).symbol
+    last_bar = BarRepo(ctx.conn).last_date(listing)
+    today = ctx.clock.utcnow().date()
+
+    def stale(s: AnalystSignal) -> bool:
+        if s.analyst in FACTOR_NAMES:
+            return today - s.as_of > PEER_MAX_AGE
+        return last_bar is not None and last_bar > s.as_of
+
+    found = sorted(SignalRepo(ctx.conn).latest(listing), key=lambda s: ORDER.index(s.analyst))
+    return [StoredSignal(s, stale(s)) for s in found]
 
 
 def signal_history(ctx: AppContext, symbol: str, analyst: str) -> list[AnalystSignal]:
