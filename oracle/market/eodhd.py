@@ -46,9 +46,9 @@ class EodhdClient:
                 not_found=(), secret=self._key,
             )
         except SourceFailed as exc:
-            if str(exc) in ("HTTP 401", "HTTP 403"):
+            if exc.status in (401, 403):
                 raise SourceFailed("key rejected") from None
-            if str(exc) == "HTTP 404":
+            if exc.status == 404:
                 raise NoData(f"{path.rsplit('/', 1)[-1]} not found") from None
             raise
         return resp.json()

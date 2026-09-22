@@ -15,7 +15,8 @@ from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
 
 # Depth of a first fetch, for prices and FX alike.
-HISTORY = timedelta(days=5 * 365 + 1)
+HISTORY_YEARS = 5
+HISTORY = timedelta(days=HISTORY_YEARS * 365 + 1)
 # Re-fetched on every update, so a bar or rate stored mid-session is replaced by the
 # final one.
 REFETCH_OVERLAP = timedelta(days=7)
@@ -27,6 +28,11 @@ class NoData(Exception):
 
 class SourceFailed(Exception):
     """The source could not be reached or answered with an error."""
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        """The HTTP status of an error answer; None when there was no answer."""
 
 
 class AllFailed(Exception):
@@ -97,11 +103,12 @@ async def get(
         resp = await client.get(source, url, params=params, headers=headers)
     except (RequestFailed, CircuitOpen) as exc:
         detail = str(exc).removeprefix(f"{source}: ")
-        raise SourceFailed(detail.replace(secret, "***") if secret else detail) from None
+        status = exc.status if isinstance(exc, RequestFailed) else None
+        raise SourceFailed(detail.replace(secret, "***") if secret else detail, status) from None
     if resp.status_code in not_found:
         raise NoData("no data")
     if resp.status_code != 200:
-        raise SourceFailed(f"HTTP {resp.status_code}")
+        raise SourceFailed(f"HTTP {resp.status_code}", resp.status_code)
     return resp
 
 

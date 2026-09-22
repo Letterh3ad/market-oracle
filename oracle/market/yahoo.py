@@ -23,7 +23,7 @@ class YahooPrices:
     async def daily_bars(self, instrument: Instrument, since: date | None, now: datetime) -> list[Bar]:
         params = {"interval": "1d", "includeAdjustedClose": "true"}
         if since is None:
-            params["range"] = "5y"
+            params["range"] = f"{sources.HISTORY_YEARS}y"
         else:
             params["period1"] = str(_epoch(since))
             params["period2"] = str(int(now.timestamp()))

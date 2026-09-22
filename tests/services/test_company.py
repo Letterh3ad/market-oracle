@@ -190,6 +190,20 @@ async def test_market_cap_fetches_rates_for_a_currency_no_price_uses_yet(ctx, we
     view = await company_view(ctx, "SAP.DE")
     assert view.market_cap_base == pytest.approx(2.4e11 / 1.20)
     assert view.market_cap_rate_source == "yahoo"
+    eur = [r for r in web.requests_to("query2.finance.yahoo.com") if r.url.path.endswith("GBPEUR=X")]
+    assert eur and all("period1" in r.url.params for r in eur)
+
+
+async def test_a_cookie_page_error_does_not_stop_fundamentals(ctx, yahoo):
+    yahoo.cookie_status = 403
+    view = await company_view(ctx, "AAPL")
+    assert view.fundamentals.pe == 39.0
+
+
+async def test_a_cookie_page_that_is_down_or_throttling_stops_the_crumb(ctx, yahoo):
+    yahoo.cookie_status = 503
+    view = await company_view(ctx, "AAPL")
+    assert view.fundamentals is None and "no crumb" in view.fundamentals_note and "503" in view.fundamentals_note
 
 
 async def test_a_real_zero_is_kept_not_treated_as_missing(ctx):

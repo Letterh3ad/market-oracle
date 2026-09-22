@@ -186,8 +186,7 @@ async def test_a_second_update_fetches_only_recent_rates(ctx, web, yahoo):
     yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-21", 1.37))
     result = by_currency(await update_fx(ctx))["USD"]
     assert result.added == 1
-    last = [r for r in web.requests_to("query2.finance.yahoo.com") if r.url.path.endswith("GBPUSD=X")][-1]
-    assert "period1" in last.url.params
+    assert "period1" in last_request_for(web, "GBPUSD=X").url.params
 
 
 async def test_an_unknown_source_name_is_refused(ctx):
@@ -203,16 +202,48 @@ async def test_a_malformed_response_counts_as_that_source_failing(ctx, yahoo, op
     assert results["USD"].source == "yahoo"
 
 
+def last_request_for(web, pair):
+    return [r for r in web.requests_to("query2.finance.yahoo.com") if r.url.path.endswith(pair)][-1]
+
+
 async def test_history_is_fetched_once_a_history_source_recovers(ctx, yahoo, web):
     yahoo.fail["GBPTWD=X"] = 500
     await update_fx(ctx)  # open.er-api: today only
     del yahoo.fail["GBPTWD=X"]
     yahoo.add("GBPTWD=X", "TWD", "Europe/London", fx_bars(("2026-09-18", 41.0), ("2026-09-22", 42.0)), open_at=time(0, 0))
+    ctx.clock.advance(7 * 86400)
     await update_fx(ctx)
-    last = [r for r in web.requests_to("query2.finance.yahoo.com") if r.url.path.endswith("GBPTWD=X")][-1]
-    assert last.url.params.get("range") == "5y"
+    assert last_request_for(web, "GBPTWD=X").url.params.get("range") == "5y"
     conv = {c.bar.date.isoformat(): c.close_base for c in price_history_in_base(ctx, "2330.TW")}
     assert conv["2026-09-18"] == pytest.approx(1000.0 / 41.0)
+
+
+async def test_full_history_is_retried_weekly_while_only_open_er_api_has_a_currency(ctx, yahoo, web):
+    yahoo.fail["GBPTWD=X"] = 500
+    await update_fx(ctx)
+    assert last_request_for(web, "GBPTWD=X").url.params.get("range") == "5y"
+    ctx.clock.advance(6 * 86400)
+    await update_fx(ctx)
+    assert "period1" in last_request_for(web, "GBPTWD=X").url.params
+    ctx.clock.advance(86400)
+    await update_fx(ctx)
+    assert last_request_for(web, "GBPTWD=X").url.params.get("range") == "5y"
+
+
+async def test_a_currency_no_source_covers_is_retried_weekly_too(ctx, yahoo, open_er, web):
+    yahoo.fail["GBPTWD=X"] = 500
+    open_er.rates = {}
+    await update_fx(ctx)
+    ctx.clock.advance(86400)
+    await update_fx(ctx)
+    assert "period1" in last_request_for(web, "GBPTWD=X").url.params
+
+
+async def test_rates_for_one_day_fetch_a_short_range_and_leave_history_owed(ctx, yahoo, web):
+    await update_fx(ctx, currencies=["USD"], history=False)
+    assert "period1" in last_request_for(web, "GBPUSD=X").url.params
+    await update_fx(ctx)
+    assert last_request_for(web, "GBPUSD=X").url.params.get("range") == "5y"
 
 
 async def test_converted_bars_name_the_rates_source_for_attribution(ctx, yahoo):

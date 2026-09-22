@@ -35,10 +35,22 @@ class FxRepo:
         ).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None
 
-    def sources(self, currency: str) -> set[str]:
-        return {s for (s,) in self._conn.execute(
-            "SELECT DISTINCT source FROM fx_rates WHERE base = ? AND currency = ?", (self._base, currency)
-        )}
+    def history_state(self, currency: str) -> tuple[bool, date | None]:
+        """(filled by a history-capable source, day full history was last tried)."""
+        row = self._conn.execute(
+            "SELECT filled, tried_on FROM fx_history WHERE base = ? AND currency = ?", (self._base, currency)
+        ).fetchone()
+        if row is None:
+            return False, None
+        return bool(row[0]), date.fromisoformat(row[1]) if row[1] else None
+
+    def note_history(self, currency: str, tried_on: date, filled: bool) -> None:
+        with transaction(self._conn):
+            self._conn.execute(
+                "INSERT INTO fx_history (base, currency, filled, tried_on) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(base, currency) DO UPDATE SET filled = excluded.filled, tried_on = excluded.tried_on",
+                (self._base, currency, int(filled), tried_on.isoformat()),
+            )
 
     def history(self, currency: str, limit: int | None = None) -> list[FxRate]:
         """Oldest first; with `limit`, only the most recent that many."""

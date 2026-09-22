@@ -1,9 +1,11 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 
 import httpx
 import pytest
 
+from oracle.clock import SystemClock
 from oracle.config import SourceConfig
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
@@ -139,15 +141,6 @@ async def test_a_huge_retry_after_fails_now_but_still_holds_back_the_source(conn
 
 
 async def test_secret_query_parameters_never_reach_the_http_log(conn, caplog):
-    import logging
-
-    import httpx
-
-    from oracle.clock import SystemClock
-    from oracle.config import SourceConfig
-    from oracle.net.client import RateLimitedClient
-    from oracle.net.gate import SourceGate
-
     gate = SourceGate(conn, SystemClock(), {"eodhd": SourceConfig(rate_per_second=1000)})
     client = RateLimitedClient(gate, SystemClock(), "t", transport=httpx.MockTransport(lambda r: httpx.Response(200)))
     with caplog.at_level(logging.INFO, logger="httpx"):

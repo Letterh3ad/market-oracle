@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 
-from oracle.market import sources, yahoo
+from oracle.market import eodhd, sources, yahoo
 from oracle.market.eodhd import EodhdClient
 from oracle.market.sources import Instrument, NoData
 from oracle.net.client import RateLimitedClient
@@ -34,6 +34,8 @@ class FxRate:
 
 class FxSource(Protocol):
     name: str
+    has_history: bool
+    """False for a source that only ever serves today's rate."""
 
     async def daily_rates(self, base: str, currency: str, since: date | None, now: datetime) -> list[FxRate]: ...
 
@@ -51,7 +53,8 @@ def pick_rate(rates: list[FxRate], day: date) -> FxRate | None:
 class YahooFx:
     """`GBPUSD=X` is a daily series like any listing's: its close is USD per GBP."""
 
-    name = "yahoo"
+    name = yahoo.SOURCE
+    has_history = True
 
     def __init__(self, client: RateLimitedClient) -> None:
         self._prices = yahoo.YahooPrices(client)
@@ -62,7 +65,8 @@ class YahooFx:
 
 
 class EodhdFx:
-    name = "eodhd"
+    name = eodhd.SOURCE
+    has_history = True
 
     def __init__(self, eodhd: EodhdClient) -> None:
         self._eodhd = eodhd
@@ -76,6 +80,7 @@ class EcbFx:
     """Official ECB reference rates, per euro; other bases go through the euro."""
 
     name = "ecb"
+    has_history = True
     URL = "https://data-api.ecb.europa.eu/service/data/EXR/D.{currencies}.EUR.SP00.A"
 
     def __init__(self, client: RateLimitedClient) -> None:
@@ -109,6 +114,7 @@ class FrankfurterFx:
     """ECB data from a second host, with the base conversion done server-side."""
 
     name = "frankfurter"
+    has_history = True
     URL = "https://api.frankfurter.app/{start}.."
 
     def __init__(self, client: RateLimitedClient) -> None:
@@ -136,6 +142,7 @@ class OpenErFx:
     made once per instance (one update run)."""
 
     name = "open_er_api"
+    has_history = False
     URL = "https://open.er-api.com/v6/latest/{base}"
 
     def __init__(self, client: RateLimitedClient) -> None:

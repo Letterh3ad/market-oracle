@@ -262,3 +262,36 @@ backs every Yahoo call off. Snapshots are refreshed at most daily, for the compa
 primary listing; a failed refresh shows the last snapshot with its date.
 **Alternatives:** EODHD only for fundamentals (rejected: paid). curl_cffi browser
 impersonation (not needed: a header is enough today).
+
+## 2026-09-22 - Phase 3 review fixes
+
+**Context:** The two-axis review of phase 3 found duplicated source chains, a refetch rule
+that could loop, and gaps in attribution and typing.
+**Decision:**
+- `prices show --base` (not `--gbp`): the base currency is configurable, GBP by default.
+- Incremental fetches re-read the last 7 days (`REFETCH_OVERLAP`), so late corrections
+  and a missed day are picked up without a full refetch.
+- Fundamentals follow the `[prices] sources` order; no separate list to keep in step.
+- `fx update` exists as its own command, as well as running inside `watch update`.
+- FX history: an `fx_history` row per currency records whether a source with history
+  (`FxSource.has_history`) filled it and when full history was last tried, failed tries
+  included. Until filled, full history is retried at most weekly, so a currency only
+  open.er-api (today only) or no source covers does not ask every source for 5 years of
+  rates on each run. Cost: after an outage or a source recovering, the backfill can wait
+  up to a week; recent rates still update daily meanwhile. A one-off conversion (a
+  market cap in a currency no price uses) fetches the last week only. Replaces a
+  date-gap rule that refetched full history every run when a source's history started
+  late.
+- `SourceFailed.status` carries the HTTP status, so callers never match message text.
+  A 4xx from the Yahoo cookie page still sets the cookie; only 429, 5xx or no answer
+  stop the crumb.
+- One chain helper (`market/sources.first_success`): a malformed response counts as that
+  source failing, never aborting the run.
+**Alternatives:** Per-source gap filling in FX (declined: a missing day borrows the rate
+up to 5 days older, `MAX_RATE_AGE`, and it doubles traffic). Exchange holiday calendars
+for staleness (declined: too big for now; a week-long closure shows stale briefly).
+Inferring "filled" from the stored
+`source` column (rejected: a one-off conversion's short fetch would look filled).
+Kept as is: `CompanyProfile` extending the store's `ListingProfile` (small, read-only);
+`first_success` treating any parse error as that source failing (a parser bug then shows
+as "unreadable response", not a crash).

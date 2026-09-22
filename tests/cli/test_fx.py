@@ -6,7 +6,7 @@ from oracle.cli import main as cli_main
 from oracle.services.context import open_context
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
-from tests.fakes.yahoo import FakeYahoo, bar
+from tests.fakes.yahoo import FakeYahoo, bar, summary
 
 
 @pytest.fixture
@@ -103,8 +103,6 @@ def test_watch_show_prints_prices(run):
 
 
 def test_company_shows_profile_price_and_explained_figures(run):
-    from tests.fakes.yahoo import summary
-
     run.yahoo.summaries["AAPL"] = summary("USD", market_cap=4.0e12, trailingPE=39.0, dividendYield=0.0032)
     run("fx", "update")
     code, out, _ = run("company", "aapl")
@@ -130,6 +128,7 @@ def test_values_converted_with_open_er_api_rates_carry_its_credit(tmp_path, caps
     cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-22", 232.0)])
+    yahoo.summaries["AAPL"] = summary("USD", market_cap=4.0e12)
     open_er = FakeOpenEr(noon("2026-09-22"))
     open_er.rates = {"USD": 1.37}
     web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, open_er)
@@ -137,7 +136,7 @@ def test_values_converted_with_open_er_api_rates_carry_its_credit(tmp_path, caps
     for argv in (["universe", "refresh"], ["prices", "update", "AAPL"], ["fx", "update", "--source", "open_er_api"],
                  ["watch", "add", "AAPL"]):
         cli_main.main(["--config", str(cfg), *argv])
-    for argv in (["prices", "show", "AAPL", "--base"], ["watch", "show"]):
+    for argv in (["prices", "show", "AAPL", "--base"], ["watch", "show"], ["company", "AAPL"]):
         capsys.readouterr()
         cli_main.main(["--config", str(cfg), *argv])
         assert "Rates By Exchange Rate API" in capsys.readouterr().out, argv

@@ -106,7 +106,7 @@ class YahooFundamentals:
             try:
                 resp = await self._get(url, {"modules": _YAHOO_MODULES, "crumb": self._crumb})
             except SourceFailed as exc:
-                if str(exc) != "HTTP 401":
+                if exc.status != 401:
                     raise
                 self._crumb = None
                 continue
@@ -115,9 +115,13 @@ class YahooFundamentals:
 
     async def _new_crumb(self) -> str:
         try:
-            await self._get("https://fc.yahoo.com", not_found=(404,))  # 404, but sets the cookie
+            await self._get("https://fc.yahoo.com")
         except NoData:
             pass
+        except SourceFailed as exc:
+            # A 4xx still sets the cookie (404 is the usual answer and lands above).
+            if exc.status is None or exc.status == 429 or exc.status >= 500:
+                raise SourceFailed(f"no crumb ({exc})") from None
         try:
             resp = await self._get("https://query2.finance.yahoo.com/v1/test/getcrumb")
         except (NoData, SourceFailed) as exc:
@@ -126,10 +130,8 @@ class YahooFundamentals:
             raise SourceFailed("no crumb (empty answer)")
         return resp.text.strip()
 
-    async def _get(self, url: str, params: dict | None = None, not_found: tuple[int, ...] = (404,)):
-        return await sources.get(
-            self._client, self.name, url, params, headers={"User-Agent": BROWSER_UA}, not_found=not_found
-        )
+    async def _get(self, url: str, params: dict | None = None):
+        return await sources.get(self._client, self.name, url, params, headers={"User-Agent": BROWSER_UA})
 
 
 def _from_yahoo(symbol: str, today: date, modules: dict) -> Fundamentals:

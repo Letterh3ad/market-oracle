@@ -28,6 +28,8 @@ class FakeYahoo:
         self.summaries: dict[str, dict] = {}
         """symbol -> quoteSummary modules, values as {"raw": v} like the real API."""
         self.crumb = "crumb-1"
+        self.cookie_status = 404
+        """fc.yahoo.com sets the cookie whatever its status; it answers 404 today."""
         self.crumb_status = 200
         self.crumbs_issued = 0
         self.expire_crumb_after_issue = False
@@ -39,7 +41,7 @@ class FakeYahoo:
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.host == "fc.yahoo.com":
-            return httpx.Response(404, headers={"set-cookie": "A3=cookie; Domain=.yahoo.com; Path=/"})
+            return httpx.Response(self.cookie_status, headers={"set-cookie": "A3=cookie; Domain=.yahoo.com; Path=/"})
         if request.url.path == "/v1/test/getcrumb":
             self.crumb_user_agents.append(request.headers.get("user-agent", ""))
             if self.crumb_status != 200:

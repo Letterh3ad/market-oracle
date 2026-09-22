@@ -95,6 +95,6 @@ async def _market_cap_in_base(ctx: AppContext, f: Fundamentals | None, refresh: 
     rate = pick_rate(fx.history(f.currency), today)
     if rate is None and refresh:
         # The primary listing's currency may be one no stored price uses yet.
-        await update_fx(ctx, currencies=[f.currency])
+        await update_fx(ctx, currencies=[f.currency], history=False)
         rate = pick_rate(fx.history(f.currency), today)
     return (f.market_cap / rate.units_per_base, rate.source) if rate else (None, None)
