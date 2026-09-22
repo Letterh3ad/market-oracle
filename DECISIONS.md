@@ -101,3 +101,17 @@ costs far more than a slow tick, and ticks run only ~3 times a day.
 per 5s), Google News 0.5/s, ddgs 0.2/s, SEC EDGAR 5/s (half SEC's published 10/s).
 Overridable per source in `oracle.toml`.
 **Alternatives:** Tune rates by probing (rejected: probing is how blocks happen).
+
+## 2026-09-22 - Job locks: lease plus pid, with a real Windows liveness check
+
+**Context:** A scheduled tick and the GUI must never run the same job twice, and the
+stalker showed a hard-killed process leaves state claiming it still runs.
+**Decision:** `job_locks` rows carry a token, pid, host and lease. A holder is stale when
+its lease lapses without a heartbeat, or, on this host, when its pid is dead; stale locks
+are taken over, and a former holder's release or heartbeat is a no-op (heartbeat returns
+False so it can stop). On Windows liveness is `OpenProcess` plus
+`GetExitCodeProcess == STILL_ACTIVE`: `OpenProcess` alone (the stalker's check) reports a
+killed process alive while any handle to it is open, confirmed by a negative control.
+**Alternatives:** Lease only (rejected: a crash blocks the job for a whole lease). Pid
+only (rejected: pid reuse and other hosts). OS file locks (rejected: behave differently
+across platforms and say nothing about staleness).

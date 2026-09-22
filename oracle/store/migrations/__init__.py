@@ -20,6 +20,6 @@ def run_ddl(conn: sqlite3.Connection, ddl: str) -> None:
         raise ValueError(f"migration DDL ends mid-statement: {buf.strip()[:80]!r}")
 
 
-from oracle.store.migrations import m0001_meta, m0002_sources  # noqa: E402
+from oracle.store.migrations import m0001_meta, m0002_sources, m0003_job_locks  # noqa: E402
 
-MIGRATIONS = [m0001_meta, m0002_sources]
+MIGRATIONS = [m0001_meta, m0002_sources, m0003_job_locks]

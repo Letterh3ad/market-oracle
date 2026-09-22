@@ -4,9 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Second acquirer of a held job is refused with who holds it
-- [ ] Holder killed hard: next acquirer takes over (dead pid or expired lease)
-- [ ] Heartbeat extends the lease; release frees it; release by a non-holder is a no-op
-- [ ] `oracle jobs status` reports holder, age, stale
+- [x] Second acquirer of a held job is refused with who holds it
+- [x] Holder killed hard: next acquirer takes over (dead pid or expired lease)
+- [x] Heartbeat extends the lease; release frees it; release by a non-holder is a no-op
+- [x] `oracle jobs status` reports holder, age, stale
