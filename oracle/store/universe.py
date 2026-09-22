@@ -51,6 +51,9 @@ class SearchHit:
     sector: str | None
     industry: str | None
     market_cap: str | None
+    category_group: str | None
+    category: str | None
+    family: str | None
     delisted: bool
     listings: int
     """How many listings the company has (counting delisted ones only when shown)."""
@@ -61,6 +64,7 @@ class UniverseCounts:
     listings: int
     companies: int
     delisted: int
+    by_type: dict[str, tuple[int, int]]
 
 
 class UniverseRepo:
@@ -81,7 +85,12 @@ class UniverseRepo:
         row = self._conn.execute(
             "SELECT COUNT(*), COUNT(DISTINCT company_key), COALESCE(SUM(delisted), 0) FROM listings"
         ).fetchone()
-        return UniverseCounts(*row)
+        by_type = {
+            r[0]: (r[1], r[2]) for r in self._conn.execute(
+                "SELECT type, COUNT(*), COUNT(DISTINCT company_key) FROM listings GROUP BY type"
+            )
+        }
+        return UniverseCounts(*row, by_type)
 
     def search(self, q: UniverseQuery) -> list[SearchHit]:
         params: dict = {
@@ -124,6 +133,7 @@ class UniverseRepo:
             ), ranked AS ({_ALONE if primaries_only else _RANKED})
             SELECT l.symbol, l.exchange, l.currency, l.delisted,
                    p.name, p.type, p.country, p.sector, p.industry, p.market_cap,
+                   p.category_group, p.category, p.family,
                    (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key
                      AND (:delisted OR x.delisted = 0)) AS n
             FROM ranked r
@@ -137,6 +147,7 @@ class UniverseRepo:
                 symbol=r["symbol"], name=r["name"] or r["symbol"], type=r["type"],
                 country=r["country"], exchange=r["exchange"], currency=r["currency"],
                 sector=r["sector"], industry=r["industry"], market_cap=r["market_cap"],
+                category_group=r["category_group"], category=r["category"], family=r["family"],
                 delisted=bool(r["delisted"]), listings=r["n"],
             )
             for r in self._conn.execute(sql, params)

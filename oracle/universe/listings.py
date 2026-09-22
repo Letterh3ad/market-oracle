@@ -34,6 +34,9 @@ class Listing:
     market_cap: str | None = None
     website: str | None = None
     summary: str | None = None
+    category_group: str | None = None
+    category: str | None = None
+    family: str | None = None
     company_key: str = ""
     is_primary: bool = False
 
@@ -46,7 +49,7 @@ def normalise_name(name: str) -> str:
 def group_companies(listings: Iterable[Listing]) -> list[Listing]:
     """Give every listing a company key and mark one primary listing per company.
 
-    Listings are one company when they share an ISIN or a normalised name and country,
+    Listings are one company when they share an ISIN or a normalised name, country and type,
     transitively. Neither alone is enough: most listings carry no ISIN, and some carry
     another line's (German Siemens Healthineers listings hold the US ADR's ISIN).
     A name or ISIN spread over more than MAX_LINES_PER_EXCHANGE lines of one exchange
@@ -91,7 +94,8 @@ def _links(x: Listing) -> list[tuple]:
         links.append(("isin", x.isin))
     name = normalise_name(x.name)
     if name:
-        links.append(("name", name, x.country or ""))
+        # Typed, so a fund never merges with a company of the same name.
+        links.append(("name", name, x.country or "", x.type))
     return links
 
 

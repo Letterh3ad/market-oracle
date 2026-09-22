@@ -26,6 +26,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0003_job_locks,
     m0004_listings,
     m0005_listings_fts,
+    m0006_fund_fields,
 )
 
-MIGRATIONS = [m0001_meta, m0002_sources, m0003_job_locks, m0004_listings, m0005_listings_fts]
+MIGRATIONS = [m0001_meta, m0002_sources, m0003_job_locks, m0004_listings, m0005_listings_fts, m0006_fund_fields]

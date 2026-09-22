@@ -15,6 +15,19 @@ EQUITY_COLUMNS = [
 ]
 
 
+ETF_COLUMNS = [
+    "symbol", "name", "currency", "summary", "category_group", "category", "family",
+    "exchange", "mic", "isin",
+]
+
+
+def etf(symbol, name, exchange="LSE", **fields) -> dict:
+    row = dict.fromkeys(ETF_COLUMNS, "")
+    row.update(symbol=symbol, name=name, exchange=exchange)
+    row.update({k: str(v) for k, v in fields.items()})
+    return row
+
+
 def equity(symbol, name, country="United States", exchange="NMS", **fields) -> dict:
     row = dict.fromkeys(EQUITY_COLUMNS, "")
     row.update(symbol=symbol, name=name, country=country, exchange=exchange, delisted="False")
@@ -46,9 +59,12 @@ BASIC = [
 
 
 class FakeFinanceDatabase:
-    def __init__(self, equities: list[dict], sha: str = "abc123") -> None:
+    def __init__(self, equities: list[dict], etfs: list[dict] = (), sha: str = "abc123") -> None:
         self.sha = sha
-        self.files: dict[str, bytes | int] = {"equities.bz2": bz2_csv(equities)}
+        self.files: dict[str, bytes | int] = {
+            "equities.bz2": bz2_csv(equities),
+            "etfs.bz2": bz2_csv(list(etfs), ETF_COLUMNS),
+        }
         self.commit_response: httpx.Response | None = None
         self.requests: list[httpx.Request] = []
         self.transport = httpx.MockTransport(self._handle)
@@ -79,4 +95,19 @@ UNIVERSE = BASIC + [
     equity("SSNLF", "Samsung C&T Corp", "South Korea", "PNK", sector="Industrials"),
     equity("005930.KS", "Samsung Electronics Co., Ltd.", "South Korea", "KSC",
            sector="Information Technology", market_cap="Mega Cap"),
+]
+
+
+S_AND_P = "IE00B5BMR087"
+
+# 4 listings, 3 funds, none with a size band.
+ETFS = [
+    etf("CSPX.L", "iShares Core S&P 500 UCITS ETF", isin=S_AND_P, category_group="Equities",
+        category="Large Blend", family="BlackRock", currency="USD"),
+    etf("SXR8.DE", "iShares Core S&P 500 UCITS ETF", "GER", isin=S_AND_P,
+        category_group="Equities", category="Large Blend", family="BlackRock", currency="EUR"),
+    etf("VWRL.L", "Vanguard FTSE All-World UCITS ETF", category_group="Equities",
+        category="Global", family="Vanguard", currency="GBP"),
+    etf("IGLT.L", "iShares Core UK Gilts UCITS ETF", category_group="Fixed Income",
+        category="Government Bonds", family="BlackRock", currency="GBP"),
 ]

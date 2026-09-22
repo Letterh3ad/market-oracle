@@ -41,6 +41,8 @@ class UniverseStatus:
     listings: int
     companies: int
     delisted: int
+    by_type: dict[str, tuple[int, int]]
+    """type -> (listings, companies)"""
     source_commit: str | None
     refreshed_at: datetime | None
 
@@ -54,6 +56,7 @@ def universe_status(ctx: AppContext) -> UniverseStatus:
         listings=counts.listings,
         companies=counts.companies,
         delisted=counts.delisted,
+        by_type=counts.by_type,
         source_commit=meta.get(_COMMIT),
         refreshed_at=datetime.fromisoformat(refreshed) if refreshed else None,
     )
@@ -157,8 +160,11 @@ async def _download(ctx: AppContext):
     client = RateLimitedClient(gate, ctx.clock, USER_AGENT, transport=ctx.transport)
     try:
         sha = await financedatabase.latest_commit(client)
-        data = await financedatabase.download(client, sha, "equities.bz2")
-        return sha, financedatabase.parse_equities(data)
+        equities = financedatabase.parse_equities(await financedatabase.download(client, sha, "equities.bz2"))
+        etfs = financedatabase.parse_etfs(await financedatabase.download(client, sha, "etfs.bz2"))
+        # A few symbols appear in both files (CHAD); the equity row is the fuller one.
+        taken = {x.symbol for x in equities}
+        return sha, equities + [x for x in etfs if x.symbol not in taken]
     except financedatabase.Unavailable as exc:
         raise UniverseUnavailable(str(exc)) from exc
     finally:

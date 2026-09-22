@@ -4,7 +4,7 @@ import pytest
 
 from oracle.cli import main as cli_main
 from oracle.services.context import open_context
-from tests.fakes.financedatabase import BASIC, FakeFinanceDatabase
+from tests.fakes.financedatabase import BASIC, ETF_COLUMNS, ETFS, FakeFinanceDatabase, bz2_csv
 
 
 @pytest.fixture
@@ -114,3 +114,13 @@ def test_exchange_facets_show_the_market_name(run):
     _, out, _ = run("universe", "facets", "exchange")
     ger = next(line for line in out.splitlines() if line.startswith("GER"))
     assert ger.split() == ["GER", "1", "XETRA"]
+
+
+def test_status_and_search_cover_etfs(run):
+    run.fdb.files["etfs.bz2"] = bz2_csv(ETFS, ETF_COLUMNS)
+    run("universe", "refresh")
+    _, out, _ = run("universe", "status")
+    etf_line = next(line for line in out.splitlines() if line.split()[:1] == ["etf"])
+    assert "4 listings" in etf_line and "3 funds" in etf_line
+    _, out, _ = run("universe", "search", "gilts", "--type", "etf")
+    assert "Government Bonds" in out and "etf" in out

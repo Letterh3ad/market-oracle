@@ -1,9 +1,9 @@
 from oracle.universe.listings import Listing, group_companies
 
 
-def L(symbol, name, country, exchange, isin=None, delisted=False):
+def L(symbol, name, country, exchange, isin=None, delisted=False, type="equity"):
     return Listing(
-        symbol=symbol, name=name, type="equity", country=country, exchange=exchange,
+        symbol=symbol, name=name, type=type, country=country, exchange=exchange,
         isin=isin, delisted=delisted,
     )
 
@@ -135,6 +135,13 @@ def test_a_company_with_many_preferred_lines_stays_one_company():
     lines = [L(f"FMCC{c}", "Federal Home Loan Mortgage Corporation", "United States", "PNK")
              for c in "ABCDEFGHIJKLMNOPQRSTUVWXY"]
     assert len(companies(lines)) == 1
+
+
+def test_a_fund_never_merges_with_a_company_of_the_same_name():
+    assert companies([
+        L("ABC", "Acme Global", None, "NYQ"),
+        L("ABC.L", "Acme Global", None, "LSE", type="etf"),
+    ]) == {"ABC": {"ABC"}, "ABC.L": {"ABC.L"}}
 
 
 def test_company_keys_do_not_depend_on_input_order():

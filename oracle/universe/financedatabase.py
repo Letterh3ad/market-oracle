@@ -22,6 +22,12 @@ EQUITY_COLUMNS = (
 )
 
 
+ETF_COLUMNS = (
+    "symbol", "name", "currency", "summary", "category_group", "category", "family",
+    "exchange", "isin",
+)
+
+
 class Unavailable(Exception):
     pass
 
@@ -42,7 +48,21 @@ async def download(client: RateLimitedClient, sha: str, name: str) -> bytes:
 
 
 def parse_equities(data: bytes) -> list[Listing]:
-    rows = _rows(data, "equities.bz2", EQUITY_COLUMNS)
+    return _listings(_rows(data, "equities.bz2", EQUITY_COLUMNS), "equity")
+
+
+def parse_etfs(data: bytes) -> list[Listing]:
+    return _listings(_rows(data, "etfs.bz2", ETF_COLUMNS), "etf")
+
+
+# Columns copied as-is when a file has them; blanks become None.
+_OPTIONAL = (
+    "country", "exchange", "market", "currency", "isin", "sector", "industry_group",
+    "industry", "market_cap", "website", "summary", "category_group", "category", "family",
+)
+
+
+def _listings(rows: list[dict], type_: str) -> list[Listing]:
     seen: set[str] = set()
     out = []
     for r in rows:
@@ -53,12 +73,9 @@ def parse_equities(data: bytes) -> list[Listing]:
         out.append(Listing(
             symbol=symbol,
             name=r["name"].strip(),
-            type="equity",
-            delisted=r["delisted"] == "True",
-            **{c: r[c].strip() or None for c in (
-                "country", "exchange", "market", "currency", "isin", "sector",
-                "industry_group", "industry", "market_cap", "website", "summary",
-            )},
+            type=type_,
+            delisted=r.get("delisted") == "True",
+            **{c: (r.get(c) or "").strip() or None for c in _OPTIONAL},
         ))
     return out
 

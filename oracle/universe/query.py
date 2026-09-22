@@ -5,7 +5,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 # Company-level fields are read from the primary listing; exchange is per listing.
-COMPANY_FIELDS = ("country", "sector", "industry", "market_cap")
+COMPANY_FIELDS = (
+    "type", "country", "sector", "industry", "market_cap", "category_group", "category", "family",
+)
 FILTER_FIELDS = (*COMPANY_FIELDS, "exchange")
 SORTS = ("relevance", "name", "symbol", *FILTER_FIELDS)
 

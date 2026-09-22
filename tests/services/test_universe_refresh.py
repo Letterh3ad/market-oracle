@@ -44,13 +44,16 @@ async def test_refresh_loads_listings_and_counts_companies(ctx):
 async def test_refresh_downloads_the_commit_it_resolved(ctx, fdb):
     await refresh_universe(ctx)
     downloads = [r.url for r in fdb.requests if r.url.host == "raw.githubusercontent.com"]
-    assert [u.path for u in downloads] == ["/JerBouma/FinanceDatabase/abc123/compression/equities.bz2"]
+    assert sorted(u.path for u in downloads) == [
+        "/JerBouma/FinanceDatabase/abc123/compression/equities.bz2",
+        "/JerBouma/FinanceDatabase/abc123/compression/etfs.bz2",
+    ]
 
 
 async def test_refresh_goes_through_the_financedatabase_gate(ctx):
     await refresh_universe(ctx)
     gate = {s.source: s for s in source_statuses(ctx)}["financedatabase"]
-    assert gate.requests_last_hour == 2
+    assert gate.requests_last_hour == 3
 
 
 async def test_a_second_refresh_replaces_rather_than_appends(ctx, fdb):

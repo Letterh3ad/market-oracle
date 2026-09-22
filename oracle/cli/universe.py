@@ -64,16 +64,17 @@ def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if not hits:
         print("no matches")
         return 0
-    print(f"{'symbol':<12}{'name':<32}{'country':<16}{'exch':<6}{'sector':<24}size")
+    print(f"{'symbol':<12}{'name':<32}{'country':<16}{'exch':<6}{'sector / category':<24}size")
     for h in hits:
         notes = [n for n in (
             _others(h.listings - 1) if h.listings > 1 and not args.all_listings else "",
             "delisted" if h.delisted else "",
+            h.type if h.type != "equity" else "",
         ) if n]
         size = (h.market_cap or "?").removesuffix(" Cap")
         print(
             f"{h.symbol:<12}{_cut(h.name, 31):<32}{_cut(h.country, 15):<16}{h.exchange or '':<6}"
-            f"{_cut(h.sector, 23):<24}{size:<7}{'  '.join(notes)}".rstrip()
+            f"{_cut(h.sector or h.category, 23):<24}{size:<7}{'  '.join(notes)}".rstrip()
         )
     return 0
 
@@ -109,5 +110,8 @@ def _print(s: UniverseStatus) -> None:
         print("universe not loaded yet: run `oracle universe refresh`")
         return
     print(f"{s.listings} listings, {s.companies} companies, {s.delisted} delisted")
+    for type_, (listings, companies) in sorted(s.by_type.items()):
+        noun = "funds" if type_ == "etf" else "companies"
+        print(f"  {type_:<8}{listings:>8} listings{companies:>8} {noun}")
     print(f"FinanceDatabase commit {s.source_commit}")
     print(f"refreshed {s.refreshed_at:%Y-%m-%d %H:%M} UTC")
