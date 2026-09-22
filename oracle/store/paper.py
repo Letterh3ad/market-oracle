@@ -87,3 +87,22 @@ class PaperRepo:
 
 def _order(r) -> Order:
     return Order(r[0], r[1], r[2], r[3], r[4], r[5], date.fromisoformat(r[6]), r[7], r[8], r[9])
+
+
+class EquityRepo:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def record(self, account: str, day: date, cash: float, holdings: float) -> None:
+        with transaction(self._conn):
+            self._conn.execute(
+                "INSERT OR REPLACE INTO paper_equity (account, date, cash, holdings) VALUES (?, ?, ?, ?)",
+                (account, day.isoformat(), cash, holdings),
+            )
+
+    def history(self, account: str) -> list[tuple[date, float]]:
+        """(date, equity), oldest first."""
+        rows = self._conn.execute(
+            "SELECT date, cash + holdings FROM paper_equity WHERE account = ? ORDER BY date", (account,)
+        )
+        return [(date.fromisoformat(d), v) for d, v in rows]

@@ -6,7 +6,7 @@ from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.fx_service import update_fx
-from oracle.services.paper_service import account_view, fill_pending, place_buy, place_sell
+from oracle.services.paper_service import account_score, account_view, equity_history, fill_pending, place_buy, place_sell
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
@@ -132,3 +132,34 @@ async def test_selling_what_is_not_held_is_refused(ctx, yahoo, clock):
     place_sell(ctx, "AAPL", None)
     with pytest.raises(InvalidQuery, match="already"):
         place_sell(ctx, "AAPL", 1)
+
+
+async def test_equity_costs_and_one_snapshot_per_day_by_hand(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    fill_pending(ctx)  # a rerun the same day replaces the snapshot
+    score = account_score(ctx, "manual")
+    spent = 1202.2 / 1.2475
+    assert score.equity == pytest.approx(10_000 - spent + 12 * 100.0 / 1.25)
+    # Fee 1 USD, slippage 12 * 0.10 USD, and the FX spread: together exactly the gap
+    # between what was spent and a cost-free fill (12 * 100 / 1.25).
+    assert score.costs == pytest.approx(spent - 12 * 100.0 / 1.25)
+    assert score.unrealised == pytest.approx(12 * 100.0 / 1.25 - spent)
+    assert [d for d, _ in equity_history(ctx, "manual")] == [clock.utcnow().date()]
+    assert account_score(ctx, "strategy").equity == 10_000 and account_score(ctx, "strategy").max_fall == 0.0
+
+
+async def test_the_largest_fall_in_equity(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 5000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    peak = account_score(ctx, "manual").equity
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 50.0, 50.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    fill_pending(ctx)
+    low = account_score(ctx, "manual").equity
+    assert account_score(ctx, "manual").max_fall == pytest.approx(low / peak - 1)

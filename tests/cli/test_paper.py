@@ -63,3 +63,11 @@ def test_sell_all_queues_and_shows_as_pending(run):
 def test_selling_what_is_not_held_is_an_error(run):
     code, _, err = run("paper", "sell", "VOD.L", "--shares", "1")
     assert code == 1 and "not held" in err
+
+
+def test_show_scores_both_accounts_and_history_lists_equity(run):
+    _, out, _ = run("paper", "show")
+    assert "strategy: equity 10,000.00" in out and "+0.00% since start" in out and "costs paid" in out
+    run("paper", "fill")
+    _, out, _ = run("paper", "history", "--account", "manual")
+    assert "2026-09-18" in out and "10,000.00" in out

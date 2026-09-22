@@ -35,6 +35,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0012_fx_history,
     m0013_signals,
     m0014_paper,
+    m0015_paper_equity,
 )
 
 MIGRATIONS = [
@@ -52,4 +53,5 @@ MIGRATIONS = [
     m0012_fx_history,
     m0013_signals,
     m0014_paper,
+    m0015_paper_equity,
 ]

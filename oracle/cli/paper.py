@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 
 from oracle.services.context import AppContext
-from oracle.services.paper_service import ACCOUNTS, FillOutcome, Order, account_view, fill_pending, place_buy, place_sell
+from oracle.services.paper_service import ACCOUNTS, FillOutcome, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -22,6 +22,9 @@ def register(parser: argparse.ArgumentParser) -> None:
     show = sub.add_parser("show", help="cash, positions and pending orders")
     show.add_argument("--account", choices=ACCOUNTS)
     show.set_defaults(handler=show_cmd)
+    history = sub.add_parser("history", help="daily equity of an account")
+    history.add_argument("--account", choices=ACCOUNTS, default="strategy")
+    history.set_defaults(handler=history_cmd)
 
 
 def buy_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -57,12 +60,24 @@ def print_fills(outcomes: list[FillOutcome]) -> None:
 def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     base = ctx.config.base_currency
     for name in [args.account] if args.account else ACCOUNTS:
-        view = account_view(ctx, name)
-        print(f"{name}: cash {view.cash:,.2f} {base}, realised {view.realised:+,.2f}")
+        view, score = account_view(ctx, name), account_score(ctx, name)
+        print(f"{name}: equity {score.equity:,.2f} {base} ({score.return_:+.2%} since start), cash {view.cash:,.2f}")
+        print(f"  realised {score.realised:+,.2f}  unrealised {score.unrealised:+,.2f}  costs paid {score.costs:,.2f}"
+              f"  largest fall {score.max_fall:.1%}")
         for p in view.positions:
             value = f"{p.value:,.2f}" if p.value is not None else "n/a"
             print(f"  {p.symbol:<12}{p.shares:>8} shares  cost {p.cost:>12,.2f}  value {value:>12}")
         for o in view.pending:
             note = f" ({o.note})" if o.note else ""
             print(f"  pending {o.side} {o.symbol}, {_size(o, base)}, placed {o.placed_on.isoformat()}{note}")
+    return 0
+
+
+def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    rows = equity_history(ctx, args.account)
+    if not rows:
+        print(f"no equity recorded for {args.account} yet: it is recorded each time orders are filled")
+        return 0
+    for day, equity in rows:
+        print(f"{day.isoformat()}  {equity:>12,.2f} {ctx.config.base_currency}")
     return 0

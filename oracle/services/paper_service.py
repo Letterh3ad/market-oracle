@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
@@ -14,13 +15,13 @@ from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
-from oracle.store.paper import FillRow, Order, PaperRepo
+from oracle.store.paper import EquityRepo, FillRow, Order, PaperRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import EXCHANGES
 
 __all__ = [
-    "ACCOUNTS", "AccountView", "FillOutcome", "Order", "Position", "account_view", "fill_pending", "place_buy",
-    "place_sell",
+    "ACCOUNTS", "AccountScore", "AccountView", "FillOutcome", "Order", "Position", "account_score", "account_view",
+    "equity_history", "fill_pending", "place_buy", "place_sell",
 ]
 
 ACCOUNTS = ("strategy", "manual")
@@ -44,6 +45,24 @@ class AccountView:
     pending: tuple[Order, ...]
     realised: float
     """Profit or loss locked in by sells, in the base currency, after all costs."""
+
+
+@dataclass(frozen=True)
+class AccountScore:
+    name: str
+    equity: float
+    """Cash plus positions at the last close, base currency."""
+    start: float
+    realised: float
+    unrealised: float
+    costs: float
+    """Fees, stamp duty, FX spread and slippage paid, base currency."""
+    max_fall: float
+    """Largest fall from a peak in the daily equity record, as a negative ratio."""
+
+    @property
+    def return_(self) -> float:
+        return self.equity / self.start - 1
 
 
 @dataclass(frozen=True)
@@ -82,15 +101,46 @@ def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = 
 
 
 def fill_pending(ctx: AppContext) -> list[FillOutcome]:
-    """Fill every order whose next bar is stored. Orders still waiting for a bar are left
-    out; ones blocked by something else are reported with the reason."""
+    """Fill every order whose next bar is stored, then record each account's equity for
+    today. Orders still waiting for a bar are left out; ones blocked by something else
+    are reported with the reason."""
     repo = PaperRepo(ctx.conn)
     out = []
     for order in repo.pending():
         outcome = _try_fill(ctx, repo, order)
         if outcome is not None:
             out.append(outcome)
+    _record_equity(ctx)
     return out
+
+
+def account_score(ctx: AppContext, account: str) -> AccountScore:
+    view = account_view(ctx, account)
+    fills = PaperRepo(ctx.conn).fills(account)
+    holdings = _holdings(view)
+    unrealised = sum(p.value - p.cost for p in view.positions if p.value is not None)
+    costs = sum((f.fee + f.stamp) / f.rate + f.fx + f.slippage for f in fills)
+    history = EquityRepo(ctx.conn).history(account)
+    max_fall = max_drawdown(history)[0] if history else 0.0
+    return AccountScore(account, view.cash + holdings, ctx.config.risk.account, view.realised, unrealised, costs,
+                        max_fall)
+
+
+def equity_history(ctx: AppContext, account: str) -> list[tuple]:
+    """(date, equity) per day a fill run happened, oldest first."""
+    return EquityRepo(ctx.conn).history(account)
+
+
+def _record_equity(ctx: AppContext) -> None:
+    today = ctx.clock.utcnow().date()
+    for account in ACCOUNTS:
+        view = account_view(ctx, account)
+        EquityRepo(ctx.conn).record(account, today, view.cash, _holdings(view))
+
+
+def _holdings(view: AccountView) -> float:
+    """Positions at their last close; one without a rate yet counts as nothing."""
+    return sum(p.value for p in view.positions if p.value is not None)
 
 
 def account_view(ctx: AppContext, account: str) -> AccountView:
