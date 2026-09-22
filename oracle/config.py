@@ -78,6 +78,17 @@ class RiskConfig:
     """Yearly price swing at which a position gets the full `max_position`."""
 
 
+@dataclass(frozen=True)
+class StrategyConfig:
+    """The strategy account's rules beyond `[risk]` sizing; see DECISIONS.md."""
+
+    min_probability: float = 0.6
+    """Buy only on a buy or strong buy lean at least this likely."""
+    max_positions: int = 10
+    stop_loss: float = 0.08
+    """Sell a position this far below its average cost."""
+
+
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
@@ -110,6 +121,7 @@ class Config:
     fx: FxConfig = field(default_factory=FxConfig)
     analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
+    strategy: StrategyConfig = field(default_factory=StrategyConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -165,6 +177,9 @@ def _apply(raw: dict) -> Config:
         if name == "risk":
             values[name] = _risk(value)
             continue
+        if name == "strategy":
+            values[name] = _strategy(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -202,6 +217,23 @@ def _risk(raw: object) -> RiskConfig:
             wanted = "a share above 0 and below 1" if key in _RISK_SHARES else "a positive number"
             raise ConfigError(f"risk.{key} must be {wanted}, got {value!r}")
     return RiskConfig(**{k: float(v) for k, v in raw.items()})
+
+
+def _strategy(raw: object) -> StrategyConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("strategy must be a [strategy] table")
+    _reject_unknown(raw, StrategyConfig, "[strategy]")
+    for key, value in raw.items():
+        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if key == "max_positions":
+            ok, wanted = isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 50, "1 to 50"
+        elif key == "min_probability":
+            ok, wanted = number and 0 < value <= 1, "above 0, at most 1"
+        else:
+            ok, wanted = number and 0 < value < 1, "above 0 and below 1"
+        if not ok:
+            raise ConfigError(f"strategy.{key} must be {wanted}, got {value!r}")
+    return StrategyConfig(**raw)
 
 
 def _keys(raw: object) -> Keys:

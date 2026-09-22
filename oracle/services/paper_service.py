@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
+from oracle.broker.rules import Decision, Holding, Rules, decide
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -15,13 +16,16 @@ from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
-from oracle.store.paper import EquityRepo, FillRow, Order, PaperRepo
+from oracle.store.leans import LeanRepo
+from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision, Order, PaperRepo
+from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import EXCHANGES
 
 __all__ = [
     "ACCOUNTS", "AccountScore", "AccountView", "FillOutcome", "Order", "Position", "account_score", "account_view",
-    "equity_history", "fill_pending", "place_buy", "place_sell",
+    "equity_history", "fill_pending", "place_buy", "place_sell", "strategy_log", "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "manual")
@@ -98,6 +102,42 @@ def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = 
     now = ctx.clock.utcnow()
     return repo.add_order(account, listing, "sell", None, shares,
                           to_utc_iso(now), now.date(), source)
+
+
+def strategy_step(ctx: AppContext) -> list[Decision]:
+    """Run the strategy rules over every watched listing's latest lean and queue the
+    resulting orders on the strategy account. Every decision, skips included, is logged."""
+    account = "strategy"
+    repo, leans = PaperRepo(ctx.conn), LeanRepo(ctx.conn)
+    view = account_view(ctx, account)
+    watched = WatchlistRepo(ctx.conn).all_symbols()
+    found = {s: lean for s in watched if (lean := leans.latest(s)) is not None}
+    holdings = {p.symbol: Holding(p.symbol, p.shares, p.cost, p.value) for p in view.positions}
+    sizes = {s: size for s in watched if (size := _risk_size(ctx, s)) is not None}
+    pending = {o.symbol for o in repo.pending(account)}
+    rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
+                  ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
+    decisions = decide(found, holdings, view.cash, view.cash + _holdings(view), sizes, rules, pending)
+    today, logged = ctx.clock.utcnow().date(), []
+    for d in decisions:
+        order = None
+        if d.action == "buy":
+            order = place_buy(ctx, d.symbol, d.cash, account, source=account)
+        elif d.action == "sell":
+            order = place_sell(ctx, d.symbol, None, account, source=account)
+        logged.append(LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None))
+    DecisionRepo(ctx.conn).log(logged)
+    return decisions
+
+
+def strategy_log(ctx: AppContext, limit: int = 50) -> list[LoggedDecision]:
+    """The strategy account's recent decisions, newest first."""
+    return DecisionRepo(ctx.conn).recent(limit)
+
+
+def _risk_size(ctx: AppContext, symbol: str) -> float | None:
+    risk = next((s for s in SignalRepo(ctx.conn).latest(symbol) if s.analyst == "risk"), None)
+    return dict(risk.figures).get("size_share") if risk else None
 
 
 def fill_pending(ctx: AppContext) -> list[FillOutcome]:

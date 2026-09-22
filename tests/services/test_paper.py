@@ -6,7 +6,10 @@ from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.fx_service import update_fx
-from oracle.services.paper_service import account_score, account_view, equity_history, fill_pending, place_buy, place_sell
+from oracle.services.paper_service import (
+    account_score, account_view, equity_history, fill_pending, place_buy, place_sell, strategy_log,
+    strategy_step,
+)
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
@@ -163,3 +166,42 @@ async def test_the_largest_fall_in_equity(ctx, yahoo, clock):
     fill_pending(ctx)
     low = account_score(ctx, "manual").equity
     assert account_score(ctx, "manual").max_fall == pytest.approx(low / peak - 1)
+
+
+def seed(ctx, symbol, label, probability=0.7, size_share=0.05, as_of=date(2026, 9, 21)):
+    from oracle.analysts.signals import AnalystSignal
+    from oracle.broker.rules import Lean
+    from oracle.store.leans import LeanRepo
+    from oracle.store.signals import SignalRepo
+
+    LeanRepo(ctx.conn).save([Lean(symbol, as_of, label, probability, "baseline")], "because", "2026-09-21T20:00:00Z")
+    SignalRepo(ctx.conn).save([AnalystSignal("risk", symbol, as_of, 0.0, 1.0, "r", (("size_share", size_share),))],
+                              "2026-09-21T20:00:00Z")
+
+
+async def test_a_strategy_step_buys_on_a_lean_and_logs_every_decision(ctx, yahoo, clock):
+    seed(ctx, "AAPL", "buy")
+    seed(ctx, "VOD.L", "buy", probability=0.5)
+    from oracle.services.watch_service import watch
+    watch(ctx, "AAPL")
+    watch(ctx, "VOD.L")
+    decisions = {d.symbol: d for d in strategy_step(ctx)}
+    assert decisions["AAPL"].action == "buy" and decisions["AAPL"].cash == pytest.approx(500.0)
+    assert decisions["VOD.L"].action == "skip"
+    [order] = account_view(ctx, "strategy").pending
+    assert (order.symbol, order.source) == ("AAPL", "strategy")
+    logged = {d.symbol: d for d in strategy_log(ctx)}
+    assert logged["VOD.L"].reason.startswith("probability") and logged["AAPL"].action == "buy"
+
+
+async def test_a_strategy_step_sells_on_a_sell_lean(ctx, yahoo, clock):
+    from oracle.services.watch_service import watch
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    strategy_step(ctx)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    seed(ctx, "AAPL", "strong sell", as_of=date(2026, 9, 22))
+    [d] = [d for d in strategy_step(ctx) if d.symbol == "AAPL"]
+    assert d.action == "sell"
+    assert account_view(ctx, "strategy").pending[0].side == "sell"

@@ -435,3 +435,18 @@ after fetching; `oracle tick` (phase 10) will own that sequencing.
 **Alternatives:** A `Broker` protocol now (deferred to phase 12: with one implementation
 it would only delegate). Fractional shares (rejected: most non-US venues do not offer
 them). Filling at the placing day's close (rejected: look-ahead).
+
+## 2026-09-22 - Strategy rules engine
+
+**Context:** Ticket 04: the strategy account trades on leans under fixed rules.
+**Decision:** A pure `decide()` over leans, holdings, cash, equity and risk sizes. Sells
+first: a stop (8% or more below average cost) sells whatever the lean says; otherwise a
+sell or strong sell lean sells the whole position. Buys by probability, highest first:
+buy or strong buy at 60% or more, at most 10 positions, sized at the risk analyst's
+suggested share of equity capped at 10%, never spending below the 20% cash floor. Sell
+proceeds are not counted until they fill. Held or pending listings are not bought again.
+Every decision, skips included, is logged with its reason. Thresholds are a
+`[strategy]` config section; sizing reuses `[risk]`. Leans are stored per listing, date
+and source so AI leans can sit beside the baseline.
+**Alternatives:** Topping up held positions (deferred: needs a rebalance rule).
+Counting pending sell proceeds (rejected: optimistic; a sell can still be rejected).

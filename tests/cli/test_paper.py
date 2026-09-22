@@ -71,3 +71,8 @@ def test_show_scores_both_accounts_and_history_lists_equity(run):
     run("paper", "fill")
     _, out, _ = run("paper", "history", "--account", "manual")
     assert "2026-09-18" in out and "10,000.00" in out
+
+
+def test_step_without_leans_says_how_to_get_them(run):
+    code, out, _ = run("paper", "step")
+    assert code == 0 and "oracle analyse" in out

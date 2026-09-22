@@ -101,3 +101,13 @@ def test_risk_values_out_of_range_are_refused(tmp_path, line):
     path.write_text(f"[risk]\n{line}\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="risk."):
         load_config(path, cwd=tmp_path)
+
+
+def test_strategy_rules_default_to_the_design_and_are_validated(tmp_path):
+    s = load_config(None, cwd=tmp_path)[0].strategy
+    assert (s.min_probability, s.max_positions, s.stop_loss) == (0.6, 10, 0.08)
+    path = tmp_path / "oracle.toml"
+    for line in ("max_positions = 0", "stop_loss = 1.5", "min_probability = 0", "max_positions = 2.5"):
+        path.write_text(f"[strategy]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="strategy."):
+            load_config(path, cwd=tmp_path)

@@ -106,3 +106,33 @@ class EquityRepo:
             "SELECT date, cash + holdings FROM paper_equity WHERE account = ? ORDER BY date", (account,)
         )
         return [(date.fromisoformat(d), v) for d, v in rows]
+
+
+@dataclass(frozen=True)
+class LoggedDecision:
+    day: date
+    symbol: str
+    action: str
+    cash: float | None
+    reason: str
+    order_id: int | None
+
+
+class DecisionRepo:
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def log(self, rows: list[LoggedDecision]) -> None:
+        with transaction(self._conn):
+            self._conn.executemany(
+                "INSERT INTO strategy_decisions (day, symbol, action, cash, reason, order_id) VALUES (?, ?, ?, ?, ?, ?)",
+                [(r.day.isoformat(), r.symbol, r.action, r.cash, r.reason, r.order_id) for r in rows],
+            )
+
+    def recent(self, limit: int = 50) -> list[LoggedDecision]:
+        """Newest first."""
+        rows = self._conn.execute(
+            "SELECT day, symbol, action, cash, reason, order_id FROM strategy_decisions ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [LoggedDecision(date.fromisoformat(r[0]), *r[1:]) for r in rows]

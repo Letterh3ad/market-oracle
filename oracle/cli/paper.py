@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 
 from oracle.services.context import AppContext
-from oracle.services.paper_service import ACCOUNTS, FillOutcome, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell
+from oracle.services.paper_service import (
+    ACCOUNTS, FillOutcome, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
+    strategy_log, strategy_step,
+)
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -22,6 +25,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     show = sub.add_parser("show", help="cash, positions and pending orders")
     show.add_argument("--account", choices=ACCOUNTS)
     show.set_defaults(handler=show_cmd)
+    sub.add_parser("step", help="run the strategy rules and queue its orders").set_defaults(handler=step_cmd)
+    sub.add_parser("log", help="the strategy account's recent decisions").set_defaults(handler=log_cmd)
     history = sub.add_parser("history", help="daily equity of an account")
     history.add_argument("--account", choices=ACCOUNTS, default="strategy")
     history.set_defaults(handler=history_cmd)
@@ -80,4 +85,20 @@ def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         return 0
     for day, equity in rows:
         print(f"{day.isoformat()}  {equity:>12,.2f} {ctx.config.base_currency}")
+    return 0
+
+
+def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    decisions = strategy_step(ctx)
+    if not decisions:
+        print("no decisions: no watched listing has a lean yet (run `oracle analyse`)")
+    for d in decisions:
+        amount = f" for {d.cash:,.2f} {ctx.config.base_currency}" if d.cash is not None else ""
+        print(f"{d.symbol}: {d.action}{amount} ({d.reason})")
+    return 0
+
+
+def log_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    for d in strategy_log(ctx):
+        print(f"{d.day.isoformat()}  {d.symbol:<12}{d.action:<6}{d.reason}")
     return 0
