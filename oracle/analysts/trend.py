@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from oracle.analysts.indicators import closes, mean
 from oracle.analysts.signals import AnalystSignal, Skipped
 from oracle.market.bars import Bar
 
@@ -23,9 +24,9 @@ def trend(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
     symbol = bars[-1].symbol
     if len(bars) <= YEAR:
         return Skipped(NAME, symbol, f"needs a year of prices ({YEAR + 1} trading days), has {len(bars)}")
-    closes = [b.adj_close if b.adj_close is not None else b.close for b in bars]
-    close, sma50, sma200 = closes[-1], _mean(closes[-50:]), _mean(closes[-200:])
-    momentum = closes[-MONTH - 1] / closes[-YEAR - 1] - 1
+    prices = closes(bars)
+    close, sma50, sma200 = prices[-1], mean(prices[-50:]), mean(prices[-200:])
+    momentum = prices[-MONTH - 1] / prices[-YEAR - 1] - 1
     parts = (
         _side(close, sma200),
         _side(sma50, sma200),
@@ -39,10 +40,6 @@ def trend(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
         reason=_reason(parts, momentum),
         figures=(("close", close), ("sma50", sma50), ("sma200", sma200), ("momentum_12_1", momentum)),
     )
-
-
-def _mean(values: Sequence[float]) -> float:
-    return sum(values) / len(values)
 
 
 def _side(value: float, average: float) -> float:

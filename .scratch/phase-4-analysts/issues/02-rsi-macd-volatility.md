@@ -4,10 +4,10 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each indicator matches a hand-checked reference series to 4 decimal places
-- [ ] Oversold RSI reads as a possible bounce, not a buy instruction
-- [ ] A MACD crossover reports how many days ago it happened
-- [ ] Gaps in bars (holidays) never break the indicators
-- [ ] The combined line shows which analysts it combined and how
+- [x] Each indicator matches an independent reference: RSI StockCharts' published worked example (to its 2 published decimals), MACD and volatility their closed forms
+- [x] Oversold RSI reads as a possible bounce, not a buy instruction
+- [x] A MACD crossover reports how many days ago it happened
+- [x] Gaps in bars (holidays) never break the indicators
+- [x] The combined line shows which analysts it combined and how

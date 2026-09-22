@@ -323,3 +323,18 @@ adjusted closes so dividends and splits do not read as drops. Analysts may impor
 data types; the architecture test enforces it.
 **Alternatives:** Direction as its own field (rejected: can contradict the score).
 Confidence from signal strength (rejected: that double-counts the score).
+
+## 2026-09-22 - Technical analyst defaults
+
+**Context:** Ticket 02 needs RSI, MACD and volatility signals and one combined line.
+**Decision:** RSI (Wilder, 14): outside 30..70 is a mean-reversion hint worded "may
+bounce / may pull back", never an instruction; score 0.5..1 by how far out; confidence
+is how many of the last 5 readings share the zone. MACD (12/26/9): the histogram's sign
+counts twice, the line's once (the crossover leads, the side of zero confirms); reports
+the crossover's age. Volatility (20-day, annualised) never gives a direction; against
+its median over the past year it cuts the combined confidence (swings 2x usual halve
+it). The combined `technicals` signal is the confidence-weighted average of trend, RSI
+and MACD. RSI, MACD and volatility need 60 bars.
+**Alternatives:** RSI as a trend-follower (overbought = strong; rejected: conflicts with
+the trend analyst, which already covers direction). Volatility as bearish (rejected:
+high volatility says risk, not direction).

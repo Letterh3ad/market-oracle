@@ -41,6 +41,7 @@ def test_analyse_prints_each_signal_with_its_reason(run):
     assert code == 0
     assert "AAPL" in out and "trend" in out and "bearish" in out
     assert "below its 200-day average" in out
+    assert "technicals" in out and "Combines trend, RSI and MACD" in out
 
 
 def test_a_skipped_analyst_says_why(run):

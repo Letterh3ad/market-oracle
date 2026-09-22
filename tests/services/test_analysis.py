@@ -44,7 +44,7 @@ async def ctx(tmp_path, yahoo, clock):
 
 async def test_analyse_stores_the_trend_signal_for_the_last_bar(ctx):
     result = analyse(ctx, "aapl")
-    assert [s.analyst for s in result.signals] == ["trend"]
+    assert "trend" in [s.analyst for s in result.signals]
     stored = signal_history(ctx, "AAPL", "trend")
     assert [(s.as_of, s.direction.value) for s in stored] == [(DAYS[-1], "bullish")]
 
@@ -69,3 +69,9 @@ async def test_an_unknown_symbol_is_refused_with_suggestions(ctx):
 async def test_a_listing_without_prices_says_how_to_get_them(ctx):
     with pytest.raises(NoPrices, match="oracle prices update MSFT"):
         analyse(ctx, "MSFT")
+
+
+async def test_analyse_runs_every_technical_and_the_combined_line(ctx):
+    result = analyse(ctx, "AAPL")
+    assert [s.analyst for s in result.signals] == ["trend", "rsi", "macd", "volatility", "technicals"]
+    assert signal_history(ctx, "AAPL", "technicals")[-1].as_of == DAYS[-1]

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
+from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
 from oracle.analysts.trend import trend
 from oracle.services.context import AppContext
 from oracle.services.errors import NoPrices
@@ -28,7 +29,8 @@ def analyse(ctx: AppContext, symbol: str) -> Analysis:
     bars = BarRepo(ctx.conn).history(listing)
     if not bars:
         raise NoPrices(f"no prices stored for {listing}: run `oracle prices update {listing}`")
-    results = [trend(bars)]
+    results = [f(bars) for f in (trend, rsi_signal, macd_signal, volatility_signal)]
+    results.append(combine([r for r in results if isinstance(r, AnalystSignal)]))
     signals = tuple(r for r in results if isinstance(r, AnalystSignal))
     SignalRepo(ctx.conn).save(list(signals), to_utc_iso(ctx.clock.utcnow()))
     return Analysis(listing, signals, tuple(r for r in results if isinstance(r, Skipped)))
