@@ -32,6 +32,16 @@ ships conservative, documented defaults instead of asking for trading judgement.
 - Full GraphRAG (see Decisions).
 - Being public. Private repo; copyleft dependencies are acceptable, permissive preferred.
 
+## After v1 (user requests, 2026-09-22)
+
+- **Custom portfolios.** User-created paper portfolios beside the strategy and manual
+  ledgers, each scored the same way.
+- **Friends on the network.** A friend connects over the local WiFi, and later from outside
+  via port forwarding, with their own portfolio to trade against the automated system.
+  Needs per-user accounts and login, portfolios owned by a user, and HTTPS before any port
+  is forwarded (a forwarded port is reachable by anyone, not just the friend). Shared
+  market data and one rate budget across users. Until then the GUI binds to localhost.
+
 ## Hardware
 
 Windows 11, RTX 5060 Laptop 8GB. Default LLM `qwen3:4b-instruct-2507-q8_0` via Ollama
