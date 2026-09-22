@@ -22,8 +22,8 @@ def test_a_source_override_changes_only_what_it_sets(tmp_path):
 
 
 def test_a_new_source_needs_a_rate(tmp_path):
-    with pytest.raises(ConfigError, match="eodhd"):
-        _load(tmp_path, "[sources.eodhd]\ncooldown_s = 60\n")
+    with pytest.raises(ConfigError, match="tiingo"):
+        _load(tmp_path, "[sources.tiingo]\ncooldown_s = 60\n")
 
 
 def test_a_non_positive_rate_is_rejected(tmp_path):

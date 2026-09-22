@@ -4,10 +4,14 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Without a key EODHD is skipped silently and reported as "no key" by `prices sources`
-- [ ] With Yahoo failing (breaker open or HTTP error) and a key set, bars come from EODHD
-- [ ] Symbol mapping covers US, LSE, XETRA, Frankfurt, Paris, Amsterdam, Milan, Madrid, Swiss, Toronto, Tokyo, Hong Kong, Korea, India, Australia; others skip
-- [ ] Network smoke test against EODHD's public demo key (AAPL.US)
-- [ ] Keys never appear in logs, errors or `prices sources` output
+- [x] Without a key EODHD is skipped silently and reported as "no key" by `prices sources`
+- [x] With Yahoo failing (breaker open or HTTP error) and a key set, bars come from EODHD
+- [x] Symbol mapping covers US, LSE, XETRA, Frankfurt, Paris, Amsterdam, Milan, Madrid, Swiss, Toronto, Tokyo, Hong Kong, Korea, India, Australia; others skip
+- [x] Network smoke test against EODHD's public demo key (AAPL.US)
+- [x] Keys never appear in logs, errors or `prices sources` output
+
+## Comments
+
+Non-US EODHD codes and LSE pence are unverified until `pytest -m network` runs with `ORACLE_EODHD_KEY` set (cross-checks six exchanges against Yahoo).

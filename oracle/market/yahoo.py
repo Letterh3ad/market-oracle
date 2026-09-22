@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timezone
 from urllib.parse import quote
 
 from oracle.market.bars import Bar, local_date, major_unit
-from oracle.market.sources import NoData, SourceFailed
+from oracle.market.sources import Instrument, NoData, SourceFailed
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
 
@@ -21,7 +21,8 @@ class YahooPrices:
     def __init__(self, client: RateLimitedClient) -> None:
         self._client = client
 
-    async def daily_bars(self, symbol: str, since: date | None, now: datetime) -> list[Bar]:
+    async def daily_bars(self, instrument: Instrument, since: date | None, now: datetime) -> list[Bar]:
+        symbol = instrument.symbol
         params = {"interval": "1d", "includeAdjustedClose": "true"}
         if since is None:
             params["range"] = HISTORY
@@ -32,7 +33,7 @@ class YahooPrices:
         try:
             resp = await self._client.get(SOURCE, url, params=params)
         except (RequestFailed, CircuitOpen) as exc:
-            raise SourceFailed(str(exc)) from exc
+            raise SourceFailed(str(exc).removeprefix(f"{SOURCE}: ")) from exc
         if resp.status_code == 404:
             raise NoData(_error_text(resp) or "no data")
         if resp.status_code != 200:

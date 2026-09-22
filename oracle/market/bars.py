@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 
 # Quotes in a currency's minor unit: London in pence, Johannesburg in cents, Tel Aviv
 # in agorot. Stored in the major unit so every price compares directly.
-_SUB_UNITS = {"GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ILA": ("ILS", 100)}
+_SUB_UNITS = {
+    "GBp": ("GBP", 100), "GBX": ("GBP", 100), "ZAc": ("ZAR", 100), "ZAC": ("ZAR", 100), "ILA": ("ILS", 100),
+}
 
 
 @dataclass(frozen=True)

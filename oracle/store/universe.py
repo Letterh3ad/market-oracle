@@ -45,6 +45,7 @@ class Resolved:
     company_key: str
     name: str
     """The company's name, from its primary listing."""
+    currency: str | None
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ class UniverseRepo:
     def resolve(self, symbol: str) -> Resolved | None:
         """A symbol in any case, as stored, with its company; None if not listed."""
         row = self._conn.execute(
-            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name
+            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name, l.currency
                FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
                WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
             {"s": symbol.strip()},

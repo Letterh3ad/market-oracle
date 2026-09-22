@@ -49,3 +49,11 @@ def test_show_before_any_update_says_how(run):
 def test_an_unavailable_price_is_an_error_without_a_traceback(run):
     code, _, err = run("prices", "update", "NOPE")
     assert code == 1 and "no listing" in err and "Traceback" not in err
+
+
+def test_sources_lists_the_chain_and_why_a_source_is_off(run, monkeypatch):
+    monkeypatch.delenv("ORACLE_EODHD_KEY", raising=False)
+    code, out, _ = run("prices", "sources")
+    assert code == 0
+    rows = [line.split(None, 2) for line in out.splitlines()[1:]]
+    assert rows == [["1", "yahoo", "on"], ["2", "eodhd", "off (no key)"]]

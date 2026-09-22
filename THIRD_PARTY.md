@@ -34,6 +34,7 @@ Called over HTTP, not redistributed.
 | Service | Terms | Use |
 |---|---|---|
 | Yahoo Finance chart API (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars (`oracle/market/yahoo.py`) |
+| EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars (`oracle/market/eodhd.py`) |
 
 ## Dev dependencies
 

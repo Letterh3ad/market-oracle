@@ -4,7 +4,7 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
-from oracle.services.prices_service import price_history, update_listing
+from oracle.services.prices_service import price_history, price_sources, update_listing
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -16,6 +16,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     show.add_argument("symbol")
     show.add_argument("--days", type=int, default=10, help="most recent trading days (default 10)")
     show.set_defaults(handler=show_cmd)
+    sub.add_parser("sources", help="where prices come from, in order").set_defaults(handler=sources_cmd)
 
 
 def update_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -34,4 +35,12 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         adj = f"{b.adj_close:.2f}" if b.adj_close is not None else "n/a"
         volume = f"{b.volume:,}" if b.volume is not None else "n/a"
         print(f"{b.date.isoformat():<12}{b.close:>12.2f}{adj:>12}{volume:>14}")
+    return 0
+
+
+def sources_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    print(f"{'#':<4}{'source':<10}state")
+    for s in price_sources(ctx):
+        state = "on" if s.enabled else f"off ({s.reason})"
+        print(f"{s.position or '-':<4}{s.name:<10}{state}")
     return 0
