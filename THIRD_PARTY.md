@@ -34,7 +34,10 @@ Called over HTTP, not redistributed.
 | Service | Terms | Use |
 |---|---|---|
 | Yahoo Finance chart API (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars (`oracle/market/yahoo.py`) |
-| EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars (`oracle/market/eodhd.py`) |
+| EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars and FX (`oracle/market/eodhd.py`, `fx.py`) |
+| ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
+| Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |
+| ExchangeRate-API open access (open.er-api.com) | Free tier; attribution required: "Rates By Exchange Rate API" (https://www.exchangerate-api.com), shown wherever its rates are displayed | today's FX for currencies others lack (`oracle/market/fx.py`) |
 
 ## Dev dependencies
 

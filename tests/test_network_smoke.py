@@ -59,3 +59,22 @@ async def test_real_eodhd_agrees_with_yahoo_across_exchanges(tmp_path, symbol):
     assert shared, "no common trading day"
     day = shared[-1]
     assert closes["eodhd"][day] == pytest.approx(closes["yahoo"][day], rel=0.03)
+
+
+@pytest.mark.parametrize("source, currency", [
+    ("yahoo", "USD"), ("ecb", "USD"), ("ecb", "EUR"), ("frankfurter", "JPY"), ("open_er_api", "TWD"),
+])
+async def test_real_fx_sources(tmp_path, source, currency):
+    from datetime import timedelta
+
+    from oracle.market import fx
+    from oracle.services.http import open_client
+
+    build = {"yahoo": fx.YahooFx, "ecb": fx.EcbFx, "frankfurter": fx.FrankfurterFx, "open_er_api": fx.OpenErFx}
+    with open_context(Config(db_path=tmp_path / "o.db"), None) as ctx:
+        now = ctx.clock.utcnow()
+        async with open_client(ctx) as client:
+            rates = await build[source](client).daily_rates("GBP", currency, now.date() - timedelta(days=14), now)
+    assert rates and all(r.source == source and r.units_per_base > 0 for r in rates)
+    sane = {"USD": (1.0, 2.0), "EUR": (1.0, 1.5), "JPY": (120, 260), "TWD": (30, 60)}[currency]
+    assert sane[0] < rates[-1].units_per_base < sane[1]

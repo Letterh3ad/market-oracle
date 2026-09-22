@@ -4,7 +4,7 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
-from oracle.services.prices_service import price_history, price_sources, update_listing
+from oracle.services.prices_service import price_history, price_history_in_base, price_sources, update_listing
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -15,6 +15,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     show = sub.add_parser("show", help="stored daily bars for a listing")
     show.add_argument("symbol")
     show.add_argument("--days", type=int, default=10, help="most recent trading days (default 10)")
+    show.add_argument("--base", action="store_true", help="add the close in base currency (GBP by default)")
     show.set_defaults(handler=show_cmd)
     sub.add_parser("sources", help="where prices come from, in order").set_defaults(handler=sources_cmd)
 
@@ -26,15 +27,23 @@ def update_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    bars = price_history(ctx, args.symbol, args.days)
+    rows = price_history_in_base(ctx, args.symbol, args.days) if args.base else None
+    bars = [r.bar for r in rows] if rows is not None else price_history(ctx, args.symbol, args.days)
     if not bars:
         print(f"no prices stored yet: run `oracle prices update {args.symbol.upper()}`")
         return 0
-    print(f"{'date':<12}{'close':>12}{'adj close':>12}{'volume':>14}  {bars[-1].currency}")
-    for b in bars:
+    base = f"{'in ' + ctx.config.base_currency:>12}" if rows is not None else ""
+    print(f"{'date':<12}{'close':>12}{'adj close':>12}{'volume':>14}  {bars[-1].currency}{base}")
+    for i, b in enumerate(bars):
         adj = f"{b.adj_close:.2f}" if b.adj_close is not None else "n/a"
         volume = f"{b.volume:,}" if b.volume is not None else "n/a"
-        print(f"{b.date.isoformat():<12}{b.close:>12.2f}{adj:>12}{volume:>14}")
+        converted = ""
+        if rows is not None:
+            value = rows[i].close_base
+            converted = f"{f'{value:.2f}' if value is not None else 'n/a':>15}"
+        print(f"{b.date.isoformat():<12}{b.close:>12.2f}{adj:>12}{volume:>14}{converted}")
+    if rows is not None and any(r.close_base is None for r in rows):
+        print("n/a: no exchange rate stored for that day; run `oracle fx update`")
     return 0
 
 

@@ -26,6 +26,10 @@ class SourceConfig:
 DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "yahoo": SourceConfig(rate_per_second=0.5),
     "eodhd": SourceConfig(rate_per_second=2.0),
+    "ecb": SourceConfig(rate_per_second=0.5),
+    "frankfurter": SourceConfig(rate_per_second=0.5),
+    # Its free tier asks for about one call a day; one update makes one call.
+    "open_er_api": SourceConfig(rate_per_second=0.05),
     "gdelt": SourceConfig(rate_per_second=0.2),
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
@@ -35,6 +39,7 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
 
 
 PRICE_SOURCES = ("yahoo", "eodhd")
+FX_SOURCES = ("yahoo", "ecb", "frankfurter", "eodhd", "open_er_api")
 KEY_NAMES = ("eodhd",)
 
 
@@ -42,6 +47,12 @@ KEY_NAMES = ("eodhd",)
 class PricesConfig:
     sources: tuple[str, ...] = PRICE_SOURCES
     """Tried in order for each listing until one has data; keyed ones only with a key."""
+
+
+@dataclass(frozen=True)
+class FxConfig:
+    sources: tuple[str, ...] = FX_SOURCES
+    """Tried in order for each currency until one has rates; keyed ones only with a key."""
 
 
 class Keys:
@@ -72,6 +83,7 @@ class Config:
     base_currency: str = "GBP"
     sources: dict[str, SourceConfig] = field(default_factory=lambda: dict(DEFAULT_SOURCES))
     prices: PricesConfig = field(default_factory=PricesConfig)
+    fx: FxConfig = field(default_factory=FxConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -116,7 +128,10 @@ def _apply(raw: dict) -> Config:
             values[name] = _keys(value)
             continue
         if name == "prices":
-            values[name] = PricesConfig(sources=_source_list(value, "prices", PRICE_SOURCES))
+            values[name] = PricesConfig(sources=_source_list(value, "prices", PRICE_SOURCES, PricesConfig))
+            continue
+        if name == "fx":
+            values[name] = FxConfig(sources=_source_list(value, "fx", FX_SOURCES, FxConfig))
             continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
@@ -144,10 +159,10 @@ def _keys(raw: object) -> Keys:
     return Keys({name: value.strip() for name, value in raw.items()})
 
 
-def _source_list(raw: object, section: str, known: tuple[str, ...]) -> tuple[str, ...]:
+def _source_list(raw: object, section: str, known: tuple[str, ...], cls: type) -> tuple[str, ...]:
     if not isinstance(raw, dict):
         raise ConfigError(f"{section} must be a [{section}] table")
-    _reject_unknown(raw, PricesConfig, f"[{section}]")
+    _reject_unknown(raw, cls, f"[{section}]")
     names = raw.get("sources", [])
     if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
         raise ConfigError(f"{section}.sources must be a non-empty list of names")

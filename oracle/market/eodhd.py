@@ -45,6 +45,16 @@ class EodhdPrices:
             raise NoData("exchange not covered")
         if not instrument.currency:
             raise NoData("currency unknown")
+        rows = await self.eod(code, since, now)
+        quoted = MINOR_UNITS.get((code.rpartition(".")[2], instrument.currency), instrument.currency)
+        currency, per_unit = major_unit(quoted)
+        try:
+            return [_bar(instrument.symbol, row, currency, per_unit) for row in rows]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SourceFailed(f"unreadable response ({type(exc).__name__})") from None
+
+    async def eod(self, code: str, since: date | None, now: datetime) -> list[dict]:
+        """Raw daily rows for an EODHD code (`AAPL.US`, `GBPUSD.FOREX`)."""
         start = since if since is not None else now.date() - HISTORY
         params = {"api_token": self._key, "fmt": "json", "from": start.isoformat()}
         try:
@@ -57,12 +67,13 @@ class EodhdPrices:
             raise NoData(f"{code} not found")
         if resp.status_code != 200:
             raise SourceFailed(f"HTTP {resp.status_code}")
-        quoted = MINOR_UNITS.get((code.rpartition(".")[2], instrument.currency), instrument.currency)
-        currency, per_unit = major_unit(quoted)
         try:
-            return [_bar(instrument.symbol, row, currency, per_unit) for row in resp.json()]
-        except (KeyError, TypeError, ValueError) as exc:
-            raise SourceFailed(f"unreadable response ({type(exc).__name__})") from None
+            rows = resp.json()
+        except ValueError:
+            raise SourceFailed("unreadable response") from None
+        if not isinstance(rows, list):
+            raise SourceFailed("unreadable response")
+        return rows
 
     def _redact(self, text: str) -> str:
         # The key travels in the query string, so any message quoting a URL carries it.

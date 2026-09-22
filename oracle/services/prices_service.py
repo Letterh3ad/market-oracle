@@ -6,20 +6,35 @@ from datetime import date, timedelta
 from oracle.config import PRICE_SOURCES
 from oracle.market.bars import Bar
 from oracle.market.eodhd import EodhdPrices
+from oracle.market.fx import pick_rate
 from oracle.market.sources import Instrument, NoData, PriceSource, SourceFailed
 from oracle.market.yahoo import YahooPrices
 from oracle.net.client import RateLimitedClient
 from oracle.services.context import AppContext
 from oracle.services.errors import PriceUnavailable
 from oracle.services.http import open_client
+from oracle.services.sources import missing_key
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
+from oracle.store.fx import FxRepo
 from oracle.store.db import to_utc_iso
 
-__all__ = ["Bar", "PriceUpdate", "SourceInfo", "price_history", "price_sources", "update_listing"]
+__all__ = [
+    "Bar", "ConvertedBar", "PriceUpdate", "SourceInfo",
+    "price_history", "price_history_in_base", "price_sources", "update_listing",
+]
 
 # Re-fetched on every update, so a bar stored mid-session is replaced by the final one.
 OVERLAP = timedelta(days=7)
+
+
+@dataclass(frozen=True)
+class ConvertedBar:
+    bar: Bar
+    rate: float | None
+    """Units of the bar's currency per unit of base currency; None when no rate is
+    stored for the day or the five before it."""
+    close_base: float | None
 
 
 @dataclass(frozen=True)
@@ -59,13 +74,30 @@ def price_history(ctx: AppContext, symbol: str, days: int | None = None) -> list
     return BarRepo(ctx.conn).history(resolve_symbol(ctx, symbol).symbol, days)
 
 
+def price_history_in_base(ctx: AppContext, symbol: str, days: int | None = None) -> list[ConvertedBar]:
+    """Stored bars with each close converted to the base currency at that day's rate."""
+    bars = price_history(ctx, symbol, days)
+    base = ctx.config.base_currency
+    fx = FxRepo(ctx.conn, base)
+    series: dict[str, list] = {}
+    out = []
+    for b in bars:
+        if b.currency == base:
+            out.append(ConvertedBar(b, 1.0, b.close))
+            continue
+        rates = series.setdefault(b.currency, fx.history(b.currency))
+        picked = pick_rate(rates, b.date)
+        rate = picked.units_per_base if picked else None
+        out.append(ConvertedBar(b, rate, b.close / rate if rate else None))
+    return out
+
+
 def price_sources(ctx: AppContext) -> list[SourceInfo]:
     order = ctx.config.prices.sources
     out = []
     for name in PRICE_SOURCES:
         position = order.index(name) + 1 if name in order else None
-        missing_key = _KEYED.get(name) is not None and ctx.config.keys.get(name) is None
-        reason = "not in [prices] sources" if position is None else "no key" if missing_key else None
+        reason = "not in [prices] sources" if position is None else "no key" if missing_key(ctx, name) else None
         out.append(SourceInfo(name, position, reason is None, reason))
     return sorted(out, key=lambda s: (s.position is None, s.position or 0, s.name))
 
@@ -82,10 +114,6 @@ async def _first_with_data(ctx: AppContext, client: RateLimitedClient, instrumen
             return bars, source.name
         failures.append(f"{source.name}: no data")
     raise PriceUnavailable(f"no price data for {instrument.symbol} ({'; '.join(failures)})")
-
-
-# Sources needing a key, by key name; they are skipped until it is set.
-_KEYED = {"eodhd": "eodhd"}
 
 
 def _sources(ctx: AppContext, client: RateLimitedClient) -> list[PriceSource]:

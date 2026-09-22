@@ -30,6 +30,9 @@ class BarRepo:
             )
         return sum(1 for b in {b.date for b in bars} if b.isoformat() not in known)
 
+    def currencies(self) -> list[str]:
+        return [r[0] for r in self._conn.execute("SELECT DISTINCT currency FROM bars ORDER BY currency")]
+
     def last_date(self, symbol: str) -> date | None:
         row = self._conn.execute("SELECT MAX(date) FROM bars WHERE symbol = ?", (symbol,)).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None
