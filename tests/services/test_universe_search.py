@@ -65,7 +65,6 @@ def test_delisted_listings_are_hidden_unless_asked_for(ctx):
     ('"quotes', ["QQQ.L"]),
     ("apple*", ["AAPL", "APLE"]),
     ("NEAR(apple", []),
-    ("", []),
     (") & -", []),
 ])
 def test_punctuation_never_reaches_fts_syntax(ctx, query, expected):

@@ -21,3 +21,7 @@ class UniverseUnavailable(ServiceError):
 class UniverseNotLoaded(ServiceError):
     def __init__(self) -> None:
         super().__init__("the universe is not loaded yet: run `oracle universe refresh`")
+
+
+class UnknownFilterValue(ServiceError):
+    pass

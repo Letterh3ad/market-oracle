@@ -199,3 +199,17 @@ freed at once by the pid check. The whole swap is one transaction, so readers se
 universe or the new one, never a mix.
 **Alternatives:** `holding()` (rejected: nondeterministic under the fake clock for no gain
 on a job this short).
+
+## 2026-09-22 - Universe filters: company fields from the primary, size-first ranking
+
+**Context:** FinanceDatabase repeats company fields on every listing, not always
+consistently (Siemens' Indian listings say India), and bm25 alone ranked junk lines
+("NVIDIA CORP NVIDIA ORD" on the LSE's OTC board) above NVDA.
+**Decision:** Country, sector, industry and market cap filter and sort on the company's
+primary listing; exchange filters the listing, and the row shown is that exchange's
+line. Values match case-insensitively; an unknown value fails with the closest real
+ones. Text search ranks exact symbol, then market-cap band, then bm25. No text means
+browse, biggest first. Blanks sort last in both directions. When nothing can select a
+non-primary line, the query reads primaries only (browse ~1s to ~150ms on real data).
+**Alternatives:** Per-listing company fields (rejected: Siemens would count as Indian).
+Pure bm25 (rejected: ranks short junk names first).

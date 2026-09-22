@@ -4,11 +4,11 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Filters combine with AND; the same filter repeated combines with OR (`--country Japan --country Germany`)
-- [ ] Filter values match case-insensitively
-- [ ] Market cap sorts by band order (Mega > Large > Mid > Small > Micro > Nano > unknown), not alphabetically
-- [ ] `oracle universe facets country` lists countries with company counts
-- [ ] A typo such as `--country Germny` suggests "Germany"
-- [ ] Filtering with no query lists companies in sort order
+- [x] Filters combine with AND; the same filter repeated combines with OR (`--country Japan --country Germany`)
+- [x] Filter values match case-insensitively
+- [x] Market cap sorts by band order (Mega > Large > Mid > Small > Micro > Nano > unknown), not alphabetically
+- [x] `oracle universe facets country` lists countries with company counts
+- [x] A typo such as `--country Germny` suggests "Germany"
+- [x] Filtering with no query lists companies in sort order

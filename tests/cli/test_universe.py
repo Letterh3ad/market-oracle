@@ -76,3 +76,41 @@ def test_search_before_a_refresh_is_an_error_saying_how_to_load(run):
     code, _, err = run("universe", "search", "apple")
     assert code == 1
     assert "oracle universe refresh" in err
+
+
+def _symbols(out):
+    return [line.split()[0] for line in out.splitlines()[1:] if line.strip()]
+
+
+def test_search_without_a_query_filters_and_sorts(run):
+    run("universe", "refresh")
+    _, out, _ = run("universe", "search", "--country", "japan", "--country", "United States")
+    assert _symbols(out) == ["AAPL", "7203.T"]
+    _, out, _ = run("universe", "search", "--sort", "name", "--desc", "--limit", "1")
+    assert _symbols(out) == ["7203.T"]
+    _, out, _ = run("universe", "search", "--market-cap", "mega", "--exchange", "GER")
+    assert _symbols(out) == ["APC.DE"]
+
+
+def test_a_typo_in_a_filter_is_an_error_with_a_suggestion(run):
+    run("universe", "refresh")
+    code, _, err = run("universe", "search", "--country", "Japna")
+    assert code == 1
+    assert "Japan" in err
+
+
+def test_facets_list_values_with_company_counts(run):
+    run("universe", "refresh")
+    code, out, _ = run("universe", "facets", "country")
+    assert code == 0
+    counts = dict(line.rsplit(None, 1) for line in out.splitlines()[1:])
+    assert {k.strip(): v for k, v in counts.items()} == {
+        "United States": "1", "Japan": "1", "Germany": "1"
+    }
+
+
+def test_exchange_facets_show_the_market_name(run):
+    run("universe", "refresh")
+    _, out, _ = run("universe", "facets", "exchange")
+    ger = next(line for line in out.splitlines() if line.startswith("GER"))
+    assert ger.split() == ["GER", "1", "XETRA"]

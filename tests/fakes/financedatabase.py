@@ -35,9 +35,10 @@ APPLE = "US0378331005"
 # 7 listings, 4 companies, 1 delisted.
 BASIC = [
     equity("AAPL", "Apple Inc.", isin=APPLE, sector="Information Technology", market_cap="Mega Cap"),
-    equity("APC.DE", "Apple Inc.", exchange="GER", isin=APPLE, currency="EUR"),
+    equity("APC.DE", "Apple Inc.", exchange="GER", isin=APPLE, currency="EUR", market="XETRA"),
     equity("AAPL.MI", "Apple Inc.", exchange="MIL", isin=APPLE, currency="EUR"),
-    equity("7203.T", "Toyota Motor Corporation", "Japan", "JPX", currency="JPY"),
+    equity("7203.T", "Toyota Motor Corporation", "Japan", "JPX", currency="JPY",
+           sector="Consumer Discretionary", market_cap="Large Cap"),
     equity("TM", "Toyota Motor Corporation", "Japan", "NYQ"),
     equity("OLD.F", "Oldco AG", "Germany", "FRA", delisted="True"),
     equity("NONAME.F", "", "Germany", "FRA"),
@@ -71,9 +72,11 @@ class FakeFinanceDatabase:
 UNIVERSE = BASIC + [
     equity("APLE", "Apple Hospitality REIT, Inc.", sector="Real Estate", market_cap="Small Cap"),
     equity("T", "AT&T Inc.", sector="Communication Services", market_cap="Large Cap"),
-    equity("KO", "The Coca-Cola Company", exchange="NYQ", market_cap="Mega Cap"),
+    equity("KO", "The Coca-Cola Company", exchange="NYQ", sector="Consumer Staples",
+           market_cap="Mega Cap"),
     equity("QQQ.L", '"Quotes" Ltd', "United Kingdom", "LSE"),
-    equity("X.TO", "TMX Group Limited", "Canada", "TOR"),
-    equity("SSNLF", "Samsung C&T Corp", "South Korea", "PNK"),
-    equity("005930.KS", "Samsung Electronics Co., Ltd.", "South Korea", "KSC", market_cap="Mega Cap"),
+    equity("X.TO", "TMX Group Limited", "Canada", "TOR", sector="Financials", market_cap="Mid Cap"),
+    equity("SSNLF", "Samsung C&T Corp", "South Korea", "PNK", sector="Industrials"),
+    equity("005930.KS", "Samsung Electronics Co., Ltd.", "South Korea", "KSC",
+           sector="Information Technology", market_cap="Mega Cap"),
 ]
