@@ -9,4 +9,4 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pytest -q
 ```
 
-Design: `docs/design/2026-09-22-market-oracle-design.md`.
+Design decisions: `DECISIONS.md`. Planning notes are kept locally, outside the repo.
