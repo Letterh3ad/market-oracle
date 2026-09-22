@@ -4,10 +4,10 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Add, remove and show round-trip; adding a symbol twice is a no-op
-- [ ] Lists are created on first add; removing the last member keeps the list
-- [ ] Watching one listing does not watch the company's other listings
-- [ ] A symbol missing after refresh stays on the list, flagged as missing
-- [ ] Unknown symbol on add gives a clear error, with search suggestions
+- [x] Add, remove and show round-trip; adding a symbol twice is a no-op
+- [x] Lists are created on first add; removing the last member keeps the list
+- [x] Watching one listing does not watch the company's other listings
+- [x] A symbol missing after refresh stays on the list, flagged as missing
+- [x] Unknown symbol on add gives a clear error, with search suggestions

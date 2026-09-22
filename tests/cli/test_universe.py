@@ -154,3 +154,26 @@ def test_tagging_an_unknown_symbol_is_an_error_with_suggestions(run):
     code, _, err = run("tag", "add", "APPL", "ai")
     assert code == 1
     assert "AAPL" in err
+
+
+def test_watch_commands_round_trip(run):
+    run("universe", "refresh")
+    code, out, _ = run("watch", "add", "apc.de")
+    assert code == 0 and "watching Apple Inc. (APC.DE) on main" in out
+    code, _, _ = run("watch", "add", "TM", "--list", "income")
+    assert code == 0
+    _, out, _ = run("watch", "show")
+    assert _symbols(out) == ["APC.DE"] and "EUR" in out
+    _, out, _ = run("watch", "lists")
+    assert [line.split()[:2] for line in out.splitlines()] == [["income", "1"], ["main", "1"]]
+    code, _, _ = run("watch", "remove", "APC.DE")
+    assert code == 0
+    code, out, _ = run("watch", "remove", "APC.DE")
+    assert code == 1 and "not on main" in out
+
+
+def test_showing_an_unknown_watchlist_is_an_error_with_a_suggestion(run):
+    run("universe", "refresh")
+    assert run("watch", "add", "AAPL", "--list", "income")[0] == 0
+    code, _, err = run("watch", "show", "incme")
+    assert code == 1 and "income" in err

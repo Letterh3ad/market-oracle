@@ -5,7 +5,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from oracle.cli import jobs, net, status, tag, universe
+from oracle.cli import jobs, net, status, tag, universe, watch
 from oracle.services.context import load_settings, open_context
 from oracle.services.errors import ConfigInvalid, ServiceError
 
@@ -15,6 +15,7 @@ SUBCOMMANDS: list[tuple[str, Callable]] = [
     ("jobs", jobs.register),
     ("universe", universe.register),
     ("tag", tag.register),
+    ("watch", watch.register),
 ]
 
 

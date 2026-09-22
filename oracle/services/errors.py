@@ -33,3 +33,11 @@ class UnknownSymbol(ServiceError):
 
 class InvalidTag(ServiceError):
     pass
+
+
+class UnknownWatchlist(ServiceError):
+    pass
+
+
+class InvalidWatchlistName(ServiceError):
+    pass
