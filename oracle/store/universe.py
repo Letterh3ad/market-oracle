@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
+from oracle.store.tags import TagRepo
 from oracle.universe.listings import MARKET_CAP_BANDS, Listing
 from oracle.universe.query import COMPANY_FIELDS, FILTER_FIELDS, UniverseQuery, fts_match
 
@@ -34,6 +35,14 @@ def _column(name: str) -> str:
 
 
 @dataclass(frozen=True)
+class Resolved:
+    symbol: str
+    company_key: str
+    name: str
+    """The company's name, from its primary listing."""
+
+
+@dataclass(frozen=True)
 class Facet:
     value: str
     companies: int
@@ -57,6 +66,7 @@ class SearchHit:
     delisted: bool
     listings: int
     """How many listings the company has (counting delisted ones only when shown)."""
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -92,6 +102,16 @@ class UniverseRepo:
         }
         return UniverseCounts(*row, by_type)
 
+    def resolve(self, symbol: str) -> Resolved | None:
+        """A symbol in any case, as stored, with its company; None if not listed."""
+        row = self._conn.execute(
+            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name
+               FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
+               WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
+            {"s": symbol.strip()},
+        ).fetchone()
+        return Resolved(*row) if row else None
+
     def search(self, q: UniverseQuery) -> list[SearchHit]:
         params: dict = {
             "q": q.text.strip(), "delisted": q.include_delisted, "limit": q.limit, "offset": q.offset
@@ -104,6 +124,12 @@ class UniverseRepo:
                 params[f"{name}_{i}"] = value
                 keys.append(f":{name}_{i}")
             where.append(f"{_column(name)} COLLATE NOCASE IN ({', '.join(keys)})")
+        for i, tag in enumerate(q.tags):
+            params[f"tag_{i}"] = tag
+            where.append(
+                f"""l.company_key IN (SELECT x.company_key FROM tags t
+                    JOIN listings x ON x.symbol = t.symbol WHERE t.tag = :tag_{i})"""
+            )
 
         match = fts_match(q.text)
         # With nothing able to pick a non-primary line, each company is its primary
@@ -131,7 +157,7 @@ class UniverseRepo:
                                      "p.company_key = l.company_key AND p.is_primary"}
                 WHERE {" AND ".join(where)}
             ), ranked AS ({_ALONE if primaries_only else _RANKED})
-            SELECT l.symbol, l.exchange, l.currency, l.delisted,
+            SELECT l.symbol, l.company_key, l.exchange, l.currency, l.delisted,
                    p.name, p.type, p.country, p.sector, p.industry, p.market_cap,
                    p.category_group, p.category, p.family,
                    (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key
@@ -142,15 +168,18 @@ class UniverseRepo:
             {"" if q.all_listings else "WHERE r.rn = 1"}
             ORDER BY {self._order(q, bool(match))}
             LIMIT :limit OFFSET :offset"""
+        rows = self._conn.execute(sql, params).fetchall()
+        # Fetched per page, not per candidate row: most rows never reach the page.
+        tags = TagRepo(self._conn).of_companies(list({r["company_key"] for r in rows}))
         return [
             SearchHit(
                 symbol=r["symbol"], name=r["name"] or r["symbol"], type=r["type"],
                 country=r["country"], exchange=r["exchange"], currency=r["currency"],
                 sector=r["sector"], industry=r["industry"], market_cap=r["market_cap"],
                 category_group=r["category_group"], category=r["category"], family=r["family"],
-                delisted=bool(r["delisted"]), listings=r["n"],
+                delisted=bool(r["delisted"]), listings=r["n"], tags=tags.get(r["company_key"], ()),
             )
-            for r in self._conn.execute(sql, params)
+            for r in rows
         ]
 
     @staticmethod

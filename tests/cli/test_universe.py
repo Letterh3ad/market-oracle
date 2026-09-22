@@ -124,3 +124,33 @@ def test_status_and_search_cover_etfs(run):
     assert "4 listings" in etf_line and "3 funds" in etf_line
     _, out, _ = run("universe", "search", "gilts", "--type", "etf")
     assert "Government Bonds" in out and "etf" in out
+
+
+def test_tag_commands_round_trip_and_show_in_search(run):
+    run("universe", "refresh")
+    code, out, _ = run("tag", "add", "APC.DE", "AI Hardware")
+    assert code == 0 and "ai hardware" in out and "Apple Inc." in out
+    _, out, _ = run("tag", "list", "aapl")
+    assert out.split("\n")[0].strip() == "ai hardware"
+    _, out, _ = run("universe", "search", "--tag", "ai hardware")
+    assert _symbols(out) == ["AAPL"] and "[ai hardware]" in out
+    _, out, _ = run("tag", "list")
+    assert out.split() == ["ai", "hardware", "AAPL"]
+    code, out, _ = run("tag", "remove", "AAPL", "ai hardware")
+    assert code == 0
+    _, out, _ = run("tag", "list")
+    assert "no tags" in out
+
+
+def test_removing_a_missing_tag_says_so(run):
+    run("universe", "refresh")
+    code, out, _ = run("tag", "remove", "AAPL", "nope")
+    assert code == 1
+    assert "not tagged" in out
+
+
+def test_tagging_an_unknown_symbol_is_an_error_with_suggestions(run):
+    run("universe", "refresh")
+    code, _, err = run("tag", "add", "APPL", "ai")
+    assert code == 1
+    assert "AAPL" in err

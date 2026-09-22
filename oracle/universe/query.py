@@ -16,6 +16,8 @@ SORTS = ("relevance", "name", "symbol", *FILTER_FIELDS)
 class UniverseQuery:
     text: str = ""
     filters: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    tags: tuple[str, ...] = ()
+    """Every one must be on the company (unlike filters, where repeats mean either)."""
     sort: str | None = None
     """None: relevance with text, market cap without."""
     descending: bool = False

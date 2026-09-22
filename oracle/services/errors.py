@@ -25,3 +25,11 @@ class UniverseNotLoaded(ServiceError):
 
 class UnknownFilterValue(ServiceError):
     pass
+
+
+class UnknownSymbol(ServiceError):
+    pass
+
+
+class InvalidTag(ServiceError):
+    pass

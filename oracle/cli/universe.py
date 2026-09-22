@@ -30,6 +30,10 @@ def register(parser: argparse.ArgumentParser) -> None:
             f"--{_flag(name)}", dest=name, action="append", default=[], metavar="VALUE",
             help="repeat for either; see `oracle universe facets`",
         )
+    search.add_argument(
+        "--tag", dest="tags", action="append", default=[], metavar="TAG",
+        help="repeat to require every tag",
+    )
     search.add_argument("--sort", choices=[_flag(s) for s in SORTS], help="default: relevance, or size when browsing")
     search.add_argument("--desc", action="store_true", help="reverse the sort")
     search.add_argument("--offset", type=int, default=0)
@@ -56,7 +60,7 @@ def status(ctx: AppContext, args: argparse.Namespace) -> int:
 def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     hits = search_universe(
         ctx, args.query,
-        filters={name: getattr(args, name) for name in FILTER_FIELDS},
+        filters={name: getattr(args, name) for name in FILTER_FIELDS}, tags=args.tags,
         sort=args.sort and _field(args.sort), descending=args.desc,
         all_listings=args.all_listings, include_delisted=args.include_delisted,
         limit=args.limit, offset=args.offset,
@@ -70,6 +74,7 @@ def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
             _others(h.listings - 1) if h.listings > 1 and not args.all_listings else "",
             "delisted" if h.delisted else "",
             h.type if h.type != "equity" else "",
+            f"[{', '.join(h.tags)}]" if h.tags else "",
         ) if n]
         size = (h.market_cap or "?").removesuffix(" Cap")
         print(

@@ -14,17 +14,19 @@ from oracle.services.errors import (
     UniverseNotLoaded,
     UniverseUnavailable,
     UnknownFilterValue,
+    UnknownSymbol,
 )
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.meta import MetaRepo
-from oracle.store.universe import Facet, SearchHit, UniverseRepo
+from oracle.store.tags import TagRepo
+from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
 from oracle.universe.listings import MARKET_CAP_BANDS, group_companies
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
-    "FILTER_FIELDS", "SORTS", "Facet", "SearchHit", "UniverseStatus",
-    "facets", "refresh_universe", "search_universe", "universe_status",
+    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "UniverseStatus",
+    "facets", "refresh_universe", "resolve_symbol", "search_universe", "universe_status",
 ]
 
 JOB = "universe_refresh"
@@ -67,6 +69,7 @@ def search_universe(
     text: str = "",
     *,
     filters: Mapping[str, Sequence[str]] | None = None,
+    tags: Sequence[str] = (),
     sort: str | None = None,
     descending: bool = False,
     all_listings: bool = False,
@@ -75,8 +78,8 @@ def search_universe(
     offset: int = 0,
 ) -> list[SearchHit]:
     """Companies matching every word of `text` (as a prefix of a name or symbol word)
-    and every filter; repeated values of one filter mean either. No text lists the
-    whole filtered universe, biggest first."""
+    and every filter; repeated values of one filter mean either, while every tag must be
+    present. No text lists the whole filtered universe, biggest first."""
     _require_loaded(ctx)
     if sort is not None and sort not in SORTS:
         raise ValueError(f"unknown sort {sort!r}")
@@ -85,7 +88,7 @@ def search_universe(
     repo = UniverseRepo(ctx.conn)
     checked = {name: _check(repo, name, values) for name, values in (filters or {}).items() if values}
     return repo.search(UniverseQuery(
-        text=text, filters=checked, sort=sort, descending=descending, all_listings=all_listings,
+        text=text, filters=checked, tags=_check_tags(ctx, tags), sort=sort, descending=descending, all_listings=all_listings,
         include_delisted=include_delisted, limit=limit, offset=offset,
     ))
 
@@ -94,6 +97,17 @@ def facets(ctx: AppContext, name: str) -> list[Facet]:
     _require_loaded(ctx)
     _check_field(name)
     return UniverseRepo(ctx.conn).facets(name)
+
+
+def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
+    """The listing as stored, or UnknownSymbol with search suggestions."""
+    _require_loaded(ctx)
+    found = UniverseRepo(ctx.conn).resolve(symbol)
+    if found:
+        return found
+    near = [h.symbol for h in search_universe(ctx, symbol, limit=3, include_delisted=True)]
+    hint = f"; did you mean {' or '.join(near)}?" if near else ""
+    raise UnknownSymbol(f"no listing {symbol!r} in the universe{hint}")
 
 
 def _require_loaded(ctx: AppContext) -> None:
@@ -119,13 +133,27 @@ def _check(repo: UniverseRepo, name: str, values: Sequence[str]) -> tuple[str, .
     out = []
     for value in values:
         k = key(value.strip())
-        if k in known:
-            out.append(known[k])
-            continue
-        close = [known[c] for c in difflib.get_close_matches(k, known, n=3, cutoff=0.6)]
-        hint = f"did you mean {' or '.join(close)}?" if close else f"see `oracle universe facets {name}`"
-        raise UnknownFilterValue(f"no {name.replace('_', ' ')} {value!r}; {hint}")
+        if k not in known:
+            raise UnknownFilterValue(_unknown(name.replace("_", " "), value, k, known,
+                                              f"see `oracle universe facets {name}`"))
+        out.append(known[k])
     return tuple(out)
+
+
+def _check_tags(ctx: AppContext, tags: Sequence[str]) -> tuple[str, ...]:
+    known = {t: t for t in TagRepo(ctx.conn).all_tags()}
+    out = []
+    for raw in tags:
+        tag = " ".join(raw.casefold().split())
+        if tag not in known:
+            raise UnknownFilterValue(_unknown("tag", raw, tag, known, "see `oracle tag list`"))
+        out.append(tag)
+    return tuple(out)
+
+
+def _unknown(what: str, value: str, key: str, known: Mapping[str, str], fallback: str) -> str:
+    close = [known[c] for c in difflib.get_close_matches(key, known, n=3, cutoff=0.6)]
+    return f"no {what} {value!r}; " + (f"did you mean {' or '.join(close)}?" if close else fallback)
 
 
 def _band_key(value: str) -> str:

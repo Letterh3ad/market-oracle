@@ -177,7 +177,8 @@ ISINs on subsidiaries (POSCO) run 34 to 96. Result on real data: 112,705 listing
 companies. Each company has one primary listing: active before delisted, then an
 exchange in its home country (the country most of its listings give), then exchange
 tier and market depth, then symbol. Search shows primaries unless `--all-listings`.
-Tags attach to the company key, so they cover every listing. Watchlists hold listings,
+Tags are stored against the symbol tagged and read through that listing's current
+company, so they cover every listing and survive a refresh that regroups companies. Watchlists hold listings,
 since a listing is what gets priced (phase 3). Both survive a refresh and flag members
 that vanished rather than dropping them.
 **Alternatives:** Show every listing (rejected: noise). Group by composite FIGI (rejected:
