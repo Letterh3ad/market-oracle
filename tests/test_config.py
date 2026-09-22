@@ -59,7 +59,7 @@ def test_example_file_documents_every_key():
     example = Path(__file__).resolve().parents[1] / "oracle.toml.example"
     config, _ = load_config(example, cwd=example.parent)
     text = example.read_text(encoding="utf-8")
-    assert all(f"{f.name} =" in text for f in fields(Config))
+    assert all(f"{f.name} =" in text or f"[{f.name}." in text for f in fields(Config))
     assert isinstance(config, Config)
 
 

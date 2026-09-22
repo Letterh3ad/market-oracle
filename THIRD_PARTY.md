@@ -16,7 +16,9 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 
 ## Runtime dependencies
 
-None yet.
+| Package | License | Use |
+|---|---|---|
+| httpx | BSD-3-Clause | async HTTP (`oracle/net/client.py`) |
 
 ## Dev dependencies
 

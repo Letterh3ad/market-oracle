@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
 DEFAULT_CONFIG_NAME = "oracle.toml"
@@ -13,9 +13,29 @@ class ConfigError(ValueError):
 
 
 @dataclass(frozen=True)
+class SourceConfig:
+    rate_per_second: float
+    cooldown_s: float = 900.0
+    max_retries: int = 3
+
+
+# Conservative on purpose: most of these are unofficial or unmetered-but-watched, and
+# an IP block costs far more than a slow tick. Reasons in DECISIONS.md.
+DEFAULT_SOURCES: dict[str, SourceConfig] = {
+    "yfinance": SourceConfig(rate_per_second=0.5),
+    "stooq": SourceConfig(rate_per_second=0.5),
+    "gdelt": SourceConfig(rate_per_second=0.2),
+    "google_news": SourceConfig(rate_per_second=0.5),
+    "ddgs": SourceConfig(rate_per_second=0.2),
+    "sec_edgar": SourceConfig(rate_per_second=5.0),
+}
+
+
+@dataclass(frozen=True)
 class Config:
     db_path: Path = Path("oracle.db")
     base_currency: str = "GBP"
+    sources: dict[str, SourceConfig] = field(default_factory=lambda: dict(DEFAULT_SOURCES))
 
 
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
@@ -39,6 +59,9 @@ def _apply(raw: dict) -> Config:
         raise ConfigError(f"unknown config key(s): {', '.join(unknown)}")
     values = {}
     for name, value in raw.items():
+        if name == "sources":
+            values[name] = _sources(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -51,6 +74,29 @@ def _apply(raw: dict) -> Config:
     if not re.fullmatch(r"[A-Z]{3}", config.base_currency):
         raise ConfigError(f"base_currency must be an ISO 4217 code like GBP, got {config.base_currency!r}")
     return config
+
+
+def _sources(raw: object) -> dict[str, SourceConfig]:
+    if not isinstance(raw, dict):
+        raise ConfigError("sources must be a table of [sources.<name>] sections")
+    merged = dict(DEFAULT_SOURCES)
+    known = {f.name: f for f in fields(SourceConfig)}
+    for name, table in raw.items():
+        if not isinstance(table, dict):
+            raise ConfigError(f"sources.{name} must be a table")
+        unknown = sorted(set(table) - set(known))
+        if unknown:
+            raise ConfigError(f"unknown key(s) in sources.{name}: {', '.join(unknown)}")
+        base = merged.get(name)
+        if base is None and "rate_per_second" not in table:
+            raise ConfigError(f"sources.{name} is new and needs rate_per_second")
+        values = {}
+        for key, value in table.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise ConfigError(f"sources.{name}.{key} must be a positive number, got {value!r}")
+            values[key] = int(value) if key == "max_retries" else float(value)
+        merged[name] = replace(base, **values) if base else SourceConfig(**values)
+    return merged
 
 
 def _resolve(config: Config, base: Path) -> Config:

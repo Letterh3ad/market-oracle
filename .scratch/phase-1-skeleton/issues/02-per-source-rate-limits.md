@@ -4,11 +4,11 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Two processes acquiring the same source concurrently respect its combined rate (multi-process test)
-- [ ] Different sources do not throttle each other
-- [ ] A run of 429/403/5xx trips that source's breaker; it stays open across a new process until cooldown
-- [ ] Retry-After and exponential backoff honoured
-- [ ] Sources and rates configured in `oracle.toml`
-- [ ] `oracle net status` output covers every configured source
+- [x] Two processes acquiring the same source concurrently respect its combined rate (multi-process test)
+- [x] Different sources do not throttle each other
+- [x] A run of 429/403/5xx trips that source's breaker; it stays open across a new process until cooldown
+- [x] Retry-After and exponential backoff honoured
+- [x] Sources and rates configured in `oracle.toml`
+- [x] `oracle net status` output covers every configured source

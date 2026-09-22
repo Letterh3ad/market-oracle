@@ -5,13 +5,14 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from oracle.cli import status
+from oracle.cli import net, status
 from oracle.config import ConfigError, load_config
 from oracle.services.context import open_context
 from oracle.services.errors import ServiceError
 
 SUBCOMMANDS: list[tuple[str, Callable]] = [
     ("status", status.register),
+    ("net", net.register),
 ]
 
 

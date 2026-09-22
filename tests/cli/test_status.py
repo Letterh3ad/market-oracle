@@ -3,6 +3,7 @@ import sys
 
 from oracle.cli.main import main
 from oracle.store.db import connect
+from oracle.store.migrate import SCHEMA_VERSION
 
 
 def _run(capsys, *argv):
@@ -21,7 +22,7 @@ def test_status_reports_schema_db_and_config_source(tmp_path, capsys):
     cfg.write_text('db_path = "o.db"\n', encoding="utf-8")
     code, out, _ = _run(capsys, "--config", str(cfg), "status")
     assert code == 0
-    assert _field(out, "schema") == "1"
+    assert _field(out, "schema") == str(SCHEMA_VERSION)
     assert _field(out, "database") == str(tmp_path / "o.db")
     assert _field(out, "config") == str(cfg)
     assert _field(out, "currency") == "GBP"

@@ -78,3 +78,26 @@ the default).
 slippage, FX spread, exchange hours and 0.5% LSE stamp duty. No shorting until v2. IBKR
 paper via `ib_async` in phase 12, the only free option covering global markets.
 **Alternatives:** Alpaca paper (rejected as the target: US stocks and crypto only).
+
+## 2026-09-22 - Rate limits are per source, held in SQLite, paced by wall-clock slots
+
+**Context:** The stalker had one API and one process, so an in-memory token bucket was
+enough. Here a scheduled tick and the GUI run as separate processes against many sources.
+**Decision:** `source_state` holds each source's next free slot as epoch seconds.
+`SourceGate.acquire` claims a slot inside `BEGIN IMMEDIATE` (which serialises processes)
+and sleeps outside it; idle time banks no burst. Backoff and Retry-After move the shared
+slot, so they slow every process. Breaker runs (429 x3, 403 x3, 5xx/transport x5) and
+the trip persist, so a restart does not reset a block. Verified by a two-subprocess test
+with a negative control. Library-based sources (yfinance) call the gate directly.
+**Alternatives:** Per-process buckets (rejected: two processes double the real rate).
+A monotonic clock (rejected: not comparable across processes). A lock-server process
+(rejected: another thing to keep alive for no gain over SQLite).
+
+## 2026-09-22 - Conservative default source rates
+
+**Context:** Most data sources here are unofficial or unmetered but watched; an IP block
+costs far more than a slow tick, and ticks run only ~3 times a day.
+**Decision:** yfinance 0.5/s, Stooq 0.5/s, GDELT 0.2/s (GDELT's own ask: one request
+per 5s), Google News 0.5/s, ddgs 0.2/s, SEC EDGAR 5/s (half SEC's published 10/s).
+Overridable per source in `oracle.toml`.
+**Alternatives:** Tune rates by probing (rejected: probing is how blocks happen).
