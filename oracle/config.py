@@ -55,6 +55,15 @@ class FxConfig:
     """Tried in order for each currency until one has rates; keyed ones only with a key."""
 
 
+@dataclass(frozen=True)
+class AnalystsConfig:
+    peers: int = 20
+    """Companies a factor score is compared against."""
+
+
+PEERS_RANGE = (5, 100)
+
+
 class Keys:
     """API keys for paid sources. Never shown: repr lists names only."""
 
@@ -81,6 +90,7 @@ class Config:
     sources: dict[str, SourceConfig] = field(default_factory=lambda: dict(DEFAULT_SOURCES))
     prices: PricesConfig = field(default_factory=PricesConfig)
     fx: FxConfig = field(default_factory=FxConfig)
+    analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -130,6 +140,9 @@ def _apply(raw: dict) -> Config:
         if name == "fx":
             values[name] = FxConfig(sources=_source_list(value, "fx", FX_SOURCES, FxConfig))
             continue
+        if name == "analysts":
+            values[name] = _analysts(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -142,6 +155,17 @@ def _apply(raw: dict) -> Config:
     if not re.fullmatch(r"[A-Z]{3}", config.base_currency):
         raise ConfigError(f"base_currency must be an ISO 4217 code like GBP, got {config.base_currency!r}")
     return config
+
+
+def _analysts(raw: object) -> AnalystsConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("analysts must be an [analysts] table")
+    _reject_unknown(raw, AnalystsConfig, "[analysts]")
+    peers = raw.get("peers", AnalystsConfig.peers)
+    low, high = PEERS_RANGE
+    if isinstance(peers, bool) or not isinstance(peers, int) or not low <= peers <= high:
+        raise ConfigError(f"analysts.peers must be a whole number from {low} to {high}, got {peers!r}")
+    return AnalystsConfig(peers=peers)
 
 
 def _keys(raw: object) -> Keys:

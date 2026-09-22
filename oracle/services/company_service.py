@@ -2,16 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
-from oracle.market import registry
 from oracle.market.fundamentals import FIGURES, Figure, Fundamentals
 from oracle.market.fx import pick_rate
-from oracle.market.sources import AllFailed, Instrument, first_success
+from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
+from oracle.services.fundamentals_service import fetch_fundamentals
 from oracle.services.fx_service import update_fx
-from oracle.services.http import open_client
 from oracle.services.prices_service import ConvertedBar, day_change, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
-from oracle.store.db import to_utc_iso
 from oracle.store.fundamentals import FundamentalsRepo
 from oracle.store.fx import FxRepo
 from oracle.store.tags import TagRepo
@@ -63,25 +61,10 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
 
 
 async def _fundamentals(ctx: AppContext, instrument: Instrument, refresh: bool) -> tuple[Fundamentals | None, str | None]:
-    repo = FundamentalsRepo(ctx.conn)
-    today = ctx.clock.utcnow().date()
-    stored = repo.latest(instrument.symbol)
-    if stored is not None and (stored.as_of >= today or not refresh):
-        return stored, None
-    if not refresh:
-        return None, "fundamentals not fetched yet (refresh off)"
-    try:
-        async with open_client(ctx) as client:
-            fresh, _ = await first_success(
-                registry.fundamentals_sources(ctx.config.prices.sources, client, ctx.config.keys),
-                lambda s: s.fundamentals(instrument, today),
-            )
-    except AllFailed as exc:
-        if stored is not None:
-            return stored, f"could not refresh ({exc}); showing {stored.as_of.isoformat()}"
-        return None, f"no fundamentals ({exc})"
-    repo.save(fresh, to_utc_iso(ctx.clock.utcnow()))
-    return fresh, None
+    if refresh:
+        return (await fetch_fundamentals(ctx, [instrument]))[instrument.symbol]
+    stored = FundamentalsRepo(ctx.conn).latest(instrument.symbol)
+    return (stored, None) if stored is not None else (None, "fundamentals not fetched yet (refresh off)")
 
 
 async def _market_cap_in_base(ctx: AppContext, f: Fundamentals | None, refresh: bool) -> tuple[float | None, str | None]:

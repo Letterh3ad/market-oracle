@@ -338,3 +338,15 @@ and MACD. RSI, MACD and volatility need 60 bars.
 **Alternatives:** RSI as a trend-follower (overbought = strong; rejected: conflicts with
 the trend analyst, which already covers direction). Volatility as bearish (rejected:
 high volatility says risk, not direction).
+
+## 2026-09-22 - Peer ordering and the shared fundamentals fetch
+
+**Context:** FinanceDatabase gives market cap only as a band (Mega, Large, ...), so
+"biggest 20" needs a tie-break; peers and the company view both fetch fundamentals.
+**Decision:** Peers are active equity companies (primary listing) in the same industry
+group, ordered by band, then by how many active listings the company has (a proxy for
+global prominence), then by name. Fewer than 5 in the industry group falls back to the
+sector. `fundamentals_service.fetch_fundamentals` is the one fetch path, with a maximum
+age: today for the company itself, 7 days for peers; one client and crumb per run.
+**Alternatives:** Ordering by fetched market cap (rejected: needs every candidate's
+fundamentals before choosing, far more traffic).

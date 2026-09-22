@@ -48,6 +48,19 @@ class Resolved:
     currency: str | None
 
 
+PEER_FIELDS = ("industry_group", "sector")
+
+
+@dataclass(frozen=True)
+class PeerRow:
+    symbol: str
+    """The company's primary listing."""
+    name: str
+    market_cap: str | None
+    """FinanceDatabase's size band, e.g. "Large Cap"."""
+    currency: str | None
+
+
 @dataclass(frozen=True)
 class ListingProfile:
     """A listing with its company's fields, read from the primary listing."""
@@ -61,6 +74,7 @@ class ListingProfile:
     type: str
     country: str | None
     sector: str | None
+    industry_group: str | None
     industry: str | None
     category: str | None
     family: str | None
@@ -137,7 +151,7 @@ class UniverseRepo:
         row = self._conn.execute(
             """SELECT l.symbol, p.symbol AS primary_symbol, p.currency AS primary_currency, l.company_key,
                       COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, p.country, p.sector,
-                      p.industry, p.category, p.family, l.exchange,
+                      p.industry_group, p.industry, p.category, p.family, l.exchange,
                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key AND x.delisted = 0)
                         AS listings,
                       p.website, p.summary
@@ -146,6 +160,23 @@ class UniverseRepo:
             {"s": symbol.strip()},
         ).fetchone()
         return ListingProfile(**dict(row)) if row else None
+
+    def peers(self, company_key: str, field: str, value: str, limit: int) -> list[PeerRow]:
+        """Other active equity companies sharing `field` (sector or industry_group), by
+        primary listing: biggest market-cap band first, then the most widely listed."""
+        if field not in PEER_FIELDS:
+            raise ValueError(f"peers are grouped by {' or '.join(PEER_FIELDS)}, not {field!r}")
+        rows = self._conn.execute(
+            f"""SELECT p.symbol, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.market_cap, p.currency,
+                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
+                FROM listings p
+                WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0
+                  AND p.{field} = :v AND p.company_key != :k
+                ORDER BY p.market_cap IS NULL, {_CAP_ORDER}, n DESC, name COLLATE NOCASE
+                LIMIT :limit""",
+            {"v": value, "k": company_key, "limit": limit},
+        )
+        return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))

@@ -25,6 +25,10 @@ sources = ["yahoo", "eodhd"]
 [fx]
 sources = ["yahoo", "ecb", "frankfurter", "eodhd", "open_er_api"]
 
+# Deterministic analysts.
+[analysts]
+peers = 20   # companies a factor score is compared against (5 to 100)
+
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.
 [keys]

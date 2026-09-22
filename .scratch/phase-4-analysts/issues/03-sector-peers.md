@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The peer list excludes the company itself and funds
-- [ ] A sparse industry group falls back to the sector, and says so
-- [ ] A second run within 7 days makes no fundamentals requests
-- [ ] A peer whose fundamentals fail is listed as missing, and the rest still load
-- [ ] `[analysts] peers` changes the group size; values outside 5..100 are refused
+- [x] The peer list excludes the company itself and funds
+- [x] A sparse industry group falls back to the sector, and says so
+- [x] A second run within 7 days makes no fundamentals requests
+- [x] A peer whose fundamentals fail is listed as missing, and the rest still load
+- [x] `[analysts] peers` changes the group size; values outside 5..100 are refused
