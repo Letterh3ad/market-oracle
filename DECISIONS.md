@@ -150,3 +150,35 @@ same 30s deadline as the busy timeout. The race test now starts `connect()` behi
 barrier with 10 processes, which reproduced the failure every run before the fix.
 **Alternatives:** Serialise first open with a file lock (rejected: more moving parts for a
 one-line retry).
+
+## 2026-09-22 - Universe: FinanceDatabase data files loaded into SQLite, no library
+
+**Context:** The `financedatabase` package pulls in pandas and downloads the same `.bz2`
+files from GitHub on use. Equities alone are 112,707 rows (93MB CSV); loading that per
+command is slow, and tags and watchlists need to join against it.
+**Decision:** Fetch the equities and ETF `.bz2` files ourselves through the gate (source
+`financedatabase`), pinned to a resolved commit SHA, and load them into SQLite with
+stdlib `bz2`/`csv` in one atomic swap. Name and symbol search uses FTS5. Delisted rows
+(10,404) are kept but hidden by default.
+**Alternatives:** The library with pandas in-memory filtering (rejected: heavy dependency,
+seconds per query, no joins). Funds, indices, currencies and crypto (deferred: not needed
+for a stock tool yet).
+
+## 2026-09-22 - One row per company by default; tags on companies, watchlists on listings
+
+**Context:** The same company lists on many exchanges (Apple has 19 rows: AAPL, APC.DE,
+AAPL.MI...), so raw search results are mostly duplicates. Only 27% of rows carry an ISIN.
+**Decision:** A company key is the ISIN when present, else normalised name plus country.
+Each company has one primary listing: on an exchange in its home country, else the
+highest in a fixed exchange ranking. Search shows primaries unless `--all-listings`.
+Tags attach to the company key, so they cover every listing. Watchlists hold listings,
+since a listing is what gets priced (phase 3). Both survive a refresh and flag members
+that vanished rather than dropping them.
+**Alternatives:** Show every listing (rejected: noise). Group by composite FIGI (rejected:
+sparser than ISIN here). Tags on listings (rejected: tagging APC.DE should tag Apple).
+
+## 2026-09-22 - yfinance enrichment moves to phase 3
+
+**Context:** Enriching opened or watched companies needs the PriceSource plumbing.
+**Decision:** Phase 2 is the offline universe only; enrichment ships with phase 3.
+**Alternatives:** A thin yfinance call in phase 2 (rejected: built twice).
