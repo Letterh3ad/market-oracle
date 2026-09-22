@@ -58,3 +58,9 @@ def test_a_watchlist_of_one_gives_no_correlation_and_says_why():
 
 def test_too_little_history_is_skipped():
     assert isinstance(risk("ME", dated(alternating(30, 0.02)), {}, **SETTINGS), Skipped)
+
+
+def test_correlation_needs_60_shared_days():
+    a = dated(alternating(60, 0.01))
+    assert correlation(a[:59], a[:59]) is None
+    assert correlation(a, a) == pytest.approx(1.0)

@@ -60,15 +60,15 @@ def score(name: str, company: Fundamentals, peers: Sequence[Fundamentals], basis
 
 
 def value(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(_BY_NAME["value"], company, peers, basis)
+    return score("value", company, peers, basis)
 
 
 def quality(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(_BY_NAME["quality"], company, peers, basis)
+    return score("quality", company, peers, basis)
 
 
 def growth(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
-    return _score(_BY_NAME["growth"], company, peers, basis)
+    return score("growth", company, peers, basis)
 
 
 def _score(factor: Factor, company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:

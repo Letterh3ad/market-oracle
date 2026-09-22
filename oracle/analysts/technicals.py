@@ -45,7 +45,7 @@ def macd_signal(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
     # The crossover (histogram) leads; which side of zero the line is on confirms.
     score = (2 * signs[-1] + _sign(line[-1])) / 3
     confidence = (1.0 if signs[-1] == _sign(line[-1]) else 0.5) if score else 0.0
-    side = {1: "above", -1: "below", 0: "level with"}[signs[-1]]
+    side = "above" if signs[-1] > 0 else "below"
     if signs[-1] == 0:
         when = "is level with its own average"
     elif days < 0:
