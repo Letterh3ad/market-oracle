@@ -1,20 +1,19 @@
-"""EODHD (eodhd.com, paid): daily bars for listings on the exchanges mapped below.
+"""EODHD (eodhd.com, paid): daily bars, FX and fundamentals.
 
-Only US symbols are verified against the public demo key; the others follow EODHD's
-documented exchange codes and are checked by the keyed network smoke test."""
+Only US symbols are verified against the public demo key; the other exchanges follow
+EODHD's documented codes and are checked by the keyed network smoke test."""
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
+from oracle.market import sources
 from oracle.market.bars import Bar, major_unit
 from oracle.market.sources import Instrument, NoData, SourceFailed
 from oracle.net.client import RateLimitedClient
-from oracle.net.errors import CircuitOpen, RequestFailed
 
 SOURCE = "eodhd"
-EOD_URL = "https://eodhd.com/api/eod/{code}"
-HISTORY = timedelta(days=5 * 365 + 1)
+API = "https://eodhd.com/api"
 
 # Yahoo suffix -> EODHD exchange code. No suffix is a US listing.
 EXCHANGES = {
@@ -32,12 +31,42 @@ def eodhd_code(symbol: str) -> str | None:
     return f"{base}.{exchange}" if exchange else None
 
 
-class EodhdPrices:
-    name = SOURCE
+class EodhdClient:
+    """Authenticated JSON calls; the key rides in the query string, as EODHD requires."""
 
     def __init__(self, client: RateLimitedClient, key: str) -> None:
         self._client = client
         self._key = key
+
+    async def get_json(self, path: str, params: dict | None = None):
+        try:
+            resp = await sources.get(
+                self._client, SOURCE, f"{API}/{path}",
+                {"api_token": self._key, "fmt": "json", **(params or {})},
+                not_found=(), secret=self._key,
+            )
+        except SourceFailed as exc:
+            if str(exc) in ("HTTP 401", "HTTP 403"):
+                raise SourceFailed("key rejected") from None
+            if str(exc) == "HTTP 404":
+                raise NoData(f"{path.rsplit('/', 1)[-1]} not found") from None
+            raise
+        return resp.json()
+
+    async def eod(self, code: str, since: date | None, now: datetime) -> list[dict]:
+        """Raw daily rows for an EODHD code (`AAPL.US`, `GBPUSD.FOREX`)."""
+        start = since if since is not None else now.date() - sources.HISTORY
+        rows = await self.get_json(f"eod/{code}", {"from": start.isoformat()})
+        if not isinstance(rows, list):
+            raise SourceFailed("unreadable response")
+        return rows
+
+
+class EodhdPrices:
+    name = SOURCE
+
+    def __init__(self, eodhd: EodhdClient) -> None:
+        self._eodhd = eodhd
 
     async def daily_bars(self, instrument: Instrument, since: date | None, now: datetime) -> list[Bar]:
         code = eodhd_code(instrument.symbol)
@@ -45,41 +74,10 @@ class EodhdPrices:
             raise NoData("exchange not covered")
         if not instrument.currency:
             raise NoData("currency unknown")
-        rows = await self.eod(code, since, now)
+        rows = await self._eodhd.eod(code, since, now)
         quoted = MINOR_UNITS.get((code.rpartition(".")[2], instrument.currency), instrument.currency)
         currency, per_unit = major_unit(quoted)
-        try:
-            return [_bar(instrument.symbol, row, currency, per_unit) for row in rows]
-        except (KeyError, TypeError, ValueError) as exc:
-            raise SourceFailed(f"unreadable response ({type(exc).__name__})") from None
-
-    async def eod(self, code: str, since: date | None, now: datetime) -> list[dict]:
-        """Raw daily rows for an EODHD code (`AAPL.US`, `GBPUSD.FOREX`)."""
-        start = since if since is not None else now.date() - HISTORY
-        rows = await self.get_json(EOD_URL.format(code=code), {"from": start.isoformat()}, code)
-        if not isinstance(rows, list):
-            raise SourceFailed("unreadable response")
-        return rows
-
-    async def get_json(self, url: str, params: dict, code: str):
-        try:
-            resp = await self._client.get(SOURCE, url, params={"api_token": self._key, "fmt": "json", **params})
-        except (RequestFailed, CircuitOpen) as exc:
-            raise SourceFailed(self._redact(str(exc).removeprefix(f"{SOURCE}: "))) from None
-        if resp.status_code in (401, 403):
-            raise SourceFailed("key rejected")
-        if resp.status_code == 404:
-            raise NoData(f"{code} not found")
-        if resp.status_code != 200:
-            raise SourceFailed(f"HTTP {resp.status_code}")
-        try:
-            return resp.json()
-        except ValueError:
-            raise SourceFailed("unreadable response") from None
-
-    def _redact(self, text: str) -> str:
-        # The key travels in the query string, so any message quoting a URL carries it.
-        return text.replace(self._key, "***")
+        return [_bar(instrument.symbol, row, currency, per_unit) for row in rows]
 
 
 def _bar(symbol: str, row: dict, currency: str, per_unit: int) -> Bar:

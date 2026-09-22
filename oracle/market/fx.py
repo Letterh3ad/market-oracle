@@ -9,12 +9,11 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 
-from oracle.market import eodhd, yahoo
-from oracle.market.sources import Instrument, NoData, SourceFailed
+from oracle.market import sources, yahoo
+from oracle.market.eodhd import EodhdClient
+from oracle.market.sources import Instrument, NoData
 from oracle.net.client import RateLimitedClient
-from oracle.net.errors import CircuitOpen, RequestFailed
 
-HISTORY = timedelta(days=5 * 365 + 1)
 # How far back a rate may stand in for a day without one (weekends, holidays).
 MAX_RATE_AGE = timedelta(days=5)
 # What the ECB publishes (and Frankfurter, which serves ECB data), plus the euro.
@@ -65,8 +64,8 @@ class YahooFx:
 class EodhdFx:
     name = "eodhd"
 
-    def __init__(self, client: RateLimitedClient, key: str) -> None:
-        self._eodhd = eodhd.EodhdPrices(client, key)
+    def __init__(self, eodhd: EodhdClient) -> None:
+        self._eodhd = eodhd
 
     async def daily_rates(self, base, currency, since, now):
         rows = await self._eodhd.eod(f"{base}{currency}.FOREX", since, now)
@@ -86,9 +85,9 @@ class EcbFx:
         if not {base, currency} <= ECB_CURRENCIES:
             raise NoData("not an ECB currency")
         wanted = sorted({base, currency} - {"EUR"})
-        start = since if since is not None else now.date() - HISTORY
-        resp = await _get(self._client, self.name, self.URL.format(currencies="+".join(wanted)),
-                          {"startPeriod": start.isoformat(), "format": "csvdata"})
+        start = since if since is not None else now.date() - sources.HISTORY
+        resp = await sources.get(self._client, self.name, self.URL.format(currencies="+".join(wanted)),
+                                 {"startPeriod": start.isoformat(), "format": "csvdata"}, not_found=(404, 422))
         per_eur: dict[str, dict[date, float]] = {}
         for row in csv.DictReader(io.StringIO(resp.text)):
             if row.get("OBS_VALUE"):
@@ -118,17 +117,14 @@ class FrankfurterFx:
     async def daily_rates(self, base, currency, since, now):
         if not {base, currency} <= ECB_CURRENCIES:
             raise NoData("not an ECB currency")
-        start = since if since is not None else now.date() - HISTORY
-        resp = await _get(self._client, self.name, self.URL.format(start=start.isoformat()),
-                          {"from": base, "to": currency})
-        try:
-            rates = resp.json()["rates"]
-            return sorted(
-                (FxRate(currency, date.fromisoformat(d), float(v[currency]), self.name) for d, v in rates.items()),
-                key=lambda r: r.date,
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise SourceFailed(f"unreadable response ({type(exc).__name__})") from None
+        start = since if since is not None else now.date() - sources.HISTORY
+        resp = await sources.get(self._client, self.name, self.URL.format(start=start.isoformat()),
+                                 {"from": base, "to": currency}, not_found=(404, 422))
+        rates = resp.json()["rates"]
+        return sorted(
+            (FxRate(currency, date.fromisoformat(d), float(v[currency]), self.name) for d, v in rates.items()),
+            key=lambda r: r.date,
+        )
 
 
 # Required by its free tier wherever its rates are displayed.
@@ -148,22 +144,11 @@ class OpenErFx:
 
     async def daily_rates(self, base, currency, since, now):
         if base not in self._latest:
-            self._latest[base] = (await _get(self._client, self.name, self.URL.format(base=base))).json()
+            resp = await sources.get(self._client, self.name, self.URL.format(base=base))
+            self._latest[base] = resp.json()
         body = self._latest[base]
         value = (body.get("rates") or {}).get(currency)
         if value is None:
             raise NoData("currency not covered")
         day = datetime.fromtimestamp(body["time_last_update_unix"], timezone.utc).date()
         return [FxRate(currency, day, float(value), self.name)]
-
-
-async def _get(client: RateLimitedClient, source: str, url: str, params: dict | None = None):
-    try:
-        resp = await client.get(source, url, params=params)
-    except (RequestFailed, CircuitOpen) as exc:
-        raise SourceFailed(str(exc).removeprefix(f"{source}: ")) from None
-    if resp.status_code in (404, 422):
-        raise NoData("no data")
-    if resp.status_code != 200:
-        raise SourceFailed(f"HTTP {resp.status_code}")
-    return resp

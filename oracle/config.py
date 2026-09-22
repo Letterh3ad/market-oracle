@@ -67,9 +67,6 @@ class Keys:
     def with_(self, name: str, value: str) -> Keys:
         return Keys({**self._values, name: value})
 
-    def secrets(self) -> list[str]:
-        return list(self._values.values())
-
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Keys) and other._values == self._values
 

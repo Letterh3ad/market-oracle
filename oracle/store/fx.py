@@ -35,6 +35,12 @@ class FxRepo:
         ).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None
 
+    def first_date(self, currency: str) -> date | None:
+        row = self._conn.execute(
+            "SELECT MIN(date) FROM fx_rates WHERE base = ? AND currency = ?", (self._base, currency)
+        ).fetchone()
+        return date.fromisoformat(row[0]) if row[0] else None
+
     def history(self, currency: str, limit: int | None = None) -> list[FxRate]:
         """Oldest first; with `limit`, only the most recent that many."""
         rows = self._conn.execute(

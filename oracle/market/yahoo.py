@@ -3,14 +3,13 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from urllib.parse import quote
 
+from oracle.market import sources
 from oracle.market.bars import Bar, local_date, major_unit
-from oracle.market.sources import Instrument, NoData, SourceFailed
+from oracle.market.sources import Instrument, NoData
 from oracle.net.client import RateLimitedClient
-from oracle.net.errors import CircuitOpen, RequestFailed
 
 SOURCE = "yahoo"
 CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}"
-HISTORY = "5y"
 
 
 class YahooPrices:
@@ -22,26 +21,15 @@ class YahooPrices:
         self._client = client
 
     async def daily_bars(self, instrument: Instrument, since: date | None, now: datetime) -> list[Bar]:
-        symbol = instrument.symbol
         params = {"interval": "1d", "includeAdjustedClose": "true"}
         if since is None:
-            params["range"] = HISTORY
+            params["range"] = "5y"
         else:
             params["period1"] = str(_epoch(since))
             params["period2"] = str(int(now.timestamp()))
-        url = CHART_URL.format(symbol=quote(symbol, safe=""))
-        try:
-            resp = await self._client.get(SOURCE, url, params=params)
-        except (RequestFailed, CircuitOpen) as exc:
-            raise SourceFailed(str(exc).removeprefix(f"{SOURCE}: ")) from exc
-        if resp.status_code == 404:
-            raise NoData(_error_text(resp) or "no data")
-        if resp.status_code != 200:
-            raise SourceFailed(f"HTTP {resp.status_code}")
-        try:
-            return _parse(symbol, resp.json())
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise SourceFailed(f"unreadable chart response ({type(exc).__name__}: {exc})") from None
+        url = CHART_URL.format(symbol=quote(instrument.symbol, safe=""))
+        resp = await sources.get(self._client, SOURCE, url, params)
+        return _parse(instrument.symbol, resp.json())
 
 
 def _parse(symbol: str, body: dict) -> list[Bar]:
@@ -74,10 +62,3 @@ def _parse(symbol: str, body: dict) -> list[Bar]:
 
 def _epoch(day: date) -> int:
     return int(datetime.combine(day, time(0), tzinfo=timezone.utc).timestamp())
-
-
-def _error_text(resp) -> str | None:
-    try:
-        return resp.json()["chart"]["error"]["description"]
-    except (ValueError, KeyError, TypeError):
-        return None

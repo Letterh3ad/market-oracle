@@ -121,3 +121,23 @@ def test_company_says_why_fundamentals_are_missing(run):
     code, out, _ = run("company", "AAPL")
     assert code == 0
     assert "no fundamentals" in out
+
+
+def test_values_converted_with_open_er_api_rates_carry_its_credit(tmp_path, capsys, monkeypatch):
+    from tests.fakes.fx import FakeOpenEr, noon
+
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
+    yahoo = FakeYahoo()
+    yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-22", 232.0)])
+    open_er = FakeOpenEr(noon("2026-09-22"))
+    open_er.rates = {"USD": 1.37}
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, open_er)
+    monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
+    for argv in (["universe", "refresh"], ["prices", "update", "AAPL"], ["fx", "update", "--source", "open_er_api"],
+                 ["watch", "add", "AAPL"]):
+        cli_main.main(["--config", str(cfg), *argv])
+    for argv in (["prices", "show", "AAPL", "--base"], ["watch", "show"]):
+        capsys.readouterr()
+        cli_main.main(["--config", str(cfg), *argv])
+        assert "Rates By Exchange Rate API" in capsys.readouterr().out, argv

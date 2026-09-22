@@ -35,10 +35,10 @@ def local_date(epoch_s: float, tz_name: str) -> date:
     return datetime.fromtimestamp(epoch_s, timezone.utc).astimezone(ZoneInfo(tz_name)).date()
 
 
-# Weekdays a last bar may trail today before it counts as stale. Holidays are not
-# modelled, so this absorbs a long weekend; a week-long closure (Golden Week) will
-# briefly show stale.
-STALE_AFTER_WEEKDAYS = 3
+# Weekdays a last bar may trail today before it counts as stale: today's bar may not
+# exist yet, and one weekday may be a holiday. Holiday calendars are not modelled, so
+# a longer closure (Golden Week) briefly shows stale.
+STALE_AFTER_WEEKDAYS = 2
 
 
 def is_stale(last: date, today: date) -> bool:

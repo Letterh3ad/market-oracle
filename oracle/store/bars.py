@@ -33,6 +33,11 @@ class BarRepo:
     def currencies(self) -> list[str]:
         return [r[0] for r in self._conn.execute("SELECT DISTINCT currency FROM bars ORDER BY currency")]
 
+    def first_date_in(self, currency: str) -> date | None:
+        """The oldest bar of any listing priced in `currency`."""
+        row = self._conn.execute("SELECT MIN(date) FROM bars WHERE currency = ?", (currency,)).fetchone()
+        return date.fromisoformat(row[0]) if row[0] else None
+
     def last_date(self, symbol: str) -> date | None:
         row = self._conn.execute("SELECT MAX(date) FROM bars WHERE symbol = ?", (symbol,)).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None

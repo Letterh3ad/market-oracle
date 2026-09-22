@@ -28,7 +28,7 @@ def yahoo():
     y = FakeYahoo()
     y.add("AAPL", "USD", "America/New_York", [bar("2026-09-17", 200.0), bar("2026-09-18", 210.0)])
     y.add("SAP.DE", "EUR", "Europe/Berlin", [bar("2026-09-18", 150.0)])
-    y.add("KO", "USD", "America/New_York", [bar("2026-09-09", 60.0), bar("2026-09-10", 61.0)])
+    y.add("KO", "USD", "America/New_York", [bar("2026-09-16", 60.0), bar("2026-09-17", 61.0)])
     y.add("GBPUSD=X", "USD", "Europe/London", [bar("2026-09-17", 1.25), bar("2026-09-18", 1.25)])
     y.add("GBPEUR=X", "EUR", "Europe/London", [bar("2026-09-18", 1.20)])
     return y
@@ -89,7 +89,7 @@ async def test_a_watched_symbol_gone_from_the_universe_is_reported_not_fetched(c
 
 async def test_nothing_watched_is_nothing_to_do(ctx):
     run = await update_watched(ctx)
-    assert (run.listings, run.fx) == ([], [])
+    assert (run.listings, run.fx) == ((), ())
 
 
 async def test_a_second_update_is_refused_while_one_runs(ctx):
@@ -105,9 +105,9 @@ async def test_watch_show_carries_the_last_price_in_both_currencies(ctx):
     lines = {i.symbol: i for i in show_watchlist(ctx)}
     aapl = lines["AAPL"]
     assert (aapl.last_date.isoformat(), aapl.last_close, aapl.close_base) == ("2026-09-18", 210.0, pytest.approx(168.0))
-    assert aapl.change_pct == pytest.approx(5.0)
+    assert aapl.day_change == pytest.approx(0.05)
     assert not aapl.stale
-    assert lines["SAP.DE"].change_pct is None  # one bar: no previous close
+    assert lines["SAP.DE"].day_change is None  # one bar: no previous close
 
 
 async def test_a_listing_never_priced_shows_without_a_price(ctx):
@@ -120,5 +120,5 @@ async def test_a_price_several_trading_days_old_is_stale(ctx):
     watch(ctx, "KO")
     await update_listing(ctx, "KO")
     [line] = show_watchlist(ctx)
-    # Last bar Thursday 10 September; eight weekdays before Tuesday 22 September.
+    # Last bar Thursday 17 September: Friday's and Monday's bars are missing by Tuesday.
     assert line.stale

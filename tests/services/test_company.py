@@ -22,6 +22,7 @@ UNIVERSE = [
            industry="Technology Hardware", website="https://www.apple.com"),
     equity("APC.DE", "Apple Inc.", exchange="GER", isin=APPLE, currency="EUR"),
     equity("BP.L", "BP p.l.c.", "United Kingdom", "LSE", currency="GBP", sector="Energy"),
+    equity("SAP.DE", "SAP SE", "Germany", "GER", currency="EUR", sector="Information Technology"),
 ]
 
 
@@ -35,6 +36,8 @@ def yahoo():
         profitMargins=0.276, returnOnEquity=1.49, revenueGrowth=0.164, debtToEquity=78.4, beta=1.085,
     )
     y.summaries["BP.L"] = summary("GBp", market_cap=8.4e10, trailingPE=20.9)
+    y.summaries["SAP.DE"] = summary("EUR", market_cap=2.4e11, beta=0.0)
+    y.add("GBPEUR=X", "EUR", "Europe/London", [bar("2026-09-18", 1.20)])
     return y
 
 
@@ -99,7 +102,7 @@ async def test_the_profile_comes_from_the_universe_with_tags(ctx):
 
 async def test_the_latest_price_shows_in_both_currencies_with_the_day_change(ctx):
     view = await company_view(ctx, "AAPL")
-    assert (view.price.bar.close, view.price.close_base, view.change_pct) == (210.0, 168.0, pytest.approx(5.0))
+    assert (view.price.bar.close, view.price.close_base, view.day_change) == (210.0, 168.0, pytest.approx(0.05))
 
 
 async def test_fundamentals_are_fetched_normalised_and_stored(ctx):
@@ -181,3 +184,20 @@ async def test_every_figure_has_a_plain_english_line(ctx):
         "market_cap", "pe", "forward_pe", "pb", "dividend_yield", "profit_margin", "roe",
         "revenue_growth", "debt_to_equity", "beta",
     }
+
+
+async def test_market_cap_fetches_rates_for_a_currency_no_price_uses_yet(ctx, web):
+    view = await company_view(ctx, "SAP.DE")
+    assert view.market_cap_base == pytest.approx(2.4e11 / 1.20)
+    assert view.market_cap_rate_source == "yahoo"
+
+
+async def test_a_real_zero_is_kept_not_treated_as_missing(ctx):
+    assert (await company_view(ctx, "SAP.DE")).fundamentals.beta == 0.0
+
+
+async def test_without_refresh_the_view_makes_no_request(ctx, web):
+    before = len(web.requests)
+    view = await company_view(ctx, "AAPL", refresh=False)
+    assert len(web.requests) == before
+    assert view.fundamentals is None and "not fetched" in view.fundamentals_note

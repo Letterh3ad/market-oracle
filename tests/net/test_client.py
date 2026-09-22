@@ -136,3 +136,22 @@ async def test_a_huge_retry_after_fails_now_but_still_holds_back_the_source(conn
     assert clock.sleeps == []
     await client.get("src", URL)
     assert clock.sleeps == [pytest.approx(3600.0)]
+
+
+async def test_secret_query_parameters_never_reach_the_http_log(conn, caplog):
+    import logging
+
+    import httpx
+
+    from oracle.clock import SystemClock
+    from oracle.config import SourceConfig
+    from oracle.net.client import RateLimitedClient
+    from oracle.net.gate import SourceGate
+
+    gate = SourceGate(conn, SystemClock(), {"eodhd": SourceConfig(rate_per_second=1000)})
+    client = RateLimitedClient(gate, SystemClock(), "t", transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    with caplog.at_level(logging.INFO, logger="httpx"):
+        await client.get("eodhd", "https://eodhd.com/api/eod/AAPL.US", params={"api_token": "sk-secret-1", "from": "2026"})
+    await client.aclose()
+    assert "HTTP Request" in caplog.text
+    assert "sk-secret-1" not in caplog.text and "api_token=***" in caplog.text

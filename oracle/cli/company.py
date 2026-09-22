@@ -6,6 +6,7 @@ import textwrap
 
 from oracle.services.company_service import FIGURES, company_view
 from oracle.services.context import AppContext
+from oracle.services.fx_service import credits
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -33,7 +34,7 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     else:
         b = view.price.bar
         in_base = f" = {view.price.close_base:.2f} {base}" if view.price.close_base is not None else ""
-        day = f", {view.change_pct:+.2f}% on the day" if view.change_pct is not None else ""
+        day = f", {view.day_change * 100:+.2f}% on the day" if view.day_change is not None else ""
         print(f"  last close {b.close:.2f} {b.currency}{in_base} ({b.date.isoformat()}{day})")
 
     print()
@@ -46,6 +47,8 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
             value = _money(view.market_cap_base, base) if fig.name == "market_cap" else _format(getattr(f, fig.name), fig.kind)
             print(f"  {fig.label:<18}{value:>12}  {textwrap.shorten(fig.meaning, 200)}")
 
+    for credit in credits([view.market_cap_rate_source, view.price.rate_source if view.price else None]):
+        print(credit)
     if p.summary:
         print()
         print(textwrap.indent(textwrap.fill(p.summary, 88), "  "))

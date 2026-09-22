@@ -8,11 +8,10 @@ from datetime import date
 from typing import Protocol
 from urllib.parse import quote
 
-from oracle.market import eodhd
+from oracle.market import eodhd, sources, yahoo
 from oracle.market.bars import major_unit
-from oracle.market.sources import Instrument, NoData, SourceFailed
+from oracle.market.sources import Instrument, NoData, SourceFailed, first_present
 from oracle.net.client import RateLimitedClient
-from oracle.net.errors import CircuitOpen, RequestFailed
 
 
 @dataclass(frozen=True)
@@ -93,48 +92,44 @@ class YahooFundamentals:
     The client keeps cookies, so one instance serves one session; a rejected crumb is
     renewed once."""
 
-    name = "yahoo"
-    SOURCE = "yahoo"
+    name = yahoo.SOURCE
 
     def __init__(self, client: RateLimitedClient) -> None:
         self._client = client
         self._crumb: str | None = None
 
     async def fundamentals(self, instrument: Instrument, today: date) -> Fundamentals:
-        for attempt in range(2):
+        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{quote(instrument.symbol, safe='')}"
+        for _ in range(2):
             if self._crumb is None:
                 self._crumb = await self._new_crumb()
-            resp = await self._get(
-                f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{quote(instrument.symbol, safe='')}",
-                {"modules": _YAHOO_MODULES, "crumb": self._crumb},
-            )
-            if resp.status_code != 401:
-                break
-            self._crumb = None
-        else:
-            raise SourceFailed("crumb rejected twice")
-        if resp.status_code == 404:
-            raise NoData("no fundamentals")
-        if resp.status_code != 200:
-            raise SourceFailed(f"HTTP {resp.status_code}")
-        try:
+            try:
+                resp = await self._get(url, {"modules": _YAHOO_MODULES, "crumb": self._crumb})
+            except SourceFailed as exc:
+                if str(exc) != "HTTP 401":
+                    raise
+                self._crumb = None
+                continue
             return _from_yahoo(instrument.symbol, today, resp.json()["quoteSummary"]["result"][0])
-        except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise SourceFailed(f"unreadable quoteSummary ({type(exc).__name__})") from None
+        raise SourceFailed("crumb rejected twice")
 
     async def _new_crumb(self) -> str:
-        await self._get("https://fc.yahoo.com")  # answers 404 but sets the session cookie
-        resp = await self._get("https://query2.finance.yahoo.com/v1/test/getcrumb")
-        if resp.status_code != 200 or not resp.text.strip():
-            raise SourceFailed(f"no crumb (HTTP {resp.status_code})")
+        try:
+            await self._get("https://fc.yahoo.com", not_found=(404,))  # 404, but sets the cookie
+        except NoData:
+            pass
+        try:
+            resp = await self._get("https://query2.finance.yahoo.com/v1/test/getcrumb")
+        except (NoData, SourceFailed) as exc:
+            raise SourceFailed(f"no crumb ({exc})") from None
+        if not resp.text.strip():
+            raise SourceFailed("no crumb (empty answer)")
         return resp.text.strip()
 
-    async def _get(self, url: str, params: dict | None = None):
-        try:
-            return await self._client.get(self.SOURCE, url, params=params, headers={"User-Agent": BROWSER_UA})
-        except (RequestFailed, CircuitOpen) as exc:
-            detail = str(exc).removeprefix(f"{self.SOURCE}: ")
-            raise SourceFailed(f"no crumb ({detail})" if "getcrumb" in url else detail) from None
+    async def _get(self, url: str, params: dict | None = None, not_found: tuple[int, ...] = (404,)):
+        return await sources.get(
+            self._client, self.name, url, params, headers={"User-Agent": BROWSER_UA}, not_found=not_found
+        )
 
 
 def _from_yahoo(symbol: str, today: date, modules: dict) -> Fundamentals:
@@ -146,35 +141,34 @@ def _from_yahoo(symbol: str, today: date, modules: dict) -> Fundamentals:
     debt_pct = raw("financialData", "debtToEquity")
     quoted = (modules.get("price") or {}).get("currency")
     return Fundamentals(
-        symbol=symbol, as_of=today, source="yahoo",
-        # Market cap is in the major unit even when the price is quoted in pence.
+        symbol=symbol, as_of=today, source=yahoo.SOURCE,
+        # Market cap is in the major unit even when the price is quoted in pence
+        # (checked on BP.L: 8.4e10 at 542p, i.e. pounds).
         currency=major_unit(quoted)[0] if quoted else None,
-        market_cap=raw("price", "marketCap") or raw("summaryDetail", "marketCap"),
+        market_cap=first_present(raw("price", "marketCap"), raw("summaryDetail", "marketCap")),
         pe=raw("summaryDetail", "trailingPE"),
-        forward_pe=raw("summaryDetail", "forwardPE") or raw("defaultKeyStatistics", "forwardPE"),
+        forward_pe=first_present(raw("summaryDetail", "forwardPE"), raw("defaultKeyStatistics", "forwardPE")),
         pb=raw("defaultKeyStatistics", "priceToBook"),
         dividend_yield=raw("summaryDetail", "dividendYield"),
         profit_margin=raw("financialData", "profitMargins"),
         roe=raw("financialData", "returnOnEquity"),
         revenue_growth=raw("financialData", "revenueGrowth"),
         debt_to_equity=None if debt_pct is None else debt_pct / 100,  # Yahoo gives a percentage
-        beta=raw("summaryDetail", "beta") or raw("defaultKeyStatistics", "beta"),
+        beta=first_present(raw("summaryDetail", "beta"), raw("defaultKeyStatistics", "beta")),
     )
 
 
 class EodhdFundamentals:
-    name = "eodhd"
+    name = eodhd.SOURCE
 
-    def __init__(self, client: RateLimitedClient, key: str) -> None:
-        self._eodhd = eodhd.EodhdPrices(client, key)
+    def __init__(self, client: eodhd.EodhdClient) -> None:
+        self._eodhd = client
 
     async def fundamentals(self, instrument: Instrument, today: date) -> Fundamentals:
         code = eodhd.eodhd_code(instrument.symbol)
         if code is None:
             raise NoData("exchange not covered")
-        body = await self._eodhd.get_json(
-            f"https://eodhd.com/api/fundamentals/{code}", {"filter": "Highlights,Valuation,Technicals"}, code
-        )
+        body = await self._eodhd.get_json(f"fundamentals/{code}", {"filter": "Highlights,Valuation,Technicals"})
         if not isinstance(body, dict):
             raise SourceFailed("unreadable response")
 

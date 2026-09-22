@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
+from oracle.services.fx_service import credits
 from oracle.services.prices_service import (
     price_history,
     price_history_in_base,
@@ -60,6 +61,8 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         print(f"{b.date.isoformat():<12}{b.close:>12.2f}{adj:>12}{volume:>14}{converted}")
     if rows is not None and any(r.close_base is None for r in rows):
         print("n/a: no exchange rate stored for that day; run `oracle fx update`")
+    for credit in credits(r.rate_source for r in rows or ()):
+        print(credit)
     return 0
 
 

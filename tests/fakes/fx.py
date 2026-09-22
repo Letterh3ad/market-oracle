@@ -67,9 +67,13 @@ class FakeOpenEr:
         self.updated = updated
         self.rates: dict[str, float] = {}
         self.calls = 0
+        self.garbage = False
+        """Answer 200 with an HTML page, as a captive portal or outage page would."""
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.calls += 1
+        if self.garbage:
+            return httpx.Response(200, text="<html>maintenance</html>")
         return httpx.Response(200, json={
             "result": "success", "base_code": request.url.path.rsplit("/", 1)[1],
             "time_last_update_unix": int(self.updated.timestamp()),

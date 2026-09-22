@@ -6,7 +6,7 @@ from datetime import date
 from oracle.services.context import AppContext
 from oracle.market.bars import is_stale
 from oracle.services.errors import InvalidWatchlistName, UnknownWatchlist
-from oracle.services.prices_service import price_history_in_base
+from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
@@ -37,8 +37,10 @@ class WatchLine(WatchItem):
     price_currency: str | None = None
     """The stored bars' currency (pounds for London, not the universe's hint)."""
     close_base: float | None = None
-    change_pct: float | None = None
-    """Against the previous stored close."""
+    rate_source: str | None = None
+    """Where the rate behind close_base came from, for attribution."""
+    day_change: float | None = None
+    """Ratio against the previous stored close: 0.05 is up 5%."""
     stale: bool = False
 
 
@@ -78,11 +80,10 @@ def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:
     if not recent:
         return WatchLine(**asdict(item))
     last = recent[-1]
-    change = (last.bar.close / recent[0].bar.close - 1) * 100 if len(recent) == 2 else None
     return WatchLine(
         **asdict(item),
         last_date=last.bar.date, last_close=last.bar.close, price_currency=last.bar.currency,
-        close_base=last.close_base, change_pct=change,
+        close_base=last.close_base, rate_source=last.rate_source, day_change=day_change(recent),
         stale=is_stale(last.bar.date, ctx.clock.utcnow().date()),
     )
 

@@ -193,3 +193,31 @@ async def test_a_second_update_fetches_only_recent_rates(ctx, web, yahoo):
 async def test_an_unknown_source_name_is_refused(ctx):
     with pytest.raises(InvalidQuery, match="ecbb"):
         await update_fx(ctx, sources=("ecbb",))
+
+
+async def test_a_malformed_response_counts_as_that_source_failing(ctx, yahoo, open_er):
+    yahoo.fail["GBPTWD=X"] = 500
+    open_er.garbage = True
+    results = by_currency(await update_fx(ctx))
+    assert results["TWD"].source is None and "unreadable" in results["TWD"].error
+    assert results["USD"].source == "yahoo"
+
+
+async def test_history_is_fetched_once_a_history_source_recovers(ctx, yahoo, web):
+    yahoo.fail["GBPTWD=X"] = 500
+    await update_fx(ctx)  # open.er-api: today only
+    del yahoo.fail["GBPTWD=X"]
+    yahoo.add("GBPTWD=X", "TWD", "Europe/London", fx_bars(("2026-09-18", 41.0), ("2026-09-22", 42.0)), open_at=time(0, 0))
+    await update_fx(ctx)
+    last = [r for r in web.requests_to("query2.finance.yahoo.com") if r.url.path.endswith("GBPTWD=X")][-1]
+    assert last.url.params.get("range") == "5y"
+    conv = {c.bar.date.isoformat(): c.close_base for c in price_history_in_base(ctx, "2330.TW")}
+    assert conv["2026-09-18"] == pytest.approx(1000.0 / 41.0)
+
+
+async def test_converted_bars_name_the_rates_source_for_attribution(ctx, yahoo):
+    yahoo.fail["GBPTWD=X"] = 500
+    await update_fx(ctx)
+    last = price_history_in_base(ctx, "2330.TW")[-1]
+    assert last.rate_source == "open_er_api"
+    assert price_history_in_base(ctx, "VOD.L")[-1].rate_source is None
