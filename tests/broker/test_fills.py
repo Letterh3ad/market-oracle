@@ -1,6 +1,6 @@
 import pytest
 
-from oracle.broker.fills import COSTS, buy_fill, fee
+from oracle.broker.fills import COSTS, buy_fill, fee, sell_fill
 
 US, UK, EU, OTHER = "United States", "United Kingdom", "Germany", "Japan"
 
@@ -37,3 +37,18 @@ def test_a_base_currency_listing_pays_no_fx_spread():
 ])
 def test_fee_bands(country, shares, price, expected):
     assert fee(country, shares, price, COSTS) == pytest.approx(expected)
+
+
+def test_a_sell_by_hand():
+    # 12 shares at 110 * 0.999 = 109.89 -> 1318.68 USD, less the 1 USD minimum fee =
+    # 1317.68 USD, less the 0.2% FX spread, at 1.25 -> 1052.0357 GBP.
+    f = sell_fill(12, open_price=110.0, rate=1.25, country=US)
+    assert f.cash == pytest.approx(1317.68 * 0.998 / 1.25)
+    assert f.stamp == 0.0
+
+
+def test_stamp_duty_on_lse_buys_only():
+    lse = buy_fill(1000.0, open_price=10.0, rate=1.0, country=UK, exchange="LSE", costs=COSTS)
+    xetra = buy_fill(1000.0, open_price=10.0, rate=1.0, country=EU, exchange="GER", costs=COSTS)
+    assert lse.stamp == pytest.approx(lse.shares * lse.price * 0.005) and lse.stamp > 0
+    assert xetra.stamp == 0.0

@@ -47,3 +47,19 @@ def test_buy_then_prices_update_fills_it_and_show_lists_the_position(run):
     assert "VOD.L: bought" in out
     _, out, _ = run("paper", "show")
     assert "VOD.L" in out and "pending" not in out
+
+
+def test_sell_all_queues_and_shows_as_pending(run):
+    run("paper", "buy", "VOD.L", "1000")
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 21), 71.0, 71.0, 71.0, 71.0, 71.0, 1000))
+    run.clock.advance(3 * 86400)
+    run("prices", "update")
+    code, out, _ = run("paper", "sell", "VOD.L", "--all")
+    assert code == 0 and "whole position" in out
+    _, out, _ = run("paper", "show", "--account", "manual")
+    assert "pending sell VOD.L, the whole position" in out and "realised +0.00" in out
+
+
+def test_selling_what_is_not_held_is_an_error(run):
+    code, _, err = run("paper", "sell", "VOD.L", "--shares", "1")
+    assert code == 1 and "not held" in err

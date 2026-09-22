@@ -1,13 +1,14 @@
 """Paper trading: two ledgers in the base currency, orders filled at the next open with
-pessimistic costs. `PaperBroker` is the `Broker` a real paper account (phase 12) replaces."""
+pessimistic costs."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from oracle.broker.fills import COSTS, Fill, buy_fill
+from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
+from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
@@ -17,7 +18,10 @@ from oracle.store.paper import FillRow, Order, PaperRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import EXCHANGES
 
-__all__ = ["ACCOUNTS", "AccountView", "FillOutcome", "Order", "Position", "account_view", "fill_pending", "place_buy"]
+__all__ = [
+    "ACCOUNTS", "AccountView", "FillOutcome", "Order", "Position", "account_view", "fill_pending", "place_buy",
+    "place_sell",
+]
 
 ACCOUNTS = ("strategy", "manual")
 
@@ -38,6 +42,8 @@ class AccountView:
     cash: float
     positions: tuple[Position, ...]
     pending: tuple[Order, ...]
+    realised: float
+    """Profit or loss locked in by sells, in the base currency, after all costs."""
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,26 @@ def place_buy(ctx: AppContext, symbol: str, cash: float, account: str = "manual"
     return PaperRepo(ctx.conn).add_order(account, listing, "buy", cash, None, to_utc_iso(now), now.date(), source)
 
 
+def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = "manual",
+               source: str = "manual") -> Order:
+    """Queue a sell of `shares` (None: the whole position); long only, so never more than
+    held and not already queued for sale."""
+    listing = resolve_symbol(ctx, symbol).symbol
+    repo = PaperRepo(ctx.conn)
+    held = _replay(repo, account)[0].get(listing, [0, 0.0])[0]
+    if not held:
+        raise InvalidQuery(f"{listing} is not held on the {account} account")
+    queued = [o for o in repo.pending(account) if o.symbol == listing and o.side == "sell"]
+    free = 0 if any(o.shares is None for o in queued) else held - sum(o.shares for o in queued)
+    if free <= 0:
+        raise InvalidQuery(f"all {held} {listing} shares already have a pending sell")
+    if shares is not None and not 0 < shares <= free:
+        raise InvalidQuery(f"can sell 1 to {free} {listing} shares, not {shares}")
+    now = ctx.clock.utcnow()
+    return repo.add_order(account, listing, "sell", None, shares,
+                          to_utc_iso(now), now.date(), source)
+
+
 def fill_pending(ctx: AppContext) -> list[FillOutcome]:
     """Fill every order whose next bar is stored. Orders still waiting for a bar are left
     out; ones blocked by something else are reported with the reason."""
@@ -69,8 +95,9 @@ def fill_pending(ctx: AppContext) -> list[FillOutcome]:
 
 def account_view(ctx: AppContext, account: str) -> AccountView:
     repo = PaperRepo(ctx.conn)
-    return AccountView(account, _cash(ctx, repo, account), tuple(_positions(ctx, repo, account)),
-                       tuple(repo.pending(account)))
+    held, realised = _replay(repo, account)
+    return AccountView(account, _cash(ctx, repo, account), tuple(_positions(ctx, held)), tuple(repo.pending(account)),
+                       realised)
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
@@ -84,6 +111,14 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
         return FillOutcome(order, "pending", note)
     profile = UniverseRepo(ctx.conn).profile(order.symbol)
     country = EXCHANGES.get(profile.exchange or "", (profile.country or "", 0))[0]
+    if order.side == "sell":
+        held = _replay(repo, order.account)[0].get(order.symbol, [0, 0.0])[0]
+        shares = order.shares if order.shares is not None else held
+        if not 0 < shares <= held:
+            return _reject(repo, order, f"only {held} shares held")
+        fill = sell_fill(shares, open_price=bar.open, rate=rate, country=country, costs=COSTS)
+        repo.record_fill(_row(order, bar.date, bar.currency, rate, fill))
+        return FillOutcome(order, "filled", None)
     cash = _cash(ctx, repo, order.account)
     if order.cash > cash:
         return _reject(repo, order, f"not enough cash: {order.cash:,.2f} asked, {cash:,.2f} available")
@@ -116,14 +151,22 @@ def _cash(ctx: AppContext, repo: PaperRepo, account: str) -> float:
     return ctx.config.risk.account + sum(f.cash for f in repo.fills(account))
 
 
-def _positions(ctx: AppContext, repo: PaperRepo, account: str) -> list[Position]:
-    held: dict[str, list[float]] = {}  # symbol -> [shares, cost]
+def _replay(repo: PaperRepo, account: str) -> tuple[dict[str, list], float]:
+    """({symbol: [shares, cost]}, realised) from the account's fills, at average cost."""
+    held: dict[str, list] = {}
+    realised = 0.0
     for f in repo.fills(account):
         shares, cost = held.get(f.symbol, [0, 0.0])
         if f.side == "buy":
             held[f.symbol] = [shares + f.shares, cost - f.cash]
         else:
-            held[f.symbol] = [shares - f.shares, cost * (shares - f.shares) / shares]
+            sold_cost = cost * f.shares / shares
+            realised += f.cash - sold_cost
+            held[f.symbol] = [shares - f.shares, cost - sold_cost]
+    return held, realised
+
+
+def _positions(ctx: AppContext, held: dict[str, list]) -> list[Position]:
     out = []
     for symbol, (shares, cost) in sorted(held.items()):
         if shares:

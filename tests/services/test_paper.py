@@ -4,9 +4,9 @@ import pytest
 
 from oracle.config import Config
 from oracle.services.context import open_context
-from oracle.services.errors import UnknownSymbol
+from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.fx_service import update_fx
-from oracle.services.paper_service import account_view, fill_pending, place_buy
+from oracle.services.paper_service import account_view, fill_pending, place_buy, place_sell
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
@@ -99,3 +99,36 @@ async def test_no_exchange_rate_for_the_fill_day_keeps_it_pending_and_says_why(c
 async def test_unknown_symbols_are_refused(ctx):
     with pytest.raises(UnknownSymbol):
         place_buy(ctx, "APPL", 1000.0)
+
+
+async def test_a_partial_sell_realises_profit_at_average_cost_by_hand(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    place_sell(ctx, "AAPL", 6)
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 110.0, 110.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    [done] = fill_pending(ctx)
+    assert done.status == "filled"
+    view = account_view(ctx, "manual")
+    # Proceeds: 6 * 109.89 = 659.34 USD - 1 fee = 658.34 * 0.998 / 1.25; cost: half of
+    # the 12-share buy (1202.2 / 1.2475).
+    proceeds, half_cost = 658.34 * 0.998 / 1.25, 1202.2 / 1.2475 / 2
+    assert view.realised == pytest.approx(proceeds - half_cost)
+    assert view.positions[0].shares == 6 and view.positions[0].cost == pytest.approx(half_cost)
+
+
+async def test_selling_what_is_not_held_is_refused(ctx, yahoo, clock):
+    with pytest.raises(InvalidQuery, match="not held"):
+        place_sell(ctx, "AAPL", 1)
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    with pytest.raises(InvalidQuery, match="12"):
+        place_sell(ctx, "AAPL", 13)
+    place_sell(ctx, "AAPL", None)
+    with pytest.raises(InvalidQuery, match="already"):
+        place_sell(ctx, "AAPL", 1)
