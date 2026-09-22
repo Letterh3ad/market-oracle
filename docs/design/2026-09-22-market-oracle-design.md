@@ -177,6 +177,13 @@ FastAPI plus native ES modules, no build step (stalker pattern). Tabs: universe 
 filter, sort, tag), company (lean report), watchlist, research trace, ledgers. Every
 metric has a plain-English tooltip.
 
+**Force rerun (user request, 2026-09-22).** Scheduled or throttled work that failed or is
+waiting (a Yahoo price or fundamentals fetch, FX full-history backfill held by its weekly
+retry, a company's news run) shows as a list of failed or deferred jobs. The user ticks
+the ones to rerun, per job and per company, and runs them now, off schedule. A rerun still
+goes through the shared gate and circuit breaker; it bypasses only the schedule and retry
+throttles. Service first (phase 10 job model), GUI button in phase 6 or later.
+
 ### Alerts
 ntfy primary (free, phone push, self-hostable), Discord webhook optional. Fired on lean
 changes and paper executions.

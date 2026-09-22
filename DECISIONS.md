@@ -295,3 +295,17 @@ Inferring "filled" from the stored
 Kept as is: `CompanyProfile` extending the store's `ListingProfile` (small, read-only);
 `first_success` treating any parse error as that source failing (a parser bug then shows
 as "unreadable response", not a crash).
+
+## 2026-09-22 - Phase 4 analysts: peers, risk scope, stored signals
+
+**Context:** Factor scores need peer fundamentals, which are fetched per company on
+demand; there is no portfolio until phase 5; the lean report and Laya need signal history.
+**Decision:** Peers are the biggest companies in the same industry group (sector when too
+few), `[analysts] peers` = 20 by default, adjustable later from the GUI; peer fundamentals
+are reused for 7 days. Risk is per listing in phase 4 (volatility-scaled size, max
+drawdown, correlation with the watchlist); portfolio risk waits for the ledgers. Every
+`AnalystSignal` is stored per symbol, analyst and date; a same-day rerun replaces it.
+**Alternatives:** Only already-stored peers (rejected: thin or missing scores). 50 peers
+(rejected: more traffic and crumb 429 risk). A hypothetical equal-weight watchlist
+portfolio (rejected: rebuilt once real ledgers exist). Recompute on demand (rejected:
+history and Laya need storage).
