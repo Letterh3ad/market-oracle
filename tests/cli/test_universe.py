@@ -1,0 +1,47 @@
+from functools import partial
+
+import pytest
+
+from oracle.cli import main as cli_main
+from oracle.services.context import open_context
+from tests.fakes.financedatabase import BASIC, FakeFinanceDatabase
+
+
+@pytest.fixture
+def run(tmp_path, capsys, monkeypatch):
+    """`oracle --config ... <argv>` against a fake FinanceDatabase, fast-paced."""
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
+    fdb = FakeFinanceDatabase(BASIC)
+    monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=fdb.transport))
+
+    def _run(*argv):
+        code = cli_main.main(["--config", str(cfg), *argv])
+        out, err = capsys.readouterr()
+        return code, out, err
+
+    _run.fdb = fdb
+    return _run
+
+
+def test_status_before_a_refresh_says_how_to_load(run):
+    code, out, _ = run("universe", "status")
+    assert code == 0
+    assert "oracle universe refresh" in out
+
+
+def test_refresh_then_status_shows_counts_and_commit(run):
+    code, out, _ = run("universe", "refresh")
+    assert code == 0
+    assert "7 listings" in out and "4 companies" in out
+    _, out, _ = run("universe", "status")
+    assert "abc123" in out
+    assert "1 delisted" in out
+
+
+def test_a_failed_refresh_is_an_error_without_a_traceback(run):
+    run.fdb.files["equities.bz2"] = 404
+    code, _, err = run("universe", "refresh")
+    assert code == 1
+    assert "404" in err
+    assert "Traceback" not in err

@@ -28,6 +28,7 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
     "sec_edgar": SourceConfig(rate_per_second=5.0),
+    "financedatabase": SourceConfig(rate_per_second=0.5),
 }
 
 

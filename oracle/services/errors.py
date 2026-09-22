@@ -8,3 +8,11 @@ class DatabaseTooNew(ServiceError):
 
 class ConfigInvalid(ServiceError):
     pass
+
+
+class JobAlreadyRunning(ServiceError):
+    pass
+
+
+class UniverseUnavailable(ServiceError):
+    pass

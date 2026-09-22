@@ -168,9 +168,15 @@ for a stock tool yet).
 
 **Context:** The same company lists on many exchanges (Apple has 19 rows: AAPL, APC.DE,
 AAPL.MI...), so raw search results are mostly duplicates. Only 27% of rows carry an ISIN.
-**Decision:** A company key is the ISIN when present, else normalised name plus country.
-Each company has one primary listing: on an exchange in its home country, else the
-highest in a fixed exchange ranking. Search shows primaries unless `--all-listings`.
+**Decision:** Listings sharing an ISIN or a normalised name plus country are one company,
+transitively. Neither alone works: most listings carry no ISIN, and some carry another
+line's (German Siemens Healthineers listings hold the US ADR's ISIN). A name or ISIN on
+more than 30 lines of one exchange links nothing: real companies peak around 25
+(Freddie Mac preferreds), while placeholders (96 OTC funds named "ISHARES") and parents'
+ISINs on subsidiaries (POSCO) run 34 to 96. Result on real data: 112,705 listings, 64,422
+companies. Each company has one primary listing: active before delisted, then an
+exchange in its home country (the country most of its listings give), then exchange
+tier and market depth, then symbol. Search shows primaries unless `--all-listings`.
 Tags attach to the company key, so they cover every listing. Watchlists hold listings,
 since a listing is what gets priced (phase 3). Both survive a refresh and flag members
 that vanished rather than dropping them.
@@ -182,3 +188,14 @@ sparser than ISIN here). Tags on listings (rejected: tagging APC.DE should tag A
 **Context:** Enriching opened or watched companies needs the PriceSource plumbing.
 **Decision:** Phase 2 is the offline universe only; enrichment ships with phase 3.
 **Alternatives:** A thin yfinance call in phase 2 (rejected: built twice).
+
+## 2026-09-22 - Universe refresh holds its job lock without a heartbeat task
+
+**Context:** `JobLock.holding()` heartbeats on `clock.sleep`, which under a fake clock
+spins and drags fake time forward during every await.
+**Decision:** Refresh takes the lock with a 30-minute lease, heartbeats once before it
+writes (aborting if the lock was taken), and releases in `finally`. A hard kill is still
+freed at once by the pid check. The whole swap is one transaction, so readers see the old
+universe or the new one, never a mix.
+**Alternatives:** `holding()` (rejected: nondeterministic under the fake clock for no gain
+on a job this short).
