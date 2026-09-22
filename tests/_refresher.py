@@ -20,7 +20,7 @@ async def main(cfg: Path, ready: Path, release: Path) -> None:
             ready.write_text("ok")
             while not release.exists():
                 await asyncio.sleep(0.05)
-        return fdb.transport.handler(request)
+        return fdb.handle(request)
 
     config, source = load_config(cfg)
     with open_context(config, source, transport=httpx.MockTransport(handle)) as ctx:

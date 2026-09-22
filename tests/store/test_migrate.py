@@ -86,3 +86,19 @@ def test_migrating_from_an_earlier_version_does_not_rerun_applied_steps(tmp_path
     migrate(conn)
     assert current_version(conn) == 2
     assert "two" in _tables(conn)
+
+
+def test_fx_history_marks_currencies_a_history_source_already_filled(tmp_path, monkeypatch):
+    from oracle.store import migrations
+
+    conn = connect(tmp_path / "t.db")
+    before = migrations.MIGRATIONS[: migrations.MIGRATIONS.index(migrations.m0012_fx_history)]
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", before)
+    migrate(conn)
+    conn.executemany(
+        "INSERT INTO fx_rates VALUES ('GBP', ?, ?, 1.0, ?, 'x')",
+        [("USD", "2026-09-18", "yahoo"), ("USD", "2026-09-22", "open_er_api"), ("TWD", "2026-09-22", "open_er_api")],
+    )
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
+    migrate(conn)
+    assert [tuple(r) for r in conn.execute("SELECT currency, filled FROM fx_history")] == [("USD", 1)]

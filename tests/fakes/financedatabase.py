@@ -59,6 +59,8 @@ BASIC = [
 
 
 class FakeFinanceDatabase:
+    hosts = {"api.github.com", "raw.githubusercontent.com"}
+
     def __init__(self, equities: list[dict], etfs: list[dict] = (), sha: str = "abc123") -> None:
         self.sha = sha
         self.files: dict[str, bytes | int] = {
@@ -67,9 +69,9 @@ class FakeFinanceDatabase:
         }
         self.commit_response: httpx.Response | None = None
         self.requests: list[httpx.Request] = []
-        self.transport = httpx.MockTransport(self._handle)
+        self.transport = httpx.MockTransport(self.handle)
 
-    def _handle(self, request: httpx.Request) -> httpx.Response:
+    def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         path = request.url.path
         if request.url.host == "api.github.com" and path == "/repos/JerBouma/FinanceDatabase/commits/main":

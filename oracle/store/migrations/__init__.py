@@ -29,6 +29,10 @@ from oracle.store.migrations import (  # noqa: E402
     m0006_fund_fields,
     m0007_tags,
     m0008_watchlists,
+    m0009_bars,
+    m0010_fx_rates,
+    m0011_fundamentals,
+    m0012_fx_history,
 )
 
 MIGRATIONS = [
@@ -40,4 +44,8 @@ MIGRATIONS = [
     m0006_fund_fields,
     m0007_tags,
     m0008_watchlists,
+    m0009_bars,
+    m0010_fx_rates,
+    m0011_fundamentals,
+    m0012_fx_history,
 ]

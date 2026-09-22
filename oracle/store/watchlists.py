@@ -70,6 +70,10 @@ class WatchlistRepo:
         )
         return [WatchItem(*r[:6], delisted=bool(r[6]), missing=bool(r[7])) for r in rows]
 
+    def all_symbols(self) -> list[str]:
+        """Every watched symbol once, whichever lists hold it."""
+        return [r[0] for r in self._conn.execute("SELECT DISTINCT symbol FROM watchlist_items ORDER BY symbol")]
+
     def summaries(self) -> list[WatchlistSummary]:
         rows = self._conn.execute(
             """SELECT w.name, COUNT(i.symbol), COUNT(i.symbol) - COUNT(l.symbol)

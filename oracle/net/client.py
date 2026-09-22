@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
@@ -14,6 +16,21 @@ BACKOFF_CAP_S = 60.0
 # Longer waits are not slept through in-call: the caller gets a failure now, and the
 # source's shared slot still moves back by the full wait so no process ignores it.
 MAX_IN_CALL_WAIT_S = 120.0
+
+# httpx logs every request URL at INFO, and paid sources take their key in the query.
+_SECRET_PARAM = re.compile(r"((?:api_token|apikey|api_key|token)=)[^&\s\"']+", re.IGNORECASE)
+
+
+class _RedactSecrets(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = _SECRET_PARAM.sub(r"\1***", message)
+        if redacted != message:
+            record.msg, record.args = redacted, ()
+        return True
+
+
+logging.getLogger("httpx").addFilter(_RedactSecrets())
 
 
 class RateLimitedClient:

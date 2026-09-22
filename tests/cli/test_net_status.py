@@ -23,7 +23,7 @@ def test_every_configured_source_is_listed_with_its_rate(tmp_path, capsys):
     cfg, _ = _setup(tmp_path, "[sources.eodhd]\nrate_per_second = 1.5\n")
     assert main(["--config", str(cfg), "net", "status"]) == 0
     rows = _rows(capsys.readouterr().out)
-    assert {"yfinance", "stooq", "gdelt", "google_news", "ddgs", "sec_edgar", "eodhd"} <= set(rows)
+    assert {"yahoo", "gdelt", "google_news", "ddgs", "sec_edgar", "eodhd"} <= set(rows)
     assert "1.5" in rows["eodhd"]
     assert "ok" in rows["gdelt"]
 
@@ -39,8 +39,8 @@ async def test_recent_requests_are_counted(tmp_path, capsys):
 def test_an_open_breaker_shows_its_reason(tmp_path, capsys):
     cfg, gate = _setup(tmp_path)
     for _ in range(3):
-        gate.record("yfinance", 429)
+        gate.record("yahoo", 429)
     main(["--config", str(cfg), "net", "status"])
-    row = _rows(capsys.readouterr().out)["yfinance"]
+    row = _rows(capsys.readouterr().out)["yahoo"]
     assert "OPEN" in row
     assert "429" in row

@@ -232,3 +232,66 @@ Pure bm25 (rejected: ranks short junk names first).
   biggest first is already the default.
 **Alternatives:** A per-field spec map for the market cap and exchange special cases
 (deferred: three call sites, revisit if a fourth appears).
+
+## 2026-09-22 - Prices from Yahoo directly; paid and backup sources as ordered chains
+
+**Context:** The design named yfinance with a Stooq fallback. Probing showed Yahoo's chart
+and quoteSummary (cookie plus crumb) endpoints answer a plain httpx client, so yfinance
+would add pandas and curl_cffi for nothing; Stooq now serves a JavaScript bot wall.
+**Decision:** An in-house Yahoo client through the shared gate (source `yahoo`, replacing
+`yfinance`; `stooq` dropped). Prices and FX each come from an ordered source list in
+`oracle.toml` (`[prices] sources`, `[fx] sources`), tried in turn. Paid sources are wired
+but enabled only by a key (`[keys]` or `ORACLE_<NAME>_KEY`): EODHD for prices, FX and
+fundamentals, verified against its public demo key. Free FX backups: ECB SDMX, Frankfurter
+and open.er-api (today only). Every stored bar and rate records its source. History: 5
+years of daily bars on first fetch, then incremental. `tzdata` so bars carry the
+exchange's local date on Windows.
+**Alternatives:** yfinance (rejected: heavy deps, bypasses the shared gate). No fallback
+price source (rejected: user asked for paid options wired and testable). If Yahoo starts
+fingerprint-blocking httpx, a curl_cffi transport can slot under the same client.
+
+## 2026-09-22 - Yahoo fundamentals present a browser user agent for the crumb
+
+**Context:** quoteSummary needs a session cookie plus a crumb. Yahoo answered the crumb
+endpoint with 429 to our honest `market-oracle/0.1` user agent and 200 to a browser one
+seconds later, so the filter is on the user agent, not the rate.
+**Decision:** Only the three fundamentals calls (fc.yahoo.com, getcrumb, quoteSummary) send
+a browser user agent, as yfinance does; the chart endpoint keeps the honest one. They go
+through the shared `yahoo` gate, so a run of 429s trips the same breaker as prices and
+backs every Yahoo call off. Snapshots are refreshed at most daily, for the company's
+primary listing; a failed refresh shows the last snapshot with its date.
+**Alternatives:** EODHD only for fundamentals (rejected: paid). curl_cffi browser
+impersonation (not needed: a header is enough today).
+
+## 2026-09-22 - Phase 3 review fixes
+
+**Context:** The two-axis review of phase 3 found duplicated source chains, a refetch rule
+that could loop, and gaps in attribution and typing.
+**Decision:**
+- `prices show --base` (not `--gbp`): the base currency is configurable, GBP by default.
+- Incremental fetches re-read the last 7 days (`REFETCH_OVERLAP`), so late corrections
+  and a missed day are picked up without a full refetch.
+- Fundamentals follow the `[prices] sources` order; no separate list to keep in step.
+- `fx update` exists as its own command, as well as running inside `watch update`.
+- FX history: an `fx_history` row per currency records whether a source with history
+  (`FxSource.has_history`) filled it and when full history was last tried, failed tries
+  included. Until filled, full history is retried at most weekly, so a currency only
+  open.er-api (today only) or no source covers does not ask every source for 5 years of
+  rates on each run. Cost: after an outage or a source recovering, the backfill can wait
+  up to a week; recent rates still update daily meanwhile. A one-off conversion (a
+  market cap in a currency no price uses) fetches the last week only. Replaces a
+  date-gap rule that refetched full history every run when a source's history started
+  late.
+- `SourceFailed.status` carries the HTTP status, so callers never match message text.
+  A 4xx from the Yahoo cookie page still sets the cookie; only 429, 5xx or no answer
+  stop the crumb.
+- One chain helper (`market/sources.first_success`): a malformed response counts as that
+  source failing, never aborting the run.
+**Alternatives:** Per-source gap filling in FX (declined: a missing day borrows the rate
+up to 5 days older, `MAX_RATE_AGE`, and it doubles traffic). Exchange holiday calendars
+for staleness (declined: too big for now; a week-long closure shows stale briefly).
+Inferring "filled" from the stored
+`source` column (rejected: a one-off conversion's short fetch would look filled).
+Kept as is: `CompanyProfile` extending the store's `ListingProfile` (small, read-only);
+`first_success` treating any parse error as that source failing (a parser bug then shows
+as "unreadable response", not a crash).

@@ -1,0 +1,167 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import date
+
+from oracle.config import PRICE_SOURCES
+from oracle.market import registry
+from oracle.market.bars import Bar
+from oracle.market.fx import pick_rate
+from oracle.market.sources import REFETCH_OVERLAP, AllFailed, Instrument, first_success
+from oracle.net.client import RateLimitedClient
+from oracle.services.context import AppContext
+from oracle.services.errors import PriceUnavailable, UnknownSymbol
+from oracle.services.fx_service import FxUpdate, update_fx
+from oracle.services.http import open_client
+from oracle.services.jobs_service import single_flight
+from oracle.services.universe_service import resolve_symbol
+from oracle.store.bars import BarRepo
+from oracle.store.db import to_utc_iso
+from oracle.store.fx import FxRepo
+from oracle.store.watchlists import WatchlistRepo
+
+__all__ = [
+    "Bar", "ConvertedBar", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
+    "day_change", "price_history", "price_history_in_base", "price_sources", "update_listing",
+    "update_watched",
+]
+
+JOB = "prices_update"
+LEASE_S = 1800.0
+
+
+@dataclass(frozen=True)
+class ConvertedBar:
+    bar: Bar
+    rate: float | None
+    """Units of the bar's currency per unit of base currency; None when no rate is
+    stored for the day or the five before it."""
+    close_base: float | None
+    rate_source: str | None = None
+    """Where the rate came from, for attribution; None for base-currency bars."""
+
+
+@dataclass(frozen=True)
+class SourceInfo:
+    name: str
+    position: int | None
+    """1-based place in `[prices] sources`; None when left out."""
+    enabled: bool
+    reason: str | None
+    """Why it is not used, when it is not."""
+
+
+@dataclass(frozen=True)
+class PriceUpdate:
+    symbol: str
+    added: int
+    """Trading days new to the store."""
+    last_date: date | None
+    source: str
+
+
+@dataclass(frozen=True)
+class ListingOutcome:
+    symbol: str
+    added: int
+    source: str | None
+    error: str | None
+
+
+@dataclass(frozen=True)
+class WatchedUpdate:
+    listings: tuple[ListingOutcome, ...]
+    fx: tuple[FxUpdate, ...]
+
+    @property
+    def failed(self) -> list[ListingOutcome]:
+        return [o for o in self.listings if o.error is not None]
+
+
+async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
+    """Fetch new daily bars for one listing from the first configured source that has
+    them. Nothing is stored unless a source succeeds."""
+    async with open_client(ctx) as client:
+        return await _update(ctx, client, symbol)
+
+
+async def update_watched(ctx: AppContext) -> WatchedUpdate:
+    """Every watched listing once, then the FX their currencies need, in one process at
+    a time. A listing that fails is reported and the rest carry on."""
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        outcomes = []
+        async with open_client(ctx) as client:
+            for symbol in WatchlistRepo(ctx.conn).all_symbols():
+                held.check()
+                try:
+                    r = await _update(ctx, client, symbol)
+                except (PriceUnavailable, UnknownSymbol) as exc:
+                    outcomes.append(ListingOutcome(symbol, 0, None, str(exc)))
+                else:
+                    outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
+        held.check()
+        fx = await update_fx(ctx) if outcomes else []
+    return WatchedUpdate(tuple(outcomes), tuple(fx))
+
+
+def price_history(ctx: AppContext, symbol: str, days: int | None = None) -> list[Bar]:
+    """Stored bars, oldest first; `days` keeps only the most recent trading days."""
+    return BarRepo(ctx.conn).history(resolve_symbol(ctx, symbol).symbol, days)
+
+
+def price_history_in_base(ctx: AppContext, symbol: str, days: int | None = None) -> list[ConvertedBar]:
+    """Stored bars with each close converted to the base currency at that day's rate."""
+    base = ctx.config.base_currency
+    fx = FxRepo(ctx.conn, base)
+    series: dict[str, list] = {}
+    out = []
+    for b in price_history(ctx, symbol, days):
+        if b.currency == base:
+            out.append(ConvertedBar(b, 1.0, b.close))
+            continue
+        picked = pick_rate(series.setdefault(b.currency, fx.history(b.currency)), b.date)
+        if picked is None:
+            out.append(ConvertedBar(b, None, None))
+        else:
+            out.append(ConvertedBar(b, picked.units_per_base, b.close / picked.units_per_base, picked.source))
+    return out
+
+
+def day_change(recent: Sequence[ConvertedBar]) -> float | None:
+    """The last close against the one before, as a ratio (0.05 is up 5%)."""
+    return recent[-1].bar.close / recent[-2].bar.close - 1 if len(recent) >= 2 else None
+
+
+def price_sources(ctx: AppContext) -> list[SourceInfo]:
+    order = ctx.config.prices.sources
+    out = []
+    for name in PRICE_SOURCES:
+        position = order.index(name) + 1 if name in order else None
+        if position is None:
+            reason = "not in [prices] sources"
+        elif registry.missing_key(ctx.config.keys, name):
+            reason = "no key"
+        else:
+            reason = None
+        out.append(SourceInfo(name, position, reason is None, reason))
+    return sorted(out, key=lambda s: (s.position is None, s.position or 0, s.name))
+
+
+async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> PriceUpdate:
+    listing = resolve_symbol(ctx, symbol)
+    repo = BarRepo(ctx.conn)
+    last = repo.last_date(listing.symbol)
+    since = None if last is None else last - REFETCH_OVERLAP
+    instrument = Instrument(listing.symbol, listing.currency)
+    now = ctx.clock.utcnow()
+    try:
+        bars, source = await first_success(
+            registry.price_sources(ctx.config.prices.sources, client, ctx.config.keys),
+            lambda s: s.daily_bars(instrument, since, now),
+            empty_is_no_data=since is None,
+        )
+    except AllFailed as exc:
+        raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})") from None
+    added = repo.upsert(bars, to_utc_iso(now))
+    return PriceUpdate(listing.symbol, added, repo.last_date(listing.symbol), source)

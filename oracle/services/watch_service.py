@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import date
 
 from oracle.services.context import AppContext
+from oracle.market.bars import is_stale
 from oracle.services.errors import InvalidWatchlistName, UnknownWatchlist
+from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
 from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
-    "DEFAULT_LIST", "WatchItem", "Watched", "WatchlistSummary",
+    "DEFAULT_LIST", "WatchLine", "Watched", "WatchlistSummary",
     "show_watchlist", "unwatch", "watch", "watchlists",
 ]
 
@@ -27,6 +30,20 @@ class Watched:
     """False when it was already on the list."""
 
 
+@dataclass(frozen=True)
+class WatchLine(WatchItem):
+    last_date: date | None = None
+    last_close: float | None = None
+    price_currency: str | None = None
+    """The stored bars' currency (pounds for London, not the universe's hint)."""
+    close_base: float | None = None
+    rate_source: str | None = None
+    """Where the rate behind close_base came from, for attribution."""
+    day_change: float | None = None
+    """Ratio against the previous stored close: 0.05 is up 5%."""
+    stale: bool = False
+
+
 def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watched:
     """Watch one listing (not the company's others: a listing is what gets priced)."""
     name = _name(watchlist)
@@ -40,7 +57,7 @@ def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool
     return WatchlistRepo(ctx.conn).remove(_name(watchlist), symbol.strip())
 
 
-def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[WatchItem]:
+def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[WatchLine]:
     name = _name(watchlist)
     repo = WatchlistRepo(ctx.conn)
     if repo.name_of(name) is None:
@@ -49,11 +66,26 @@ def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[Watch
         known = {s.name.casefold(): s.name for s in repo.summaries()}
         near = [known[k] for k in closest(name.casefold(), known)]
         raise UnknownWatchlist(f"no watchlist {name!r}; " + hint(near, "see `oracle watch lists`"))
-    return repo.items(name)
+    return [_with_price(ctx, item) for item in repo.items(name)]
 
 
 def watchlists(ctx: AppContext) -> list[WatchlistSummary]:
     return WatchlistRepo(ctx.conn).summaries()
+
+
+def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:
+    if item.missing:
+        return WatchLine(**asdict(item))
+    recent = price_history_in_base(ctx, item.symbol, days=2)
+    if not recent:
+        return WatchLine(**asdict(item))
+    last = recent[-1]
+    return WatchLine(
+        **asdict(item),
+        last_date=last.bar.date, last_close=last.bar.close, price_currency=last.bar.currency,
+        close_base=last.close_base, rate_source=last.rate_source, day_change=day_change(recent),
+        stale=is_stale(last.bar.date, ctx.clock.utcnow().date()),
+    )
 
 
 def _name(raw: str) -> str:

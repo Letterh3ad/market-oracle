@@ -8,9 +8,24 @@ base_currency = "GBP"
 
 # Per-source request pacing, shared by every oracle process on this database.
 # Override any field of a built-in source, or add a new one (rate_per_second required).
-# Built-ins: yfinance 0.5, stooq 0.5, gdelt 0.2, google_news 0.5, ddgs 0.2, sec_edgar 5.0,
+# Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.2, google_news 0.5, ddgs 0.2, sec_edgar 5.0,
 # financedatabase 0.5 (GitHub, used by `oracle universe refresh`)
 [sources.gdelt]
 rate_per_second = 0.2   # GDELT asks for at most one request every 5 seconds
 cooldown_s = 900        # how long a tripped breaker stays open
 max_retries = 3         # retries on 429/5xx before giving up
+
+# Where daily prices come from, tried in order per listing until one has data.
+# Keyed sources are skipped until their key is set below.
+[prices]
+sources = ["yahoo", "eodhd"]
+
+# Where exchange rates into base_currency come from, tried in order per currency.
+# yahoo, ecb and frankfurter have history; open_er_api has today's rate only.
+[fx]
+sources = ["yahoo", "ecb", "frankfurter", "eodhd", "open_er_api"]
+
+# API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
+# so keys can stay out of files. This file is gitignored; keep it that way.
+[keys]
+# eodhd = "..."   # eodhd.com, global daily prices, FX and fundamentals

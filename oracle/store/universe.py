@@ -45,6 +45,31 @@ class Resolved:
     company_key: str
     name: str
     """The company's name, from its primary listing."""
+    currency: str | None
+
+
+@dataclass(frozen=True)
+class ListingProfile:
+    """A listing with its company's fields, read from the primary listing."""
+
+    symbol: str
+    """The listing asked about."""
+    primary_symbol: str
+    primary_currency: str | None
+    company_key: str
+    name: str
+    type: str
+    country: str | None
+    sector: str | None
+    industry: str | None
+    category: str | None
+    family: str | None
+    exchange: str | None
+    """Of the listing asked about."""
+    listings: int
+    """Active listings of the company."""
+    website: str | None
+    summary: str | None
 
 
 @dataclass(frozen=True)
@@ -108,6 +133,20 @@ class UniverseRepo:
         }
         return UniverseCounts(*row, by_type)
 
+    def profile(self, symbol: str) -> ListingProfile | None:
+        row = self._conn.execute(
+            """SELECT l.symbol, p.symbol AS primary_symbol, p.currency AS primary_currency, l.company_key,
+                      COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, p.country, p.sector,
+                      p.industry, p.category, p.family, l.exchange,
+                      (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key AND x.delisted = 0)
+                        AS listings,
+                      p.website, p.summary
+               FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
+               WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
+            {"s": symbol.strip()},
+        ).fetchone()
+        return ListingProfile(**dict(row)) if row else None
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]
@@ -115,7 +154,7 @@ class UniverseRepo:
     def resolve(self, symbol: str) -> Resolved | None:
         """A symbol in any case, as stored, with its company; None if not listed."""
         row = self._conn.execute(
-            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name
+            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name, l.currency
                FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
                WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
             {"s": symbol.strip()},

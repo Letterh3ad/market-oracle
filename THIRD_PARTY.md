@@ -19,12 +19,25 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | Package | License | Use |
 |---|---|---|
 | httpx | BSD-3-Clause | async HTTP (`oracle/net/client.py`) |
+| tzdata | Apache-2.0 | IANA time zones on Windows, for exchange-local bar dates |
 
 ## Data
 
 | Dataset | License | Use |
 |---|---|---|
 | [FinanceDatabase](https://github.com/JerBouma/FinanceDatabase) (compressed CSVs, fetched at a pinned commit) | MIT | offline universe: names, classification, exchanges (`oracle/universe/financedatabase.py`) |
+
+## Services
+
+Called over HTTP, not redistributed.
+
+| Service | Terms | Use |
+|---|---|---|
+| Yahoo Finance chart and quoteSummary APIs (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars, FX and fundamentals (`oracle/market/yahoo.py`, `fx.py`, `fundamentals.py`) |
+| EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars, FX and fundamentals (`oracle/market/eodhd.py`, `fx.py`, `fundamentals.py`) |
+| ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
+| Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |
+| ExchangeRate-API open access (open.er-api.com) | Free tier; attribution required: "Rates By Exchange Rate API" (https://www.exchangerate-api.com), shown wherever its rates are displayed | today's FX for currencies others lack (`oracle/market/fx.py`) |
 
 ## Dev dependencies
 

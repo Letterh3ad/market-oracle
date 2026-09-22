@@ -4,6 +4,7 @@ import argparse
 
 from oracle.cli.common import cut
 from oracle.services.context import AppContext
+from oracle.services.fx_service import credits
 from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, unwatch, watch, watchlists
 
 
@@ -43,14 +44,26 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if not items:
         print(f"{args.list} is empty: add with `oracle watch add SYMBOL`")
         return 0
-    print(f"{'symbol':<12}{'name':<32}{'exch':<6}{'ccy':<5}country")
+    base = ctx.config.base_currency
+    print(f"{'symbol':<12}{'name':<26}{'exch':<6}{'country':<15}{'last close':>16}{'in ' + base:>12}{'day':>9}  date")
     for i in items:
         if i.missing:
             print(f"{i.symbol:<12}MISSING: no longer in the universe (remove, or refresh again later)")
             continue
-        delisted = "  delisted" if i.delisted else ""
-        print(f"{i.symbol:<12}{cut(i.name, 31):<32}{i.exchange or '':<6}{i.currency or '':<5}"
-              f"{i.country or ''}{delisted}")
+        close = f"{i.last_close:.2f} {i.price_currency}" if i.last_close is not None else "not priced"
+        in_base = f"{i.close_base:.2f}" if i.close_base is not None else "n/a"
+        day = f"{i.day_change * 100:+.2f}%" if i.day_change is not None else ""
+        notes = "  ".join(n for n in (
+            i.last_date.isoformat() if i.last_date else "",
+            "STALE" if i.stale else "",
+            "delisted" if i.delisted else "",
+        ) if n)
+        print(
+            f"{i.symbol:<12}{cut(i.name, 25):<26}{i.exchange or '':<6}{cut(i.country, 14):<15}"
+            f"{close:>16}{in_base:>12}{day:>9}  {notes}".rstrip()
+        )
+    for credit in credits(i.rate_source for i in items):
+        print(credit)
     return 0
 
 
