@@ -350,3 +350,17 @@ sector. `fundamentals_service.fetch_fundamentals` is the one fetch path, with a 
 age: today for the company itself, 7 days for peers; one client and crumb per run.
 **Alternatives:** Ordering by fetched market cap (rejected: needs every candidate's
 fundamentals before choosing, far more traffic).
+
+## 2026-09-22 - Factor scoring rules
+
+**Context:** Ticket 04 turns peer comparisons into value, quality and growth signals.
+**Decision:** Each figure is a percentile (share of reporting peers beaten, ties half);
+a factor averages its figures' percentiles and maps 0..1 to -1..1. Negative P/E, forward
+P/E, P/B and debt to equity (losses or negative equity) rank as the worst, never the
+cheapest. Confidence is the share of figures agreeing with the factor's direction times
+a thinness penalty (reporting peers / 5, capped at 1). Value: P/E, forward P/E, P/B,
+dividend yield. Quality: profit margin, ROE, debt to equity. Growth: revenue growth
+(the only growth figure the sources give today). `analyse` is now async: it fetches
+the company's fundamentals (daily) and its peers' (weekly).
+**Alternatives:** Z-scores (rejected: one outlier peer distorts a 20-company group).
+Sector-median comparison only (rejected: says less than a rank).

@@ -12,16 +12,22 @@ from tests.analysts.bars import geometric, weekdays
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
-from tests.fakes.yahoo import FakeYahoo, bar
+from tests.fakes.yahoo import FakeYahoo, bar, summary
 
 NOW = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
 DAYS = weekdays(300, date(2025, 7, 1))
+HARDWARE = dict(currency="USD", sector="Information Technology", industry_group="Hardware")
+PEERS = ["DELL", "HPQ", "HPE", "LOGI", "NTAP"]
 
 
 @pytest.fixture
 def yahoo():
     y = FakeYahoo()
     y.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, geometric(300, 0.001))])
+    y.add("NOSECT", "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in DAYS])
+    y.summaries["AAPL"] = summary("USD", market_cap=3e12, trailingPE=10.0, profitMargins=0.3, revenueGrowth=0.05)
+    for i, peer in enumerate(PEERS):
+        y.summaries[peer] = summary("USD", market_cap=1e11, trailingPE=20.0 + i, profitMargins=0.1, revenueGrowth=0.1)
     return y
 
 
@@ -32,8 +38,10 @@ def clock():
 
 @pytest.fixture
 async def ctx(tmp_path, yahoo, clock):
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD"),
-                                       equity("MSFT", "Microsoft", currency="USD")]), yahoo)
+    universe = [equity("AAPL", "Apple Inc.", market_cap="Mega Cap", **HARDWARE),
+                equity("MSFT", "Microsoft", currency="USD"), equity("NOSECT", "No Sector Co", currency="USD")]
+    universe += [equity(p, f"{p} Inc.", market_cap="Large Cap", **HARDWARE) for p in PEERS]
+    web = FakeWeb(FakeFinanceDatabase(universe), yahoo)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, clock, web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -43,35 +51,50 @@ async def ctx(tmp_path, yahoo, clock):
 
 
 async def test_analyse_stores_the_trend_signal_for_the_last_bar(ctx):
-    result = analyse(ctx, "aapl")
+    result = await analyse(ctx, "aapl")
     assert "trend" in [s.analyst for s in result.signals]
     stored = signal_history(ctx, "AAPL", "trend")
     assert [(s.as_of, s.direction.value) for s in stored] == [(DAYS[-1], "bullish")]
 
 
 async def test_a_rerun_on_the_same_data_replaces_and_a_new_bar_adds_history(ctx, yahoo, clock):
-    analyse(ctx, "AAPL")
-    analyse(ctx, "AAPL")
+    await analyse(ctx, "AAPL")
+    await analyse(ctx, "AAPL")
     assert len(signal_history(ctx, "AAPL", "trend")) == 1
     next_day = weekdays(301, date(2025, 7, 1))[-1]
     yahoo.series["AAPL"].bars.append(bar(next_day.isoformat(), 200.0))
     clock.advance(86400)
     await update_listing(ctx, "AAPL")
-    analyse(ctx, "AAPL")
+    await analyse(ctx, "AAPL")
     assert [s.as_of for s in signal_history(ctx, "AAPL", "trend")] == [DAYS[-1], next_day]
 
 
 async def test_an_unknown_symbol_is_refused_with_suggestions(ctx):
     with pytest.raises(UnknownSymbol, match="AAPL"):
-        analyse(ctx, "AAPLE")
+        await analyse(ctx, "AAPLE")
 
 
 async def test_a_listing_without_prices_says_how_to_get_them(ctx):
     with pytest.raises(NoPrices, match="oracle prices update MSFT"):
-        analyse(ctx, "MSFT")
+        await analyse(ctx, "MSFT")
 
 
 async def test_analyse_runs_every_technical_and_the_combined_line(ctx):
-    result = analyse(ctx, "AAPL")
-    assert [s.analyst for s in result.signals] == ["trend", "rsi", "macd", "volatility", "technicals"]
+    result = await analyse(ctx, "AAPL")
+    assert [s.analyst for s in result.signals][:5] == ["trend", "rsi", "macd", "volatility", "technicals"]
     assert signal_history(ctx, "AAPL", "technicals")[-1].as_of == DAYS[-1]
+
+
+async def test_analyse_scores_value_quality_and_growth_against_peers(ctx):
+    result = await analyse(ctx, "AAPL")
+    by = {s.analyst: s for s in result.signals}
+    # P/E 10 beats all 5 peers (20..24); margin 0.3 beats all 5; growth 0.05 beats none.
+    assert (by["value"].score, by["quality"].score, by["growth"].score) == (1.0, 1.0, -1.0)
+    assert "industry group Hardware" in by["value"].reason
+
+
+async def test_factors_without_peers_are_skipped_with_the_reason(ctx):
+    await update_listing(ctx, "NOSECT")
+    result = await analyse(ctx, "NOSECT")
+    skipped = {k.analyst: k.reason for k in result.skipped}
+    assert set(skipped) >= {"value", "quality", "growth"} and "no sector" in skipped["value"]

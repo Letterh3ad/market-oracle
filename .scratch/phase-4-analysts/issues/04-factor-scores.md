@@ -4,10 +4,10 @@
 
 **Blocked by:** 01, 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Percentiles are correct on a hand-built peer set, including ties
-- [ ] Negative P/E (losses) is treated as expensive, not cheap
-- [ ] A figure missing for the company is skipped; a factor with no figures gives no signal and says why
-- [ ] Fewer than 5 peers with a figure lowers confidence and says so
-- [ ] Every factor has a plain-English meaning line
+- [x] Percentiles are correct on a hand-built peer set, including ties
+- [x] Negative P/E (losses) is treated as expensive, not cheap
+- [x] A figure missing for the company is skipped; a factor with no figures gives no signal and says why
+- [x] Fewer than 5 peers with a figure lowers confidence and says so
+- [x] Every factor has a plain-English meaning line

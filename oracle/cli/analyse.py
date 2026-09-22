@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import textwrap
 
 from oracle.services.analysis_service import analyse
@@ -13,7 +14,7 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
-    result = analyse(ctx, args.symbol)
+    result = asyncio.run(analyse(ctx, args.symbol))
     print(result.symbol)
     for s in result.signals:
         print(f"  {s.analyst:<12}{s.direction.value:<9}score {s.score:+.2f}  confidence {s.confidence:.0%}"
