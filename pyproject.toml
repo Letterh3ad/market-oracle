@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "market-oracle"
+version = "0.1.0"
+description = "Local global-stock research and paper-trading tool"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+oracle = "oracle.cli.main:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.setuptools.packages.find]
+include = ["oracle*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

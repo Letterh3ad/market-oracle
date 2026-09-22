@@ -1,0 +1,88 @@
+import pytest
+
+from oracle.store.db import connect
+from oracle.store.migrate import SCHEMA_VERSION, SchemaTooNew, current_version, migrate
+from oracle.store.migrations import run_ddl
+
+
+def _tables(conn) -> set[str]:
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")
+    return {r[0] for r in rows}
+
+
+def _migration(ddl):
+    class _M:
+        @staticmethod
+        def up(conn):
+            run_ddl(conn, ddl)
+
+    return _M
+
+
+def test_fresh_database_migrates_to_head(tmp_path):
+    conn = connect(tmp_path / "t.db")
+    assert current_version(conn) == 0
+    assert migrate(conn) == SCHEMA_VERSION
+    assert current_version(conn) == SCHEMA_VERSION
+
+
+def test_migrate_is_idempotent(tmp_path):
+    conn = connect(tmp_path / "t.db")
+    migrate(conn)
+    before = _tables(conn)
+    assert migrate(conn) == SCHEMA_VERSION
+    assert _tables(conn) == before
+
+
+def test_wal_and_foreign_keys_are_on(tmp_path):
+    conn = connect(tmp_path / "t.db")
+    assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+
+
+def test_a_failing_migration_leaves_no_partial_schema(tmp_path, monkeypatch):
+    class _Broken:
+        @staticmethod
+        def up(conn):
+            conn.execute("CREATE TABLE partial (id INTEGER PRIMARY KEY)")
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", [_Broken])
+    conn = connect(tmp_path / "t.db")
+    with pytest.raises(RuntimeError, match="boom"):
+        migrate(conn)
+    assert current_version(conn) == 0
+    assert "partial" not in _tables(conn)
+
+
+def test_a_database_from_a_newer_build_is_refused(conn):
+    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION + 1}")
+    with pytest.raises(SchemaTooNew):
+        migrate(conn)
+
+
+def test_ddl_ending_mid_statement_is_rejected(conn):
+    with pytest.raises(ValueError):
+        run_ddl(conn, "CREATE TABLE ok(a);\nCREATE TABLE broken(a)\n")
+
+
+def test_semicolon_inside_a_literal_does_not_split_a_statement(conn):
+    run_ddl(conn, "CREATE TABLE t(a TEXT DEFAULT 'x;y');\n")
+    assert "t" in _tables(conn)
+
+
+def test_migrating_from_an_earlier_version_does_not_rerun_applied_steps(tmp_path, monkeypatch):
+    first = _migration("CREATE TABLE one(a);")
+    second = _migration("CREATE TABLE two(a);")
+    conn = connect(tmp_path / "t.db")
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", [first])
+    migrate(conn)
+
+    def _boom(_conn):
+        raise AssertionError("must not re-run an already-applied migration")
+
+    monkeypatch.setattr(first, "up", _boom)
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", [first, second])
+    migrate(conn)
+    assert current_version(conn) == 2
+    assert "two" in _tables(conn)
