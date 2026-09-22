@@ -418,3 +418,20 @@ gitignored and untracked; local copies stay. THIRD_PARTY.md stays tracked: it is
 license record, not planning. Earlier commits still hold those files; history is not
 rewritten.
 **Alternatives:** Rewriting history to purge them (declined: private repo, force-push).
+
+## 2026-09-22 - Paper fills: next open, whole shares, pessimistic costs
+
+**Context:** Phase 5 paper ledgers must not flatter the strategy; the validation gate and
+Laya's calibration will be measured on them.
+**Decision:** Two accounts (`strategy`, `manual`) start with `[risk] account` in the base
+currency. An order fills at the open of the first stored bar dated after the day it was
+placed, in whole shares. Costs: 0.1% adverse slippage; 0.2% FX spread on each conversion
+(none for base-currency listings); IBKR fixed-plan fees in the listing's currency (US
+0.005 per share, min 1, max 1% of value; UK and Europe 0.05%, min 3; elsewhere 0.1%,
+min 5); 0.5% stamp duty on LSE buys. A buy is sized so every cost fits its amount. No FX
+rate for the fill day leaves the order pending with the reason. Cash and positions are
+replayed from fills (average cost), never stored. `prices update` fills pending orders
+after fetching; `oracle tick` (phase 10) will own that sequencing.
+**Alternatives:** A `Broker` protocol now (deferred to phase 12: with one implementation
+it would only delegate). Fractional shares (rejected: most non-US venues do not offer
+them). Filling at the placing day's close (rejected: look-ahead).

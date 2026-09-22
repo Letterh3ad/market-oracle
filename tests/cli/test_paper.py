@@ -1,0 +1,49 @@
+from datetime import date, datetime, timezone
+from functools import partial
+
+import pytest
+
+from oracle.cli import main as cli_main
+from oracle.services.context import open_context
+from tests.fakes.clock import FakeClock
+from tests.fakes.financedatabase import FakeFinanceDatabase, equity
+from tests.fakes.web import FakeWeb
+from tests.fakes.yahoo import FakeYahoo, bar
+
+
+@pytest.fixture
+def run(tmp_path, capsys, monkeypatch):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(
+        "[sources.financedatabase]\nrate_per_second = 1000\n[sources.yahoo]\nrate_per_second = 1000\n",
+        encoding="utf-8",
+    )
+    yahoo = FakeYahoo()
+    yahoo.add("VOD.L", "GBp", "Europe/London", [bar("2026-09-17", 70.0)])
+    web = FakeWeb(FakeFinanceDatabase([equity("VOD.L", "Vodafone", "United Kingdom", "LSE", currency="GBP")]), yahoo)
+    clock = FakeClock(datetime(2026, 9, 18, 20, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(cli_main, "open_context", partial(open_context, clock=clock, transport=web.transport))
+
+    def _run(*argv):
+        code = cli_main.main(["--config", str(cfg), *argv])
+        out, err = capsys.readouterr()
+        return code, out, err
+
+    _run.yahoo, _run.clock = yahoo, clock
+    _run("universe", "refresh")
+    _run("watch", "add", "VOD.L")
+    _run("prices", "update")
+    return _run
+
+
+def test_buy_then_prices_update_fills_it_and_show_lists_the_position(run):
+    code, out, _ = run("paper", "buy", "vod.l", "1000")
+    assert code == 0 and "VOD.L" in out and "next open" in out
+    _, out, _ = run("paper", "show")
+    assert "pending" in out and "manual" in out and "strategy" in out
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 21), 71.0, 71.0, 71.0, 71.0, 71.0, 1000))
+    run.clock.advance(3 * 86400)
+    _, out, _ = run("prices", "update")
+    assert "VOD.L: bought" in out
+    _, out, _ = run("paper", "show")
+    assert "VOD.L" in out and "pending" not in out
