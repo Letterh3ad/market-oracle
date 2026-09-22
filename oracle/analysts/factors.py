@@ -55,6 +55,10 @@ def percentile(value: float, others: Sequence[float], higher_is_better: bool) ->
 _BY_NAME = {f.name: f for f in FACTORS}
 
 
+def score(name: str, company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
+    return _score(_BY_NAME[name], company, peers, basis)
+
+
 def value(company: Fundamentals, peers: Sequence[Fundamentals], basis: str) -> AnalystSignal | Skipped:
     return _score(_BY_NAME["value"], company, peers, basis)
 

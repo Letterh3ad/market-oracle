@@ -46,7 +46,9 @@ def macd_signal(bars: Sequence[Bar]) -> AnalystSignal | Skipped:
     score = (2 * signs[-1] + _sign(line[-1])) / 3
     confidence = (1.0 if signs[-1] == _sign(line[-1]) else 0.5) if score else 0.0
     side = {1: "above", -1: "below", 0: "level with"}[signs[-1]]
-    if days < 0:
+    if signs[-1] == 0:
+        when = "is level with its own average"
+    elif days < 0:
         when = f"has been {side} its own average since the data starts"
     else:
         when = f"crossed {side} its own average {days} trading day{'s' if days != 1 else ''} ago"

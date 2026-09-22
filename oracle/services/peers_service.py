@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from oracle.market.fundamentals import Fundamentals
@@ -58,7 +59,7 @@ async def peer_group(ctx: AppContext, symbol: str) -> PeerGroup:
     return with_fundamentals(choice, found)
 
 
-def with_fundamentals(choice: PeerChoice, found: dict) -> PeerGroup:
+def with_fundamentals(choice: PeerChoice, found: Mapping[str, tuple[Fundamentals | None, str | None]]) -> PeerGroup:
     peers = tuple(Peer(r.symbol, r.name, r.market_cap, *found[r.symbol]) for r in choice.rows)
     return PeerGroup(choice.company.primary_symbol, choice.basis, choice.fell_back, peers)
 

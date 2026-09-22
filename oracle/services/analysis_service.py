@@ -27,7 +27,6 @@ __all__ = [
     "analyse_watched", "latest_signals", "signal_history",
 ]
 
-FACTOR_ANALYSTS = (factors.value, factors.quality, factors.growth)
 FACTOR_NAMES = tuple(f.name for f in factors.FACTORS)
 # Display order: price-based first, then the peer comparisons.
 ORDER = ("technicals", "trend", "rsi", "macd", "volatility", "risk", "value", "quality", "growth")
@@ -86,7 +85,7 @@ async def _factors(ctx: AppContext, listing: str) -> list[AnalystSignal | Skippe
     peers = [p.fundamentals for p in group.peers if p.fundamentals is not None]
     # Stored under the listing analysed, like every other signal.
     own = replace(own, symbol=listing)
-    return [f(own, peers, group.basis) for f in FACTOR_ANALYSTS]
+    return [factors.score(name, own, peers, group.basis) for name in FACTOR_NAMES]
 
 
 def _risk(ctx: AppContext, listing: str) -> AnalystSignal | Skipped:

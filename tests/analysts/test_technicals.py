@@ -72,3 +72,9 @@ def test_macd_without_a_crossover_in_the_data_does_not_invent_one():
 
 def test_combined_skip_names_the_symbol():
     assert combine([], "ME").symbol == "ME"
+
+
+def test_a_flat_price_reads_as_level_and_flat_not_below_and_falling():
+    s = macd_signal(series([100.0] * 80))
+    assert "is level with its own average" in s.reason and "broader move is flat" in s.reason
+    assert s.direction == Direction.NEUTRAL

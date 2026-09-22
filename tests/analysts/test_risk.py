@@ -6,7 +6,8 @@ from oracle.analysts.risk import correlation, max_drawdown, risk, suggested_size
 from oracle.analysts.signals import Direction, Skipped
 from tests.analysts.bars import weekdays
 
-SETTINGS = dict(currency="EUR", account=10_000.0, max_position=0.10, cash_floor=0.20, target_volatility=0.20)
+SIZING = dict(account=10_000.0, max_position=0.10, cash_floor=0.20, target_volatility=0.20)
+SETTINGS = dict(currency="EUR", **SIZING)
 
 
 def alternating(n, move):
@@ -19,10 +20,9 @@ def dated(closes, start=0):
 
 
 def test_size_halves_when_volatility_doubles_and_never_exceeds_the_cap():
-    sizing = {k: v for k, v in SETTINGS.items() if k != "currency"}
-    assert suggested_size(0.40, **sizing) == pytest.approx(500.0)
-    assert suggested_size(0.80, **sizing) == pytest.approx(250.0)
-    assert suggested_size(0.05, **sizing) == 1000.0  # calm, but capped at 10% of 10,000
+    assert suggested_size(0.40, **SIZING) == pytest.approx(500.0)
+    assert suggested_size(0.80, **SIZING) == pytest.approx(250.0)
+    assert suggested_size(0.05, **SIZING) == 1000.0  # calm, but capped at 10% of 10,000
 
 
 def test_max_drawdown_by_hand_with_its_dates():

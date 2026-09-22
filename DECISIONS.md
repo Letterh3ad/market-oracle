@@ -1,7 +1,7 @@
 # Decisions
 
-Design and architecture decisions made on the user's behalf. Full design:
-`docs/design/2026-09-22-market-oracle-design.md`.
+Design and architecture decisions made on the user's behalf. The full design and
+tickets are planning notes kept locally, outside the repo.
 
 ## 2026-09-22 - A new repo, borrowing from the stalker rather than sharing a package
 
@@ -408,3 +408,13 @@ refetches the last week, so everything would read stale after each update).
 watch marks) live beside their use; one registry would be premature with nine analysts.
 Risk shows out of date when FX lags the last bar by more than 5 days: honest, since its
 series really ends earlier.
+
+## 2026-09-22 - Planning files stay out of the repo
+
+**Context:** The user asked for CLAUDE.md, `.scratch/` and other planning files to be
+ignored, keeping DECISIONS.md and README.md as the tracked record.
+**Decision:** `/CLAUDE.md`, `/.scratch/` and `/docs/` (design doc, agent conventions) are
+gitignored and untracked; local copies stay. THIRD_PARTY.md stays tracked: it is the
+license record, not planning. Earlier commits still hold those files; history is not
+rewritten.
+**Alternatives:** Rewriting history to purge them (declined: private repo, force-push).

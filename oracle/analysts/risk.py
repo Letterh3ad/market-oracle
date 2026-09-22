@@ -12,6 +12,8 @@ from oracle.analysts.indicators import MIN_BARS, YEAR, mean, volatility
 from oracle.analysts.signals import AnalystSignal, Skipped
 
 NAME = "risk"
+# Shared trading days below this make a correlation noise.
+MIN_SHARED_DAYS = 60
 
 Series = Sequence[tuple[date, float]]
 """(date, close in the base currency), oldest first."""
@@ -41,7 +43,7 @@ def correlation(a: Series, b: Series) -> float | None:
     """Of daily log returns, over the days both traded; None with too few in common."""
     other = dict(b)
     common = [(d, v, other[d]) for d, v in a if d in other]
-    if len(common) < MIN_BARS:
+    if len(common) < MIN_SHARED_DAYS:
         return None
     ra = [math.log(y[1] / x[1]) for x, y in zip(common, common[1:])]
     rb = [math.log(y[2] / x[2]) for x, y in zip(common, common[1:])]
