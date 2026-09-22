@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timedelta, timezone
 
 from tests.fakes.clock import FakeClock
@@ -11,8 +12,10 @@ def test_system_clock_utcnow_is_timezone_aware():
 async def test_system_clock_sleeps():
     clock = SystemClock()
     before = clock.now()
-    await clock.sleep(0.01)
-    assert clock.now() - before >= 0.005
+    await clock.sleep(0.05)
+    # asyncio fires a timer up to one clock tick early (~15.6ms on Windows).
+    tick = time.get_clock_info("monotonic").resolution
+    assert clock.now() - before >= 0.05 - 2 * tick
 
 
 async def test_fake_clock_sleep_advances_without_waiting():
