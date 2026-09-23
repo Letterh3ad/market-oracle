@@ -18,6 +18,19 @@ from tests.fakes.web_search import FakePages, FakeSearcher
 from tests.fakes.yahoo import FakeYahoo, bar
 
 NOW = datetime(2026, 9, 21, 20, 0, tzinfo=timezone.utc)
+HARDWARE = dict(sector="Information Technology", industry_group="Technology Hardware & Equipment")
+UNIVERSE = [
+    equity("AAPL", "Apple Inc.", currency="USD", market_cap="Mega Cap", **HARDWARE),
+    equity("DELL", "Dell Technologies", currency="USD", market_cap="Large Cap", **HARDWARE),
+    equity("HPQ", "HP Inc.", currency="USD", market_cap="Large Cap", **HARDWARE),
+    equity("6758.T", "Sony Group", "Japan", "JPX", currency="JPY", market_cap="Large Cap", **HARDWARE),
+    equity("LOGI", "Logitech", currency="USD", market_cap="Mid Cap", **HARDWARE),
+    equity("SMCI", "Super Micro Computer", currency="USD", market_cap="Mid Cap", **HARDWARE),
+    equity("SSUN.VI", "Samsung Electronics Co Ltd Sponsored GDR Pfd", "South Korea", "VIE", currency="USD",
+           market_cap="Mega Cap", **HARDWARE),
+    equity("MSFT", "Microsoft", currency="USD", market_cap="Mega Cap", sector="Information Technology",
+           industry_group="Software & Services"),
+]
 
 
 @pytest.fixture
@@ -49,7 +62,7 @@ def sec():
 async def ctx(tmp_path, news, gdelt, pages, sec):
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt, pages, sec)
+    web = FakeWeb(FakeFinanceDatabase(UNIVERSE), yahoo, news, gdelt, pages, sec)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -392,3 +405,18 @@ async def test_an_as_of_replay_sees_only_filings_made_by_then(ctx, sec):
     apple_filings(sec)
     run = await research(ctx, "AAPL", ScriptedModel(step("filings"), step("final", "Done.")), as_of=date(2026, 9, 1))
     assert run.steps[0].observation == "[a1] 2026-08-01 SEC: 10-Q Quarterly report"
+
+
+async def test_related_companies_are_universe_peers_with_the_reason_named(ctx, pages):
+    run = await research(ctx, "AAPL", ScriptedModel(step("related_companies"), step("final", "Done.")))
+    observation = run.steps[0].observation
+    lines = observation.splitlines()
+    assert lines[0] == "Apple Inc. (AAPL) is related to these by industry group Technology Hardware & Equipment:"
+    assert {"DELL: Dell Technologies (Large Cap)", "6758.T: Sony Group (Large Cap)"} <= set(lines[1:])
+    # Depositary receipt lines repeat a company already listed elsewhere.
+    assert "Microsoft" not in observation and "GDR" not in observation and len(lines) == 6
+
+
+async def test_related_companies_of_an_unknown_symbol_says_so(ctx):
+    run = await research(ctx, "AAPL", ScriptedModel(step("related_companies", "NOPE"), step("final", "Done.")))
+    assert "no listing 'NOPE'" in run.steps[0].observation

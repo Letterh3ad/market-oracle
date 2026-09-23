@@ -3,6 +3,7 @@ as-of run every tool sees only what existed by the end of that day."""
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta, timezone
@@ -22,6 +23,7 @@ from oracle.research.web import WebSearcher, WebSearchFailed, page_text, unsafe_
 from oracle.services.company_service import FIGURES, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
+from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
@@ -54,8 +56,7 @@ class MarketData:
         self._as_of = as_of
 
     async def run(self, input: str) -> str:
-        # Small models sometimes leak JSON punctuation into the input.
-        symbol = input.strip(" '\"{}[]") or self._listing
+        symbol = _symbol(input, self._listing)
         try:
             view = await company_view(self._ctx, symbol, refresh=False)
         except ServiceError as exc:
@@ -86,6 +87,11 @@ class MarketData:
 
     def _known(self, day: date) -> bool:
         return self._as_of is None or day <= self._as_of
+
+
+def _symbol(input: str, default: str) -> str:
+    # Small models sometimes leak JSON punctuation into the input.
+    return input.strip(" '\"{}[]") or default
 
 
 def _figure(kind: str, value: float, currency: str | None) -> str:
@@ -296,7 +302,7 @@ class Filings:
         self._contact = contact
 
     async def run(self, input: str) -> str:
-        symbol = input.strip(" '\"{}[]").upper() or self._listing
+        symbol = _symbol(input, self._listing).upper()
         # Yahoo marks non-US listings with an exchange suffix (VOD.L, 7203.T); US share
         # classes use a dash (BRK-B).
         if "." in symbol:
@@ -331,3 +337,37 @@ class Filings:
             return resp.json()
         except ValueError as exc:
             raise ToolError(f"SEC sent something unreadable ({exc})") from exc
+
+
+# Enough to see who competes without crowding out the evidence.
+MAX_RELATED = 10
+_RECEIPT = re.compile(r"\b[AG]DRS?\b", re.IGNORECASE)
+
+
+class RelatedCompanies:
+    """Peers from the universe: the factor analysts' own choice (same industry group, else
+    sector). The relationship graph (phase 8) replaces this behind the same tool."""
+
+    name = "related_companies"
+    description = ("companies related to a listing (same industry, else sector), largest first; "
+                   "input: its symbol, or empty for the company researched")
+
+    def __init__(self, ctx: AppContext, listing: str) -> None:
+        self._ctx = ctx
+        self._listing = listing
+
+    async def run(self, input: str) -> str:
+        symbol = _symbol(input, self._listing)
+        try:
+            choice = choose_peers(self._ctx, symbol)
+        except ServiceError as exc:
+            raise ToolError(str(exc)) from exc
+        if not choice.rows:
+            return f"No related companies found for {choice.company.name} ({choice.company.symbol})."
+        head = f"{choice.company.name} ({choice.company.symbol}) is related to these by {choice.basis}:"
+        # Depositary receipt lines carry their own ISINs, so they repeat a company already
+        # listed (Samsung's GDRs); they would crowd out real peers.
+        companies = [r for r in choice.rows if not _RECEIPT.search(r.name)]
+        rows = [f"{r.symbol}: {r.name}" + (f" ({r.market_cap})" if r.market_cap else "")
+                for r in companies[:MAX_RELATED]]
+        return "\n".join([head, *rows])

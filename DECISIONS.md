@@ -771,3 +771,12 @@ contact (name and email). The user chose a config setting sent to sec.gov only.
   contact is ever sent by a test unasked.
 **Alternatives:** Sending the contact to every site (rejected by the user: it would unblock
 Wikipedia but hands the email to arbitrary hosts).
+
+## 2026-09-23 - related_companies from the universe until the graph exists
+
+**Context:** Ticket 6 of phase 7. The relationship graph is phase 8.
+**Decision:** `related_companies` returns the factor analysts' own peer choice (same
+industry group, else sector), at most 10, largest first, with the basis named once. No
+network. Depositary receipt lines (names with ADR/GDR) are skipped: they repeat a company
+already listed and filled 3 of 10 slots for Apple (Samsung's GDRs). The peer choice for
+factor scores is unchanged. Phase 8 swaps the graph in behind the same tool name.
