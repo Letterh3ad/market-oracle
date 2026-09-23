@@ -914,3 +914,17 @@ replay was left for later.
 relies on `single_flight` serializing runs (returning fallbacks per reply would keep that
 state inside the run); the GUI trace tells a forced final step by its observation, which
 relies on the engine leaving normal final steps without one.
+
+## 2026-09-23 - Instruct stays the research default; thinking writes reports on an opt-in deep run
+**Context:** Compared `qwen3:4b-instruct-2507` with `qwen3:4b-thinking-2507` writing the six
+report roles from the same evidence (AAPL, 7203.T, SAP.DE), plus the user's abliterated
+`general-heretic` on 7203.T.
+**Decision:** Instruct remains the default for the loop and the roles. A user-chosen "deep"
+run keeps the loop on instruct and writes the roles on thinking. Thinking was more
+accurate (valuations read right, one or two precise citations per claim) but ~15x slower
+(8 to 10 min against ~35s) and lost one of 18 replies to bad JSON. It needs a far larger
+reply cap (~6144 tokens) and context (16k): at the 1024 cap it spends every token thinking
+and returns nothing.
+**Alternatives:** Thinking as the default (too slow for routine runs); thinking for the loop
+too (slower still, no evidence it searches better); `general-heretic` (matched instruct,
+since research never triggers refusals, so abliteration buys nothing).
