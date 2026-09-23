@@ -7,6 +7,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 
+import tomlkit
+from tomlkit.exceptions import TOMLKitError
+
 DEFAULT_CONFIG_NAME = "oracle.toml"
 
 
@@ -95,6 +98,15 @@ class StrategyConfig:
 
 
 @dataclass(frozen=True)
+class ScheduleConfig:
+    """Automatic ticks while the GUI runs. Off until the user turns it on."""
+
+    enabled: bool = False
+    time: str = "22:30"
+    """Local time, weekdays only: after the US close for a UK user."""
+
+
+@dataclass(frozen=True)
 class GuiConfig:
     host: str = "127.0.0.1"
     """Localhost only by default: nothing on the network can reach the GUI."""
@@ -157,29 +169,25 @@ class Config:
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
+    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
 
-def with_setting(text: str, section: str, key: str, literal: str) -> str:
-    """`text` (an oracle.toml) with `key` in `[section]` set to `literal`, written as TOML.
-    Everything else, comments included, is kept as it was."""
-    lines = text.splitlines()
-    header = re.compile(r"\s*\[([^\]]+)\]")
-    start = next((i for i, line in enumerate(lines) if (m := header.match(line)) and m.group(1).strip() == section), None)
-    if start is None:
-        body = "\n".join(lines)
-        return (body + "\n\n" if body.strip() else "") + f"[{section}]\n{key} = {literal}\n"
-    end = next((i for i in range(start + 1, len(lines)) if header.match(lines[i])), len(lines))
-    assign = re.compile(rf"(\s*{re.escape(key)}\s*=\s*)([^#]*?)(\s*(#.*)?)$")
-    for i in range(start + 1, end):
-        if m := assign.match(lines[i]):
-            lines[i] = f"{m.group(1)}{literal}{m.group(3)}"
-            break
-    else:
-        lines.insert(start + 1, f"{key} = {literal}")
-    return "\n".join(lines) + "\n"
+def with_settings(text: str, section: str, values: Mapping[str, object]) -> str:
+    """`text` (an oracle.toml) with each key in `[section]` set to its value. Everything else,
+    comments included, is kept as it was."""
+    try:
+        doc = tomlkit.parse(text)
+    except TOMLKitError as exc:
+        raise ConfigError(f"not valid TOML: {exc}") from exc
+    table = doc.get(section)
+    if table is None:
+        table = doc[section] = tomlkit.table()
+    for key, value in values.items():
+        table[key] = value
+    return tomlkit.dumps(doc)
 
 
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
@@ -239,6 +247,9 @@ def _apply(raw: dict) -> Config:
             continue
         if name == "gui":
             values[name] = _gui(value)
+            continue
+        if name == "schedule":
+            values[name] = _schedule(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -315,6 +326,22 @@ def _gui(raw: object) -> GuiConfig:
     if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ConfigError(f"gui.port must be a whole number from 1024 to 65535, got {port!r}")
     return GuiConfig(host=host, port=port)
+
+
+def _schedule(raw: object) -> ScheduleConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("schedule must be a [schedule] table")
+    _reject_unknown(raw, ScheduleConfig, "[schedule]")
+    enabled, at = raw.get("enabled", ScheduleConfig.enabled), raw.get("time", ScheduleConfig.time)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"schedule.enabled must be true or false, got {enabled!r}")
+    return ScheduleConfig(enabled=enabled, time=check_schedule_time(at))
+
+
+def check_schedule_time(value: object) -> str:
+    if not (isinstance(value, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value)):
+        raise ConfigError(f'schedule.time must be a 24-hour time like "22:30", got {value!r}')
+    return value
 
 
 LLM_BACKENDS = ("ollama", "claude")

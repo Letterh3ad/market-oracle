@@ -17,7 +17,7 @@ from oracle.services.paper_service import fill_pending, strategy_step
 from oracle.services.prices_service import update_watched
 from oracle.store.ticks import Stage, TickRepo, TickRun
 
-__all__ = ["STAGES", "Stage", "TickRun", "last_tick", "run_tick"]
+__all__ = ["STAGES", "Stage", "TickRun", "last_tick", "record_skipped", "run_tick"]
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +85,13 @@ async def _run_stage(ctx: AppContext, name: str, stage: StageRun) -> Stage:
             log.exception("tick stage %s failed", name)
         return Stage(name, "failed", "did not run", str(exc) or type(exc).__name__)
     return Stage(name, "partial" if error else "ok", summary, error)
+
+
+def record_skipped(ctx: AppContext, trigger: str, note: str) -> TickRun:
+    """A tick that never started, stored so the user can see why."""
+    now = ctx.clock.utcnow()
+    run = TickRun(trigger, now, now, (), note)
+    return replace(run, id=TickRepo(ctx.conn).save(run))
 
 
 def last_tick(ctx: AppContext) -> TickRun | None:

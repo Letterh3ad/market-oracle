@@ -17,7 +17,7 @@ async function refresh() {
     tip("Universe", "universe"),
     u.loaded ? ` ${u.listings.toLocaleString()} listings` : ` not loaded (${u.next})`,
   );
-  tick.show(status.tick);
+  tick.show(status.tick, status.schedule);
   const paused = status.sources.filter((s) => s.state === "paused");
   document.getElementById("sources-state").textContent =
     paused.length ? `${paused.length} source(s) paused` : "all sources ok";

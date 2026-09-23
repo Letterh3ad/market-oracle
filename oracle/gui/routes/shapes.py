@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
+from oracle.services.schedule_service import ScheduleView
 from oracle.services.tick_service import TickRun
 
 
@@ -32,6 +33,10 @@ def tick(run: TickRun | None) -> dict | None:
         "outcome": run.outcome, "first_error": run.first_error, "note": run.note,
         "stages": [asdict(s) for s in run.stages],
     }
+
+
+def schedule(view: ScheduleView) -> dict:
+    return asdict(view)
 
 
 def order_outcome(order: Order, status: str, note: str | None) -> dict:
