@@ -69,6 +69,11 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
 
 def print_report(report: Report) -> None:
     print(f"Report ({UNVALIDATED}):")
+    _wrapped(f"Verdict (unvalidated): {_verdict(report)}", "  ")
+    if report.verdict:
+        _wrapped(f"Verdict wrong if: {report.verdict.invalidated_if}", "  ")
+    if report.did_not_read:
+        _wrapped(f"The verdict {report.did_not_read}", "  ")
     for label, case in (("Bull", report.bull), ("Bear", report.bear)):
         _wrapped(f"{label}: {_claim(case) if case else '(no case the evidence supports)'}", "  ")
     if report.findings:
@@ -91,12 +96,23 @@ def print_history(runs: list[ResearchRun], symbol: str) -> None:
     for r in runs:
         replay = " (replay)" if r.as_of else ""
         print(f"{r.report.day.isoformat()}{replay}  {r.model_label}")
+        _wrapped(f"verdict: {_verdict(r.report)}", "  ")
         for label, case in (("bull", r.report.bull), ("bear", r.report.bear)):
             _wrapped(f"{label}: {case.text if case else '(none)'}", "  ")
 
 
+def _verdict(report: Report) -> str:
+    if v := report.verdict:
+        return f"{v.label.upper()}, confidence {v.confidence:.0%}: {_cited(v.reason, v.cites)}"
+    return f"none ({report.no_verdict})"
+
+
 def _claim(c: Claim) -> str:
-    return f"{c.text} {' '.join(f'[a{i}]' for i in c.cites)}"
+    return _cited(c.text, c.cites)
+
+
+def _cited(text: str, cites: tuple[int, ...]) -> str:
+    return f"{text} {' '.join(f'[a{i}]' for i in cites)}"
 
 
 def _wrapped(text: str, indent: str) -> None:

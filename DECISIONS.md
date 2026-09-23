@@ -1168,3 +1168,32 @@ fake models now answer a well-formed empty reply for roles a test does not scrip
 **Alternatives:** A `research_checks` table (a migration for data never queried on its own);
 saving an empty report for an all-garbled run (looks like research that found nothing);
 raising (the run is already recorded as failed; an exception adds nothing but a noisy job).
+
+## 2026-09-23 - The verdict reads the statistics and the whole run, under a context budget
+
+**Context:** ai-account 01: each report ends in a buy/hold/sell verdict. The user asked that
+it read the regular statistics and the full research run, not only the final report.
+**Decision:** A seventh role, `verdict`, runs after the six (only when the report is usable).
+Its input, filled in this order: the stored-data line (prices, 1-day/1-month/3-month change,
+fundamentals, baseline lean and probability, analyst signals; never trimmed), the
+researcher's notes, the six roles' outputs, cited evidence, tool observations that show cited
+evidence, other observations, then uncited evidence. Budget: `([llm] context - 1024) * 4`
+characters less the system prompt; Claude uses a fixed 200k tokens. Filling stops at the first
+item that does not fit, so nothing lower-priority takes its room; what was left out is counted
+by kind ("did not read: 7 uncited items") and shown. The reason must cite an item the verdict
+role was actually shown; otherwise, and for a bad label, confidence or blank condition, the
+verdict is rejected with its reason. It reuses ticket 06's `Answer` check.
+**Alternatives:** Skipping items that do not fit and packing smaller later ones (lets uncited
+items displace role outputs); counting tokens with a tokenizer (a dependency for a rough
+budget); letting the verdict cite anything the run was shown (it could cite what it never read).
+
+## 2026-09-23 - The verdict is stored in the report JSON; replays never supply the latest verdict
+
+**Context:** Ticket 02's AI step reads each listing's latest verdict.
+**Decision:** `verdict`, `verdict_rejected` and `unread` live in `research_reports.body` like
+06's checks (no migration); older reports read back with none ("written before reports had
+verdicts"). `latest_verdict(ctx, symbol)` returns the newest live run whose report has a valid
+verdict, found with `json_extract`; as-of replays are excluded so a backtest never trades live.
+**Alternatives:** A verdict column or table (a migration for one query `json_extract` serves);
+returning the newest report even when its verdict was rejected (ticket 02 can still apply its
+own age limit to the older valid one).

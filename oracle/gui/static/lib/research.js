@@ -23,10 +23,25 @@ function side(label, key, claim) {
       : el("div", { class: "dim" }, "No case the evidence supports."));
 }
 
+const TONES = { buy: "up", sell: "down", hold: "" };
+
+function verdict(p) {
+  const v = p.verdict;
+  return el("div", { class: "card" },
+    el("div", { class: "dim small" }, tip("Verdict", "verdict"),
+      el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated"))),
+    v ? el("div", null, el("strong", { class: TONES[v.label] }, v.label.toUpperCase()),
+      ` confidence ${Math.round(v.confidence * 100)}%: ${v.reason}`, ...cites(v.cites))
+      : el("div", { class: "dim" }, `No verdict: ${p.no_verdict}.`),
+    v ? el("div", { class: "small" }, `Wrong if: ${v.invalidated_if}`) : null,
+    p.did_not_read ? el("div", { class: "dim small" }, tip("The verdict " + p.did_not_read, "verdict_unread")) : null);
+}
+
 function report(r) {
   const p = r.report;
   if (!p) return el("p", { class: "dim" }, r.error ? `This run failed: ${r.error}` : "This run wrote no report.");
   return el("div", null,
+    verdict(p),
     el("div", { class: "row cards" }, side("Bull case", "bull_case", p.bull), side("Bear case", "bear_case", p.bear)),
     p.findings.length ? el("div", null, el("div", { class: "dim small" }, tip("Findings", "research_findings")),
       el("ul", null, ...p.findings.map((c) => claimLine(c, ROLES[c.role] ?? c.role)))) : null,

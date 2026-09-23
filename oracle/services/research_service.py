@@ -16,7 +16,8 @@ from oracle.research.news import Article
 from oracle.research.queries import plan, seed_queries, suggest
 from oracle.research.roles import write_report
 from oracle.research.tools import Tool
-from oracle.research.trace import UNVALIDATED, Claim, Report, ResearchRun, RunStatus, Step
+from oracle.research.trace import UNVALIDATED, Claim, Report, ResearchRun, RunStatus, Step, Verdict
+from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
@@ -34,14 +35,16 @@ from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 
 __all__ = [
-    "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "latest_research", "report_history", "research",
-    "research_progress", "sweep_interrupted",
+    "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "Verdict", "latest_research",
+    "latest_verdict", "report_history", "research", "research_progress", "sweep_interrupted",
 ]
 
 JOB = "research"
 UNUSABLE = "the model's answers were unusable"
 # Far longer than a run takes; a crashed holder is freed by the pid check instead.
 LEASE_S = 3600.0
+# Conservative for every Claude model the backend can name.
+CLAUDE_CONTEXT = 200_000
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
@@ -89,13 +92,19 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
     findings, cited = keep_citations(outcome.findings, shown)
-    evidence = await _evidence(ctx, shelf, repo, run_id, listing, as_of, day, findings)
-    report = await write_report(model, evidence, shown, day)
+    statistics, data_id = await _statistics(ctx, shelf, run_id, listing, as_of, day)
+    run = repo.get(run_id)
+    evidence = tuple(e for e in run.evidence if e.id != data_id)
+    lines = {e.id: evidence_line(e.id, e.published, e.outlet, e.title) for e in evidence}
+    digest = "\n".join(["Evidence:", statistics, *lines.values()]) + f"\n\nResearcher's notes: {findings or '(none)'}"
+    report = await write_report(model, digest, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
             repo.set_cited(run_id, cited)
             repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
         return
+    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines)
+    report = await add_verdict(model, report, material, context_tokens(ctx))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)
@@ -116,10 +125,10 @@ def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: Cha
         exc.add_note(f"the run could not be marked failed either: {also!r}")
 
 
-async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: int, listing: str,
-                    as_of: date | None, day: date, notes: str) -> str:
-    """What the roles read: the stored data as one citable item (kept with the run, so the
-    report can be checked later), every article the run was shown, and the loop's notes."""
+async def _statistics(ctx: AppContext, shelf: Shelf, run_id: int, listing: str, as_of: date | None,
+                      day: date) -> tuple[str, int]:
+    """The stored data as one citable item (kept with the run, so the report can be checked
+    later), as the roles read it, and its id."""
     signals = "; ".join(f"{s.signal.analyst}: {s.signal.direction.value} ({s.signal.reason})"
                         + (" [out of date]" if s.stale else "")
                         for s in latest_signals(ctx, listing) if s.signal.as_of <= day)
@@ -127,10 +136,7 @@ async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: i
     [data_id] = shelf.keep([Article(f"oracle:data/{listing}/run-{run_id}",
                                     f"{listing} stored prices, fundamentals and analyst signals", "stored data",
                                     datetime.combine(day, time(), timezone.utc), body=data)], "oracle")
-    lines = [f"[a{data_id}] {day.isoformat()} stored data: {data}"]
-    lines += [evidence_line(e.id, e.published, e.outlet, e.title) for e in repo.get(run_id).evidence
-              if e.id != data_id]
-    return "Evidence:\n" + "\n".join(lines) + f"\n\nResearcher's notes: {notes or '(none)'}"
+    return f"[a{data_id}] {day.isoformat()} stored data: {data}", data_id
 
 
 def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
@@ -174,6 +180,16 @@ def sweep_interrupted(ctx: AppContext) -> None:
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:
     return ResearchRepo(ctx.conn).latest(resolve_symbol(ctx, symbol).symbol)
+
+
+def context_tokens(ctx: AppContext) -> int:
+    """How much the configured model reads at once; `[llm] context` sizes Ollama's only."""
+    return ctx.config.llm.context if ctx.config.llm.backend == "ollama" else CLAUDE_CONTEXT
+
+
+def latest_verdict(ctx: AppContext, symbol: str) -> ResearchRun | None:
+    """The newest live run whose report has a valid verdict; replays never count."""
+    return ResearchRepo(ctx.conn).latest_verdict(resolve_symbol(ctx, symbol).symbol)
 
 
 def configured_model(ctx: AppContext) -> ChatModel:

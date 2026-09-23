@@ -59,6 +59,13 @@ const GLOSSARY = {
   research_findings: "What each analyst role concluded. Every claim cites the evidence it rests on; uncited claims are dropped.",
   risks: "What could hurt someone holding the shares soon.",
   invalidated_if: "A plain condition that, if it happens, means the bull case was wrong.",
+  verdict:
+    "The research's own call: buy, hold or sell, with a confidence from 0 to 1. It is written last, from the " +
+    "analyst statistics, the lean, the recent price change, every step of the research and the roles above. " +
+    "A reply that fails the checks is left out, never guessed at.",
+  verdict_unread:
+    "The model reads only so much at once. The statistics always fit; after them come the researcher's notes, " +
+    "the roles' outputs, the cited evidence and the tool results, and what did not fit is counted here.",
   research_rejections:
     "What was left out of this report. A role's answer is unusable when it is not in the shape asked for; " +
     "a claim is dropped when it has no text, cites nothing, or cites something the research was never shown.",

@@ -1,0 +1,110 @@
+from datetime import date
+
+import pytest
+
+from oracle.research.trace import Claim, Evidence, Report, Step, Verdict
+from oracle.research.verdict import Material, add_verdict, budget, check, fit
+from tests.fakes.llm import ScriptedModel
+
+DAY = date(2026, 9, 21)
+STATS = "[a9] 2026-09-21 stored data: AAPL last close 105.00 USD. Change over 1 day: +5.0%. Baseline lean: buy 64%."
+REPORT = Report(DAY, (Claim("Beat estimates", (1,), "news_analyst"),), Claim("Momentum", (1,), "bull"), None,
+                (Claim("China demand", (2,), "risk"),), "Next quarter misses")
+GOOD = {"verdict": "buy", "confidence": 0.7, "reason": "Beat and momentum", "cites": ["a1"],
+        "invalidated_if": "Guidance cut"}
+
+
+def ev(i: int) -> Evidence:
+    return Evidence(i, f"https://x.test/{i}", f"Title {i}", "X", None, False)
+
+
+def material(uncited: int = 0, notes: str = "Beat [a1].", steps: tuple[Step, ...] = ()) -> Material:
+    evidence = (ev(1), ev(2), *(ev(10 + n) for n in range(uncited)))
+    return Material(STATS, 9, notes, REPORT, evidence, steps,
+                    {e.id: f"[a{e.id}] undated X: {e.title}" for e in evidence})
+
+
+def test_everything_fits_in_a_roomy_budget_and_all_of_it_is_citable():
+    steps = (Step(1, "look", "news_search", "Apple", "[a1] undated X: Title 1\n[a2] undated X: Title 2"),
+             Step(2, "done", "final", "Beat [a1].", None))
+    f = fit(material(uncited=2, steps=steps), 100_000)
+    assert f.text.startswith(f"Statistics:\n{STATS}")
+    for part in ("Beat [a1].", "- news_analyst: Beat estimates [a1]", "- bull case: Momentum [a1]",
+                 "- risk: China demand [a2]", "- the bull case is wrong if: Next quarter misses",
+                 "[a11] undated X: Title 11", "Step 1, news_search(Apple):"):
+        assert part in f.text
+    assert "Step 2" not in f.text
+    assert f.shown == {1, 2, 9, 10, 11} and f.unread == ()
+
+
+def test_the_statistics_are_always_there_even_with_no_room_at_all():
+    f = fit(material(uncited=3), 0)
+    assert STATS in f.text and f.shown == {9}
+    assert f.unread == ("the researcher's notes", "4 role outputs", "2 cited items", "3 uncited items")
+
+
+def test_a_tight_budget_leaves_out_uncited_evidence_first_and_records_it():
+    m = material(uncited=7)
+    full = fit(m, 100_000).text
+    assert fit(m, len(full)).text == full
+    assert fit(m, len(full) - 1).unread == ("1 uncited item",)
+    f = fit(m, len(full.split("\n\nOther evidence shown:")[0]))
+    assert f.unread == ("7 uncited items",) and "- risk: China demand" in f.text and "[a1] undated" in f.text
+
+
+def test_observations_behind_cited_evidence_come_before_the_rest():
+    cited = Step(1, "", "news_search", "Apple", "[a1] undated X: Title 1 " + "x" * 200)
+    other = Step(2, "", "news_search", "Pears", "[a10] undated X: Title 10 " + "y" * 200)
+    m = material(uncited=1, steps=(other, cited))
+    f = fit(m, len(fit(m, 100_000).text) - 260)
+    assert "Title 1 xxx" in f.text and "yyy" not in f.text
+    assert f.unread == ("1 step observation", "1 uncited item")
+
+
+def test_the_budget_is_the_models_context_less_the_reply_and_the_prompt():
+    assert budget(8192, "s" * 100) == (8192 - 1024) * 4 - 100
+    assert budget(1000, "s") == 0
+
+
+@pytest.mark.parametrize("reply, why", [
+    ("garbled", "not in the shape asked for"),
+    ({**GOOD, "cites": "a1"}, "not in the shape asked for"),
+    ({**GOOD, "verdict": "strong buy"}, "'strong buy' is not buy, hold or sell"),
+    ({**GOOD, "confidence": 1.5}, "confidence 1.5 is not a number from 0 to 1"),
+    ({**GOOD, "confidence": "0.7"}, "confidence '0.7' is not a number from 0 to 1"),
+    ({**GOOD, "reason": "", "cites": []}, "it gave no reason"),
+    ({**GOOD, "cites": []}, "its reason cites no evidence"),
+    ({**GOOD, "cites": ["a42"]}, "its reason cites nothing it was shown"),
+    ({**GOOD, "invalidated_if": " "}, "it gave no condition that would prove it wrong"),
+])
+def test_an_invalid_verdict_is_rejected_with_its_reason(reply, why):
+    assert check(reply, {1, 9}) == (None, why)
+
+
+def test_a_valid_verdict_keeps_only_the_citations_it_was_shown():
+    assert check({**GOOD, "verdict": " Hold ", "confidence": 1, "cites": ["a1", "a42"]}, {1}) == (
+        Verdict("hold", 1.0, "Beat and momentum", (1,), "Guidance cut"), None)
+
+
+async def test_the_verdict_role_reads_the_fitted_material_and_its_verdict_lands_on_the_report():
+    model = ScriptedModel()
+    model.roles = {"verdict": {**GOOD, "cites": ["a9"]}}
+    r = await add_verdict(model, REPORT, material(uncited=1), 8192)
+    assert r.verdict == Verdict("buy", 0.7, "Beat and momentum", (9,), "Guidance cut")
+    assert r.verdict_rejected is None and r.unread == () and r.did_not_read is None and 9 in r.cites
+    (messages, schema), = model.calls
+    assert messages[0]["content"].startswith("Role: verdict.") and STATS in messages[1]["content"]
+    assert schema["properties"]["verdict"]["enum"] == ["buy", "hold", "sell"]
+
+
+async def test_a_rejected_verdict_says_why_and_what_went_unread():
+    model = ScriptedModel()
+    model.roles = {"verdict": {**GOOD, "cites": ["a1"]}}
+    r = await add_verdict(model, REPORT, material(uncited=40), 1100)
+    assert r.verdict is None and r.verdict_rejected == "its reason cites nothing it was shown"
+    assert r.no_verdict == "the verdict was rejected: its reason cites nothing it was shown"
+    assert r.did_not_read == "did not read: the researcher's notes, 4 role outputs, 2 cited items, 40 uncited items"
+
+
+def test_an_older_report_has_no_verdict_and_says_so():
+    assert REPORT.verdict is None and REPORT.no_verdict == "written before reports had verdicts"

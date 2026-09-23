@@ -205,3 +205,17 @@ async def test_a_run_with_no_usable_answers_shows_as_failed_beside_the_last_repo
     body = (await ready.get("/api/companies/AAPL/research")).json()
     assert body["run"]["report"]["bull"]["text"] == "Earnings momentum"
     assert body["failed"]["error"] == "the model's answers were unusable"
+
+
+async def test_the_verdict_comes_with_the_report_or_why_there_is_none(ready, ollama):
+    ollama.roles["verdict"] = {"verdict": "hold", "confidence": 0.55, "reason": "Beat but priced in", "cites": ["a1"],
+                               "invalidated_if": "Guidance is raised"}
+    report = (await researched(ready))["report"]
+    assert report["verdict"] == {"label": "hold", "confidence": 0.55, "reason": "Beat but priced in", "cites": [1],
+                                 "invalidated_if": "Guidance is raised"}
+    assert report["no_verdict"] is None and report["did_not_read"] is None
+    ollama.contents = [step("final", "Again.")]
+    ollama.roles["verdict"] = {"verdict": "moon", "confidence": 1, "reason": "x", "cites": [], "invalidated_if": ""}
+    report = (await researched(ready))["report"]
+    assert report["verdict"] is None
+    assert report["no_verdict"] == "the verdict was rejected: 'moon' is not buy, hold or sell"

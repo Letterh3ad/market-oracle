@@ -93,6 +93,8 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
             "day": report.day, "bull": report.bull and asdict(report.bull), "bear": report.bear and asdict(report.bear),
             "findings": [asdict(c) for c in report.findings], "risks": [asdict(c) for c in report.risks],
             "invalidated_if": report.invalidated_if, "rejections": report.rejections,
+            "verdict": report.verdict and asdict(report.verdict), "no_verdict": report.no_verdict,
+            "did_not_read": report.did_not_read,
         },
         # A link only for a web address: stored-data items have none, and nothing else may run.
         "evidence": [{**asdict(e), "link": e.url if urlsplit(e.url).scheme in ("http", "https") else None}

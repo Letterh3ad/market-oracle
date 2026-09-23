@@ -13,6 +13,7 @@ from oracle.research.llm import ChatModel
 from oracle.research.trace import Claim, Report
 
 MAX_CLAIMS = 3
+MAX_CITES = 5
 
 _BASE = ("Role: {role}. You are {who} on a research team studying a listed company for an investor "
          "holding for days to a few weeks. {task} Use only the evidence given. Cite each claim by the "
@@ -40,7 +41,7 @@ RISK = ("the risk manager", f'List up to {MAX_CLAIMS} risks that could hurt a ho
                             'JSON: "risks" and "invalidated_if".')
 
 # Bounded arrays: Ollama's grammar honours maxItems, so a small model cannot loop inside one.
-_CITES = {"type": "array", "items": {"type": "string"}, "maxItems": 5}
+_CITES = {"type": "array", "items": {"type": "string"}, "maxItems": MAX_CITES}
 _CLAIM_LIST = {"type": "array", "maxItems": MAX_CLAIMS,
                "items": {"type": "object", "properties": {"text": {"type": "string"}, "cites": _CITES},
                          "required": ["text", "cites"]}}
@@ -51,8 +52,8 @@ async def write_report(model: ChatModel, evidence: str, shown: set[int], day: da
     and the report's checks record it."""
 
     async def ask(role: str, who: str, task: str, material: str, schema: dict, expected: dict) -> Answer:
-        system = _BASE.format(role=role, who=who, task=task)
-        reply = await model.reply([{"role": "system", "content": system}, {"role": "user", "content": material}],
+        reply = await model.reply([{"role": "system", "content": prompt(role, who, task)},
+                                   {"role": "user", "content": material}],
                                   {"type": "object", "properties": schema, "required": list(schema)})
         answer = Answer(role, reply, expected, shown)
         answers.append(answer)
@@ -75,6 +76,11 @@ async def write_report(model: ChatModel, evidence: str, shown: set[int], day: da
     return Report(day, tuple(findings), sides["bull"], sides["bear"], tuple(risk.claims("risks", MAX_CLAIMS)),
                   condition.strip() if isinstance(condition, str) and condition.strip() else None,
                   tuple(a.check for a in answers))
+
+
+def prompt(role: str, who: str, task: str) -> str:
+    """A role's system prompt; it starts "Role: <role>." so a scripted model can tell roles apart."""
+    return _BASE.format(role=role, who=who, task=task)
 
 
 def _listed(claims: list[Claim]) -> str:

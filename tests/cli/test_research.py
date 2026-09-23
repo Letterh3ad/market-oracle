@@ -164,3 +164,41 @@ def test_a_run_with_no_usable_answers_says_so_and_exits_nonzero(run, ollama, new
                                   "risk"), "garbled")
     code, out, _ = run("research", "AAPL")
     assert code == 1 and "Failed: the model's answers were unusable" in out and "Report (" not in out
+
+
+VERDICT = {"verdict": "buy", "confidence": 0.7, "reason": "Beat estimates", "cites": ["a1"],
+           "invalidated_if": "Guidance is cut"}
+
+
+def test_the_verdict_comes_from_the_default_ollama_model_and_is_printed_badged(run, ollama, news):
+    scripted_report(ollama, news)
+    ollama.roles["verdict"] = VERDICT
+    code, out, _ = run("research", "AAPL")
+    [asked] = [b for b in ollama.bodies if b["messages"][0]["content"].startswith("Role: verdict.")]
+    assert asked["model"] == "qwen3:4b-instruct-2507-q8_0" and asked["format"]["properties"]["verdict"]["enum"] == [
+        "buy", "hold", "sell"]
+    report = out.split("Report (unvalidated")[1]
+    assert code == 0 and "Verdict (unvalidated): BUY, confidence 70%: Beat estimates [a1]" in report
+    assert "Verdict wrong if: Guidance is cut" in report and "did not read" not in report
+    _, out, _ = run("research", "AAPL", "--history")
+    assert "verdict: BUY, confidence 70%" in out
+
+
+def test_a_malformed_verdict_is_printed_as_none_with_the_reason(run, ollama, news):
+    scripted_report(ollama, news)
+    ollama.roles["verdict"] = "I think you should buy"
+    code, out, _ = run("research", "AAPL")
+    assert code == 0
+    assert "Verdict (unvalidated): none (the verdict was rejected: not in the shape asked for)" in out
+
+
+def test_what_the_verdict_did_not_read_is_printed(capsys):
+    from datetime import date
+
+    from oracle.cli.research import print_report
+    from oracle.services.research_service import Report
+
+    print_report(Report(date(2026, 9, 21), (), None, None, (), None, unread=("7 uncited items",)))
+    out = capsys.readouterr().out
+    assert "Verdict (unvalidated): none (written before reports had verdicts)" in out
+    assert "The verdict did not read: 7 uncited items" in out

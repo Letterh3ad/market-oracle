@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import asdict
 from collections.abc import Set
 from datetime import date, datetime
 
-from oracle.research.trace import Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step
+from oracle.research.trace import Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step, Verdict
 from oracle.store.db import transaction
 
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
@@ -47,6 +48,15 @@ class ResearchRepo:
             "JOIN research_reports p ON p.run_id = r.id WHERE r.symbol = ? ORDER BY r.started_at DESC, r.id DESC", (symbol,),
         ).fetchall()
         return [self._run(row) for row in rows]
+
+    def latest_verdict(self, symbol: str) -> ResearchRun | None:
+        """The newest live (not replayed) run whose report has a valid verdict."""
+        row = self._conn.execute(
+            "SELECT r.id FROM research_runs r JOIN research_reports p ON p.run_id = r.id "
+            "WHERE r.symbol = ? AND r.as_of IS NULL AND json_extract(p.body, '$.verdict') IS NOT NULL "
+            "ORDER BY r.started_at DESC, r.id DESC LIMIT 1", (symbol,),
+        ).fetchone()
+        return self.get(row[0]) if row else None
 
     def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
         with transaction(self._conn):
@@ -115,10 +125,14 @@ class ResearchRepo:
         def claim(c: dict | None) -> Claim | None:
             return Claim(c["text"], tuple(c["cites"]), c["role"]) if c else None
 
+        def verdict(v: dict | None) -> Verdict | None:
+            return Verdict(v["label"], v["confidence"], v["reason"], tuple(v["cites"]), v["invalidated_if"]) if v else None
+
         return Report(date.fromisoformat(row[0]), tuple(claim(c) for c in body["findings"]), claim(body["bull"]),
                       claim(body["bear"]), tuple(claim(c) for c in body["risks"]), body["invalidated_if"],
                       tuple(RoleCheck(c["role"], c["usable"], {Drop(k): n for k, n in c["dropped"].items()})
-                            for c in body.get("checks", ())))
+                            for c in body.get("checks", ())),
+                      verdict(body.get("verdict")), body.get("verdict_rejected"), tuple(body.get("unread", ())))
 
 
 def _report_json(r: Report) -> dict:
@@ -128,4 +142,6 @@ def _report_json(r: Report) -> dict:
     return {"findings": [claim(c) for c in r.findings], "bull": claim(r.bull), "bear": claim(r.bear),
             "risks": [claim(c) for c in r.risks], "invalidated_if": r.invalidated_if,
             # Kept in the body, not a table: they are only ever read with the report.
-            "checks": [{"role": c.role, "usable": c.usable, "dropped": c.dropped} for c in r.checks]}
+            "checks": [{"role": c.role, "usable": c.usable, "dropped": c.dropped} for c in r.checks],
+            "verdict": asdict(r.verdict) if r.verdict else None, "verdict_rejected": r.verdict_rejected,
+            "unread": list(r.unread)}

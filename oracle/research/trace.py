@@ -79,6 +79,22 @@ class RoleCheck:
     dropped: dict[Drop, int]
 
 
+VERDICTS = ("buy", "hold", "sell")
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """The research's call on the listing, written last from everything the run found."""
+
+    label: str
+    """One of VERDICTS."""
+    confidence: float
+    """0 to 1."""
+    reason: str
+    cites: tuple[int, ...]
+    invalidated_if: str
+
+
 UNVALIDATED = "unvalidated: AI research has not yet beaten the technicals-only baseline in paper trades"
 
 
@@ -95,6 +111,22 @@ class Report:
     invalidated_if: str | None
     checks: tuple[RoleCheck, ...] = ()
     """Empty for a report saved before answers were checked."""
+    verdict: Verdict | None = None
+    verdict_rejected: str | None = None
+    """Why there is no verdict; None with no verdict means the report predates verdicts."""
+    unread: tuple[str, ...] = ()
+    """What the verdict role's context budget left out, e.g. "7 uncited items"."""
+
+    @property
+    def no_verdict(self) -> str | None:
+        """Why the report has no verdict, as shown; None when it has one."""
+        if self.verdict:
+            return None
+        return f"the verdict was rejected: {self.verdict_rejected}" if self.verdict_rejected             else "written before reports had verdicts"
+
+    @property
+    def did_not_read(self) -> str | None:
+        return f"did not read: {', '.join(self.unread)}" if self.unread else None
 
     @property
     def usable(self) -> bool:
@@ -118,7 +150,7 @@ class Report:
 
     @property
     def cites(self) -> set[int]:
-        claims = [*self.findings, *self.risks, *(c for c in (self.bull, self.bear) if c)]
+        claims = [*self.findings, *self.risks, *(c for c in (self.bull, self.bear, self.verdict) if c)]
         return {i for c in claims for i in c.cites}
 
 
