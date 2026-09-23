@@ -6,6 +6,7 @@ from pathlib import Path
 from oracle.services.context import AppContext
 from oracle.store.meta import MetaRepo
 from oracle.store.migrate import current_version
+from oracle.system.version import code_version
 
 
 @dataclass(frozen=True)
@@ -15,6 +16,8 @@ class StatusReport:
     config_source: Path | None
     created_at: str
     base_currency: str
+    version: str
+    """The code's commit (or files hash)."""
 
 
 def status(ctx: AppContext) -> StatusReport:
@@ -24,4 +27,5 @@ def status(ctx: AppContext) -> StatusReport:
         config_source=ctx.config_source,
         created_at=MetaRepo(ctx.conn).get("created_at") or "",
         base_currency=ctx.config.base_currency,
+        version=code_version(),
     )

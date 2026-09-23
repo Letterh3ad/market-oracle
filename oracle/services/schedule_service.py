@@ -8,9 +8,11 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
+from oracle.config import AutomationConfig, ScheduleConfig
+
 from oracle.services.context import AppContext
 from oracle.services.activity_service import JobRunner, submit_tick
-from oracle.services.settings_service import reload_schedule
+from oracle.services.settings_service import reload_live_settings
 from oracle.services.tick_service import TickRun, last_tick, record_skipped, ticked_since
 from oracle.store.watchlists import WatchlistRepo
 
@@ -67,7 +69,7 @@ class Scheduler:
         self._ctx = ctx
         self._tz = tz
         self._runner = runner
-        self._setting = ctx.config.schedule
+        self._setting = self._live_setting()
         self._started = self._polled = ctx.clock.utcnow()
         self._file_stamp = self._stamp()
         # Due times before the floor never fire, so turning scheduling on or moving its time
@@ -79,14 +81,14 @@ class Scheduler:
         """One poll: run a tick if one is due and none has run since."""
         if (stamp := self._stamp()) != self._file_stamp:
             self._file_stamp = stamp
-            reload_schedule(self._ctx)
+            reload_live_settings(self._ctx)
         ctx, s = self._ctx, self._ctx.config.schedule
         now = ctx.clock.utcnow()
-        if s != self._setting:
+        if (setting := self._live_setting()) != self._setting:
             # Changed some time after the last poll: a run due since then still counts.
-            self._setting, self._floor = s, self._polled
+            self._setting, self._floor = setting, self._polled
         self._polled = now
-        if not s.enabled:
+        if not (s.enabled and ctx.config.automation.enabled):
             return None
         due = last_due(now, s.time, self._tz)
         # A tick finishing after the due time covers it, even one started just before.
@@ -103,6 +105,9 @@ class Scheduler:
         # A tick cut off part way stored its own record. One cancelled before it started did
         # not, and without one this due time would be submitted again on the next poll.
         return last_tick(ctx) if ticked_since(ctx, due) else record_skipped(ctx, trigger, f"skipped: {job.error}")
+
+    def _live_setting(self) -> tuple[ScheduleConfig, AutomationConfig]:
+        return self._ctx.config.schedule, self._ctx.config.automation
 
     def _stamp(self) -> int | None:
         path = self._ctx.config_source

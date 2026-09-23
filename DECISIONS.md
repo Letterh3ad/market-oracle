@@ -1102,3 +1102,55 @@ when its server stops or dies ends `interrupted`; queued ones end `cancelled`, "
 A scheduled tick cancelled before it starts is recorded as skipped, so it is not resubmitted.
 **Alternatives:** A heartbeat per job row (more writes for the same answer on one machine);
 keeping `cancelled` with the reason in the error text (the state column then lies).
+
+## 2026-09-23 - GUI jobs run on worker threads with their own connection
+**Context:** A watchlist Analyse held the server's event loop for ~30 s on the real DB, so
+every page stalled until it finished. The job runner ran work as tasks on that loop.
+**Decision:** A job's work takes the context it runs with, and the runner runs it through
+an executor. The GUI server uses a thread executor: one thread per running job, its own
+event loop and SQLite connection, same config, clock and transport. Cancel reaches the
+worker's task across threads, and the runner waits for the job's cleanup before recording
+the outcome. Queue-logic tests use an inline executor. Measured on a real-DB copy: 158 page
+loads during a 32 s Analyse, worst 56 ms.
+**Alternatives:** A process pool (pickling contexts and results, no shared clock or fake
+transport in tests); chunking long loops with `await asyncio.sleep(0)` (every future long
+stretch would need the same care); running only the analysis in `to_thread` (fixes one job,
+not the class).
+
+## 2026-09-23 - Restart spawns a detached copy that waits for the port
+**Context:** app-control 01. The server must restart itself from the page, and the new copy
+must outlive whatever started the old one (a Claude session included).
+**Decision:** The server starts its own command (interpreter, absolute config, working
+folder, spelled out rather than copied from `sys.argv`) in its own minimised console, out of
+the parent's job object when Windows allows it, then asks uvicorn to exit gracefully. The
+new copy binds its own socket, retrying for 30 s while the old one lets go. `/api/status`
+names the answering server's pid, so the page reloads only once a new one answers.
+**Alternatives:** A supervisor process that restarts the server (a second thing to keep
+alive); `os.execv` in place (Windows starts a new process anyway, and the old one's port and
+jobs would not shut down cleanly first); no console window (the log would go nowhere).
+
+## 2026-09-23 - Start at login is a Startup-folder shortcut that runs the loaded code's folder
+**Context:** app-control 03. Oracle should start with Windows without admin rights or new
+dependencies, and must run the live worktree even if the current server was started from
+another folder.
+**Decision:** A `Market Oracle.lnk` in the user's Startup folder, written through
+PowerShell's WScript.Shell with values passed as environment variables; its presence is the
+setting. It starts the running interpreter with the absolute config, minimised, in the
+folder the `oracle` package was loaded from. Restart uses the same command.
+**Alternatives:** A Task Scheduler entry (more moving parts, harder to see and delete by
+hand); a `.vbs` launcher (VBScript is being removed from Windows); a `.cmd` (flashes a
+console); pywin32 for the shortcut (a dependency for one call).
+
+## 2026-09-23 - Automation switch stops only automatic work; shortcuts use Windows' folders
+**Context:** app-control 04 and its review gate.
+**Decision:** Jobs carry an `automatic` flag (scheduled and catch-up ticks today); turning
+automation off from the GUI offers "Stop it" / "Let it finish" for those only, and the CLI
+switch leaves running work alone and says so. A tick that fell due while automation was off
+never fires late. Desktop, Start-menu and Startup folders come from `SHGetFolderPathW`
+(OneDrive-redirected desktops work). Restart, Shut down and the automation switch sit in
+the always-visible header; start-at-login and shortcuts in the App section, which names the
+running version and the folder the launchers start. A launcher written from a server in the
+dev checkout points at the dev checkout: set them from the live GUI's App section.
+**Alternatives:** Cancelling every job on "off" (manual work is the user's own); asking
+every time even with nothing automatic running (noise); `%USERPROFILE%\Desktop` (wrong under
+OneDrive).

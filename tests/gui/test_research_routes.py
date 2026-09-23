@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from datetime import datetime
 
 import pytest
@@ -152,7 +153,7 @@ class Stalled:
 
     def __init__(self):
         self.fell_back_to = set()
-        self.asked = asyncio.Event()
+        self.asked = threading.Event()  # set on the job's worker thread
 
     async def reply(self, messages, schema):
         self.asked.set()
@@ -169,7 +170,7 @@ async def test_cancelling_running_research_records_it_cancelled_frees_the_lock_a
     monkeypatch.setattr(activity_service, "research", lambda c, s: research(c, s, model=stalled))
     first = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
     second = (await ready.post("/api/jobs/research", params={"symbol": "KO"})).json()
-    await stalled.asked.wait()
+    await asyncio.to_thread(stalled.asked.wait)
     cancelled = (await ready.post(f"/api/activity/{first['id']}/cancel")).json()
     assert cancelled["state"] == "cancelled"
     body = (await ready.get("/api/companies/AAPL/research")).json()

@@ -19,6 +19,7 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
         ("config", source),
         ("currency", report.base_currency),
         ("created", report.created_at),
+        ("version", report.version),
     ]
     print("market-oracle")
     for name, value in rows:

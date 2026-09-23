@@ -11,15 +11,15 @@ from dataclasses import replace
 from pathlib import Path
 
 from oracle.config import (
-    DEFAULT_CONFIG_NAME, PEERS_RANGE, ConfigError, ScheduleConfig, check_peers, check_schedule_time, load_config,
-    with_settings,
+    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, check_peers, check_schedule_time,
+    load_config, with_settings,
 )
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 
 log = logging.getLogger(__name__)
 
-__all__ = ["PEERS_RANGE", "reload_schedule", "set_peer_count", "set_schedule"]
+__all__ = ["PEERS_RANGE", "reload_live_settings", "set_automation", "set_peer_count", "set_schedule"]
 
 
 def set_peer_count(ctx: AppContext, count: int) -> Path:
@@ -41,17 +41,26 @@ def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:
     return path
 
 
-def reload_schedule(ctx: AppContext) -> None:
-    """Take `[schedule]` from oracle.toml as it is now, so `oracle schedule` in another
-    process reaches a running GUI. A file that no longer loads keeps the current setting."""
+def set_automation(ctx: AppContext, enabled: bool) -> Path:
+    """The master switch for work that starts by itself; a running scheduler sees it on its
+    next poll."""
+    path = _save(ctx, "automation", {"enabled": enabled})
+    ctx.config = replace(ctx.config, automation=AutomationConfig(enabled))
+    return path
+
+
+def reload_live_settings(ctx: AppContext) -> None:
+    """Take `[schedule]` and `[automation]` from oracle.toml as they are now, so the CLI in
+    another process reaches a running GUI. A file that no longer loads keeps the current
+    settings."""
     if ctx.config_source is None:
         return
     try:
-        schedule = load_config(ctx.config_source)[0].schedule
+        loaded = load_config(ctx.config_source)[0]
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
-        log.warning("oracle.toml no longer loads (%s); keeping the current schedule", exc)
+        log.warning("oracle.toml no longer loads (%s); keeping the current schedule and automation", exc)
         return
-    ctx.config = replace(ctx.config, schedule=schedule)
+    ctx.config = replace(ctx.config, schedule=loaded.schedule, automation=loaded.automation)
 
 
 def _check(check, value) -> None:

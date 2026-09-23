@@ -24,3 +24,13 @@ def test_five_days_back_is_the_limit():
 
 def test_no_rates_no_answer():
     assert pick_rate([], date(2026, 9, 15)) is None
+
+
+def test_a_rate_series_picks_what_pick_rate_picks_for_every_day():
+    from datetime import timedelta
+
+    from oracle.market.fx import RateSeries
+
+    series = RateSeries(RATES)
+    days = [date(2026, 9, 10) + timedelta(n) for n in range(20)]
+    assert [series.pick(d) for d in days] == [pick_rate(RATES, d) for d in days]

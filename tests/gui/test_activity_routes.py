@@ -1,4 +1,5 @@
 import asyncio
+import threading
 
 
 async def test_nothing_is_listed_before_any_work(client):
@@ -18,15 +19,15 @@ async def test_the_runner_stops_with_the_server_and_interrupts_running_work(ctx)
     from oracle.gui.app import build_app
 
     app = build_app(ctx)
-    started = asyncio.Event()
+    started = threading.Event()  # set on the job's worker thread
 
-    async def forever():
+    async def forever(c):
         started.set()
         await asyncio.Event().wait()
 
     async with app.router.lifespan_context(app):
         job = app.state.runner.submit("research", "Research X", forever)
-        await started.wait()
+        await asyncio.to_thread(started.wait)
     assert job.state == "interrupted"
 
 

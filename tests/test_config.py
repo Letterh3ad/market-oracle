@@ -195,3 +195,14 @@ def test_schedule_settings_are_checked(tmp_path):
         path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="schedule"):
             load_config(path, cwd=tmp_path)
+
+
+def test_automation_is_on_by_default_and_checked(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].automation.enabled is True
+    path = tmp_path / "oracle.toml"
+    path.write_text("[automation]\nenabled = false\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].automation.enabled is False
+    for line in ('enabled = "no"', "later = 1"):
+        path.write_text(f"[automation]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="automation"):
+            load_config(path, cwd=tmp_path)

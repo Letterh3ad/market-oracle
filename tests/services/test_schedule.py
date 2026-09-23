@@ -194,3 +194,26 @@ async def test_a_skip_never_hides_the_longer_tick_it_ran_into(ctx):
     TickRepo(ctx.conn).save(TickRun("manual", started, ctx.clock.utcnow(), (Stage("prices", "ok", "done"),)))
     assert last_tick(ctx).trigger == "manual"
     assert await s.check() is None
+
+
+async def test_automation_off_means_a_due_tick_never_fires_and_on_again_waits_for_the_next(ctx):
+    from oracle.services.settings_service import set_automation
+
+    s = scheduler(ctx)
+    set_automation(ctx, False)
+    ctx.clock.advance(2 * 3600)  # 23:00 BST: the 22:30 run fell due while off
+    assert await s.check() is None and last_tick(ctx) is None
+    assert "[automation]" in ctx.config_source.read_text(encoding="utf-8")
+    set_automation(ctx, True)
+    assert await s.check() is None  # and does not fire late
+
+
+async def test_automation_turned_off_in_another_process_reaches_a_running_scheduler(ctx):
+    import os
+
+    s = scheduler(ctx)
+    path = ctx.config_source
+    path.write_text(path.read_text(encoding="utf-8") + "[automation]\nenabled = false\n", encoding="utf-8")
+    os.utime(path, ns=(1, 1))
+    ctx.clock.advance(90 * 60)
+    assert await s.check() is None and ctx.config.automation.enabled is False

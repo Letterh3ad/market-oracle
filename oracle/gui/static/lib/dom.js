@@ -1,7 +1,9 @@
 // --- error banner ---------------------------------------------------------
 function showError(message) {
+  const banner = document.getElementById("error-banner");
+  if (!banner) return; // the page was replaced (Oracle shut down)
   document.getElementById("error-msg").textContent = message;
-  document.getElementById("error-banner").hidden = false;
+  banner.hidden = false;
 }
 function clearError() {
   document.getElementById("error-banner").hidden = true;

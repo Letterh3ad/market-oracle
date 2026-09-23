@@ -14,9 +14,10 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); }
-header { display: flex; gap: 24px; align-items: center; padding: 8px 16px;
+header { display: flex; flex-wrap: wrap; gap: 4px 24px; align-items: center; padding: 8px 16px;
   background: var(--bg-raised); border-bottom: 1px solid var(--border); }
 header h1 { font-size: 16px; margin: 0 16px 0 0; }
+#app-controls { margin: 0 0 0 auto; }
 .dim { color: var(--text-dim); }
 .layout { display: flex; min-height: calc(100vh - 44px); }
 nav { width: 160px; background: var(--bg-inset); border-right: 1px solid var(--border); padding: 8px 0; }
@@ -106,6 +107,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
   <span id="universe-state" class="dim">Universe ...</span>
   <span id="tick-state" class="dim"></span>
   <span id="sources-state" class="dim"></span>
+  <span id="app-controls" class="row"></span>
 </header>
 <div id="error-banner" hidden role="alert"><span id="error-msg"></span>
   <button id="error-close" type="button" aria-label="Dismiss">&times;</button></div>
@@ -117,6 +119,10 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
       <summary id="tick-summary" class="dim">Ticks</summary>
       <div id="tick-controls" class="row"></div>
       <div id="tick-last"></div>
+    </details>
+    <details>
+      <summary class="dim">App</summary>
+      <div id="app-settings"></div>
     </details>
     <details>
       <summary class="dim">Data sources</summary>

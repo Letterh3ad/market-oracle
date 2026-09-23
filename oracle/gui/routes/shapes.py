@@ -40,6 +40,7 @@ def tick(run: TickRun | None) -> dict | None:
 def job(j: Job) -> dict:
     return {
         "id": j.id, "kind": j.kind, "label": j.label, "subject": j.subject, "link": j.link, "state": j.state,
+        "automatic": j.automatic,
         "progress": j.progress(), "error": j.error, "submitted_at": j.submitted_at, "started_at": j.started_at,
         "finished_at": j.finished_at, "result": _result(j) if j.state == "done" else None,
     }

@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from oracle.services.errors import (
-    InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
+    CannotRestart, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
     ServiceError,
     UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownJob, UnknownSymbol, UnknownWatchlist,
 )
@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 STATUS = (
     ((UnknownSymbol, UnknownWatchlist, UnknownJob), 404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
-    ((JobAlreadyRunning, UniverseNotLoaded, NoPrices), 409),
+    ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart), 409),
     ((PriceUnavailable, UniverseUnavailable), 502),
     # The local model is a service of this machine, not an upstream: unavailable, not a bad gateway.
     ((ModelUnavailable,), 503),

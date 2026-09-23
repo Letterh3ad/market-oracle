@@ -107,6 +107,13 @@ class ScheduleConfig:
 
 
 @dataclass(frozen=True)
+class AutomationConfig:
+    """The master switch: off, nothing starts by itself (manual buttons still work)."""
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class GuiConfig:
     host: str = "127.0.0.1"
     """Localhost only by default: nothing on the network can reach the GUI."""
@@ -170,6 +177,7 @@ class Config:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+    automation: AutomationConfig = field(default_factory=AutomationConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
@@ -251,6 +259,9 @@ def _apply(raw: dict) -> Config:
         if name == "schedule":
             values[name] = _schedule(value)
             continue
+        if name == "automation":
+            values[name] = _automation(value)
+            continue
         if name == "llm":
             values[name] = _llm(value)
             continue
@@ -326,6 +337,16 @@ def _gui(raw: object) -> GuiConfig:
     if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ConfigError(f"gui.port must be a whole number from 1024 to 65535, got {port!r}")
     return GuiConfig(host=host, port=port)
+
+
+def _automation(raw: object) -> AutomationConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("automation must be an [automation] table")
+    _reject_unknown(raw, AutomationConfig, "[automation]")
+    enabled = raw.get("enabled", AutomationConfig.enabled)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"automation.enabled must be true or false, got {enabled!r}")
+    return AutomationConfig(enabled=enabled)
 
 
 def _schedule(raw: object) -> ScheduleConfig:
