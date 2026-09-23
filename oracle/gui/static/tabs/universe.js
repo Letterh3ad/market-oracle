@@ -10,7 +10,7 @@ const LABELS = {
 const label = (field) => LABELS[field] ?? field.charAt(0).toUpperCase() + field.slice(1);
 
 // Survives tab switches, so coming back shows the same search.
-const state = { q: "", filters: [], tags: [], sort: "", desc: false, offset: 0, list: "main" };
+const state = { q: "", filters: [], tags: [], sort: "", desc: false, offset: 0, list: "main", field: null };
 let options = null;
 let seq = 0;
 
@@ -59,7 +59,7 @@ function renderControls(pane) {
   }, state.desc ? "Descending" : "Ascending");
 
   const field = el("select", { "aria-label": "Filter field" },
-    ...options.filters.map((f) => el("option", { value: f }, label(f))));
+    ...options.filters.map((f) => el("option", { value: f, selected: f === state.field ? "" : null }, label(f))));
   const values = el("datalist", { id: "u-values" });
   const value = el("input", { list: "u-values", placeholder: "value", size: "18", "aria-label": "Filter value" });
   const loadValues = async () => {
@@ -69,7 +69,7 @@ function renderControls(pane) {
         el("option", { value: r.value }, `${r.label ? r.label + ", " : ""}${r.companies.toLocaleString()} companies`)));
     } catch (err) { showError(err.message); }
   };
-  field.addEventListener("change", loadValues);
+  field.addEventListener("change", () => { state.field = field.value; loadValues(); });
   loadValues();
   const addFilter = el("button", { type: "button", onclick: () => {
     if (!value.value.trim()) return;
@@ -87,11 +87,13 @@ function renderControls(pane) {
     ...state.filters.map(([f, v], i) => chip(`${label(f)}: ${v}`, () => { state.filters.splice(i, 1); searchAgain(pane); })),
     ...state.tags.map((t, i) => chip(`tag: ${t}`, () => { state.tags.splice(i, 1); searchAgain(pane); })),
   ];
-  pane.querySelector("#u-controls").replaceChildren(
+  const rows = [
     el("div", { class: "row" }, field, value, values, addFilter, tagInput, addTag, tip("", "tags")),
     el("div", { class: "row" }, el("span", { class: "dim" }, "Sort"), sortSelect, direction, tip("", "sort_direction")),
-    chips.length ? el("div", { class: "row" }, ...chips) : null,
-  );
+  ];
+  // replaceChildren would print a null as the text "null".
+  if (chips.length) rows.push(el("div", { class: "row" }, ...chips));
+  pane.querySelector("#u-controls").replaceChildren(...rows);
 }
 
 function chip(text, onRemove) {

@@ -542,3 +542,16 @@ module holds every metric's plain-English tooltip.
 **Alternatives:** The stalker's `TestClient` (rejected: needs `check_same_thread=False`
 in tests, which production never uses). A JS test runner (declined by the user: browser
 checks by hand per tab).
+
+## 2026-09-23 - Question-driven discovery as phase 8b
+
+**Context:** The user asked whether the ReAct loop can research a question to find new
+companies, not just companies already named. The design covered research on any company
+on demand and related-company surfacing through the graph, but not starting from a question.
+**Decision:** Add phase 8b, Discovery: a question becomes queries, candidates are matched
+to the universe and widened through the relationship graph, and the result is a saved,
+rerunnable shortlist with evidence and research/watch actions. After phase 8, because it
+reuses the ReAct loop and tools (7) and the graph plus Laya screening (8).
+**Alternatives:** Building it in phase 7 (rejected: would duplicate the graph and
+screening that phase 8 adds). Leaving it until after v1 (rejected: it is how the user
+means to find companies).
