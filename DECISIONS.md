@@ -418,3 +418,98 @@ gitignored and untracked; local copies stay. THIRD_PARTY.md stays tracked: it is
 license record, not planning. Earlier commits still hold those files; history is not
 rewritten.
 **Alternatives:** Rewriting history to purge them (declined: private repo, force-push).
+
+## 2026-09-22 - Paper fills: next open, whole shares, pessimistic costs
+
+**Context:** Phase 5 paper ledgers must not flatter the strategy; the validation gate and
+Laya's calibration will be measured on them.
+**Decision:** Two accounts (`strategy`, `manual`) start with `[risk] account` in the base
+currency. An order fills at the open of the first stored bar dated after the day it was
+placed, in whole shares. Costs: 0.1% adverse slippage; 0.2% FX spread on each conversion
+(none for base-currency listings); IBKR fixed-plan fees in the listing's currency (US
+0.005 per share, min 1, max 1% of value; UK and Europe 0.05%, min 3; elsewhere 0.1%,
+min 5); 0.5% stamp duty on LSE buys. A buy is sized so every cost fits its amount. No FX
+rate for the fill day leaves the order pending with the reason. Cash and positions are
+replayed from fills (average cost), never stored. `prices update` fills pending orders
+after fetching; `oracle tick` (phase 10) will own that sequencing.
+**Alternatives:** A `Broker` protocol now (deferred to phase 12: with one implementation
+it would only delegate). Fractional shares (rejected: most non-US venues do not offer
+them). Filling at the placing day's close (rejected: look-ahead).
+
+## 2026-09-22 - Strategy rules engine
+
+**Context:** Ticket 04: the strategy account trades on leans under fixed rules.
+**Decision:** A pure `decide()` over leans, holdings, cash, equity and risk sizes. Sells
+first: a stop (8% or more below average cost) sells whatever the lean says; otherwise a
+sell or strong sell lean sells the whole position. Buys by probability, highest first:
+buy or strong buy at 60% or more, at most 10 positions, sized at the risk analyst's
+suggested share of equity capped at 10%, never spending below the 20% cash floor. Sell
+proceeds are not counted until they fill. Held or pending listings are not bought again.
+Every decision, skips included, is logged with its reason. Thresholds are a
+`[strategy]` config section; sizing reuses `[risk]`. Leans are stored per listing, date
+and source so AI leans can sit beside the baseline.
+**Alternatives:** Topping up held positions (deferred: needs a rebalance rule).
+Counting pending sell proceeds (rejected: optimistic; a sell can still be rejected).
+
+## 2026-09-23 - Baseline lean from technicals and factors, never traded when out of date
+
+**Context:** Ticket 05: until AI leans exist, the strategy account needs a lean.
+**Decision:** `oracle analyse` builds a `baseline` lean from the current stored signals:
+technicals plus value, quality and growth, averaged by confidence. Score bands match
+signal direction (+-0.2 ends neutral, +-0.6 starts strong). Probability is 0.5 plus half
+the agreeing confidence out of all four inputs, so missing inputs lower it. No technicals
+signal means no lean (factors alone say nothing about timing). Stale signals (a newer bar
+stored, or fundamentals over a week old) are left out; a recent factor signal from an
+earlier run is kept, so one failed fundamentals fetch does not thin the lean. The lean is
+dated by the last bar; `paper step` skips a watched listing whose lean is older than its
+last bar, or that has none, and logs why. Stops still apply to held listings either way.
+**Alternatives:** Only this run's signals (rejected: a transient fetch failure would drop
+the factors). Trading on the last lean regardless of age (rejected: never trade on stale data).
+
+## 2026-09-23 - Phase 5 review round 1
+
+**Context:** Two-axis review of phase 5 against `main`.
+**Decision:**
+- Pending strategy buys reserve their cash and take a position slot, so repeated
+  `paper step` runs before a fill cannot break the cash floor or the position cap.
+- A buy must spend more than nothing. A bar with no open is skipped; the order fills at
+  the next bar that has one, rather than waiting forever.
+- A listing gone from the universe: a held position still sells, at the dearest fee band;
+  a buy is rejected (its exchange, and so any stamp duty, is unknown).
+- A stop on a listing whose lean is out of date logs only the sell.
+- `paper buy SYMBOL AMOUNT` takes a positional amount in the configured base currency,
+  not the ticket's `--gbp` (the base currency is not always GBP).
+- Equity is recorded once per day that fills run (`prices update` or `paper fill`), not
+  on a daily timer; the largest fall is measured over those days. `oracle tick`
+  (phase 10) will run fills daily, closing the gaps.
+- A sell whose fee exceeds its proceeds leaves cash lower, as a real broker would.
+**Alternatives:** Deferred as follow-ups: a per-sell realised P&L figure (only the running
+total is shown), side-by-side account columns (phase 6 GUI), enums for side, status and
+action strings, merging `Holding` and `Position`, store-level tests for paper and lean
+repos. A position that has never had a rate counts as nothing in equity until one arrives.
+
+## 2026-09-23 - Phase 5 review round 2
+
+**Context:** Second two-axis review of phase 5, mostly the round 1 fixes.
+**Decision:**
+- A buy amount must be finite as well as positive (`nan` would have crashed every fill run).
+- A zero risk size means no buy, like a missing one.
+- A listing with a pending order gets a logged skip ("an order is already pending") on
+  each step. A held listing with nothing to do (no sell lean, no stop) logs nothing.
+- Strategy decisions are logged as each order is placed, not after the loop.
+**Alternatives:** Moving `print_fills` out of `cli/common.py` again (kept: it is shared by
+`paper` and `prices`, which is what common is for).
+
+## 2026-09-23 - Phase 5 review round 3
+
+**Context:** Third and last full review round of phase 5.
+**Decision:**
+- A held listing gone from the universe can still be sold, by hand or by a stop: selling
+  falls back to the account's own holdings when the universe no longer knows the symbol.
+- A watched listing gone from the universe is skipped ("no longer in the universe"), so
+  one delisting never aborts `paper step`.
+- A buy of a listing gone from the universe is rejected at once, not after its next bar.
+- One logged decision per listing per step: a pending order or a sell outranks a lean
+  that is missing or out of date.
+**Alternatives:** Further review rounds are capped: from here only critical and high
+findings are fixed.

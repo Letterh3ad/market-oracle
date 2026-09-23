@@ -35,3 +35,8 @@ def _print(result: Analysis) -> None:
         print_signal(s, 2)
     for k in result.skipped:
         print(f"  {k.analyst:<12}no signal: {k.reason}")
+    lean = result.lean
+    if lean is None:
+        print("  baseline lean: none (needs the technicals signal)")
+    else:
+        print(f"  {lean.source} lean: {lean.label} ({lean.probability:.0%})")

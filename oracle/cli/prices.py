@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 
+from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
+from oracle.services.paper_service import fill_pending
 from oracle.services.prices_service import (
     price_history,
     price_history_in_base,
@@ -40,6 +42,8 @@ def update_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         print(f"{o.symbol}: FAILED ({o.error})" if o.error else f"{o.symbol}: {o.added} new bars (from {o.source})")
     for f in run.fx:
         print(f"{f.currency}: no rates ({f.error})" if f.source is None else f"{f.currency}: {f.added} new rates from {f.source}")
+    # New bars may complete paper orders waiting for their next open.
+    print_fills(fill_pending(ctx))
     return 1 if run.failed or any(f.source is None for f in run.fx) else 0
 
 
