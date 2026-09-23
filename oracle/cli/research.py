@@ -32,8 +32,9 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.history:
         print_history(report_history(ctx, args.symbol), args.symbol)
         return 0
-    print_run(asyncio.run(research(ctx, args.symbol, as_of=args.as_of)), ctx.config.llm.max_steps)
-    return 0
+    r = asyncio.run(research(ctx, args.symbol, as_of=args.as_of))
+    print_run(r, ctx.config.llm.max_steps)
+    return 1 if r.status == RunStatus.FAILED else 0
 
 
 def print_run(r: ResearchRun, max_steps: int) -> None:
@@ -53,6 +54,8 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
         print(f"stopped at the {max_steps}-step limit; findings asked for then")
     print(f"Findings ({r.model_label}):")
     _wrapped(r.findings or "(none given)", "  ")
+    if r.status == RunStatus.FAILED:
+        print(f"Failed: {r.error}")
     if r.report:
         print_report(r.report)
     cited = [e for e in r.evidence if e.cited]
@@ -78,6 +81,8 @@ def print_report(report: Report) -> None:
         _wrapped(f"- {_claim(c)}", "    ")
     if report.invalidated_if:
         _wrapped(f"Invalidated if: {report.invalidated_if}", "  ")
+    if report.rejections:
+        _wrapped(f"Rejected: {report.rejections}", "  ")
 
 
 def print_history(runs: list[ResearchRun], symbol: str) -> None:

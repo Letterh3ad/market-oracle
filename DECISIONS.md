@@ -1154,3 +1154,17 @@ dev checkout points at the dev checkout: set them from the live GUI's App sectio
 **Alternatives:** Cancelling every job on "off" (manual work is the user's own); asking
 every time even with nothing automatic running (noise); `%USERPROFILE%\Desktop` (wrong under
 OneDrive).
+
+## 2026-09-23 - Research answer checks live in the report JSON; a run with no usable role fails
+
+**Context:** ai-account 06: every research role's answer is checked (usable or not, claims
+dropped by reason) and the counts are shown with the report. The ticket asked for a migration.
+**Decision:** The per-role checks are stored inside `research_reports.body` beside the claims,
+since they are only ever read with the report; reports saved earlier read back with no checks.
+If no role gave a usable answer, the run finishes `failed` with "the model's answers were
+unusable", keeps the loop's notes, and saves no report (no exception, so the job reads done
+and the company page shows the failure beside the last report). The CLI exits 1 then. The
+fake models now answer a well-formed empty reply for roles a test does not script.
+**Alternatives:** A `research_checks` table (a migration for data never queried on its own);
+saving an empty report for an all-garbled run (looks like research that found nothing);
+raising (the run is already recorded as failed; an exception adds nothing but a noisy job).

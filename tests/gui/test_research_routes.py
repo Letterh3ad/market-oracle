@@ -185,3 +185,23 @@ async def test_a_finished_job_refuses_cancel(ready):
     job = await finish(ready)
     response = await ready.post(f"/api/activity/{job['id']}/cancel")
     assert response.status_code == 400 and "already done" in response.json()["error"]
+
+
+async def test_what_the_checks_rejected_comes_with_the_report(ready, ollama):
+    assert (await researched(ready))["report"]["rejections"] is None
+    ollama.contents = [step("final", "Again.")]
+    ollama.roles["risk"] = "garbled"
+    report = (await researched(ready))["report"]
+    # This run was shown only its own stored data, so the claims citing a1 and a2 cite nothing it saw.
+    assert report["rejections"] == "1 of 6 roles gave an unusable answer; 3 claims dropped (3 citing nothing shown)"
+
+
+async def test_a_run_with_no_usable_answers_shows_as_failed_beside_the_last_report(ready, ollama):
+    await finish(ready)
+    ollama.contents = [step("final", "Again.")]
+    ollama.roles = dict.fromkeys(("fundamental_analyst", "technical_analyst", "news_analyst", "bull", "bear",
+                                  "risk"), "garbled")
+    await finish(ready)
+    body = (await ready.get("/api/companies/AAPL/research")).json()
+    assert body["run"]["report"]["bull"]["text"] == "Earnings momentum"
+    assert body["failed"]["error"] == "the model's answers were unusable"

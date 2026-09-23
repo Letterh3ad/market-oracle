@@ -59,6 +59,9 @@ const GLOSSARY = {
   research_findings: "What each analyst role concluded. Every claim cites the evidence it rests on; uncited claims are dropped.",
   risks: "What could hurt someone holding the shares soon.",
   invalidated_if: "A plain condition that, if it happens, means the bull case was wrong.",
+  research_rejections:
+    "What was left out of this report. A role's answer is unusable when it is not in the shape asked for; " +
+    "a claim is dropped when it has no text, cites nothing, or cites something the research was never shown.",
   evidence:
     "The articles, filings and pages the research was shown, by id. [a3] in the report points here. " +
     "'stored data' is Market Oracle's own prices, fundamentals and analyst signals.",

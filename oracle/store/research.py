@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import Set
 from datetime import date, datetime
 
-from oracle.research.trace import Claim, Evidence, Report, ResearchRun, RunStatus, Step
+from oracle.research.trace import Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step
 from oracle.store.db import transaction
 
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
@@ -116,7 +116,9 @@ class ResearchRepo:
             return Claim(c["text"], tuple(c["cites"]), c["role"]) if c else None
 
         return Report(date.fromisoformat(row[0]), tuple(claim(c) for c in body["findings"]), claim(body["bull"]),
-                      claim(body["bear"]), tuple(claim(c) for c in body["risks"]), body["invalidated_if"])
+                      claim(body["bear"]), tuple(claim(c) for c in body["risks"]), body["invalidated_if"],
+                      tuple(RoleCheck(c["role"], c["usable"], {Drop(k): n for k, n in c["dropped"].items()})
+                            for c in body.get("checks", ())))
 
 
 def _report_json(r: Report) -> dict:
@@ -124,4 +126,6 @@ def _report_json(r: Report) -> dict:
         return {"text": c.text, "cites": list(c.cites), "role": c.role} if c else None
 
     return {"findings": [claim(c) for c in r.findings], "bull": claim(r.bull), "bear": claim(r.bear),
-            "risks": [claim(c) for c in r.risks], "invalidated_if": r.invalidated_if}
+            "risks": [claim(c) for c in r.risks], "invalidated_if": r.invalidated_if,
+            # Kept in the body, not a table: they are only ever read with the report.
+            "checks": [{"role": c.role, "usable": c.usable, "dropped": c.dropped} for c in r.checks]}

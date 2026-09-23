@@ -6,17 +6,19 @@ import json
 
 import httpx
 
+from tests.fakes.llm import blank
+
 
 class FakeOllama:
     hosts = {"localhost"}
 
     def __init__(self, *contents, models=("qwen3:4b-instruct-2507-q8_0",)) -> None:
         self.contents = list(contents)
+        """Strings sent as-is; anything else is sent as JSON text, as Ollama would."""
         self.suggestions: list[str] = []
         """Answered to the query-suggestion call, which comes before the loop's steps."""
         self.roles: dict[str, object] = {}
-        """Role name -> its answer, for the report calls after the loop; others answer {}."""
-        """Strings sent as-is; anything else is sent as JSON text, as Ollama would."""
+        """Role name -> its answer, for the report calls after the loop; others answer `blank`."""
         self.models = set(models)
         self.bodies: list[dict] = []
         self.down = False
@@ -33,7 +35,8 @@ class FakeOllama:
                 "role": "assistant", "content": json.dumps({"queries": self.suggestions})}})
         system = body["messages"][0]["content"] if body["messages"] else ""
         if system.startswith("Role: "):
-            answer = self.roles.get(system[len("Role: "):].split(".", 1)[0], {})
+            role = system[len("Role: "):].split(".", 1)[0]
+            answer = self.roles[role] if role in self.roles else blank(body["format"])
             return httpx.Response(200, json={"model": body["model"], "done": True, "message": {
                 "role": "assistant", "content": json.dumps(answer)}})
         content = self.contents.pop(0)

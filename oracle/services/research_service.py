@@ -39,6 +39,7 @@ __all__ = [
 ]
 
 JOB = "research"
+UNUSABLE = "the model's answers were unusable"
 # Far longer than a run takes; a crashed holder is freed by the pid check instead.
 LEASE_S = 3600.0
 
@@ -90,6 +91,11 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     findings, cited = keep_citations(outcome.findings, shown)
     evidence = await _evidence(ctx, shelf, repo, run_id, listing, as_of, day, findings)
     report = await write_report(model, evidence, shown, day)
+    if not report.usable:
+        with transaction(ctx.conn):
+            repo.set_cited(run_id, cited)
+            repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
+        return
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)

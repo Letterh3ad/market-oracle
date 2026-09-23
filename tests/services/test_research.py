@@ -531,6 +531,39 @@ async def test_a_case_with_no_valid_citation_is_left_out(ctx, news):
     assert report.bull is None and report.bear is not None and report.risks == () and report.invalidated_if is None
 
 
+async def test_what_the_checks_rejected_is_stored_with_the_report(ctx, news):
+    model = report_script(news)
+    model.roles["risk"] = "garbled"
+    run = await research(ctx, "AAPL", model)
+    assert run.status == "done"
+    assert run.report.rejections == ("1 of 6 roles gave an unusable answer; "
+                                     "2 claims dropped (1 citing nothing shown, 1 with no citation)")
+    assert latest_research(ctx, "AAPL").report.checks == run.report.checks and len(run.report.checks) == 6
+
+
+async def test_a_run_whose_roles_all_gave_unusable_answers_fails_without_a_report(ctx, news):
+    from oracle.services.research_service import report_history
+
+    model = report_script(news)
+    model.roles = {role: "garbled" for role in ("fundamental_analyst", "technical_analyst", "news_analyst",
+                                                "bull", "bear", "risk")}
+    run = await research(ctx, "AAPL", model)
+    assert (run.status, run.error, run.report) == ("failed", "the model's answers were unusable", None)
+    assert run.findings == "Beat [a1]." and run.finished_at is not None
+    assert report_history(ctx, "AAPL") == []
+
+
+async def test_a_report_saved_before_answers_were_checked_reads_back_with_no_checks(ctx, news):
+    import json
+
+    run = await research(ctx, "AAPL", report_script(news))
+    body = json.loads(ctx.conn.execute("SELECT body FROM research_reports").fetchone()[0])
+    del body["checks"]
+    ctx.conn.execute("UPDATE research_reports SET body = ?", (json.dumps(body),))
+    old = latest_research(ctx, "AAPL").report
+    assert old.checks == () and old.rejections is None and old.bull == run.report.bull
+
+
 async def test_research_never_changes_the_traded_lean(ctx, news):
     from datetime import date
 

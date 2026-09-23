@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
@@ -53,6 +54,31 @@ class Claim:
     role: str
 
 
+class Drop(StrEnum):
+    """Why a claim was left out, in the order the checks run."""
+
+    WRONG_SHAPE = "wrong shape"
+    EMPTY_TEXT = "empty text"
+    NO_CITATION = "no citation"
+    UNKNOWN_CITATION = "unknown citation"
+    """It cites ids, but none of them were shown to the run."""
+
+
+# Most telling first, for the summary line.
+_DROPPED = {Drop.UNKNOWN_CITATION: "citing nothing shown", Drop.NO_CITATION: "with no citation",
+            Drop.EMPTY_TEXT: "with no text", Drop.WRONG_SHAPE: "in the wrong shape"}
+
+
+@dataclass(frozen=True)
+class RoleCheck:
+    """What the checks made of one role's answer."""
+
+    role: str
+    usable: bool
+    """The reply had every field asked for, of the right type; an unusable role adds nothing."""
+    dropped: dict[Drop, int]
+
+
 UNVALIDATED = "unvalidated: AI research has not yet beaten the technicals-only baseline in paper trades"
 
 
@@ -67,6 +93,28 @@ class Report:
     bear: Claim | None
     risks: tuple[Claim, ...]
     invalidated_if: str | None
+    checks: tuple[RoleCheck, ...] = ()
+    """Empty for a report saved before answers were checked."""
+
+    @property
+    def usable(self) -> bool:
+        return not self.checks or any(c.usable for c in self.checks)
+
+    @property
+    def rejections(self) -> str | None:
+        """What the checks rejected, as one line for the GUI and CLI; None when nothing was."""
+        parts = []
+        if bad := sum(not c.usable for c in self.checks):
+            parts.append(f"{bad} of {len(self.checks)} roles gave "
+                         + ("an unusable answer" if bad == 1 else "unusable answers"))
+        dropped = Counter()
+        for c in self.checks:
+            dropped.update(c.dropped)
+        if total := dropped.total():
+            reasons = sorted(dropped.items(), key=lambda kv: (-kv[1], list(_DROPPED).index(kv[0])))
+            parts.append(f"{total} claim{'' if total == 1 else 's'} dropped ("
+                         + ", ".join(f"{n} {_DROPPED[r]}" for r, n in reasons) + ")")
+        return "; ".join(parts) or None
 
     @property
     def cites(self) -> set[int]:

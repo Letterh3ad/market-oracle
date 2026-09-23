@@ -149,3 +149,18 @@ def test_history_lists_past_reports_without_running(run, ollama, news):
     code, out, _ = run("research", "AAPL", "--history")
     assert code == 0 and out.index("Second view") < out.index("First view")
     assert ollama.contents == []  # nothing new was asked of the model
+
+
+def test_what_the_checks_rejected_is_printed_with_the_report(run, ollama, news):
+    scripted_report(ollama, news)
+    ollama.roles["risk"] = "garbled"
+    _, out, _ = run("research", "AAPL")
+    assert "Rejected: 1 of 6 roles gave an unusable answer" in out.split("Report (unvalidated")[1]
+
+
+def test_a_run_with_no_usable_answers_says_so_and_exits_nonzero(run, ollama, news):
+    scripted_report(ollama, news)
+    ollama.roles = dict.fromkeys(("fundamental_analyst", "technical_analyst", "news_analyst", "bull", "bear",
+                                  "risk"), "garbled")
+    code, out, _ = run("research", "AAPL")
+    assert code == 1 and "Failed: the model's answers were unusable" in out and "Report (" not in out

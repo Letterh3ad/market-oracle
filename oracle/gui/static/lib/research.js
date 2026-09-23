@@ -32,7 +32,8 @@ function report(r) {
       el("ul", null, ...p.findings.map((c) => claimLine(c, ROLES[c.role] ?? c.role)))) : null,
     p.risks.length ? el("div", null, el("div", { class: "dim small" }, tip("Risks", "risks")),
       el("ul", null, ...p.risks.map((c) => claimLine(c)))) : null,
-    p.invalidated_if ? el("p", null, tip("Invalidated if", "invalidated_if"), ` ${p.invalidated_if}`) : null);
+    p.invalidated_if ? el("p", null, tip("Invalidated if", "invalidated_if"), ` ${p.invalidated_if}`) : null,
+    p.rejections ? el("p", { class: "dim small" }, tip("Rejected", "research_rejections"), `: ${p.rejections}`) : null);
 }
 
 function evidence(r) {
