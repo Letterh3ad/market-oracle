@@ -19,16 +19,21 @@ from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
+from oracle.store.health import HealthRepo, ListingHealth
+from oracle.store.universe import Resolved, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
-    "Bar", "ConvertedBar", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "day_change", "price_history", "price_history_in_base", "price_sources", "update_listing",
+    "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
+    "day_change", "listing_health", "price_history", "price_history_in_base", "price_sources", "update_listing",
     "update_watched",
 ]
 
 JOB = "prices_update"
 LEASE_S = 1800.0
+# Distinct days of "no data" from every source before a listing counts as dead. Days, not
+# runs, so several updates in one day of a Yahoo hiccup never kill a listing.
+DEAD_AFTER_DAYS = 3
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,8 @@ class ListingOutcome:
     added: int
     source: str | None
     error: str | None
+    skipped: str | None = None
+    """Why a dead listing was not tried; never an error."""
 
 
 @dataclass(frozen=True)
@@ -91,9 +98,13 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
     process at a time. A listing that fails is reported and the rest carry on."""
     with single_flight(ctx, JOB, LEASE_S) as held:
         outcomes = []
+        health = HealthRepo(ctx.conn)
         async with open_client(ctx) as client:
             for symbol in WatchlistRepo(ctx.conn).all_symbols():
                 held.check()
+                if (h := health.get(symbol)).dead:
+                    outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
+                    continue
                 try:
                     r = await _update(ctx, client, symbol)
                 except (PriceUnavailable, UnknownSymbol) as exc:
@@ -101,7 +112,7 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
                 else:
                     outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
         held.check()
-        rates = await update_fx(ctx) if fx and outcomes else []
+        rates = await update_fx(ctx) if fx and any(o.skipped is None for o in outcomes) else []
     return WatchedUpdate(tuple(outcomes), tuple(rates))
 
 
@@ -162,6 +173,21 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> Pr
             empty_is_no_data=since is None,
         )
     except AllFailed as exc:
+        if exc.no_data:
+            _note_no_data(ctx, listing, now.date())
         raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})") from None
+    if HealthRepo(ctx.conn).clear(listing.symbol):
+        UniverseRepo(ctx.conn).repick_primary(listing.company_key, HealthRepo(ctx.conn).dead_symbols())
     added = repo.upsert(bars, to_utc_iso(now))
     return PriceUpdate(listing.symbol, added, repo.last_date(listing.symbol), source)
+
+
+def _note_no_data(ctx: AppContext, listing: Resolved, day: date) -> None:
+    health = HealthRepo(ctx.conn)
+    was_dead = health.get(listing.symbol).dead
+    if health.note_no_data(listing.symbol, day, DEAD_AFTER_DAYS).dead and not was_dead:
+        UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())
+
+
+def listing_health(ctx: AppContext, symbol: str) -> ListingHealth:
+    return HealthRepo(ctx.conn).get(resolve_symbol(ctx, symbol).symbol)

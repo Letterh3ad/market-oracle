@@ -33,9 +33,11 @@ async def _prices(ctx: AppContext) -> tuple[str, str | None]:
     if not run.listings:
         return "nothing watched", None
     added = sum(o.added for o in run.listings)
+    skipped = sum(1 for o in run.listings if o.skipped)
+    tried = len(run.listings) - skipped
     first = run.failed[0] if run.failed else None
-    return (f"{len(run.listings) - len(run.failed)} of {len(run.listings)} listings updated, {added} new bars",
-            first and first.error)
+    summary = f"{tried - len(run.failed)} of {tried} listings updated, {added} new bars"
+    return summary + (f", {skipped} skipped (no data lately)" if skipped else ""), first and first.error
 
 
 async def _fx(ctx: AppContext) -> tuple[str, str | None]:

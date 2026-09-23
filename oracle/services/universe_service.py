@@ -17,6 +17,7 @@ from oracle.services.errors import (
     UnknownSymbol,
 )
 from oracle.store.db import to_utc_iso, transaction
+from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
@@ -187,7 +188,7 @@ async def refresh_universe(ctx: AppContext) -> UniverseStatus:
     previous universe untouched."""
     with single_flight(ctx, JOB, LEASE_S) as held:
         sha, listings = await _download(ctx)
-        grouped = group_companies(listings)
+        grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols())
         held.check()
         with transaction(ctx.conn):
             UniverseRepo(ctx.conn).replace_all(grouped)

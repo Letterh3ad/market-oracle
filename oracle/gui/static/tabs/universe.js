@@ -125,8 +125,9 @@ function row(h, pane) {
       e.target.disabled = true;
     } catch (err) { showError(err.message); }
   } }, "Watch");
-  return el("tr", { class: h.delisted ? "delisted" : null },
-    el("td", null, companyLink(h.symbol)), el("td", null, h.name, others, h.delisted ? " (delisted)" : null),
+  return el("tr", { class: h.delisted || h.dead ? "delisted" : null },
+    el("td", null, companyLink(h.symbol)), el("td", null, h.name, others, h.delisted ? " (delisted)" : null,
+      h.dead ? " (no price data lately)" : null),
     el("td", null, h.country ?? ""), el("td", null, h.exchange ?? ""),
     el("td", null, h.sector ?? h.category ?? ""), el("td", null, (h.market_cap ?? "?").replace(" Cap", "")),
     tagCell, el("td", null, watchBtn));

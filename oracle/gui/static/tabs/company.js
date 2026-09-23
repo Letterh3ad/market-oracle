@@ -47,8 +47,11 @@ function header(v, pane, symbol) {
     el("div", { class: "dim small" }, `${p.listings} listing${p.listings === 1 ? "" : "s"}${main}`,
       p.tags.length ? `; tags: ${p.tags.join(", ")}` : "",
       site ? el("span", null, "; ", el("a", { href: site, target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
+    v.dead_since ? el("div", { class: "warn-text small" },
+      `No price source has had data for this listing since ${v.dead_since}, so updates skip it. `,
+      "Check again tries it now.") : null,
     el("div", { class: "row", style: "margin-top: 8px" },
-      job("Update prices", "/api/jobs/prices", pane, symbol),
+      job(v.dead_since ? "Check again" : "Update prices", "/api/jobs/prices", pane, symbol),
       job("Analyse", "/api/jobs/analyse", pane, symbol),
       el("button", { type: "button", onclick: () => load(pane, symbol, true) }, "Refresh fundamentals")));
 }

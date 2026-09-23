@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from dataclasses import dataclass, replace
 
 from oracle.universe.exchanges import exchange_country, exchange_rank
@@ -46,8 +46,9 @@ def normalise_name(name: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
 
 
-def group_companies(listings: Iterable[Listing]) -> list[Listing]:
-    """Give every listing a company key and mark one primary listing per company.
+def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset()) -> list[Listing]:
+    """Give every listing a company key and mark one primary listing per company (never a
+    `dead` one, no price source has data for, while the company has another).
 
     Listings of one type are one company when they share an ISIN or a normalised name and country,
     transitively. Neither alone is enough: most listings carry no ISIN, and some carry
@@ -82,7 +83,7 @@ def group_companies(listings: Iterable[Listing]) -> list[Listing]:
     for members in groups.values():
         rows = [items[i] for i in members]
         key = _company_key(rows, untrusted)
-        primary = _primary(rows).symbol
+        primary = pick_primary(rows, dead).symbol
         for i in members:
             out[i] = replace(items[i], company_key=key, is_primary=items[i].symbol == primary)
     return out
@@ -108,12 +109,13 @@ def _company_key(rows: list[Listing], untrusted: set[tuple]) -> str:
     return f"symbol:{min(x.symbol for x in rows)}"
 
 
-def _primary(rows: list[Listing]) -> Listing:
+def pick_primary(rows: list[Listing], dead: Set[str] = frozenset()) -> Listing:
     home = _home_country(rows)
     return min(
         rows,
         key=lambda x: (
             x.delisted,
+            x.symbol in dead,
             exchange_country(x.exchange) != home,
             exchange_rank(x.exchange),
             x.symbol,

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import timedelta
+from datetime import date, timedelta
 
 from oracle.broker.rules import Lean
 from oracle.market.fundamentals import FIGURES, Figure, Fundamentals
@@ -11,7 +11,7 @@ from oracle.services.analysis_service import StoredSignal, latest_lean, latest_s
 from oracle.services.context import AppContext
 from oracle.services.fundamentals_service import fetch_fundamentals
 from oracle.services.fx_service import update_fx
-from oracle.services.prices_service import ConvertedBar, day_change, price_history_in_base
+from oracle.services.prices_service import ConvertedBar, day_change, listing_health, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.fundamentals import FundamentalsRepo
 from oracle.store.fx import FxRepo
@@ -46,6 +46,8 @@ class CompanyView:
     lean: Lean | None = None
     lean_stale: bool = False
     """Older than the last stored bar: the strategy will not trade on it."""
+    dead_since: date | None = None
+    """Set when no price source has had data for the listing lately; updates skip it."""
 
 
 async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> CompanyView:
@@ -69,7 +71,7 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
         market_cap_base=market_cap,
         market_cap_rate_source=rate_source,
         signals=tuple(latest_signals(ctx, listing.symbol)),
-        lean=lean, lean_stale=lean_stale,
+        lean=lean, lean_stale=lean_stale, dead_since=listing_health(ctx, listing.symbol).since,
     )
 
 

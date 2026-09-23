@@ -1005,3 +1005,29 @@ a full report per candidate (10+ minutes).
 watchlist, with a survivorship-bias warning, next-open fills, commission (default 0) and
 slippage (default 10 bps), against equal-weight buy-and-hold. AI is never backtested on
 periods the model has seen.
+
+## 2026-09-23 - The scheduler polls instead of sleeping until the due time
+**Context:** Ticket autotick 02: settings must apply live, and a laptop that sleeps through
+a due time must still notice it.
+**Decision:** Every 30 seconds the scheduler asks whether the most recent weekday due time
+has a tick newer than it. A setting change counts due times only from the poll before it,
+so turning scheduling on, or moving the time, never fires at once for a time already
+passed. At start there is no such limit, so the latest missed run fires once as a
+catch-up, unless no tick has ever run (nothing was missed). A failed or skipped tick
+counts as done; nothing retries until the next due time.
+**Alternatives:** Sleeping until the due time with a wake-up event (more moving parts,
+misses a sleeping laptop's due time); catching up before any tick has run.
+
+## 2026-09-23 - tomlkit replaces the regex settings writer
+**Decision:** `with_settings` (tomlkit) writes several keys in one section at once and keeps
+comments; the staged-file-then-validate write around it is unchanged.
+**Alternatives:** Keeping the regex writer (wrong on strings, arrays and nested tables).
+
+## 2026-09-23 - Dead listings: counted per day, kept apart from the universe
+**Decision:** A `listing_health` table (a refresh replaces `listings` whole) holds the
+distinct days every price source answered "no data" since bars last came. Three days
+marks the listing dead, dated to the first of them. Throttling, network errors, breaker
+trips and unreadable answers never count. Watched updates and ticks skip dead listings;
+a single-listing update (the Check again button, `oracle prices update SYMBOL`) always
+tries. Dying or recovering re-picks the company's primary listing at once.
+**Alternatives:** A column on `listings` (lost on refresh); counting runs, not days.

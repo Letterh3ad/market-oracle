@@ -47,6 +47,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0024_article_query_body,
     m0025_research_fallback,
     m0026_tick_runs,
+    m0027_listing_health,
 )
 
 MIGRATIONS = [
@@ -76,4 +77,5 @@ MIGRATIONS = [
     m0024_article_query_body,
     m0025_research_fallback,
     m0026_tick_runs,
+    m0027_listing_health,
 ]

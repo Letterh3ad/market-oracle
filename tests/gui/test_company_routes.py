@@ -55,7 +55,7 @@ async def test_an_unknown_company_is_a_404_with_suggestions(loaded):
 
 async def test_one_listing_can_be_priced_and_analysed_without_being_watched(priced):
     prices = (await priced.post("/api/jobs/prices", params={"symbol": "aapl"})).json()
-    assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None}]
+    assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}]
     ran = (await priced.post("/api/jobs/analyse", params={"symbol": "aapl"})).json()
     assert ran["listings"][0]["symbol"] == "AAPL" and ran["listings"][0]["lean"]["label"]
     assert (await priced.get("/api/watchlists/main")).json()["items"] == []
@@ -68,3 +68,16 @@ async def test_a_single_listing_job_waits_its_turn_like_the_watchlist_one(ctx, p
     with single_flight(ctx, job, 60.0):
         response = await priced.post(path, params={"symbol": "AAPL"})
     assert response.status_code == 409 and "already running" in response.json()["error"]
+
+
+async def test_a_dead_listing_says_so_and_check_again_clears_it(ctx, priced):
+    from datetime import date
+
+    from oracle.store.health import HealthRepo
+
+    HealthRepo(ctx.conn).note_no_data("AAPL", date(2026, 9, 1), dead_after=1)
+    assert (await priced.get("/api/companies/AAPL")).json()["dead_since"] == "2026-09-01"
+    hits = (await priced.get("/api/universe/search", params={"q": "AAPL"})).json()["hits"]
+    assert next(h for h in hits if h["symbol"] == "AAPL")["dead"]
+    await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})  # Check again: data is back
+    assert (await priced.get("/api/companies/AAPL")).json()["dead_since"] is None
