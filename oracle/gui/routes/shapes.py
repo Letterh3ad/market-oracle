@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from urllib.parse import urlsplit
+
 from oracle.services.paper_service import Order
+from oracle.services.research_service import UNVALIDATED, ResearchRun
 
 
 def lean(lean, stale: bool) -> dict | None:
@@ -23,3 +27,26 @@ def next_step(has_price: bool, lean, stale: bool) -> str | None:
 
 def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
+
+
+def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> dict:
+    """`failed`: a newer run that failed, shown beside the last report rather than instead of it."""
+    if run is None:
+        return {"run": None, "failed": None}
+    report = run.report
+    return {"failed": failed and {"id": failed.id, "status": failed.status, "error": failed.error,
+                                  "started_at": failed.started_at}, "run": {
+        "id": run.id, "symbol": run.symbol, "status": run.status, "backend": run.backend, "model": run.model,
+        "fell_back_to": list(run.fell_back_to), "model_label": run.model_label,
+        "started_at": run.started_at, "finished_at": run.finished_at, "as_of": run.as_of, "error": run.error,
+        "findings": run.findings, "queries": list(run.queries), "badge": UNVALIDATED,
+        "report": None if report is None else {
+            "day": report.day, "bull": report.bull and asdict(report.bull), "bear": report.bear and asdict(report.bear),
+            "findings": [asdict(c) for c in report.findings], "risks": [asdict(c) for c in report.risks],
+            "invalidated_if": report.invalidated_if,
+        },
+        # A link only for a web address: stored-data items have none, and nothing else may run.
+        "evidence": [{**asdict(e), "link": e.url if urlsplit(e.url).scheme in ("http", "https") else None}
+                     for e in run.evidence],
+        "steps": [asdict(s) for s in run.steps],
+    }}

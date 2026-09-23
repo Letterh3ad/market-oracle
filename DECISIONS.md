@@ -665,3 +665,252 @@ No hard standards breaches; round 1 fixes confirmed correct.
 counter, ledgers a root check; both work); the ledgers route's hand-picked strategy rules
 could become a service-side view; single-listing fills run outside the prices lock
 (harmless on the single-threaded server, revisit with the phase 10 job model).
+
+## 2026-09-23 - Phase 7 scope: research reports only, ten tickets
+
+**Context:** Phase 7 brings news tools, the ReAct engine and the query generator. The
+lean the strategy trades on is the technicals and factors baseline.
+**Decision:** Research produces a saved, cited report (badged unvalidated) and a trace, but
+does not change the lean; Laya combines both in phase 8. `related_companies` returns
+universe peers until the phase 8 graph replaces it behind the same tool. A Claude backend
+ships alongside Ollama (default). Tools reuse the shared gate and breaker, one source each.
+**Alternatives:** Nudging the lean with research now (rejected: untested AI influence on
+paper trades before the validation gate exists).
+
+## 2026-09-23 - ReAct engine shape
+
+**Context:** Ticket 1 of phase 7: the loop has to work on a 4B local model.
+**Decision:**
+- Each step is one JSON reply (`thought`, `action`, `input`) with the action constrained
+  to the tool names by Ollama's `format`. Tools take one string: a 4B model fills one field
+  far more reliably than an argument object.
+- A garbled reply, an unknown tool or a failing tool becomes an observation the model sees;
+  only a backend that cannot answer at all fails the run.
+- At the step cap (default 8) the model is asked once more, constrained to `final`, so a
+  capped run still has findings; the run is marked `step_cap`.
+- Steps are saved as they happen, so a failed run keeps its trace. One run at a time
+  (`research` job lock).
+- Ollama calls skip the rate gate (localhost has no budget to share); `num_ctx` 8192, since
+  Ollama's default is too small for several observations; temperature 0.
+- `market_data` reads stored data only, with figures as labelled percentages (a raw 1.49
+  ROE was read by the model as 1.49%), and forgives stray JSON punctuation in its input.
+**Alternatives:** Native tool calling (rejected for now: uneven across small models, and
+the constrained JSON step works on every backend).
+
+## 2026-09-23 - News evidence: one article per URL, citations checked
+
+**Context:** Ticket 2 of phase 7: research needs dated, sourced news it can cite.
+**Decision:**
+- Google News RSS (en-GB edition) through the shared gate as `google_news`. Articles are
+  stored once per URL whichever search found them; each run records what it was shown.
+- Observations list at most the 8 newest articles as `[a<id>] date outlet: title`, titles
+  cut at 140 characters, so several searches fit a small model's context.
+- Findings cite as `[a<id>]`. Citations of anything the run was not shown are removed, so
+  an invented id never makes a claim look sourced; the ones kept are marked cited.
+- Links are Google News redirect URLs. Resolving them to the publisher is left to the page
+  reader (ticket 4).
+**Alternatives:** Keeping invented citations flagged (rejected: a reader skims past a flag).
+
+## 2026-09-23 - GDELT and as-of research runs
+
+**Context:** Ticket 3 of phase 7: worldwide news, and research replayable as of a past day
+for backtests after the model's training cutoff.
+**Decision:**
+- `gdelt_search` uses the DOC API (ArtList JSON); outlet is the domain, date is when GDELT
+  first saw it. A plain-text answer (GDELT's way of refusing a query) is shown to the model.
+- GDELT paced at one request per 10 seconds with one retry: it asks for one per 5 seconds
+  and answers a quicker one with a lockout that each further request lengthens.
+- An as-of run sees only what existed by the end of that day (UTC) in every tool, not just
+  news: `market_data` drops later bars, fundamentals and leans, else a replay would read
+  the future from the price. Undated articles are dropped, as they may be later. The task
+  prompt names the day and tells the model not to use what it knows from after it.
+- GDELT's DOC API covers roughly the last three months, so older replays rely on Google.
+- Citations written `(a3)` count like `[a3]` and are rewritten as `[a3]` (seen live).
+**Alternatives:** Cutting only news at the as-of date (rejected: prices leak the outcome).
+
+## 2026-09-23 - Web search and the page reader
+
+**Context:** Ticket 4 of phase 7: the open web beyond news feeds.
+**Decision:**
+- `web_search` through `ddgs` (MIT; intake in THIRD_PARTY.md). It makes its own HTTP calls,
+  so the tool drives the `ddgs` gate itself: a slot before each search, 429 on its rate
+  limit, a transport error otherwise. Five results with 100-character snippets, sized so a
+  full list fits one observation (eight with longer snippets were cut mid-line live).
+- `read_page` fetches through a new `web` source (1 per second, one retry, 2-minute
+  cooldown: three paywalled 403s in a row say little about the next site). It reads at
+  most 2 MB, shows at most 1300 characters, and accepts HTML or plain text only.
+- The reader refuses non-http(s), `localhost`, `.local`/`.internal` names and non-public IP
+  literals: links come from pages the model read, so they may point into this machine or
+  the LAN. DNS names resolving to private addresses are not checked (personal tool).
+- Pages lead with their meta description when the body is thin (script-built pages).
+- Google News links only redirect by script, so the reader asks the model to search the
+  headline instead.
+- As-of replays get neither tool: web pages and results carry no reliable date.
+- Our user agent carries no contact address; sites that require one (Wikipedia) refuse it.
+  Adding the user's email to requests to arbitrary sites was not done without asking.
+- `RateLimitedClient.get` gains `max_bytes` (streams and stops; drops the encoding and
+  length headers of the cut, already-decoded body).
+**Alternatives:** ddgs's own `extract` for pages (rejected: bypasses the gate and breaker).
+
+## 2026-09-23 - SEC filings, and a contact sent to SEC only
+
+**Context:** Ticket 5 of phase 7. SEC refuses requests whose User-Agent lacks a declared
+contact (name and email). The user chose a config setting sent to sec.gov only.
+**Decision:**
+- `[research] contact = "Name email"` (validated to hold an email). Sent in the
+  User-Agent to sec.gov hosts only, never to other sites. Unset, `filings` and reading a
+  sec.gov page answer with how to set it, without a request.
+- `filings` lists key forms only (10-K, 10-Q, 8-K, 20-F, 40-F, 6-K, DEF 14A, S-1, S-4 and
+  amendments); insider and ownership forms are noise for a lean. Filings are dated
+  evidence, so they work in as-of replays too.
+- SEC's ticker map is cached in SQLite (`sec_tickers`) and refreshed weekly.
+- A symbol with an exchange suffix (VOD.L, 7203.T) is answered as non-US without a request;
+  US share classes use a dash (BRK-B) and are tried with SEC's dot form too.
+- Reading a sec.gov page goes through the `sec_edgar` budget, not the general `web` one.
+- The live EDGAR check reads `ORACLE_SEC_CONTACT` and skips without it, so no personal
+  contact is ever sent by a test unasked.
+**Alternatives:** Sending the contact to every site (rejected by the user: it would unblock
+Wikipedia but hands the email to arbitrary hosts).
+
+## 2026-09-23 - related_companies from the universe until the graph exists
+
+**Context:** Ticket 6 of phase 7. The relationship graph is phase 8.
+**Decision:** `related_companies` returns the factor analysts' own peer choice (same
+industry group, else sector), at most 10, largest first, with the basis named once. No
+network. Depositary receipt lines (names with ADR/GDR) are skipped: they repeat a company
+already listed and filled 3 of 10 slots for Apple (Samsung's GDRs). The peer choice for
+factor scores is unchanged. Phase 8 swaps the graph in behind the same tool name.
+
+## 2026-09-23 - Query generator: name seeds, a local-language query, model suggestions
+
+**Context:** Ticket 7 of phase 7. Left alone, the 4B model searched "Apple Inc. recent news
+headlines 2026".
+**Decision:**
+- Seeds from the company's short name (legal forms and "Group"/"Holdings" stripped: "Sony
+  Group Corporation" is "Sony"): "<name> shares", "<name> earnings outlook", and where the
+  listing's country reads another language, "<name> <local word for share price>" ("Sony 株価",
+  "Siemens Aktie"). FinanceDatabase has Latin-script names only, so the native-script name
+  is asked of the model rather than seeded.
+- One model call before the loop suggests up to 4 more (no dates or "latest"); blank,
+  overlong (100+ characters) and repeated ones are dropped. A garbled reply leaves the seeds.
+- The queries are saved with the run and given to the loop as its starting plan.
+- The CLI replaces characters the console cannot encode ("?") instead of crashing: a
+  Japanese query crashed `oracle research 7203.T` through a cp1252 pipe.
+- Citations grouped as `[a71, a85]` (seen live) count, rewritten as `[a71] [a85]`.
+
+## 2026-09-23 - Research roles and the report
+
+**Context:** Ticket 8 of phase 7: turn a run's evidence into a report a reader can check.
+**Decision:**
+- After the loop, six one-call roles in TradingAgents' structure (structure only, prompts
+  written fresh): fundamental, technical and news analysts (up to 3 claims each), a bull
+  and a bear (one case each, reading the analysts' findings), and a risk manager (up to 3
+  risks and an "invalidated if" condition).
+- Every claim must cite evidence the run was shown; one without a valid citation is dropped,
+  and a side with none reads "no case the evidence supports".
+- The stored prices, fundamentals and analyst signals become one dated evidence item
+  (`stored data`, as of the run's day), so data facts are cited like articles.
+- The report is saved per run as JSON, badged unvalidated, and never touches the lean;
+  `oracle research SYMBOL --history` lists past reports.
+- Live, a role reply looped inside a JSON array until the 180s timeout (reported wrongly as
+  "not reachable"). Fixed three ways: role arrays carry `maxItems` (Ollama's grammar honours
+  it), every reply is capped at 1024 tokens, and a timeout is reported as a timeout. A run
+  with roles now takes about a minute on the 4B model.
+**Alternatives:** Several debate rounds as in TradingAgents (rejected for a 4B model: each
+round costs a call and small models repeat themselves rather than rebut).
+
+## 2026-09-23 - Research in the GUI
+
+**Context:** Ticket 9 of phase 7.
+**Decision:**
+- `POST /api/jobs/research?symbol=` runs research inside the request under the job lock,
+  like the other job buttons (about a minute); `GET /api/companies/{symbol}/research`
+  returns the latest run with its report, evidence and trace.
+- A model backend that cannot answer is 503 (a service of this machine, not an upstream).
+- Evidence carries a `link` only for http(s) addresses, and the page checks again
+  (`safeUrl`, now shared in `dom.js`); links open in a new tab with `noopener noreferrer`.
+- The Company tab gains a Research section: bull and bear cases, findings by role, risks,
+  "invalidated if", cited evidence with in-page jumps from each [aN], and a collapsible
+  trace. Every part has a glossary tooltip; the unvalidated badge explains the gate.
+- A separate research tab was not added: the trace sits under its report on the Company
+  tab, where the symbol is already chosen.
+
+## 2026-09-23 - Claude as a research backend
+
+**Context:** Ticket 10 of phase 7: `[llm] backend = "claude"` runs the same loop, query
+generator and roles on Claude.
+**Decision:**
+- Through the official Anthropic Python SDK (MIT), not raw HTTP. Credentials come from
+  `ANTHROPIC_API_KEY` or an `ant auth login` profile; nothing is stored in oracle.toml.
+- `claude_model` defaults to `claude-opus-5`, a separate setting from the Ollama `model`
+  so switching backend needs one line. Paid per token; Ollama stays the default.
+- Replies use structured outputs (`output_config.format` with the step or role schema),
+  closed with `additionalProperties: false` and all fields required; array-length limits
+  are dropped for Claude (unsupported) as callers cap lengths themselves.
+- Refusals fall back server-side (`fallbacks: "default"`, beta
+  `server-side-fallback-2026-07-01`), routed by category. A request refused even so is
+  handed back as no answer, which the loop treats as not understood.
+- Credential, rate-limit, status and connection failures become plain ModelErrors naming
+  the fix. Tests fake the SDK client (the SDK runs on httpx2, so the httpx fake web cannot
+  stand in); the live check runs only with `ORACLE_CLAUDE_SMOKE=1`, as it costs money.
+
+## 2026-09-23 - Phase 7 review round 1
+
+**Context:** Two-axis review of `phase-7-research` against `main`.
+**Decision:**
+- `read_page` follows redirects itself, one hop at a time (at most 5), re-checking each
+  target: a public page could otherwise bounce the reader into this machine or the LAN,
+  and carry the SEC contact to another host. Pages are asked for uncompressed, so the 2 MB
+  cap bounds memory; a body of exactly the cap is no longer flagged cut.
+- A malformed address (`http://[bad`) is refused as invalid instead of crashing the run.
+- Any failure, not only a model error, marks the run failed (never left "running").
+- The run's model names any fallback that answered after a refusal on Claude.
+- Claude timeouts read as timeouts; its client is closed after each call.
+- Articles keep the query that first found them; the stored-data item a report cites is
+  kept per run with its text, so a report can be checked later.
+- A capped run says so in the trace's last step, not only in its status.
+- The Company tab keeps the last report on screen when a newer run fails, with the error.
+- `research_tools` split into a package (shelf, market, news, web, filings) with one fetch
+  helper, one evidence-line format and one citation writer; wording no longer assumes a
+  local model; the adapted HTML stripper is credited in THIRD_PARTY.md.
+**Alternatives:** Deferred as low: `related_companies` has no country basis (the phase 8
+graph adds it); seeds carry a local-language word, not a native-script name (the model is
+asked for that); a per-run scope type for the tool wiring. Server-side refusal fallbacks
+stay on for Claude (Anthropic's guidance for Opus 5), the user can turn them down.
+
+## 2026-09-23 - Phase 7 review round 2 fixes
+
+**Context:** Round 2 found runs that could still be left running, a fallback model written
+as prose into `model`, a newer replay hidden behind an older live report, and the step-limit
+note missing from the GUI trace.
+**Decision:**
+- One guard covers a whole run after it starts. A failure to mark it failed is added as a
+  note on the original error, never raised in its place. A cancelled run says "cancelled".
+- The report, citations and finish are written in one transaction.
+- Fallback models get their own column (`fell_back_to`, m0025) and a `ChatModel` protocol
+  field, cleared per run and recorded on failed runs too. Claude detects a fallback by the
+  API's `usage.iterations` `fallback_message` entry, not by comparing model ids (an alias
+  can come back as a longer dated id).
+- The Company tab shows the newest reported run by when it ran, not by report day.
+- The GUI trace shows the forced final step's note; evidence shows the query that found it.
+- A redirect with no Location is its own error; the duplicate status check is gone.
+**Alternatives:** Comparing served and configured ids for equality (the review's
+suggestion) would flag every dated alias as a fallback. Showing both a live report and a
+replay was left for later.
+
+## 2026-09-23 - Phase 7 review round 3 fixes (last full round)
+
+**Context:** Round 3 found no critical or high issues; lows and mediums fixed in this round.
+**Decision:**
+- Claude records the fallback entry's own `model` from `usage.iterations`, not
+  `response.model`.
+- `ResearchRun.model_label` builds "backend model (X answered when it refused)" once, for
+  the CLI and the GUI.
+- Report history is ordered by when each run started, so the CLI and the Company tab agree
+  on "newest".
+- A failure note on a `ModelError` is carried onto the `ModelUnavailable` raised in its place.
+- A test proves the report, citations and finish roll back together.
+**Alternatives:** Deferred as low: the service clears `model.fell_back_to` per run, which
+relies on `single_flight` serializing runs (returning fallbacks per reply would keep that
+state inside the run); the GUI trace tells a forced final step by its observation, which
+relies on the engine leaving normal final steps without one.

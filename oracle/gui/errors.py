@@ -7,7 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from oracle.services.errors import (
-    InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, NoPrices, PriceUnavailable, ServiceError,
+    InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
+    ServiceError,
     UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownSymbol, UnknownWatchlist,
 )
 
@@ -19,6 +20,8 @@ STATUS = (
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
     ((JobAlreadyRunning, UniverseNotLoaded, NoPrices), 409),
     ((PriceUnavailable, UniverseUnavailable), 502),
+    # The local model is a service of this machine, not an upstream: unavailable, not a bad gateway.
+    ((ModelUnavailable,), 503),
 )
 UNEXPECTED = "something went wrong inside Market Oracle: see the terminal running `oracle gui`"
 

@@ -12,6 +12,7 @@ from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.context import AppContext
+from oracle.services.research_service import research as run_research
 from oracle.services.routine_service import update_listing_prices, update_prices
 
 router = APIRouter(prefix="/api/jobs")
@@ -42,3 +43,9 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx))
          else {"label": r.analysis.lean.label, "probability": r.analysis.lean.probability}}
         for r in runs
     ]}
+
+
+@router.post("/research")
+async def research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """One research run with its report; about a minute on the default local model."""
+    return shapes.research_run(await run_research(ctx, symbol))

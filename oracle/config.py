@@ -30,10 +30,15 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "frankfurter": SourceConfig(rate_per_second=0.5),
     # Its free tier asks for about one call a day; one update makes one call.
     "open_er_api": SourceConfig(rate_per_second=0.05),
-    "gdelt": SourceConfig(rate_per_second=0.2),
+    # Asks for one request per 5 seconds and answers a quicker one with a longer lockout
+    # (seen 2026-09-23), so half that pace and one retry.
+    "gdelt": SourceConfig(rate_per_second=0.1, max_retries=1),
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
     "sec_edgar": SourceConfig(rate_per_second=5.0),
+    # Pages the research loop reads, on any site. A short cooldown: three paywalled 403s in
+    # a row say little about the next site.
+    "web": SourceConfig(rate_per_second=1.0, cooldown_s=120.0, max_retries=1),
     "financedatabase": SourceConfig(rate_per_second=0.5),
 }
 
@@ -96,6 +101,28 @@ class GuiConfig:
     port: int = 8740
 
 
+@dataclass(frozen=True)
+class LlmConfig:
+    backend: str = "ollama"
+    model: str = "qwen3:4b-instruct-2507-q8_0"
+    """Measured in the stalker: fits an 8GB GPU with room for Laya."""
+    base_url: str = "http://localhost:11434"
+    max_steps: int = 8
+    """Tool calls a run may make before it must answer."""
+    timeout_s: float = 180.0
+    """Per reply; a cold model load on 8GB is slow."""
+    context: int = 8192
+    """Tokens of context asked of the model; Ollama's own default is too small for a run."""
+    claude_model: str = "claude-opus-5"
+    """The model when backend is "claude"; its key comes from ANTHROPIC_API_KEY, never this file."""
+
+
+@dataclass(frozen=True)
+class ResearchConfig:
+    contact: str | None = None
+    """Name and email for SEC's User-Agent rule; sent to sec.gov only. Unset, EDGAR is skipped."""
+
+
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
@@ -130,6 +157,8 @@ class Config:
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
+    llm: LlmConfig = field(default_factory=LlmConfig)
+    research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -211,6 +240,12 @@ def _apply(raw: dict) -> Config:
         if name == "gui":
             values[name] = _gui(value)
             continue
+        if name == "llm":
+            values[name] = _llm(value)
+            continue
+        if name == "research":
+            values[name] = _research(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -280,6 +315,45 @@ def _gui(raw: object) -> GuiConfig:
     if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
         raise ConfigError(f"gui.port must be a whole number from 1024 to 65535, got {port!r}")
     return GuiConfig(host=host, port=port)
+
+
+LLM_BACKENDS = ("ollama", "claude")
+
+
+def _llm(raw: object) -> LlmConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("llm must be an [llm] table")
+    _reject_unknown(raw, LlmConfig, "[llm]")
+    out = {}
+    for key, value in raw.items():
+        whole = isinstance(value, int) and not isinstance(value, bool)
+        if key == "backend":
+            ok, wanted = value in LLM_BACKENDS, f"one of {', '.join(LLM_BACKENDS)}"
+        elif key in ("model", "claude_model"):
+            ok, wanted = isinstance(value, str) and bool(value.strip()), "a model name like qwen3:8b"
+        elif key == "base_url":
+            ok, wanted = isinstance(value, str) and re.match(r"https?://", value) is not None, "an http(s) URL"
+        elif key == "max_steps":
+            ok, wanted = whole and 1 <= value <= 50, "a whole number from 1 to 50"
+        elif key == "context":
+            ok, wanted = whole and 2048 <= value <= 262144, "a whole number of tokens from 2048 to 262144"
+        else:
+            ok, wanted = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0, "a positive number"
+            value = float(value) if ok else value
+        if not ok:
+            raise ConfigError(f"llm.{key} must be {wanted}, got {value!r}")
+        out[key] = value
+    return LlmConfig(**out)
+
+
+def _research(raw: object) -> ResearchConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("research must be a [research] table")
+    _reject_unknown(raw, ResearchConfig, "[research]")
+    contact = raw.get("contact")
+    if contact is not None and not (isinstance(contact, str) and re.search(r"\S+@\S+\.\S+", contact)):
+        raise ConfigError(f'research.contact must be a name and email like "Jo Bloggs jo@example.com", got {contact!r}')
+    return ResearchConfig(contact=contact.strip() if contact else None)
 
 
 def _keys(raw: object) -> Keys:

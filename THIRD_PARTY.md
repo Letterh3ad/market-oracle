@@ -16,6 +16,9 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | `oracle/gui/app.py`, `deps.py` | `wfm/gui/app.py`, `deps.py` | one router, error handlers from `oracle/gui/errors.py` |
 | `oracle/gui/static/lib/api.js` | `wfm/gui/static/lib/api.js` | none |
 | `oracle/gui/static/lib/dom.js` | `wfm/gui/static/lib/dom.js` | `humanAge` dropped |
+| `oracle/research/news.py` (RSS parsing) | `wfm/news/sources/feed.py` | Google News items only, outlet from `<source>` |
+| `oracle/research/web.py` (HTML to text) | `wfm/news/html.py` | page furniture dropped too, block tags as line breaks, title and meta description kept |
+| `oracle/research/ollama.py` | `wfm/news/classify/ollama.py` | chat reply for any schema, client per call, non-JSON handed back, `num_ctx` |
 
 ## Runtime dependencies
 
@@ -26,6 +29,10 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | FastAPI | MIT | GUI web API (`oracle/gui`) |
 | uvicorn | BSD-3-Clause | serves the GUI (`oracle gui`) |
 | Starlette, pydantic, pydantic-core, anyio (via FastAPI) | BSD-3-Clause, MIT, MIT, MIT | FastAPI's own dependencies |
+| anthropic 1.8 (Anthropic Python SDK) | MIT | Claude backend for research (`oracle/research/claude.py`); checked 2026-09-23 |
+| httpx2, httpcore2, jiter, docstring-parser, truststore (via anthropic) | BSD-3-Clause, BSD-3-Clause, MIT, MIT, MIT | the SDK's own dependencies (the rest were already here) |
+| ddgs 9.16 | MIT | web search for research (`oracle/research/web.py`); checked 2026-09-23 |
+| primp, click, lxml, colorama (via ddgs; colorama on Windows only) | MIT, BSD-3-Clause, BSD-3-Clause, BSD-3-Clause | ddgs's own dependencies |
 | TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |
 
 ## Data
@@ -45,6 +52,12 @@ Called over HTTP, not redistributed.
 | ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
 | Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |
 | ExchangeRate-API open access (open.er-api.com) | Free tier; attribution required: "Rates By Exchange Rate API" (https://www.exchangerate-api.com), shown wherever its rates are displayed | today's FX for currencies others lack (`oracle/market/fx.py`) |
+
+## Reimplemented ideas
+
+| Idea | From | License | Where |
+|---|---|---|---|
+| Research roles: fundamental, technical and news analysts, a bull/bear debate, a risk check | TradingAgents (TauricResearch) | Apache-2.0 | `oracle/research/roles.py`; structure only, prompts written fresh, no text copied |
 
 ## Dev dependencies
 

@@ -43,6 +43,22 @@ const GLOSSARY = {
     "and slippage (filling a little worse than the opening price).",
   max_fall: "The largest drop from a high point in the daily equity record: how bad it got along the way.",
   pending: "Orders waiting for the next opening price. They fill when Update prices brings in that day.",
+  research:
+    "An AI model searches news, filings and the web about the company, then a small team of AI roles writes a " +
+    "report from what it found. By default the model runs on this machine (Ollama) and takes about a minute; " +
+    "[llm] backend in oracle.toml can switch it to Claude.",
+  research_unvalidated:
+    "Unvalidated: AI research has not yet proven itself. It will count only once the strategy account, using " +
+    "it, beats price patterns and company figures alone over enough paper trades. It never changes the lean.",
+  bull_case: "The strongest honest case for buying now, from the evidence found.",
+  bear_case: "The strongest honest case against buying now, from the same evidence.",
+  research_findings: "What each analyst role concluded. Every claim cites the evidence it rests on; uncited claims are dropped.",
+  risks: "What could hurt someone holding the shares soon.",
+  invalidated_if: "A plain condition that, if it happens, means the bull case was wrong.",
+  evidence:
+    "The articles, filings and pages the research was shown, by id. [a3] in the report points here. " +
+    "'stored data' is Market Oracle's own prices, fundamentals and analyst signals.",
+  research_trace: "Every step the model took: what it thought, which tool it used, and what came back.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

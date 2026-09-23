@@ -8,12 +8,12 @@ base_currency = "GBP"
 
 # Per-source request pacing, shared by every oracle process on this database.
 # Override any field of a built-in source, or add a new one (rate_per_second required).
-# Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.2, google_news 0.5, ddgs 0.2, sec_edgar 5.0,
+# Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.1, google_news 0.5, ddgs 0.2, sec_edgar 5.0, web 1.0 (pages research reads),
 # financedatabase 0.5 (GitHub, used by `oracle universe refresh`)
 [sources.gdelt]
-rate_per_second = 0.2   # GDELT asks for at most one request every 5 seconds
+rate_per_second = 0.1   # GDELT asks for one request per 5 seconds and locks out quicker ones
 cooldown_s = 900        # how long a tripped breaker stays open
-max_retries = 3         # retries on 429/5xx before giving up
+max_retries = 1         # retries on 429/5xx before giving up
 
 # Where daily prices come from, tried in order per listing until one has data.
 # Keyed sources are skipped until their key is set below.
@@ -47,6 +47,23 @@ stop_loss = 0.08        # sell a position 8% below its average cost
 [gui]
 host = "127.0.0.1"
 port = 8740
+
+# The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
+[llm]
+backend = "ollama"
+model = "qwen3:4b-instruct-2507-q8_0"   # fits an 8GB GPU
+base_url = "http://localhost:11434"
+max_steps = 8        # tool calls a run may make before it must answer
+timeout_s = 180      # per reply; a cold model load is slow
+context = 8192       # tokens of context asked of the model
+# backend = "claude" runs research on Claude instead (paid, per token): the key comes from
+# ANTHROPIC_API_KEY or `ant auth login`, never this file.
+claude_model = "claude-opus-5"
+
+# Research sources. SEC EDGAR requires a name and email in every request's User-Agent;
+# it is sent to sec.gov only. Unset, the filings tool is skipped.
+[research]
+# contact = "Your Name you@example.com"
 
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.

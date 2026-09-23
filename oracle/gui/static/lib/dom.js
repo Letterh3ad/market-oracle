@@ -39,4 +39,13 @@ function companyLink(symbol) {
   return el("a", { class: "mono", href: `#company/${encodeURIComponent(symbol)}` }, symbol);
 }
 
-export { el, showError, clearError, companyLink };
+// Links only to web addresses: a URL from a dataset or a web page could otherwise be a script.
+function safeUrl(url) {
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol) ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+export { el, showError, clearError, companyLink, safeUrl };

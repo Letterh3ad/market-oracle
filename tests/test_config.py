@@ -142,3 +142,40 @@ def test_with_setting_adds_the_key_or_the_section_when_missing():
     )
     assert with_setting('db_path = "o.db"', "analysts", "peers", "30") == 'db_path = "o.db"\n\n[analysts]\npeers = 30\n'
     assert with_setting("", "analysts", "peers", "30") == "[analysts]\npeers = 30\n"
+
+
+def test_research_runs_on_local_ollama_by_default_and_each_llm_setting_can_change(tmp_path):
+    llm = load_config(None, cwd=tmp_path)[0].llm
+    assert (llm.backend, llm.model, llm.base_url) == ("ollama", "qwen3:4b-instruct-2507-q8_0", "http://localhost:11434")
+    assert (llm.max_steps, llm.timeout_s, llm.context) == (8, 180.0, 8192)
+    path = tmp_path / "oracle.toml"
+    path.write_text('[llm]\nmodel = "qwen3:8b"\nmax_steps = 12\ntimeout_s = 60\n', encoding="utf-8")
+    llm = load_config(path, cwd=tmp_path)[0].llm
+    assert (llm.model, llm.max_steps, llm.timeout_s) == ("qwen3:8b", 12, 60.0)
+    for line in ('backend = "gpt"', 'model = ""', "max_steps = 0", "max_steps = 51", "timeout_s = 0",
+                 "context = 512", 'base_url = "localhost"', "temperature = 1"):
+        path.write_text(f"[llm]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="llm"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_a_contact_for_sec_is_unset_by_default_and_must_hold_an_email(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].research.contact is None
+    path = tmp_path / "oracle.toml"
+    path.write_text('[research]\ncontact = "Faye faye@example.com"\n', encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].research.contact == "Faye faye@example.com"
+    for line in ('contact = "Faye"', "contact = 5", 'contact = ""', 'email = "a@b.c"'):
+        path.write_text(f"[research]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="research"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_claude_can_be_chosen_with_its_own_model_setting(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].llm.claude_model == "claude-opus-5"
+    path = tmp_path / "oracle.toml"
+    path.write_text('[llm]\nbackend = "claude"\nclaude_model = "claude-sonnet-5"\n', encoding="utf-8")
+    llm = load_config(path, cwd=tmp_path)[0].llm
+    assert (llm.backend, llm.claude_model) == ("claude", "claude-sonnet-5")
+    path.write_text('[llm]\nclaude_model = ""\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm.claude_model"):
+        load_config(path, cwd=tmp_path)

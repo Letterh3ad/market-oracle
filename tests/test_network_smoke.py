@@ -92,3 +92,91 @@ async def test_real_yahoo_fundamentals_via_the_crumb():
             f = await YahooFundamentals(client).fundamentals(Instrument("BP.L", "GBP"), date.today())
     assert f.currency == "GBP" and f.market_cap and 1e10 < f.market_cap < 1e12  # pounds, not pence
     assert f.pe is None or 0 < f.pe < 500
+
+
+async def test_real_ollama_answers_inside_the_research_schema():
+    from oracle.config import LlmConfig
+    from oracle.research.engine import step_schema
+    from oracle.research.ollama import OllamaChat
+
+    llm = LlmConfig()
+    chat = OllamaChat(llm.model, llm.base_url, llm.timeout_s, llm.context)
+    reply = await chat.reply([{"role": "user", "content": "Reply with action final and input 'ok'."}],
+                             step_schema(["market_data", "final"]))
+    assert isinstance(reply, dict) and reply["action"] in ("market_data", "final")
+
+
+async def test_real_google_news_feed_parses_into_dated_articles():
+    import httpx
+
+    from oracle.research.news import GOOGLE_NEWS, google_news_params, parse_google_news
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        resp = await http.get(GOOGLE_NEWS, params=google_news_params("Apple Inc"))
+    articles = parse_google_news(resp.text)
+    assert len(articles) > 5
+    assert all(a.outlet and not a.title.endswith(f" - {a.outlet}") for a in articles)
+    assert all(a.published is not None and a.published.tzinfo is not None for a in articles)
+
+
+async def test_real_gdelt_doc_api_answers_in_artlist_json():
+    import httpx
+
+    from oracle.research.news import GDELT_DOC, gdelt_params, parse_gdelt
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as http:
+        resp = await http.get(GDELT_DOC, params=gdelt_params('"Apple Inc"'))
+    if resp.status_code == 429:
+        # A quick rerun lengthens GDELT's lockout; wait a few minutes before trying again.
+        pytest.skip("GDELT is throttling this address")
+    articles = parse_gdelt(resp.text)
+    assert len(articles) > 5
+    assert all(a.outlet and a.published is not None for a in articles)
+
+
+async def test_real_ddgs_web_search_returns_links_with_snippets():
+    from oracle.research.web import DdgsSearcher
+
+    results = await DdgsSearcher().search("Apple Inc investor relations", 5)
+    assert results and all(r.url.startswith("http") and r.title for r in results)
+
+
+async def test_real_page_reads_as_text_without_scripts():
+    import httpx
+
+    from oracle.research.web import page_text
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        resp = await http.get("https://example.com/")
+    title, text = page_text(resp.text)
+    assert title == "Example Domain" and "documentation" in text and "{" not in text
+
+
+async def test_real_sec_edgar_lists_apples_filings():
+    import httpx
+
+    from oracle.research import edgar
+
+    contact = os.environ.get("ORACLE_SEC_CONTACT")
+    if not contact:
+        pytest.skip('set ORACLE_SEC_CONTACT="Name email" to check EDGAR live')
+    headers = {"User-Agent": edgar.user_agent(contact)}
+    async with httpx.AsyncClient(timeout=30, headers=headers) as http:
+        tickers = edgar.parse_tickers((await http.get(edgar.TICKERS_URL)).json())
+        cik, _ = tickers["AAPL"]
+        filings = edgar.parse_filings((await http.get(edgar.submissions_url(cik))).json(), cik)
+    assert cik == 320193 and any(f.form == "10-Q" for f in filings)
+    assert all(f.url.startswith(edgar.ARCHIVES) for f in filings)
+
+
+async def test_real_claude_answers_inside_the_research_schema():
+    """Costs a fraction of a cent; runs only with ORACLE_CLAUDE_SMOKE=1 set."""
+    if not os.environ.get("ORACLE_CLAUDE_SMOKE"):
+        pytest.skip("set ORACLE_CLAUDE_SMOKE=1 (and Claude credentials) to check Claude live")
+    from oracle.config import LlmConfig
+    from oracle.research.claude import ClaudeChat
+    from oracle.research.engine import step_schema
+
+    reply = await ClaudeChat(LlmConfig().claude_model, 120.0).reply(
+        [{"role": "user", "content": "Reply with action final and input 'ok'."}], step_schema(["market_data", "final"]))
+    assert isinstance(reply, dict) and reply["action"] in ("market_data", "final")

@@ -38,6 +38,14 @@ from oracle.store.migrations import (  # noqa: E402
     m0015_paper_equity,
     m0016_leans,
     m0017_symbol_nocase,
+    m0018_research,
+    m0019_articles,
+    m0020_research_as_of,
+    m0021_sec_tickers,
+    m0022_research_queries,
+    m0023_research_reports,
+    m0024_article_query_body,
+    m0025_research_fallback,
 )
 
 MIGRATIONS = [
@@ -58,4 +66,12 @@ MIGRATIONS = [
     m0015_paper_equity,
     m0016_leans,
     m0017_symbol_nocase,
+    m0018_research,
+    m0019_articles,
+    m0020_research_as_of,
+    m0021_sec_tickers,
+    m0022_research_queries,
+    m0023_research_reports,
+    m0024_article_query_body,
+    m0025_research_fallback,
 ]
