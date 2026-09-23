@@ -50,6 +50,12 @@ Called over HTTP, not redistributed.
 | Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |
 | ExchangeRate-API open access (open.er-api.com) | Free tier; attribution required: "Rates By Exchange Rate API" (https://www.exchangerate-api.com), shown wherever its rates are displayed | today's FX for currencies others lack (`oracle/market/fx.py`) |
 
+## Reimplemented ideas
+
+| Idea | From | License | Where |
+|---|---|---|---|
+| Research roles: fundamental, technical and news analysts, a bull/bear debate, a risk check | TradingAgents (TauricResearch) | Apache-2.0 | `oracle/research/roles.py`; structure only, prompts written fresh, no text copied |
+
 ## Dev dependencies
 
 | Package | License |

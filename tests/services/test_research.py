@@ -82,6 +82,15 @@ async def test_a_run_looks_up_market_data_then_answers_and_is_saved(ctx):
     assert latest_research(ctx, "AAPL") == run
 
 
+def articles(run):
+    """The run's evidence other than the stored-data item every report cites from."""
+    return [e for e in run.evidence if e.outlet != "stored data"]
+
+
+def loop_calls(model):
+    return [c for c in model.calls if "action" in c[1].get("properties", {})]
+
+
 def with_steps(ctx, n):
     from dataclasses import replace
 
@@ -94,7 +103,7 @@ async def test_at_the_step_cap_the_run_is_made_to_answer_and_says_it_was_capped(
     run = await research(ctx, "AAPL", model)
     assert run.status == "step_cap" and run.findings == "Partial view."
     assert [s.action for s in run.steps] == ["market_data", "market_data", "final"]
-    assert model.calls[-1][1]["properties"]["action"]["enum"] == ["final"]
+    assert loop_calls(model)[-1][1]["properties"]["action"]["enum"] == ["final"]
 
 
 async def test_a_garbled_reply_or_unknown_tool_is_shown_to_the_model_not_raised(ctx):
@@ -105,7 +114,7 @@ async def test_a_garbled_reply_or_unknown_tool_is_shown_to_the_model_not_raised(
     assert "No tool named 'crystal_ball'" in unknown.observation and "market_data" in unknown.observation
     assert run.status == "done"
     # The model saw both problems before answering.
-    last_messages = model.calls[-1][0]
+    last_messages = loop_calls(model)[-1][0]
     assert "Not understood" in last_messages[-3]["content"] and "crystal_ball" in last_messages[-1]["content"]
 
 
@@ -165,7 +174,7 @@ async def test_news_search_shows_dated_articles_the_findings_cite_by_id(ctx, new
     observation = run.steps[0].observation
     assert "[a1] 2026-09-20 Reuters: Apple beats estimates" in observation
     assert "[a2] 2026-09-19 BBC: iPhone demand slows in China" in observation
-    beat, slows = run.evidence
+    beat, slows = articles(run)
     assert (beat.id, beat.url, beat.outlet, beat.cited) == (1, "https://reut.rs/1", "Reuters", True)
     assert (slows.title, slows.published, slows.cited) == ("iPhone demand slows in China", utc("2026-09-19"), False)
     assert latest_research(ctx, "AAPL").evidence == run.evidence
@@ -178,7 +187,7 @@ async def test_an_article_found_twice_is_stored_once_and_keeps_its_id(ctx, news)
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("news_search", "AAPL results"),
                                                     step("final", "Done [a1].")))
     assert run.steps[0].observation == run.steps[1].observation == "[a1] 2026-09-20 Reuters: Apple beats estimates"
-    assert [e.id for e in run.evidence] == [1]
+    assert [e.id for e in articles(run)] == [1]
 
 
 async def test_a_citation_of_something_never_shown_is_dropped(ctx, news):
@@ -186,7 +195,7 @@ async def test_a_citation_of_something_never_shown_is_dropped(ctx, news):
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
                                                     step("final", "Beat estimates [a1]; sales doubled [a99].")))
     assert run.findings == "Beat estimates [a1]; sales doubled."
-    assert [(e.id, e.cited) for e in run.evidence] == [(1, True)]
+    assert [(e.id, e.cited) for e in articles(run)] == [(1, True)]
 
 
 @pytest.mark.parametrize("status, says", [(403, "HTTP 403"), (503, "news search unavailable")])
@@ -211,7 +220,7 @@ async def test_gdelt_search_shows_worldwide_articles_like_any_news(ctx, gdelt):
     gdelt.results["Apple"] = [("https://lemonde.fr/1", "Apple dévoile un iPhone pliable", "lemonde.fr", utc("2026-09-20"))]
     run = await research(ctx, "AAPL", ScriptedModel(step("gdelt_search", "Apple"), step("final", "Foldable [a1].")))
     assert run.steps[0].observation == "[a1] 2026-09-20 lemonde.fr: Apple dévoile un iPhone pliable"
-    assert [(e.url, e.cited) for e in run.evidence] == [("https://lemonde.fr/1", True)]
+    assert [(e.url, e.cited) for e in articles(run)] == [("https://lemonde.fr/1", True)]
     assert gdelt.params[0]["mode"].lower() == "artlist" and gdelt.params[0]["format"] == "json"
 
 
@@ -256,7 +265,7 @@ async def test_citations_written_in_round_brackets_still_count(ctx, news):
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
                                                     step("final", "Beat estimates (a1); grew (a7).")))
     assert run.findings == "Beat estimates [a1]; grew."
-    assert [(e.id, e.cited) for e in run.evidence] == [(1, True)]
+    assert [(e.id, e.cited) for e in articles(run)] == [(1, True)]
 
 
 async def test_web_search_results_are_undated_evidence_with_a_snippet(ctx, searcher):
@@ -266,7 +275,7 @@ async def test_web_search_results_are_undated_evidence_with_a_snippet(ctx, searc
     model = ScriptedModel(step("web_search", "Apple supplier"), step("final", "Key supplier [a1]."))
     run = await research(ctx, "AAPL", model, searcher=searcher)
     assert run.steps[0].observation == "[a1] undated tsmc.com: TSMC and Apple | Apple is TSMC's largest customer."
-    assert [(e.url, e.outlet, e.cited) for e in run.evidence] == [("https://www.tsmc.com/a", "tsmc.com", True)]
+    assert [(e.url, e.outlet, e.cited) for e in articles(run)] == [("https://www.tsmc.com/a", "tsmc.com", True)]
 
 
 async def test_a_rate_limited_web_search_trips_its_breaker_and_then_is_not_called(ctx, searcher):
@@ -287,7 +296,7 @@ async def test_a_page_is_read_as_plain_text_and_can_be_cited(ctx, pages):
     model = ScriptedModel(step("read_page", "https://news.test/story"), step("final", "Rose 8% [a1]."))
     run = await research(ctx, "AAPL", model)
     assert run.steps[0].observation == "[a1] news.test: Apple results\nApple beats\nRevenue rose 8%."
-    assert [(e.title, e.cited) for e in run.evidence] == [("Apple results", True)]
+    assert [(e.title, e.cited) for e in articles(run)] == [("Apple results", True)]
 
 
 @pytest.mark.parametrize("url, says", [
@@ -363,7 +372,7 @@ async def test_filings_lists_a_us_companys_key_sec_filings_as_dated_evidence(ctx
     run = await research(ctx, "AAPL", ScriptedModel(step("filings"), step("final", "Filed a 10-Q [a2].")))
     assert run.steps[0].observation == (
         "[a1] 2026-09-10 SEC: 8-K Current report\n[a2] 2026-08-01 SEC: 10-Q Quarterly report")
-    assert run.evidence[1].url == f"{ARCHIVE}/000032019326000077/aapl-20260627.htm" and run.evidence[1].cited
+    assert articles(run)[1].url == f"{ARCHIVE}/000032019326000077/aapl-20260627.htm" and articles(run)[1].cited
     assert all("faye@example.com" in r.headers["user-agent"] for r in sec.requests)
 
 
@@ -453,4 +462,92 @@ async def test_citations_grouped_in_one_bracket_each_count(ctx, news):
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
                                                     step("final", "Both agree [a1, a2, a9].")))
     assert run.findings == "Both agree [a1] [a2]."
-    assert [(e.id, e.cited) for e in run.evidence] == [(1, True), (2, True)]
+    assert [(e.id, e.cited) for e in articles(run)] == [(1, True), (2, True)]
+
+
+def report_script(news):
+    news.results["Apple"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20")),
+                             ("https://bbc.in/2", "iPhone demand slows in China", "BBC", utc("2026-09-19"))]
+    model = ScriptedModel(step("news_search", "Apple"), step("final", "Beat [a1]."))
+    model.roles = {
+        "fundamental_analyst": {"findings": [{"text": "Valuation is rich", "cites": ["a3"]},
+                                             {"text": "Margins will double", "cites": []}]},
+        "news_analyst": {"findings": [{"text": "Beat estimates", "cites": ["a1"]},
+                                      {"text": "Sales doubled", "cites": ["a99"]}]},
+        "bull": {"case": "Earnings momentum", "cites": ["a1"]},
+        "bear": {"case": "Priced for perfection", "cites": ["a3", "a2"]},
+        "risk": {"risks": [{"text": "China demand", "cites": ["a2"]}], "invalidated_if": "Next quarter misses"},
+    }
+    return model
+
+
+async def test_the_roles_turn_the_evidence_into_a_report_of_cited_claims_only(ctx, news):
+    from datetime import date
+
+    from oracle.research.trace import Claim
+
+    model = report_script(news)
+    run = await research(ctx, "AAPL", model)
+    report = run.report
+    assert report.day == date(2026, 9, 21)
+    assert report.findings == (Claim("Valuation is rich", (3,), "fundamental_analyst"),
+                               Claim("Beat estimates", (1,), "news_analyst"))
+    assert report.bull == Claim("Earnings momentum", (1,), "bull")
+    assert report.bear == Claim("Priced for perfection", (3, 2), "bear")
+    assert report.risks == (Claim("China demand", (2,), "risk"),) and report.invalidated_if == "Next quarter misses"
+    data = next(e for e in run.evidence if e.id == 3)
+    assert data.outlet == "stored data" and data.published.date() == date(2026, 9, 21)
+    assert all(e.cited for e in run.evidence)
+    assert latest_research(ctx, "AAPL").report == report
+
+
+async def test_every_role_reads_the_dated_evidence_and_the_stored_data(ctx, news):
+    model = report_script(news)
+    await research(ctx, "AAPL", model)
+    roles = [c for c in model.calls if c[0][0]["content"].startswith("Role: ")]
+    assert [c[0][0]["content"].split(".")[0] for c in roles] == [
+        "Role: fundamental_analyst", "Role: technical_analyst", "Role: news_analyst", "Role: bull", "Role: bear",
+        "Role: risk"]
+    digest = roles[0][0][1]["content"]
+    assert "[a1] 2026-09-20 Reuters: Apple beats estimates" in digest
+    assert "[a3] 2026-09-21 stored data:" in digest and "Last close 105.00 USD" in digest
+    assert "Beat estimates" in roles[3][0][1]["content"]  # the bull reads the analysts' findings
+
+
+async def test_a_case_with_no_valid_citation_is_left_out(ctx, news):
+    model = report_script(news)
+    model.roles["bull"] = {"case": "To the moon", "cites": ["a42"]}
+    model.roles["risk"] = "garbled"
+    report = (await research(ctx, "AAPL", model)).report
+    assert report.bull is None and report.bear is not None and report.risks == () and report.invalidated_if is None
+
+
+async def test_research_never_changes_the_traded_lean(ctx, news):
+    from datetime import date
+
+    from oracle.analysts.signals import AnalystSignal
+    from oracle.broker.rules import Lean
+    from oracle.services.analysis_service import latest_lean
+    from oracle.store.leans import LeanRepo
+    from oracle.store.signals import SignalRepo
+
+    at = "2026-09-21T20:00:00+00:00"
+    SignalRepo(ctx.conn).save([AnalystSignal("technicals", "AAPL", date(2026, 9, 21), 0.5, 0.7, "Momentum is up.", ())], at)
+    LeanRepo(ctx.conn).save([Lean("AAPL", date(2026, 9, 21), "hold", 0.6, "baseline")], "from technicals", at)
+    before = latest_lean(ctx, "AAPL")
+    model = report_script(news)
+    model.roles["bull"] = {"case": "Strong buy now", "cites": ["a1"]}
+    await research(ctx, "AAPL", model)
+    assert latest_lean(ctx, "AAPL") == before
+    digest = [c for c in model.calls if c[0][0]["content"].startswith("Role: technical_analyst")][0][0][1]["content"]
+    assert "technicals: bullish (Momentum is up.)" in digest
+
+
+async def test_report_history_lists_each_run_newest_first(ctx, news):
+    from oracle.services.research_service import report_history
+
+    for case in ("First view", "Second view"):
+        model = report_script(news)
+        model.roles["bull"] = {"case": case, "cites": ["a1"]}
+        await research(ctx, "AAPL", model)
+    assert [r.report.bull.text for r in report_history(ctx, "AAPL")] == ["Second view", "First view"]

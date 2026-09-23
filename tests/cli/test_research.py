@@ -118,3 +118,34 @@ def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, mon
     code, _, _ = run("research", "AAPL")
     sys.stdout.flush()
     assert code == 0 and b"Searches: Apple shares; Apple earnings outlook; ??? ??" in raw.getvalue()
+
+
+def scripted_report(ollama, news, bull="Earnings momentum"):
+    news.results["Apple"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters",
+                              datetime.fromisoformat("2026-09-20T12:00:00+00:00"))]
+    ollama.contents = [step("news_search", "Apple"), step("final", "Beat [a1].")]
+    ollama.roles = {
+        "news_analyst": {"findings": [{"text": "Beat estimates", "cites": ["a1"]}]},
+        "bull": {"case": bull, "cites": ["a1"]},
+        "bear": {"case": "Priced for perfection", "cites": ["a2"]},
+        "risk": {"risks": [{"text": "China demand", "cites": ["a1"]}], "invalidated_if": "Next quarter misses"},
+    }
+
+
+def test_the_report_is_printed_with_its_badge_and_evidence(run, ollama, news):
+    scripted_report(ollama, news)
+    code, out, _ = run("research", "AAPL")
+    report = out.split("Report (unvalidated")[1]
+    assert code == 0 and "Bull: Earnings momentum [a1]" in report and "Bear: Priced for perfection [a2]" in report
+    assert "- news_analyst: Beat estimates [a1]" in report and "- China demand [a1]" in report
+    assert "Invalidated if: Next quarter misses" in report
+    assert "[a2]" in out.split("Evidence cited:")[1] and "stored data" in out.split("Evidence cited:")[1]
+
+
+def test_history_lists_past_reports_without_running(run, ollama, news):
+    for bull in ("First view", "Second view"):
+        scripted_report(ollama, news, bull)
+        run("research", "AAPL")
+    code, out, _ = run("research", "AAPL", "--history")
+    assert code == 0 and out.index("Second view") < out.index("First view")
+    assert ollama.contents == []  # nothing new was asked of the model

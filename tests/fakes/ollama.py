@@ -14,6 +14,8 @@ class FakeOllama:
         self.contents = list(contents)
         self.suggestions: list[str] = []
         """Answered to the query-suggestion call, which comes before the loop's steps."""
+        self.roles: dict[str, object] = {}
+        """Role name -> its answer, for the report calls after the loop; others answer {}."""
         """Strings sent as-is; anything else is sent as JSON text, as Ollama would."""
         self.models = set(models)
         self.bodies: list[dict] = []
@@ -29,6 +31,11 @@ class FakeOllama:
         if "queries" in body["format"].get("properties", {}):
             return httpx.Response(200, json={"model": body["model"], "done": True, "message": {
                 "role": "assistant", "content": json.dumps({"queries": self.suggestions})}})
+        system = body["messages"][0]["content"] if body["messages"] else ""
+        if system.startswith("Role: "):
+            answer = self.roles.get(system[len("Role: "):].split(".", 1)[0], {})
+            return httpx.Response(200, json={"model": body["model"], "done": True, "message": {
+                "role": "assistant", "content": json.dumps(answer)}})
         content = self.contents.pop(0)
         text = content if isinstance(content, str) else json.dumps(content)
         return httpx.Response(200, json={"model": body["model"], "message": {"role": "assistant", "content": text},

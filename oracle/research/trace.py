@@ -42,6 +42,35 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class Claim:
+    text: str
+    cites: tuple[int, ...]
+    """Ids of the evidence it rests on; a claim without any is never kept."""
+    role: str
+
+
+UNVALIDATED = "unvalidated: AI research has not yet beaten the technicals-only baseline in paper trades"
+
+
+@dataclass(frozen=True)
+class Report:
+    """What the research roles concluded from a run's evidence. It informs; it never
+    changes the traded lean (Laya weighs it from phase 8)."""
+
+    day: date
+    findings: tuple[Claim, ...]
+    bull: Claim | None
+    bear: Claim | None
+    risks: tuple[Claim, ...]
+    invalidated_if: str | None
+
+    @property
+    def cites(self) -> set[int]:
+        claims = [*self.findings, *self.risks, *(c for c in (self.bull, self.bear) if c)]
+        return {i for c in claims for i in c.cites}
+
+
+@dataclass(frozen=True)
 class ResearchRun:
     id: int
     symbol: str
@@ -59,3 +88,4 @@ class ResearchRun:
     """Set for a replay: the run saw only what existed by the end of that day."""
     queries: tuple[str, ...] = ()
     """The searches the run was told to start from."""
+    report: Report | None = None

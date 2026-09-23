@@ -797,3 +797,24 @@ headlines 2026".
 - The CLI replaces characters the console cannot encode ("?") instead of crashing: a
   Japanese query crashed `oracle research 7203.T` through a cp1252 pipe.
 - Citations grouped as `[a71, a85]` (seen live) count, rewritten as `[a71] [a85]`.
+
+## 2026-09-23 - Research roles and the report
+
+**Context:** Ticket 8 of phase 7: turn a run's evidence into a report a reader can check.
+**Decision:**
+- After the loop, six one-call roles in TradingAgents' structure (structure only, prompts
+  written fresh): fundamental, technical and news analysts (up to 3 claims each), a bull
+  and a bear (one case each, reading the analysts' findings), and a risk manager (up to 3
+  risks and an "invalidated if" condition).
+- Every claim must cite evidence the run was shown; one without a valid citation is dropped,
+  and a side with none reads "no case the evidence supports".
+- The stored prices, fundamentals and analyst signals become one dated evidence item
+  (`stored data`, as of the run's day), so data facts are cited like articles.
+- The report is saved per run as JSON, badged unvalidated, and never touches the lean;
+  `oracle research SYMBOL --history` lists past reports.
+- Live, a role reply looped inside a JSON array until the 180s timeout (reported wrongly as
+  "not reachable"). Fixed three ways: role arrays carry `maxItems` (Ollama's grammar honours
+  it), every reply is capped at 1024 tokens, and a timeout is reported as a timeout. A run
+  with roles now takes about a minute on the 4B model.
+**Alternatives:** Several debate rounds as in TradingAgents (rejected for a 4B model: each
+round costs a call and small models repeat themselves rather than rebut).

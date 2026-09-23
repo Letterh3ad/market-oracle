@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime
 
-from oracle.research.trace import Evidence, ResearchRun, RunStatus, Step
+from oracle.research.trace import Claim, Evidence, Report, ResearchRun, RunStatus, Step
 from oracle.store.db import transaction
 
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of"
@@ -32,6 +33,19 @@ class ResearchRepo:
         with transaction(self._conn):
             self._conn.executemany("INSERT INTO research_queries (run_id, n, query) VALUES (?, ?, ?)",
                                    [(run_id, n, q) for n, q in enumerate(queries)])
+
+    def save_report(self, run_id: int, symbol: str, report: Report) -> None:
+        with transaction(self._conn):
+            self._conn.execute("INSERT OR REPLACE INTO research_reports (run_id, symbol, day, body) VALUES (?, ?, ?, ?)",
+                               (run_id, symbol, report.day.isoformat(), json.dumps(_report_json(report))))
+
+    def with_reports(self, symbol: str) -> list[ResearchRun]:
+        """Runs that produced a report, newest first."""
+        rows = self._conn.execute(
+            f"SELECT {', '.join('r.' + c.strip() for c in _RUN.split(','))} FROM research_runs r "
+            "JOIN research_reports p ON p.run_id = r.id WHERE r.symbol = ? ORDER BY p.day DESC, r.id DESC", (symbol,),
+        ).fetchall()
+        return [self._run(row) for row in rows]
 
     def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
         with transaction(self._conn):
@@ -79,4 +93,25 @@ class ResearchRepo:
                                  for i, u, t, o, p, c in evidence),
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
-                               "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))))
+                               "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),
+                           self._report(row[0]))
+
+    def _report(self, run_id: int) -> Report | None:
+        row = self._conn.execute("SELECT day, body FROM research_reports WHERE run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            return None
+        body = json.loads(row[1])
+
+        def claim(c: dict | None) -> Claim | None:
+            return Claim(c["text"], tuple(c["cites"]), c["role"]) if c else None
+
+        return Report(date.fromisoformat(row[0]), tuple(claim(c) for c in body["findings"]), claim(body["bull"]),
+                      claim(body["bear"]), tuple(claim(c) for c in body["risks"]), body["invalidated_if"])
+
+
+def _report_json(r: Report) -> dict:
+    def claim(c: Claim | None) -> dict | None:
+        return {"text": c.text, "cites": list(c.cites), "role": c.role} if c else None
+
+    return {"findings": [claim(c) for c in r.findings], "bull": claim(r.bull), "bear": claim(r.bear),
+            "risks": [claim(c) for c in r.risks], "invalidated_if": r.invalidated_if}

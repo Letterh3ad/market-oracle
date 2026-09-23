@@ -19,7 +19,8 @@ async def test_a_reply_is_constrained_to_the_schema_and_parsed():
     assert reply == {"thought": "t", "action": "final", "input": "x"}
     [body] = ollama.bodies
     assert body["format"] == SCHEMA and body["stream"] is False
-    assert body["options"] == {"temperature": 0, "num_ctx": 8192}
+    # A reply is capped: a small model can loop inside a JSON array until the timeout.
+    assert body["options"] == {"temperature": 0, "num_ctx": 8192, "num_predict": 1024}
     assert body["messages"] == [{"role": "user", "content": "hi"}]
 
 
@@ -37,3 +38,15 @@ async def test_ollama_not_running_says_how_to_start_it():
 async def test_a_model_not_pulled_says_how_to_get_it():
     with pytest.raises(ModelError, match="ollama pull other:1b"):
         await chat(FakeOllama(), model="other:1b").reply([], SCHEMA)
+
+
+async def test_a_reply_too_slow_is_called_a_timeout_not_unreachable():
+    import httpx
+
+    class Slow(FakeOllama):
+        def handle(self, request):
+            raise httpx.ReadTimeout("timed out", request=request)
+
+    with pytest.raises(ModelError, match="took longer than 5s") as caught:
+        await chat(Slow()).reply([], SCHEMA)
+    assert "ollama serve" not in str(caught.value)

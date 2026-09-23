@@ -43,6 +43,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0020_research_as_of,
     m0021_sec_tickers,
     m0022_research_queries,
+    m0023_research_reports,
 )
 
 MIGRATIONS = [
@@ -68,4 +69,5 @@ MIGRATIONS = [
     m0020_research_as_of,
     m0021_sec_tickers,
     m0022_research_queries,
+    m0023_research_reports,
 ]
