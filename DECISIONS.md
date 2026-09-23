@@ -1054,3 +1054,15 @@ the PC is idle. Ticks stay once a day at 22:30 local: every stage works on daily
 fills at the next open, so more ticks add nothing.
 **Alternatives:** Windows toast now (new dependency, deferred to packaging); ticks several
 times a day (no gain on daily data).
+
+## 2026-09-23 - Work runs as jobs listed in an Activity tab
+**Context:** GUI work runs inside its request: buttons block, a second research click is
+refused, nothing can be cancelled, and progress is visible only on the page that clicked.
+**Decision:** A job runner in the GUI server (started and stopped with it). Every button
+that starts work submits a job to a per-kind FIFO queue (research one at a time), and a
+new Activity tab lists running jobs with their stage, queued jobs, and finished ones, each
+cancellable while queued or running. Jobs held by other processes show read-only from the
+job locks. Queued jobs are dropped on restart ("not run: app closed"); finished ones are
+kept. Built before `ai-account`, whose tick research and Stop build on it.
+**Alternatives:** Refusing a busy research click (today); running research in parallel (an
+8GB GPU does one run well); resuming queued jobs on restart (surprising).
