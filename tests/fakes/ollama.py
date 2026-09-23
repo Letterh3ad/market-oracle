@@ -12,6 +12,8 @@ class FakeOllama:
 
     def __init__(self, *contents, models=("qwen3:4b-instruct-2507-q8_0",)) -> None:
         self.contents = list(contents)
+        self.suggestions: list[str] = []
+        """Answered to the query-suggestion call, which comes before the loop's steps."""
         """Strings sent as-is; anything else is sent as JSON text, as Ollama would."""
         self.models = set(models)
         self.bodies: list[dict] = []
@@ -24,6 +26,9 @@ class FakeOllama:
         self.bodies.append(body)
         if body["model"] not in self.models:
             return httpx.Response(404, json={"error": f"model '{body['model']}' not found"})
+        if "queries" in body["format"].get("properties", {}):
+            return httpx.Response(200, json={"model": body["model"], "done": True, "message": {
+                "role": "assistant", "content": json.dumps({"queries": self.suggestions})}})
         content = self.contents.pop(0)
         text = content if isinstance(content, str) else json.dumps(content)
         return httpx.Response(200, json={"model": body["model"], "message": {"role": "assistant", "content": text},

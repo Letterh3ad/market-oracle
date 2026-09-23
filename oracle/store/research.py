@@ -28,6 +28,11 @@ class ResearchRepo:
                 (run_id, step.n, step.thought, step.action, step.input, step.observation),
             )
 
+    def set_queries(self, run_id: int, queries: list[str]) -> None:
+        with transaction(self._conn):
+            self._conn.executemany("INSERT INTO research_queries (run_id, n, query) VALUES (?, ?, ?)",
+                                   [(run_id, n, q) for n, q in enumerate(queries)])
+
     def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
         with transaction(self._conn):
             self._conn.executemany(
@@ -72,4 +77,6 @@ class ResearchRepo:
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
                            tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c))
                                  for i, u, t, o, p, c in evidence),
-                           date.fromisoformat(row[9]) if row[9] else None)
+                           date.fromisoformat(row[9]) if row[9] else None,
+                           tuple(q for (q,) in self._conn.execute(
+                               "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))))

@@ -98,3 +98,23 @@ def test_an_as_of_date_must_be_a_real_past_date(run, ollama):
     assert code == 1 and "in the future" in err
     with pytest.raises(SystemExit):
         run("research", "AAPL", "--as-of", "18/09/2026")
+
+
+def test_the_planned_searches_are_shown_first(run, ollama):
+    ollama.suggestions = ["Apple iPhone demand"]
+    ollama.contents = [step("final", "Done.")]
+    _, out, _ = run("research", "AAPL")
+    assert "Searches: Apple shares; Apple earnings outlook; Apple iPhone demand" in out
+
+
+def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, monkeypatch):
+    import io
+    import sys
+
+    ollama.suggestions = ["トヨタ 株価"]
+    ollama.contents = [step("final", "Done.")]
+    raw = io.BytesIO()
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
+    code, _, _ = run("research", "AAPL")
+    sys.stdout.flush()
+    assert code == 0 and b"Searches: Apple shares; Apple earnings outlook; ??? ??" in raw.getvalue()

@@ -31,6 +31,8 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
 def print_run(r: ResearchRun, max_steps: int) -> None:
     replay = f", as of {r.as_of.isoformat()}" if r.as_of else ""
     print(f"{r.symbol}{replay}, researched {r.started_at}")
+    if r.queries:
+        print(f"Searches: {'; '.join(r.queries)}")
     for s in r.steps:
         if s.action == "final":
             continue

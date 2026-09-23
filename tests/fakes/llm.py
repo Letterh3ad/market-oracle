@@ -11,10 +11,14 @@ class ScriptedModel:
 
     def __init__(self, *replies) -> None:
         self.replies = list(replies)
+        self.suggestions: object = {"queries": []}
+        """The answer to the query-suggestion call, which comes before the loop's steps."""
         self.calls: list[tuple[list[dict], dict]] = []
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         self.calls.append(([dict(m) for m in messages], schema))
+        if "queries" in schema.get("properties", {}):
+            return self.suggestions
         if not self.replies:
             raise AssertionError("the script ran out of replies")
         reply = self.replies.pop(0)

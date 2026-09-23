@@ -4,24 +4,27 @@ from __future__ import annotations
 
 from datetime import date
 
+from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
 from oracle.research.engine import react
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
+from oracle.research.queries import plan, seed_queries, suggest
+from oracle.research.tools import Tool
 from oracle.research.trace import ResearchRun, RunStatus, Step
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable
+from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
 from oracle.services.research_tools import (
     Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch,
 )
-from oracle.services.http import open_client
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
 from oracle.store.research import ResearchRepo
-from oracle.store.universe import UniverseRepo
+from oracle.store.universe import ListingProfile, UniverseRepo
 
 __all__ = ["ResearchRun", "RunStatus", "Step", "latest_research", "research"]
 
@@ -49,25 +52,35 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
             shown.update(ids)
             repo.add_evidence(run_id, ids)
 
-        async with open_client(ctx) as client:
-            shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
-            contact = ctx.config.research.contact
-            tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
-                     Filings(client, ctx.conn, ctx.clock, shelf, listing, contact), RelatedCompanies(ctx, listing)]
-            if as_of is None:
-                # Web pages carry no reliable date, so a replay cannot use them.
-                gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-                tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
-            try:
-                outcome = await react(model, tools, _task(ctx, listing, as_of or today), ctx.config.llm.max_steps,
+        day = as_of or today
+        profile = UniverseRepo(ctx.conn).profile(listing)
+        try:
+            queries = plan(seed_queries(profile.name, profile.country),
+                           await suggest(model, _about(profile, day), profile.country))
+            repo.set_queries(run_id, queries)
+            async with open_client(ctx) as client:
+                tools = _tools(ctx, client, Shelf(ctx.conn, ctx.clock, on_shown, as_of), listing, as_of, searcher)
+                outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                                       lambda s: repo.add_step(run_id, s))
-            except ModelError as exc:
-                repo.finish(run_id, RunStatus.FAILED, None, str(exc), _now(ctx))
-                raise ModelUnavailable(str(exc)) from exc
+        except ModelError as exc:
+            repo.finish(run_id, RunStatus.FAILED, None, str(exc), _now(ctx))
+            raise ModelUnavailable(str(exc)) from exc
         findings, cited = keep_citations(outcome.findings, shown)
         repo.set_cited(run_id, cited)
         repo.finish(run_id, outcome.status, findings, None, _now(ctx))
         return repo.get(run_id)
+
+
+def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, as_of: date | None,
+           searcher: WebSearcher | None) -> list[Tool]:
+    contact = ctx.config.research.contact
+    tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
+             Filings(client, ctx.conn, ctx.clock, shelf, listing, contact), RelatedCompanies(ctx, listing)]
+    if as_of is None:
+        # Web pages carry no reliable date, so a replay cannot use them.
+        gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
+        tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
+    return tools
 
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:
@@ -79,13 +92,17 @@ def _configured_model(ctx: AppContext) -> ChatModel:
     return OllamaChat(llm.model, llm.base_url, llm.timeout_s, llm.context, transport=ctx.transport)
 
 
-def _task(ctx: AppContext, listing: str, day: date) -> str:
-    p = UniverseRepo(ctx.conn).profile(listing)
-    where = ", ".join(x for x in (p.exchange, p.country, p.sector) if x)
+def _about(p: ListingProfile, day: date) -> str:
     # The date matters twice: "recent" needs an anchor, and a replay must not lean on what
     # the model remembers from after it.
+    where = ", ".join(x for x in (p.exchange, p.country, p.sector, p.industry) if x)
     return (f"Today is {day.isoformat()}; use nothing you know from after it. "
-            f"Research {p.name} ({listing}){': ' + where if where else ''}.")
+            f"Company: {p.name} ({p.symbol}){': ' + where if where else ''}.")
+
+
+def _task(p: ListingProfile, day: date, queries: list[str]) -> str:
+    searches = "\n".join(f"- {q}" for q in queries)
+    return f"{_about(p, day)}\nResearch it. Start with these searches, then follow what you find:\n{searches}"
 
 
 def _now(ctx: AppContext) -> str:

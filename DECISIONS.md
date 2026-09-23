@@ -780,3 +780,20 @@ industry group, else sector), at most 10, largest first, with the basis named on
 network. Depositary receipt lines (names with ADR/GDR) are skipped: they repeat a company
 already listed and filled 3 of 10 slots for Apple (Samsung's GDRs). The peer choice for
 factor scores is unchanged. Phase 8 swaps the graph in behind the same tool name.
+
+## 2026-09-23 - Query generator: name seeds, a local-language query, model suggestions
+
+**Context:** Ticket 7 of phase 7. Left alone, the 4B model searched "Apple Inc. recent news
+headlines 2026".
+**Decision:**
+- Seeds from the company's short name (legal forms and "Group"/"Holdings" stripped: "Sony
+  Group Corporation" is "Sony"): "<name> shares", "<name> earnings outlook", and where the
+  listing's country reads another language, "<name> <local word for share price>" ("Sony 株価",
+  "Siemens Aktie"). FinanceDatabase has Latin-script names only, so the native-script name
+  is asked of the model rather than seeded.
+- One model call before the loop suggests up to 4 more (no dates or "latest"); blank,
+  overlong (100+ characters) and repeated ones are dropped. A garbled reply leaves the seeds.
+- The queries are saved with the run and given to the loop as its starting plan.
+- The CLI replaces characters the console cannot encode ("?") instead of crashing: a
+  Japanese query crashed `oracle research 7203.T` through a cp1252 pipe.
+- Citations grouped as `[a71, a85]` (seen live) count, rewritten as `[a71] [a85]`.

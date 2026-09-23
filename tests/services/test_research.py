@@ -238,7 +238,7 @@ async def test_as_of_a_date_nothing_published_later_is_seen_even_in_market_data(
     assert world.observation == "No articles found for 'Apple'."
     assert gdelt.params[0]["enddatetime"] == "20260918235959"
     assert "Last close 100.00 USD on 2026-09-18" in market.observation and "105" not in market.observation
-    assert "2026-09-18" in model.calls[0][0][1]["content"]
+    assert "2026-09-18" in model.calls[1][0][1]["content"]
     assert run.as_of == date(2026, 9, 18) and latest_research(ctx, "AAPL").as_of == date(2026, 9, 18)
 
 
@@ -317,7 +317,7 @@ async def test_an_as_of_replay_has_no_web_tools_as_pages_carry_no_date(ctx, sear
     model = ScriptedModel(step("web_search", "Apple"), step("final", "Done."))
     run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 18), searcher=searcher)
     assert "No tool named 'web_search'" in run.steps[0].observation and searcher.queries == []
-    assert "read_page" not in model.calls[0][0][0]["content"]
+    assert "read_page" not in model.calls[1][0][0]["content"]
 
 
 async def test_a_page_built_by_scripts_still_gives_its_description(ctx, pages):
@@ -420,3 +420,37 @@ async def test_related_companies_are_universe_peers_with_the_reason_named(ctx, p
 async def test_related_companies_of_an_unknown_symbol_says_so(ctx):
     run = await research(ctx, "AAPL", ScriptedModel(step("related_companies", "NOPE"), step("final", "Done.")))
     assert "no listing 'NOPE'" in run.steps[0].observation
+
+
+async def test_a_run_starts_from_seed_queries_and_the_models_suggestions(ctx):
+    model = ScriptedModel(step("final", "Done."))
+    model.suggestions = {"queries": ["Apple iPhone 18 demand", "apple SHARES", "", "x" * 150,
+                                     "Apple tariffs", "Apple CEO John Ternus", "Apple services growth", "Apple AI"]}
+    run = await research(ctx, "AAPL", model)
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple iPhone 18 demand", "Apple tariffs",
+                           "Apple CEO John Ternus", "Apple services growth")
+    task = model.calls[1][0][1]["content"]
+    assert "Start with these searches" in task and "- Apple CEO John Ternus" in task
+    assert latest_research(ctx, "AAPL").queries == run.queries
+
+
+async def test_a_listing_abroad_gets_a_query_in_its_language_and_the_model_is_asked_for_its_local_name(ctx):
+    model = ScriptedModel(step("final", "Done."))
+    run = await research(ctx, "6758.T", model)
+    assert run.queries[:3] == ("Sony shares", "Sony earnings outlook", "Sony 株価")
+    assert "Japanese" in model.calls[0][0][-1]["content"]
+
+
+async def test_a_garbled_suggestion_reply_leaves_the_seed_queries(ctx):
+    model = ScriptedModel(step("final", "Done."))
+    model.suggestions = "no idea"
+    run = await research(ctx, "AAPL", model)
+    assert run.queries == ("Apple shares", "Apple earnings outlook")
+
+
+async def test_citations_grouped_in_one_bracket_each_count(ctx, news):
+    news.results["Apple"] = [("https://x.com/1", "One", "X", utc("2026-09-20")), ("https://x.com/2", "Two", "X", utc("2026-09-19"))]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
+                                                    step("final", "Both agree [a1, a2, a9].")))
+    assert run.findings == "Both agree [a1] [a2]."
+    assert [(e.id, e.cited) for e in run.evidence] == [(1, True), (2, True)]

@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Names and headlines come from every market; a console or pipe in a legacy code page
+    # (cp1252 on Windows) must show "?" for what it cannot encode, not crash mid-report.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     parser = build_parser()
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
     if not args.command:

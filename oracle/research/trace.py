@@ -57,3 +57,5 @@ class ResearchRun:
     """Newest first."""
     as_of: date | None = None
     """Set for a replay: the run saw only what existed by the end of that day."""
+    queries: tuple[str, ...] = ()
+    """The searches the run was told to start from."""
