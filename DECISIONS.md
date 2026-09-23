@@ -513,3 +513,15 @@ repos. A position that has never had a rate counts as nothing in equity until on
   that is missing or out of date.
 **Alternatives:** Further review rounds are capped: from here only critical and high
 findings are fixed.
+
+## 2026-09-23 - Phase 6 scope: force rerun deferred, market-cap sort direction
+
+**Context:** Planning phase 6 (GUI).
+**Decision:** The force-rerun list moves to phase 10: it needs a record of failed and
+deferred jobs, which only the phase 10 job model provides (today's jobs are single-flight
+locks only). Market-cap sorting follows every other field: ascending is smallest first,
+`--desc` biggest first; a search without text still defaults to biggest first. Ledgers
+split into a read-only view and a trading ticket.
+**Alternatives:** A thin failed-job table in phase 6 (rejected: would be rebuilt in
+phase 10). Keeping the old market-cap direction and renaming the flag (rejected: every
+other sort reads "desc" as largest first).

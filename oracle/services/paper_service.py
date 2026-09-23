@@ -8,7 +8,8 @@ from dataclasses import dataclass
 
 from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
-from oracle.broker.rules import Decision, Holding, Lean, Rules, decide
+from oracle.broker.orders import Action, Side, Status
+from oracle.broker.rules import Decision, Lean, Position, Rules, decide
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
@@ -25,21 +26,11 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AccountScore", "AccountView", "FillOutcome", "Order", "Position", "account_score", "account_view",
+    "ACCOUNTS", "AccountScore", "Action", "AccountView", "FillOutcome", "Order", "Position", "Side", "Status", "account_score", "account_view",
     "equity_history", "fill_pending", "place_buy", "place_sell", "strategy_log", "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "manual")
-
-
-@dataclass(frozen=True)
-class Position:
-    symbol: str
-    shares: int
-    cost: float
-    """What the shares cost in the base currency, costs included (average cost basis)."""
-    value: float | None
-    """At the last stored close, in the base currency; None without a rate."""
 
 
 @dataclass(frozen=True)
@@ -82,8 +73,7 @@ class AccountScore:
 @dataclass(frozen=True)
 class FillOutcome:
     order: Order
-    status: str
-    """filled, rejected, or pending (waiting, with a note when something is missing)."""
+    status: Status
     note: str | None
 
 
@@ -93,7 +83,7 @@ def place_buy(ctx: AppContext, symbol: str, cash: float, account: str = "manual"
         raise InvalidQuery(f"a buy must spend more than nothing, not {cash:,.2f}")
     listing = resolve_symbol(ctx, symbol).symbol
     now = ctx.clock.utcnow()
-    return PaperRepo(ctx.conn).add_order(account, listing, "buy", cash, None, to_utc_iso(now), now.date(), source)
+    return PaperRepo(ctx.conn).add_order(account, listing, Side.BUY, cash, None, to_utc_iso(now), now.date(), source)
 
 
 def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = "manual",
@@ -105,14 +95,14 @@ def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = 
     held = _held_shares(repo, account, listing)
     if not held:
         raise InvalidQuery(f"{listing} is not held on the {account} account")
-    queued = [o for o in repo.pending(account) if o.symbol == listing and o.side == "sell"]
+    queued = [o for o in repo.pending(account) if o.symbol == listing and o.side == Side.SELL]
     free = 0 if any(o.shares is None for o in queued) else held - sum(o.shares for o in queued)
     if free <= 0:
         raise InvalidQuery(f"all {held} {listing} shares already have a pending sell")
     if shares is not None and not 0 < shares <= free:
         raise InvalidQuery(f"can sell 1 to {free} {listing} shares, not {shares}")
     now = ctx.clock.utcnow()
-    return repo.add_order(account, listing, "sell", None, shares,
+    return repo.add_order(account, listing, Side.SELL, None, shares,
                           to_utc_iso(now), now.date(), source)
 
 
@@ -135,22 +125,22 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
     view = account_view(ctx, account)
     watched = WatchlistRepo(ctx.conn).all_symbols()
     found, unusable = _usable_leans(ctx, leans, watched)
-    holdings = {p.symbol: Holding(p.symbol, p.shares, p.cost, p.value) for p in view.positions}
+    holdings = {p.symbol: p for p in view.positions}
     sizes = {s: size for s in watched if (size := _risk_size(ctx, s)) is not None}
     orders = repo.pending(account)
-    committed = sum(o.cash for o in orders if o.side == "buy")
+    committed = sum(o.cash for o in orders if o.side == Side.BUY)
     rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
                   ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, rules, {o.symbol for o in orders})
     # One decision per listing: a sell or a pending order says more than a lean problem.
-    covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == "sell"}
+    covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == Action.SELL}
     decisions = [d for d in unusable if d.symbol not in covered] + decided
     today, log = ctx.clock.utcnow().date(), DecisionRepo(ctx.conn)
     for d in decisions:
         order = None
-        if d.action == "buy":
+        if d.action == Action.BUY:
             order = place_buy(ctx, d.symbol, d.cash, account, source=account)
-        elif d.action == "sell":
+        elif d.action == Action.SELL:
             order = place_sell(ctx, d.symbol, None, account, source=account)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
         log.log([LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None)])
@@ -164,11 +154,11 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
         lean = leans.latest(symbol)
         last = bars.last_date(symbol)
         if universe.resolve(symbol) is None:
-            skips.append(Decision(symbol, "skip", None, "no longer in the universe"))
+            skips.append(Decision(symbol, Action.SKIP, None, "no longer in the universe"))
         elif lean is None:
-            skips.append(Decision(symbol, "skip", None, "no lean yet: run `oracle analyse`"))
+            skips.append(Decision(symbol, Action.SKIP, None, "no lean yet: run `oracle analyse`"))
         elif last is not None and lean.as_of < last:
-            skips.append(Decision(symbol, "skip", None, f"{lean.source} lean is out of date: run `oracle analyse`"))
+            skips.append(Decision(symbol, Action.SKIP, None, f"{lean.source} lean is out of date: run `oracle analyse`"))
         else:
             found[symbol] = lean
     return found, skips
@@ -230,7 +220,7 @@ def account_view(ctx: AppContext, account: str) -> AccountView:
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
     profile = UniverseRepo(ctx.conn).profile(order.symbol)
-    if profile is None and order.side == "buy":
+    if profile is None and order.side == Side.BUY:
         # Its exchange, and so any stamp duty, is unknown.
         return _reject(repo, order, f"{order.symbol} is no longer in the universe")
     # A bar without an open (a data gap) cannot fill; the next one with an open does.
@@ -241,22 +231,22 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
     rate = _rate(ctx, bar.currency, bar.date)
     if rate is None:
         note = f"no {bar.currency} rate for {bar.date.isoformat()}: run `oracle fx update`"
-        repo.set_status(order.id, "pending", note)
-        return FillOutcome(order, "pending", note)
+        repo.set_status(order.id, Status.PENDING, note)
+        return FillOutcome(order, Status.PENDING, note)
     if profile is None:
         # A held listing gone from the universe still sells, at the dearest fee band.
         exchange, country = "", ""
     else:
         exchange = profile.exchange or ""
         country = exchange_country(exchange) or profile.country or ""
-    if order.side == "sell":
+    if order.side == Side.SELL:
         held = _held_shares(repo, order.account, order.symbol)
         shares = order.shares if order.shares is not None else held
         if not 0 < shares <= held:
             return _reject(repo, order, f"only {held} shares held")
         fill = sell_fill(shares, open_price=bar.open, rate=rate, country=country, costs=COSTS)
         repo.record_fill(_row(order, bar.date, bar.currency, rate, fill))
-        return FillOutcome(order, "filled", None)
+        return FillOutcome(order, Status.FILLED, None)
     cash = _cash(ctx, repo, order.account)
     if order.cash > cash:
         return _reject(repo, order, f"not enough cash: {order.cash:,.2f} asked, {cash:,.2f} available")
@@ -265,12 +255,12 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
     if fill.shares == 0:
         return _reject(repo, order, f"{order.cash:,.2f} buys no whole share at {bar.open:,.2f} {bar.currency} after costs")
     repo.record_fill(_row(order, bar.date, bar.currency, rate, fill))
-    return FillOutcome(order, "filled", None)
+    return FillOutcome(order, Status.FILLED, None)
 
 
 def _reject(repo: PaperRepo, order: Order, note: str) -> FillOutcome:
-    repo.set_status(order.id, "rejected", note)
-    return FillOutcome(order, "rejected", note)
+    repo.set_status(order.id, Status.REJECTED, note)
+    return FillOutcome(order, Status.REJECTED, note)
 
 
 def _row(order: Order, day, currency: str, rate: float, fill: Fill) -> FillRow:
@@ -299,7 +289,7 @@ def _replay(repo: PaperRepo, account: str) -> tuple[dict[str, list], float]:
     realised = 0.0
     for f in repo.fills(account):
         shares, cost = held.get(f.symbol, [0, 0.0])
-        if f.side == "buy":
+        if f.side == Side.BUY:
             held[f.symbol] = [shares + f.shares, cost - f.cash]
         else:
             sold_cost = cost * f.shares / shares

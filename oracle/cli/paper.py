@@ -5,7 +5,7 @@ import argparse
 from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
+    ACCOUNTS, Order, Side, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
     strategy_log, strategy_step,
 )
 
@@ -46,7 +46,7 @@ def sell_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def _size(order: Order, base: str) -> str:
-    if order.side == "buy":
+    if order.side == Side.BUY:
         return f"{order.cash:,.2f} {base}"
     return "the whole position" if order.shares is None else f"{order.shares} shares"
 

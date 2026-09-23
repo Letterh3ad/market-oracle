@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from oracle.broker.rules import Holding, Lean, Rules, decide
+from oracle.broker.rules import Lean, Position, Rules, decide
 
 DAY = date(2026, 9, 22)
 RULES = Rules(min_probability=0.6, max_position=0.10, max_positions=10, cash_floor=0.20, stop_loss=0.08)
@@ -35,33 +35,33 @@ def test_below_the_probability_threshold_or_not_a_buy_label_is_skipped():
 
 
 def test_ten_positions_blocks_a_new_buy_and_says_why():
-    holdings = [Holding(f"H{i}", 1, 100.0, 100.0) for i in range(10)]
+    holdings = [Position(f"H{i}", 1, 100.0, 100.0) for i in range(10)]
     d = run([lean("A")], holdings, cash=9000.0)
     assert d["A"].action == "skip" and "10 positions" in d["A"].reason
 
 
 def test_the_cash_floor_is_never_spent():
     # Equity 10,000: floor 2,000; with 2,300 cash only 300 is spendable.
-    holdings = [Holding("H", 1, 7700.0, 7700.0)]
+    holdings = [Position("H", 1, 7700.0, 7700.0)]
     assert run([lean("A")], holdings, cash=2300.0)["A"].cash == pytest.approx(300.0)
-    d = run([lean("B")], [Holding("H", 1, 8060.0, 8060.0)], cash=1940.0)
+    d = run([lean("B")], [Position("H", 1, 8060.0, 8060.0)], cash=1940.0)
     assert d["B"].action == "skip" and "cash floor" in d["B"].reason
 
 
 def test_a_sell_lean_sells_the_whole_position():
-    d = run([lean("H", "sell")], [Holding("H", 5, 500.0, 520.0)])
+    d = run([lean("H", "sell")], [Position("H", 5, 500.0, 520.0)])
     assert d["H"].action == "sell" and "sell" in d["H"].reason
 
 
 def test_a_stop_sells_even_while_the_lean_is_still_buy():
-    d = run([lean("H", "buy")], [Holding("H", 5, 1000.0, 919.0)])
+    d = run([lean("H", "buy")], [Position("H", 5, 1000.0, 919.0)])
     assert d["H"].action == "sell" and "8%" in d["H"].reason
-    assert run([lean("H", "buy")], [Holding("H", 5, 1000.0, 921.0)]).get("H") is None
+    assert run([lean("H", "buy")], [Position("H", 5, 1000.0, 921.0)]).get("H") is None
 
 
 def test_a_held_or_pending_listing_is_not_bought_again():
-    assert "H" not in run([lean("H")], [Holding("H", 5, 500.0, 500.0)])
-    d = run([lean("A"), lean("H", "sell")], [Holding("H", 5, 500.0, 500.0)], pending=["A", "H"])
+    assert "H" not in run([lean("H")], [Position("H", 5, 500.0, 500.0)])
+    d = run([lean("A"), lean("H", "sell")], [Position("H", 5, 500.0, 500.0)], pending=["A", "H"])
     assert [(d[s].action, d[s].reason) for s in "AH"] == [("skip", "an order is already pending")] * 2
 
 
@@ -72,6 +72,6 @@ def test_no_risk_size_means_no_buy():
 
 
 def test_a_pending_buy_takes_a_position_slot():
-    holdings = [Holding(f"H{i}", 1, 100.0, 100.0) for i in range(9)]
+    holdings = [Position(f"H{i}", 1, 100.0, 100.0) for i in range(9)]
     d = run([lean("A")], holdings, cash=9000.0, pending=["P"])
     assert d["A"].action == "skip" and "10 positions" in d["A"].reason
