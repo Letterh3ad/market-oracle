@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { el, showError } from "./dom.js";
 import { tip } from "./tip.js";
+import * as control from "./control.js";
 import * as tick from "./tick.js";
 
 // The header line, the ticks panel and the sources panel, refreshed every 30 seconds.
@@ -18,6 +19,7 @@ async function refresh() {
     u.loaded ? ` ${u.listings.toLocaleString()} listings` : ` not loaded (${u.next})`,
   );
   tick.show(status.tick, status.schedule);
+  control.show(status.server);
   const paused = status.sources.filter((s) => s.state === "paused");
   document.getElementById("sources-state").textContent =
     paused.length ? `${paused.length} source(s) paused` : "all sources ok";

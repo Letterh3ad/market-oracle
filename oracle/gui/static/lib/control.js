@@ -2,6 +2,8 @@ import { api } from "./api.js";
 import { el, showError } from "./dom.js";
 
 const BACK_WITHIN_MS = 60_000;
+let server = null; // the last /api/status "server", for the new-version banner
+let asking = false; // a confirm or restart is on screen: status refreshes leave it alone
 
 function box() {
   return document.getElementById("app-controls");
@@ -26,6 +28,7 @@ async function waitForNewServer(oldPid) {
 }
 
 async function restart() {
+  asking = true;
   let oldPid;
   try {
     ({ server: { pid: oldPid } } = await api("/api/status"));
@@ -41,6 +44,7 @@ async function restart() {
 
 // Asks on the page, naming the work a restart would cut off.
 async function confirmRestart() {
+  asking = true;
   let jobs = [];
   try {
     ({ jobs } = await api("/api/activity"));
@@ -55,8 +59,19 @@ async function confirmRestart() {
 }
 
 function idle() {
-  box().replaceChildren(el("button", { type: "button", class: "small-btn", title: "Stop Oracle and start it again, " +
-    "picking up new code", onclick: confirmRestart }, "Restart"));
+  asking = false;
+  const fresh = server && server.version_on_disk !== server.version;
+  const note = fresh ? [el("span", { class: "warn-text small",
+    title: `running ${server.version}, on disk ${server.version_on_disk}` }, "New version ready")] : [];
+  box().replaceChildren(...note,
+    el("button", { type: "button", class: "small-btn", title: "Stop Oracle and start it again, picking up new code",
+      onclick: confirmRestart }, fresh ? "Restart to update" : "Restart"));
 }
 
-export { idle as mount };
+// Called with each status answer.
+function show(status) {
+  server = status;
+  if (!asking) idle();
+}
+
+export { idle as mount, show };

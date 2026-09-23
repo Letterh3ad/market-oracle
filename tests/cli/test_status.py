@@ -26,6 +26,7 @@ def test_status_reports_schema_db_and_config_source(tmp_path, capsys):
     assert _field(out, "database") == str(tmp_path / "o.db")
     assert _field(out, "config") == str(cfg)
     assert _field(out, "currency") == "GBP"
+    assert len(_field(out, "version")) == 7
     assert (tmp_path / "o.db").exists()
 
 

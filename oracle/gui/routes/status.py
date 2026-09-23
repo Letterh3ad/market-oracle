@@ -24,7 +24,8 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
     universe = universe_brief(ctx)
     return {
         # Which server answered, so a restarting page can tell the new one from the old.
-        "server": {"pid": control.pid, "started_at": _iso(control.started_at)},
+        "server": {"pid": control.pid, "started_at": _iso(control.started_at), "version": control.version,
+                   "version_on_disk": control.version_on_disk()},
         "base_currency": status(ctx).base_currency,
         "universe": {
             "loaded": universe.loaded,

@@ -35,3 +35,14 @@ def test_a_server_with_no_way_to_stop_itself_refuses_before_starting_a_copy():
     with pytest.raises(CannotRestart, match="cannot stop itself"):
         control.restart()
     assert spawned == []
+
+
+def test_the_version_on_disk_is_read_at_most_once_a_minute():
+    versions, clock = iter(["abc1234", "abc1234", "def5678"]), [0.0]
+    control = AppControl(CMD, spawn=lambda c: None, read_version=lambda: next(versions), now=lambda: clock[0])
+    assert control.version == "abc1234"
+    assert control.version_on_disk() == "abc1234"
+    clock[0] = 59
+    assert control.version_on_disk() == "abc1234"
+    clock[0] = 61
+    assert control.version_on_disk() == "def5678" and control.version == "abc1234"

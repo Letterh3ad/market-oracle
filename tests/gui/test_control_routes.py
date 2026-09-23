@@ -61,3 +61,14 @@ async def test_a_restart_that_cannot_start_a_copy_says_why(ctx):
         response = await c.post("/api/app/restart")
     assert response.status_code == 409
     assert "no such interpreter" in response.json()["error"]
+
+
+async def test_status_gives_the_running_version_and_the_one_on_disk(ctx):
+    from oracle.gui.app import build_app
+
+    versions = iter(["abc1234", "def5678"])
+    control = AppControl(LaunchCommand(("python",), "."), spawn=lambda c: None, read_version=lambda: next(versions))
+    app = build_app(ctx, control=control)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+        server = (await c.get("/api/status")).json()["server"]
+    assert (server["version"], server["version_on_disk"]) == ("abc1234", "def5678")
