@@ -10,7 +10,8 @@ from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
 from oracle.services.context import AppContext
 from oracle.services.errors import JobAlreadyRunning
-from oracle.services.tick_service import TickRun, last_tick, record_skipped, run_tick
+from oracle.services.settings_service import reload_schedule
+from oracle.services.tick_service import TickRun, last_tick, record_skipped, run_tick, ticked_since
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = ["ScheduleView", "Scheduler", "last_due", "next_due", "schedule_status"]
@@ -27,7 +28,7 @@ def _at(day: date, hhmm: str, tz: tzinfo | None) -> datetime:
 
 
 def _local_day(now: datetime, tz: tzinfo | None) -> date:
-    return (now.astimezone(tz) if tz else now.astimezone()).date()
+    return now.astimezone(tz).date()
 
 
 def last_due(now: datetime, hhmm: str, tz: tzinfo | None = None) -> datetime:
@@ -66,6 +67,7 @@ class Scheduler:
         self._tz = tz
         self._setting = ctx.config.schedule
         self._started = self._polled = ctx.clock.utcnow()
+        self._file_stamp = self._stamp()
         # Due times before the floor never fire, so turning scheduling on or moving its time
         # never runs at once for a time already passed. At start there is none: the run
         # missed while the app was closed (only the latest) runs once, as a catch-up.
@@ -73,6 +75,9 @@ class Scheduler:
 
     async def check(self) -> TickRun | None:
         """One poll: run a tick if one is due and none has run since."""
+        if (stamp := self._stamp()) != self._file_stamp:
+            self._file_stamp = stamp
+            reload_schedule(self._ctx)
         ctx, s = self._ctx, self._ctx.config.schedule
         now = ctx.clock.utcnow()
         if s != self._setting:
@@ -82,16 +87,23 @@ class Scheduler:
         if not s.enabled:
             return None
         due = last_due(now, s.time, self._tz)
-        last = last_tick(ctx)
-        if due < self._floor or (last is not None and last.started_at >= due):
+        # A tick finishing after the due time covers it, even one started just before.
+        if due < self._floor or ticked_since(ctx, due):
             return None
         trigger = "catch-up" if due < self._started else "scheduled"
-        if trigger == "catch-up" and last is None:
+        if trigger == "catch-up" and last_tick(ctx) is None:
             return None  # never ticked, so nothing was missed
         try:
             return await run_tick(ctx, trigger)
         except JobAlreadyRunning as exc:
             return record_skipped(ctx, trigger, f"skipped: {exc}")
+
+    def _stamp(self) -> int | None:
+        path = self._ctx.config_source
+        try:
+            return path.stat().st_mtime_ns if path else None
+        except OSError:
+            return None
 
     async def run(self) -> None:
         while True:

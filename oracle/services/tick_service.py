@@ -7,6 +7,7 @@ import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
+from datetime import datetime
 
 from oracle.services.analysis_service import analyse_watched
 from oracle.services.context import AppContext
@@ -15,9 +16,9 @@ from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import fill_pending, strategy_step
 from oracle.services.prices_service import update_watched
-from oracle.store.ticks import Stage, TickRepo, TickRun
+from oracle.store.ticks import INTERRUPTED, Stage, TickRepo, TickRun
 
-__all__ = ["STAGES", "Stage", "TickRun", "last_tick", "record_skipped", "run_tick"]
+__all__ = ["STAGES", "Stage", "TickRun", "last_tick", "record_skipped", "run_tick", "ticked_since"]
 
 log = logging.getLogger(__name__)
 
@@ -70,12 +71,21 @@ STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "ana
 async def run_tick(ctx: AppContext, trigger: str = "manual") -> TickRun:
     """Run every stage once, in one process at a time, and store the outcome."""
     started = ctx.clock.utcnow()
+    stages: list[Stage] = []
     with single_flight(ctx, JOB, LEASE_S) as held:
-        stages = []
-        for name, stage in STAGES.items():
-            held.check()
-            stages.append(await _run_stage(ctx, name, stage))
-    run = TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages))
+        try:
+            for name, stage in STAGES.items():
+                held.check()
+                stages.append(await _run_stage(ctx, name, stage))
+        except BaseException as exc:
+            # Stopped part way (server shutdown, lock taken over): still leave a record.
+            _save(ctx, TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages),
+                               f"{INTERRUPTED}: {exc or type(exc).__name__}"))
+            raise
+    return _save(ctx, TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages)))
+
+
+def _save(ctx: AppContext, run: TickRun) -> TickRun:
     return replace(run, id=TickRepo(ctx.conn).save(run))
 
 
@@ -92,8 +102,12 @@ async def _run_stage(ctx: AppContext, name: str, stage: StageRun) -> Stage:
 def record_skipped(ctx: AppContext, trigger: str, note: str) -> TickRun:
     """A tick that never started, stored so the user can see why."""
     now = ctx.clock.utcnow()
-    run = TickRun(trigger, now, now, (), note)
-    return replace(run, id=TickRepo(ctx.conn).save(run))
+    return _save(ctx, TickRun(trigger, now, now, (), note))
+
+
+def ticked_since(ctx: AppContext, at: datetime) -> bool:
+    """Whether any tick (skipped ones too) finished at or after `at`."""
+    return TickRepo(ctx.conn).finished_since(at)
 
 
 def last_tick(ctx: AppContext) -> TickRun | None:

@@ -3,8 +3,10 @@ it) and applied to the running context."""
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,7 +17,9 @@ from oracle.config import (
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 
-__all__ = ["PEERS_RANGE", "set_peer_count", "set_schedule"]
+log = logging.getLogger(__name__)
+
+__all__ = ["PEERS_RANGE", "reload_schedule", "set_peer_count", "set_schedule"]
 
 
 def set_peer_count(ctx: AppContext, count: int) -> Path:
@@ -35,6 +39,19 @@ def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:
     path = _save(ctx, "schedule", {"enabled": enabled, "time": time})
     ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled, time))
     return path
+
+
+def reload_schedule(ctx: AppContext) -> None:
+    """Take `[schedule]` from oracle.toml as it is now, so `oracle schedule` in another
+    process reaches a running GUI. A file that no longer loads keeps the current setting."""
+    if ctx.config_source is None:
+        return
+    try:
+        schedule = load_config(ctx.config_source)[0].schedule
+    except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
+        log.warning("oracle.toml no longer loads (%s); keeping the current schedule", exc)
+        return
+    ctx.config = replace(ctx.config, schedule=schedule)
 
 
 def _check(check, value) -> None:

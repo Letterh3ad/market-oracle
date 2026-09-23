@@ -102,3 +102,10 @@ async def test_a_dead_listing_is_greyed_in_search_and_never_the_primary(ctx):
     assert (await primary(ctx)) != "AAPL"
     await refresh_universe(ctx)  # a refresh keeps it that way
     assert (await primary(ctx)) != "AAPL" and listing_health(ctx, "AAPL").dead
+
+
+async def test_a_listing_with_history_that_starts_answering_empty_still_dies(ctx, yahoo):
+    await update_watched(ctx, fx=False)  # TM stores its bars
+    yahoo.series["TM"].bars = []  # Yahoo keeps the symbol but serves no bars (BTQ.DE)
+    await no_data_days(ctx, 3)
+    assert listing_health(ctx, "TM").dead

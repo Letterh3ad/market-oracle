@@ -1031,3 +1031,14 @@ trips and unreadable answers never count. Watched updates and ticks skip dead li
 a single-listing update (the Check again button, `oracle prices update SYMBOL`) always
 tries. Dying or recovering re-picks the company's primary listing at once.
 **Alternatives:** A column on `listings` (lost on refresh); counting runs, not days.
+
+## 2026-09-23 - Autotick review round 1: follow-ups left low
+**Context:** Standards and spec review of the autotick branch.
+**Decision:** Fixed: an empty price answer counts as "no data" on every fetch (the window
+always reaches back past the last stored bar); a running GUI re-reads `[schedule]` when
+oracle.toml changes; the last tick is the one that finished last, and any tick finishing
+after a due time covers it; an interrupted tick is recorded. Left as low follow-ups:
+no-data days are UTC dates (same day as local for UK evening runs); tick states and
+triggers are strings, not enums; the dead-listing wording repeats across frontends;
+`ListingOutcome` carries `error` and `skipped` side by side.
+**Alternatives:** Local no-data days (needs the zone threaded into the price service).

@@ -2,7 +2,7 @@ import { api } from "./api.js";
 import { el, showError } from "./dom.js";
 import { busyButton, sendJson } from "./ui.js";
 
-const OUTCOME_CLASS = { ok: "up", partial: "warn-text", failed: "down", skipped: "dim" };
+const OUTCOME_CLASS = { ok: "up", partial: "warn-text", failed: "down", interrupted: "down", skipped: "dim" };
 
 function when(iso) {
   return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });

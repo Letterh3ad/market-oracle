@@ -8,6 +8,9 @@ from datetime import datetime
 from oracle.store.db import to_utc_iso, transaction
 
 
+INTERRUPTED = "interrupted"
+
+
 @dataclass(frozen=True)
 class Stage:
     name: str
@@ -29,6 +32,8 @@ class TickRun:
 
     @property
     def outcome(self) -> str:
+        if self.note and self.note.startswith(INTERRUPTED):
+            return "interrupted"
         if not self.stages:
             return "skipped"
         if all(s.state == "failed" for s in self.stages):
@@ -54,10 +59,16 @@ class TickRepo:
         return int(cur.lastrowid)
 
     def recent(self, limit: int = 20) -> list[TickRun]:
+        """Newest finish first: a tick skipped while a longer one ran never hides it."""
         rows = self._conn.execute(
-            "SELECT * FROM tick_runs ORDER BY started_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM tick_runs ORDER BY finished_at DESC, id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [_run(r) for r in rows]
+
+    def finished_since(self, at: datetime) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM tick_runs WHERE finished_at >= ? LIMIT 1", (to_utc_iso(at),)
+        ).fetchone() is not None
 
 
 def _run(r) -> TickRun:

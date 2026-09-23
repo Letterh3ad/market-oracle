@@ -101,3 +101,19 @@ async def test_each_tick_is_stored_and_the_latest_one_read_back(ctx):
     stored = last_tick(ctx)
     assert stored.id == second.id and stored.stages == second.stages
     assert (stored.trigger, stored.started_at) == ("manual", second.started_at)
+
+
+async def test_a_tick_stopped_part_way_still_leaves_a_record(ctx, monkeypatch):
+    import asyncio
+
+    from oracle.services import tick_service
+
+    async def stopped(ctx):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(tick_service, "STAGES", {**STAGES, "analyse": stopped})
+    with pytest.raises(asyncio.CancelledError):
+        await run_tick(ctx)
+    stored = last_tick(ctx)
+    assert [s.name for s in stored.stages] == ["prices", "fx", "fill"]
+    assert stored.outcome == "interrupted" and stored.note.startswith("interrupted")

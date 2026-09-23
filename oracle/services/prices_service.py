@@ -170,14 +170,17 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> Pr
         bars, source = await first_success(
             registry.price_sources(ctx.config.prices.sources, client, ctx.config.keys),
             lambda s: s.daily_bars(instrument, since, now),
-            empty_is_no_data=since is None,
+            # The window starts before the last stored bar, so a source still serving the
+            # listing always returns at least that bar: empty means it has lost it.
+            empty_is_no_data=True,
         )
     except AllFailed as exc:
         if exc.no_data:
             _note_no_data(ctx, listing, now.date())
         raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})") from None
-    if HealthRepo(ctx.conn).clear(listing.symbol):
-        UniverseRepo(ctx.conn).repick_primary(listing.company_key, HealthRepo(ctx.conn).dead_symbols())
+    health = HealthRepo(ctx.conn)
+    if health.clear(listing.symbol):
+        UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())
     added = repo.upsert(bars, to_utc_iso(now))
     return PriceUpdate(listing.symbol, added, repo.last_date(listing.symbol), source)
 

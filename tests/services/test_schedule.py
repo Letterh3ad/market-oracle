@@ -156,3 +156,40 @@ async def test_a_run_due_while_the_app_is_open_is_scheduled_not_catch_up(ctx):
 
 async def test_no_catch_up_before_the_first_tick_ever(ctx):
     assert await scheduler(ctx).check() is None
+
+
+async def test_a_schedule_saved_by_another_process_reaches_a_running_scheduler(ctx):
+    import os
+
+    s = scheduler(ctx)
+    path = ctx.config_source
+    path.write_text(path.read_text(encoding="utf-8") + '[schedule]\nenabled = true\ntime = "21:30"\n',
+                    encoding="utf-8")
+    os.utime(path, ns=(1, 1))  # a new stamp even on a coarse file clock
+    ctx.clock.advance(31 * 60)
+    assert (await s.check()).trigger == "scheduled" and ctx.config.schedule.time == "21:30"
+
+
+async def test_a_file_that_stops_loading_keeps_the_running_schedule(ctx):
+    import os
+
+    s = scheduler(ctx)
+    ctx.config_source.write_text("[schedule]\nenabled = maybe\n", encoding="utf-8")
+    os.utime(ctx.config_source, ns=(1, 1))
+    await s.check()
+    assert ctx.config.schedule.enabled
+
+
+async def test_a_skip_never_hides_the_longer_tick_it_ran_into(ctx):
+    from oracle.store.ticks import Stage, TickRepo, TickRun
+
+    s = scheduler(ctx)
+    ctx.clock.advance(89 * 60)
+    started = ctx.clock.utcnow()  # a manual tick starts a minute before the due time
+    ctx.clock.advance(60)
+    with single_flight(ctx, "tick", 60.0):
+        assert (await s.check()).outcome == "skipped"
+    ctx.clock.advance(300)
+    TickRepo(ctx.conn).save(TickRun("manual", started, ctx.clock.utcnow(), (Stage("prices", "ok", "done"),)))
+    assert last_tick(ctx).trigger == "manual"
+    assert await s.check() is None
