@@ -5,10 +5,12 @@ function money(v, digits = 2) {
 }
 
 function signed(v) {
+  if (v == null) return "n/a";
   return `${v >= 0 ? "+" : ""}${money(v)}`;
 }
 
 function pct(v) {
+  if (v == null) return "n/a";
   return `${v >= 0 ? "+" : ""}${(v * 100).toFixed(2)}%`;
 }
 

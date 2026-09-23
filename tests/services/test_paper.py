@@ -382,3 +382,18 @@ async def test_an_account_names_the_rate_sources_behind_its_position_values(ctx,
     await next_day(ctx, yahoo, clock)
     fill_pending(ctx)
     assert account_view(ctx, "manual").rate_sources == ("yahoo",)
+
+
+async def test_rates_used_by_past_fills_are_still_credited_once_nothing_is_held(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    place_sell(ctx, "AAPL", None)
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 110.0, 110.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    fill_pending(ctx)
+    view = account_view(ctx, "manual")
+    assert view.positions == () and view.rate_sources == ("yahoo",)

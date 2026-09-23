@@ -55,3 +55,22 @@ def test_line_endings_survive_and_no_temporary_file_is_left(tmp_path, eol):
         set_peer_count(ctx, 40)
     assert path.read_bytes() == eol.join(lines[:2] + [b"peers = 40", b""])
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith("oracle")] == ["oracle.toml"]
+
+
+def test_an_unexpected_failure_while_checking_leaves_the_file_and_no_leftovers(tmp_path, monkeypatch):
+    from oracle.services import settings_service
+
+    path = tmp_path / "oracle.toml"
+    original = f'db_path = "{(tmp_path / "o.db").as_posix()}"\n'
+    path.write_text(original, encoding="utf-8")
+    config, source = load_settings(path)
+
+    def broken(*_args, **_kwargs):
+        raise OSError("disk went away")
+
+    monkeypatch.setattr(settings_service, "load_config", broken)
+    with open_context(config, source) as ctx:
+        with pytest.raises(OSError):
+            set_peer_count(ctx, 40)
+    assert path.read_text(encoding="utf-8") == original
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith("oracle")] == ["oracle.toml"]

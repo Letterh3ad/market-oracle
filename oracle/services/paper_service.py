@@ -28,8 +28,8 @@ from oracle.universe.exchanges import exchange_country
 
 __all__ = [
     "ACCOUNTS", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
-    "Status", "account_score", "account_view", "equity_history", "fill_pending", "place_buy", "place_sell",
-    "sells", "strategy_log", "strategy_step",
+    "Status", "account_score", "account_view", "equity_history", "fill_pending", "pending_orders", "place_buy",
+    "place_sell", "sells", "strategy_log", "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "manual")
@@ -44,7 +44,8 @@ class AccountView:
     realised: float
     """Profit or loss locked in by sells, in the base currency, after all costs."""
     rate_sources: tuple[str, ...] = ()
-    """Where the rates valuing the positions came from, for attribution."""
+    """Where the rates behind its figures came from (position values and past fills), for
+    attribution."""
 
     @property
     def holdings(self) -> float:
@@ -230,10 +231,17 @@ def _record_equity(ctx: AppContext) -> None:
         EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
 
 
+def pending_orders(ctx: AppContext) -> list[Order]:
+    """Every account's orders still waiting to fill."""
+    repo = PaperRepo(ctx.conn)
+    return [o for a in ACCOUNTS for o in repo.pending(a)]
+
+
 def account_view(ctx: AppContext, account: str) -> AccountView:
     repo = PaperRepo(ctx.conn)
     held, realised = _replay(repo, account)
     positions, sources = _positions(ctx, held)
+    sources |= _fill_rate_sources(ctx, repo, account)
     return AccountView(account, _cash(ctx, repo, account), tuple(positions), tuple(repo.pending(account)),
                        realised, tuple(sorted(sources)))
 
@@ -293,6 +301,21 @@ def _rate(ctx: AppContext, currency: str, day) -> float | None:
         return 1.0
     picked = pick_rate(FxRepo(ctx.conn, ctx.config.base_currency).history(currency), day)
     return picked.units_per_base if picked else None
+
+
+def _fill_rate_sources(ctx: AppContext, repo: PaperRepo, account: str) -> set[str]:
+    """Proceeds, costs and realised results keep the rates their fills used, long after the
+    position that needed them is gone."""
+    days: dict[str, set] = {}
+    for f in repo.fills(account):
+        if f.currency != ctx.config.base_currency:
+            days.setdefault(f.currency, set()).add(f.date)
+    fx = FxRepo(ctx.conn, ctx.config.base_currency)
+    out = set()
+    for currency, dates in days.items():
+        history = fx.history(currency)
+        out |= {r.source for d in dates if (r := pick_rate(history, d))}
+    return out
 
 
 def _cash(ctx: AppContext, repo: PaperRepo, account: str) -> float:

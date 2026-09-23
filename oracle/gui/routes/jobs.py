@@ -9,6 +9,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends
 
 from oracle.gui.deps import get_ctx
+from oracle.gui.routes import shapes
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.context import AppContext
 from oracle.services.routine_service import update_listing_prices, update_prices
@@ -23,8 +24,7 @@ async def prices(symbol: str | None = None, ctx: AppContext = Depends(get_ctx)) 
     return {
         "listings": [asdict(o) for o in run.update.listings],
         "fx": [asdict(f) for f in run.update.fx],
-        "fills": [{"symbol": f.order.symbol, "side": f.order.side, "status": f.status, "note": f.note}
-                  for f in run.fills],
+        "fills": [shapes.order_outcome(f.order, f.status, f.note) for f in run.fills],
     }
 
 

@@ -648,3 +648,20 @@ account would spoil the track record the validation gate relies on).
 **Alternatives:** Deferred as low: the ledgers route replays fills three times per
 account (fine at paper-account sizes); a watch line shows no lean when a listing has no
 prices (a lean cannot exist without them).
+
+## 2026-09-23 - Phase 6 review round 2
+
+**Context:** Two-axis review of `phase-6-gui` against `main`, focused on the round 1 fixes.
+No hard standards breaches; round 1 fixes confirmed correct.
+**Decision:**
+- Ledger credits also cover the rates past fills used (proceeds, costs, realised results),
+  not only those valuing open positions, so open.er-api stays credited after a sell.
+- Settings writes stage to a unique temp file in the same folder, removed on any failure.
+- "Fill now" reads pending orders straight from the store (`pending_orders`) instead of
+  valuing every account.
+- Lean, next-step and order-outcome JSON built once (`oracle/gui/routes/shapes.py`).
+- Percent and signed formatters show "n/a" for missing values, like money.
+**Alternatives:** Deferred as low: one shared JS guard for late answers (three tabs use a
+counter, ledgers a root check; both work); the ledgers route's hand-picked strategy rules
+could become a service-side view; single-listing fills run outside the prices lock
+(harmless on the single-threaded server, revisit with the phase 10 job model).

@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from oracle.gui.deps import get_ctx
+from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AccountView, account_score, account_view, equity_history, fill_pending, place_buy, place_sell, sells, strategy_log,
-    strategy_step,
+    ACCOUNTS, AccountView, account_score, account_view, equity_history, fill_pending, pending_orders, place_buy,
+    place_sell, sells, strategy_log, strategy_step,
 )
 
 router = APIRouter(prefix="/api/ledgers")
@@ -47,10 +48,8 @@ async def fill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     """Fill every order whose next bar is stored, and list the ones still waiting for it."""
     outcomes = fill_pending(ctx)
     reported = {o.order.id for o in outcomes}
-    rows = [(o.order, o.status, o.note) for o in outcomes]
-    rows += [(o, o.status, WAITING) for a in ACCOUNTS for o in account_view(ctx, a).pending if o.id not in reported]
-    return [{"symbol": o.symbol, "account": o.account, "side": o.side, "status": status, "note": note}
-            for o, status, note in rows]
+    return ([shapes.order_outcome(o.order, o.status, o.note) for o in outcomes]
+            + [shapes.order_outcome(o, o.status, WAITING) for o in pending_orders(ctx) if o.id not in reported])
 
 
 @router.post("/step")

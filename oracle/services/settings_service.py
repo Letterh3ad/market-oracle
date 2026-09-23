@@ -4,6 +4,7 @@ it) and applied to the running context."""
 from __future__ import annotations
 
 import os
+import tempfile
 import tomllib
 from dataclasses import replace
 from pathlib import Path
@@ -40,11 +41,15 @@ def _write_setting(path: Path, section: str, key: str, literal: str) -> None:
         tomllib.loads(updated)
     except tomllib.TOMLDecodeError as exc:
         raise InvalidQuery(f"could not update {path} safely ({exc}); set [{section}] {key} by hand") from exc
-    staged = path.with_name(path.name + ".new")
-    staged.write_bytes(updated.replace("\n", eol).encode("utf-8"))
+    fd, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".new", dir=path.parent)
+    staged = Path(name)
     try:
-        load_config(staged, cwd=path.parent)
-    except ConfigError as exc:
-        staged.unlink()
-        raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
-    os.replace(staged, path)
+        with os.fdopen(fd, "wb") as f:
+            f.write(updated.replace("\n", eol).encode("utf-8"))
+        try:
+            load_config(staged, cwd=path.parent)
+        except ConfigError as exc:
+            raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
+        os.replace(staged, path)
+    finally:
+        staged.unlink(missing_ok=True)

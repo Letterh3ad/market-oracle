@@ -48,12 +48,13 @@ function header(v, pane, symbol) {
   const p = v.profile;
   const place = [p.country, p.exchange, p.sector ?? p.category, p.industry ?? p.family].filter(Boolean).join(", ");
   const main = p.primary_symbol !== p.symbol ? `; main listing ${p.primary_symbol}` : "";
+  const site = safeUrl(p.website);
   return el("div", { class: "card" },
     el("h2", null, `${p.name} `, el("span", { class: "mono dim" }, p.symbol)),
     el("div", { class: "dim" }, place),
     el("div", { class: "dim small" }, `${p.listings} listing${p.listings === 1 ? "" : "s"}${main}`,
       p.tags.length ? `; tags: ${p.tags.join(", ")}` : "",
-      safeUrl(p.website) ? el("span", null, "; ", el("a", { href: safeUrl(p.website), target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
+      site ? el("span", null, "; ", el("a", { href: site, target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
     el("div", { class: "row", style: "margin-top: 8px" },
       job("Update prices", "/api/jobs/prices", pane, symbol),
       job("Analyse", "/api/jobs/analyse", pane, symbol),

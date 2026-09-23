@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from oracle.gui.deps import get_ctx
+from oracle.gui.routes import shapes
 from oracle.services.analysis_service import figure_meaning
 from oracle.services.company_service import FIGURES, CompanyView, company_view
 from oracle.services.context import AppContext
@@ -89,10 +90,7 @@ def _view(v: CompanyView, base: str) -> dict:
                         for n, x in s.signal.figures],
             "as_of": s.signal.as_of, "stale": s.stale,
         } for s in v.signals],
-        "lean": None if lean is None else {
-            "label": lean.label, "probability": lean.probability, "source": lean.source,
-            "as_of": lean.as_of, "stale": v.lean_stale,
-        },
-        "next": "update prices" if price is None else "analyse" if lean is None or v.lean_stale else None,
+        "lean": shapes.lean(lean, v.lean_stale),
+        "next": shapes.next_step(price is not None, lean, v.lean_stale),
         "credits": credits([v.market_cap_rate_source, price.rate_source if price else None]),
     }

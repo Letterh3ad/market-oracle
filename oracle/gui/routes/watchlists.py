@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from oracle.gui.deps import get_ctx
+from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.watch_service import WatchLine, show_watchlist, unwatch, watch, watchlists
@@ -43,7 +44,6 @@ async def remove_item(name: str, symbol: str, ctx: AppContext = Depends(get_ctx)
 
 
 def _item(line: WatchLine) -> dict:
-    lean = line.lean
     return {
         "symbol": line.symbol, "name": line.name, "exchange": line.exchange, "country": line.country,
         "delisted": line.delisted, "missing": line.missing,
@@ -51,20 +51,7 @@ def _item(line: WatchLine) -> dict:
         "close_base": line.close_base, "day_change": line.day_change, "stale": line.stale,
         "signals": [{"analyst": s.signal.analyst, "direction": s.signal.direction.value, "stale": s.stale}
                     for s in line.signals],
-        "lean": None if lean is None else {
-            "label": lean.label, "probability": lean.probability, "source": lean.source,
-            "as_of": lean.as_of, "stale": line.lean_stale,
-        },
-        "next": _next(line),
+        "lean": shapes.lean(line.lean, line.lean_stale),
+        "next": "remove it, or refresh the universe later" if line.missing
+        else shapes.next_step(line.last_close is not None, line.lean, line.lean_stale),
     }
-
-
-def _next(line: WatchLine) -> str | None:
-    """What the row needs before it is complete, as the button that does it."""
-    if line.missing:
-        return "remove it, or refresh the universe later"
-    if line.last_close is None:
-        return "update prices"
-    if line.lean is None or line.lean_stale:
-        return "analyse"
-    return None
