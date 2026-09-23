@@ -18,7 +18,7 @@ async def test_an_unpriced_listing_shows_and_says_how_to_price_it(watching):
 
 async def test_updating_prices_then_analysing_fills_in_price_signals_and_lean(watching):
     prices = (await watching.post("/api/jobs/prices")).json()
-    assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None}]
+    assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}]
     assert prices["fills"] == []
     [item] = (await watching.get("/api/watchlists/main")).json()["items"]
     assert item["last_date"] == DAYS[-1].isoformat() and not item["stale"] and item["close_base"] is not None

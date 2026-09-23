@@ -8,6 +8,10 @@ const GLOSSARY = {
     "ok: ready. waiting: holding back to stay under the speed limit. " +
     "paused: the source refused or failed several times in a row, so requests stop for a while.",
   source_rate: "The most requests per second Market Oracle lets itself send there, set in oracle.toml.",
+  tick:
+    "A tick is the daily routine in one go: fetch new prices and exchange rates, fill waiting paper orders, " +
+    "analyse every watched listing, then let the strategy account decide. A stage that fails is noted and " +
+    "the rest still run.",
   requests_last_hour: "How many requests went to this source in the last hour, from every Market Oracle process.",
   universe: "Every listed company Market Oracle knows about, from FinanceDatabase. Search and screening run over it.",
   market_cap:

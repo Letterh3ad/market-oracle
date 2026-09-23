@@ -30,6 +30,9 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
         print(f"  {p.website}")
 
     print()
+    if view.dead_since:
+        print(f"  no price source has had data since {view.dead_since}; updates skip it "
+              f"(check again: `oracle prices update {p.symbol}`)")
     if view.price is None:
         print(f"  no price stored yet: run `oracle prices update {p.symbol}`")
     else:

@@ -74,6 +74,7 @@ def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         notes = [n for n in (
             _others(h.listings - 1) if h.listings > 1 and not args.all_listings else "",
             "delisted" if h.delisted else "",
+            "no price data lately" if h.dead else "",
             h.type if h.type != "equity" else "",
             f"[{', '.join(h.tags)}]" if h.tags else "",
         ) if n]

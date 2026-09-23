@@ -17,7 +17,7 @@ from oracle.services.routine_service import update_prices
 
 def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="prices_command", required=True)
-    update = sub.add_parser("update", help="fetch new daily bars: one listing, or every watched one plus FX")
+    update = sub.add_parser("update", help="fetch new daily bars: one listing (tried even when marked dead), or every watched one plus FX")
     update.add_argument("symbol", nargs="?", help="omit to update every watchlist")
     update.set_defaults(handler=update_cmd)
     show = sub.add_parser("show", help="stored daily bars for a listing")
@@ -39,7 +39,10 @@ def update_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         print("nothing watched: add listings with `oracle watch add SYMBOL`")
         return 0
     for o in run.listings:
-        print(f"{o.symbol}: FAILED ({o.error})" if o.error else f"{o.symbol}: {o.added} new bars (from {o.source})")
+        if o.skipped:
+            print(f"{o.symbol}: skipped: {o.skipped} (check again with `oracle prices update {o.symbol}`)")
+        else:
+            print(f"{o.symbol}: FAILED ({o.error})" if o.error else f"{o.symbol}: {o.added} new bars (from {o.source})")
     for f in run.fx:
         print(f"{f.currency}: no rates ({f.error})" if f.source is None else f"{f.currency}: {f.added} new rates from {f.source}")
     print_fills(list(done.fills))

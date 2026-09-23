@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -9,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import companies, jobs, ledgers, settings, status, universe, watchlists
 from oracle.services.context import AppContext
+from oracle.services.schedule_service import Scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
 # Revalidate every load (a cheap 304 when unchanged), so an updated module is never run
@@ -23,8 +27,22 @@ class _Static(StaticFiles):
         return response
 
 
-def build_app(ctx: AppContext) -> FastAPI:
-    app = FastAPI(title="Market Oracle")
+def build_app(ctx: AppContext, scheduler: Scheduler | None = None) -> FastAPI:
+    """`scheduler` runs for as long as the server does; tests leave it out."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        task = asyncio.create_task(scheduler.run()) if scheduler else None
+        app.state.scheduler_task = task
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    app = FastAPI(title="Market Oracle", lifespan=lifespan)
     app.state.ctx = ctx
     install_error_handlers(app)
     app.include_router(status.router)

@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
+from oracle.services.schedule_service import ScheduleView
+from oracle.services.tick_service import TickRun
 
 
 def lean(lean, stale: bool) -> dict | None:
@@ -23,6 +25,18 @@ def next_step(has_price: bool, lean, stale: bool) -> str | None:
     if lean is None or stale:
         return "analyse"
     return None
+
+
+def tick(run: TickRun | None) -> dict | None:
+    return None if run is None else {
+        "trigger": run.trigger, "started_at": run.started_at, "finished_at": run.finished_at,
+        "outcome": run.outcome, "first_error": run.first_error, "note": run.note,
+        "stages": [asdict(s) for s in run.stages],
+    }
+
+
+def schedule(view: ScheduleView) -> dict:
+    return asdict(view)
 
 
 def order_outcome(order: Order, status: str, note: str | None) -> dict:

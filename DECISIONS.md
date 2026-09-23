@@ -928,3 +928,117 @@ and returns nothing.
 **Alternatives:** Thinking as the default (too slow for routine runs); thinking for the loop
 too (slower still, no evidence it searches better); `general-heretic` (matched instruct,
 since research never triggers refusals, so abliteration buys nothing).
+
+## 2026-09-23 - New build order after the grilling: evidence first
+**Context:** User wants fake-money evidence as soon as possible, GUI parity for a future
+compiled build, discovery before the graph, per-task models, and a backtest.
+**Decision:** Named streams before phase 8, in this order: `autotick`, `ai-account`,
+`gui-parity`, `universe-quality`, `models-and-deep`, `backtest`, `discovery`, then phase 8.
+Phase numbers stay; each stream ships its own GUI controls.
+**Alternatives:** Parity first (delays evidence by several sessions); renumbering phases.
+
+## 2026-09-23 - Automatic ticks run in-process, off by default
+**Context:** The design planned `oracle tick` under Windows Task Scheduler; a compiled app
+for users with no command line makes OS tasks awkward.
+**Decision:** A scheduler inside the GUI server with a toggle, off on a fresh install. One
+daily time (22:30 local, weekdays). A run missed while the app was closed runs once on the
+next start. Sequence: prices, FX, fill, analyse, step (plus AI-account research once that
+stream lands). Status shows next run, last run, last error. Listings with three "no data"
+results on three distinct days are marked dead: skipped by updates, never primary, with a
+"check again" button.
+**Alternatives:** OS task (later option); per-exchange times; catching up every missed run.
+
+## 2026-09-23 - A third paper account trades on AI verdicts
+**Context:** Research is advisory by design, so the rule account can never show whether the
+AI adds anything.
+**Decision:** An `ai` paper account trades a structured verdict (buy/hold/sell, confidence,
+invalidation) from the report roles, on the same watchlist, cash and risk limits as the
+strategy account. Research refreshes when a report is over 7 days old, price moved over 5%
+since it, or on demand; each tick has a 30-minute research budget, overflow rolls to the
+next tick. Rules, AI and buy-and-hold equity are compared side by side. Once discovery
+lands, an opt-in toggle lets the AI account trade the `discovered` watchlist too.
+**Alternatives:** Advisory only (no measurement); research overriding the rule account
+(blurs which one earned the result).
+
+## 2026-09-23 - Model profiles and task slots across providers
+**Context:** User wants to switch models per task and use Claude or OpenAI optionally, while
+staying free on local models. Replaces the single `deep_model` idea.
+**Decision:** Providers `ollama`, `openai_compatible`, `claude_api`, `claude_code`. Named
+profiles (provider, model, caps, timeout, key). Slots: research loop, report roles, query
+planning, discovery chat, deep roles, AI account; one default plus per-slot overrides and
+a per-run picker. Every default is Ollama, and every model feature must work on Ollama
+alone. `claude_code` drives the user's logged-in `claude -p` (subscription); used only when
+picked, and hidden in distributed builds unless a toml flag enables it, since Anthropic
+bars third-party products offering claude.ai login without approval.
+**Alternatives:** One `deep_model` setting; API-only Claude.
+
+## 2026-09-23 - GUI parity: settings in the toml, guarded by a test
+**Decision:** The GUI edits `oracle.toml` through `tomlkit` (keeps comments), validated by
+the config loader before writing, applied live except `db_path` and host/port (restart
+banner). Keys are masked. A manifest test fails when a CLI command has no GUI route or a
+stated reason. Universe refresh becomes a background job with progress, cancel and an
+atomic swap.
+**Alternatives:** Settings in the DB (two sources of truth); restart for every change.
+
+## 2026-09-23 - Universe quality: dead listings, suffix-blind grouping, user listings
+**Context:** BTQ.DE (BT Group on XETRA) was primary but Yahoo has no data for it; the LSE
+home listing sat in a separate "BT Group" company.
+**Decision:** Suggest live sibling listings with a one-click swap; grouping ignores legal
+suffixes (plc, Inc., AG, Ltd), blocked when both ISINs exist and differ, shipped only after
+a report of new merges on the real universe is reviewed. Listings found by discovery are
+resolved by Yahoo search, verified by a chart fetch, and kept in a `user_listings` table
+that refresh never touches.
+**Alternatives:** Leaving FinanceDatabase data as is.
+
+## 2026-09-23 - Discovery is a guided research chat, auto mode in v1
+**Decision:** A chat engine: the agent proposes a plan, runs it, reports cited findings and
+suggests next directions; the user steers or presses Stop. Auto mode (in v1) takes its own
+directions for up to N rounds within a time budget, stopping when a round finds nothing
+new, and adds finds to a `discovered` watchlist. Output: up to 10 ranked candidates with
+Watch / Research / add to universe. Company Research stays the six-role report.
+Conversations are saved. Ships before phase 8; the graph improves it later.
+**Alternatives:** Approving every tool call; interrupting mid-step (hard for a 4B model);
+a full report per candidate (10+ minutes).
+
+## 2026-09-23 - Rule-only backtest
+**Decision:** `backtest` reuses the tick pipeline with a simulated clock on a chosen
+watchlist, with a survivorship-bias warning, next-open fills, commission (default 0) and
+slippage (default 10 bps), against equal-weight buy-and-hold. AI is never backtested on
+periods the model has seen.
+
+## 2026-09-23 - The scheduler polls instead of sleeping until the due time
+**Context:** Ticket autotick 02: settings must apply live, and a laptop that sleeps through
+a due time must still notice it.
+**Decision:** Every 30 seconds the scheduler asks whether the most recent weekday due time
+has a tick newer than it. A setting change counts due times only from the poll before it,
+so turning scheduling on, or moving the time, never fires at once for a time already
+passed. At start there is no such limit, so the latest missed run fires once as a
+catch-up, unless no tick has ever run (nothing was missed). A failed or skipped tick
+counts as done; nothing retries until the next due time.
+**Alternatives:** Sleeping until the due time with a wake-up event (more moving parts,
+misses a sleeping laptop's due time); catching up before any tick has run.
+
+## 2026-09-23 - tomlkit replaces the regex settings writer
+**Decision:** `with_settings` (tomlkit) writes several keys in one section at once and keeps
+comments; the staged-file-then-validate write around it is unchanged.
+**Alternatives:** Keeping the regex writer (wrong on strings, arrays and nested tables).
+
+## 2026-09-23 - Dead listings: counted per day, kept apart from the universe
+**Decision:** A `listing_health` table (a refresh replaces `listings` whole) holds the
+distinct days every price source answered "no data" since bars last came. Three days
+marks the listing dead, dated to the first of them. Throttling, network errors, breaker
+trips and unreadable answers never count. Watched updates and ticks skip dead listings;
+a single-listing update (the Check again button, `oracle prices update SYMBOL`) always
+tries. Dying or recovering re-picks the company's primary listing at once.
+**Alternatives:** A column on `listings` (lost on refresh); counting runs, not days.
+
+## 2026-09-23 - Autotick review round 1: follow-ups left low
+**Context:** Standards and spec review of the autotick branch.
+**Decision:** Fixed: an empty price answer counts as "no data" on every fetch (the window
+always reaches back past the last stored bar); a running GUI re-reads `[schedule]` when
+oracle.toml changes; the last tick is the one that finished last, and any tick finishing
+after a due time covers it; an interrupted tick is recorded. Left as low follow-ups:
+no-data days are UTC dates (same day as local for UK evening runs); tick states and
+triggers are strings, not enums; the dead-listing wording repeats across frontends;
+`ListingOutcome` carries `error` and `skipped` side by side.
+**Alternatives:** Local no-data days (needs the zone threaded into the price service).

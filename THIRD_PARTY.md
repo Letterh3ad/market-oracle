@@ -33,6 +33,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | httpx2, httpcore2, jiter, docstring-parser, truststore (via anthropic) | BSD-3-Clause, BSD-3-Clause, MIT, MIT, MIT | the SDK's own dependencies (the rest were already here) |
 | ddgs 9.16 | MIT | web search for research (`oracle/research/web.py`); checked 2026-09-23 |
 | primp, click, lxml, colorama (via ddgs; colorama on Windows only) | MIT, BSD-3-Clause, BSD-3-Clause, BSD-3-Clause | ddgs's own dependencies |
+| tomlkit 0.15 | MIT | writes settings into `oracle.toml` keeping comments (`oracle/config.py`); checked 2026-09-23 |
 | TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |
 
 ## Data

@@ -55,6 +55,7 @@ table.results td { vertical-align: middle; }
 tr.delisted td { color: var(--text-dim); }
 th.num { text-align: right; }
 .up { color: var(--up); }
+.warn-text { color: var(--warn); }
 .down { color: var(--down); }
 .faded { opacity: 0.45; }
 .small { font-size: 12px; }
@@ -103,6 +104,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
 <header>
   <h1>Market Oracle</h1>
   <span id="universe-state" class="dim">Universe ...</span>
+  <span id="tick-state" class="dim"></span>
   <span id="sources-state" class="dim"></span>
 </header>
 <div id="error-banner" hidden role="alert"><span id="error-msg"></span>
@@ -111,6 +113,11 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
   <nav><div id="tab-list"></div></nav>
   <main>
     <div id="main-pane"></div>
+    <details open>
+      <summary id="tick-summary" class="dim">Ticks</summary>
+      <div id="tick-controls" class="row"></div>
+      <div id="tick-last"></div>
+    </details>
     <details>
       <summary class="dim">Data sources</summary>
       <table><thead id="sources-head"></thead><tbody id="sources-body"></tbody></table>

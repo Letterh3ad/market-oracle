@@ -57,3 +57,22 @@ def test_sources_lists_the_chain_and_why_a_source_is_off(run, monkeypatch):
     assert code == 0
     rows = [line.split(None, 2) for line in out.splitlines()[1:]]
     assert rows == [["1", "yahoo", "on"], ["2", "eodhd", "off (no key)"]]
+
+
+def test_a_dead_listing_is_skipped_not_failed_and_says_how_to_check_again(run, monkeypatch):
+    from datetime import date
+
+    from oracle.services import prices_service
+    from oracle.store.health import HealthRepo
+
+    real = prices_service.WatchlistRepo
+
+    def dead_first(conn):
+        HealthRepo(conn).note_no_data("AAPL", date(2026, 9, 1), dead_after=1)
+        return real(conn)
+
+    run("watch", "add", "AAPL")
+    monkeypatch.setattr(prices_service, "WatchlistRepo", dead_first)
+    code, out, _ = run("prices", "update")
+    assert code == 0
+    assert "AAPL: skipped: no source has data since 2026-09-01 (check again with `oracle prices update AAPL`)" in out

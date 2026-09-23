@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
-from oracle.universe.listings import MARKET_CAP_BANDS, Listing
+from oracle.universe.listings import MARKET_CAP_BANDS, Listing, pick_primary
 from oracle.universe.query import COMPANY_FIELDS, FILTER_FIELDS, UniverseQuery, fts_match
 
 _COLUMNS = [f.name for f in fields(Listing)]
@@ -112,6 +112,8 @@ class SearchHit:
     listings: int
     """How many listings the company has (counting delisted ones only when shown)."""
     tags: tuple[str, ...] = ()
+    dead: bool = False
+    """No price source has had data for it lately."""
 
 
 @dataclass(frozen=True)
@@ -181,6 +183,23 @@ class UniverseRepo:
         )
         return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
+    def repick_primary(self, company_key: str, dead: Set[str]) -> None:
+        """Choose the company's primary listing again, as a refresh would with `dead`."""
+        rows = [
+            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], delisted=bool(r["delisted"]))
+            for r in self._conn.execute(
+                "SELECT symbol, name, type, country, exchange, delisted FROM listings WHERE company_key = ?",
+                (company_key,),
+            )
+        ]
+        if not rows:
+            return
+        primary = pick_primary(rows, dead).symbol
+        with transaction(self._conn):
+            self._conn.execute(
+                "UPDATE listings SET is_primary = (symbol = ?) WHERE company_key = ?", (primary, company_key)
+            )
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]
@@ -241,6 +260,8 @@ class UniverseRepo:
                 WHERE {" AND ".join(where)}
             ), ranked AS ({_ALONE if primaries_only else _RANKED})
             SELECT l.symbol, l.company_key, l.exchange, l.currency, l.delisted,
+                   EXISTS (SELECT 1 FROM listing_health h WHERE h.symbol = l.symbol
+                           AND h.dead_since IS NOT NULL) AS dead,
                    p.name, p.type, p.country, p.sector, p.industry, p.market_cap,
                    p.category_group, p.category, p.family,
                    (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key
@@ -257,7 +278,7 @@ class UniverseRepo:
                 country=r["country"], exchange=r["exchange"], currency=r["currency"],
                 sector=r["sector"], industry=r["industry"], market_cap=r["market_cap"],
                 category_group=r["category_group"], category=r["category"], family=r["family"],
-                delisted=bool(r["delisted"]), listings=r["n"],
+                delisted=bool(r["delisted"]), listings=r["n"], dead=bool(r["dead"]),
             )
             for r in self._conn.execute(sql, params)
         ]

@@ -125,23 +125,23 @@ def test_the_gui_listens_on_localhost_by_default_and_the_port_can_change(tmp_pat
             load_config(path, cwd=tmp_path)
 
 
-def test_with_setting_replaces_a_value_and_keeps_comments_and_other_sections():
-    from oracle.config import with_setting
+def test_with_settings_replaces_a_value_and_keeps_comments_and_other_sections():
+    from oracle.config import with_settings
 
     text = "# mine\n[other]\npeers = 3\n\n[analysts]\npeers = 20   # how many to compare\n[risk]\naccount = 5000.0\n"
-    assert with_setting(text, "analysts", "peers", "40") == (
+    assert with_settings(text, "analysts", {"peers": 40}) == (
         "# mine\n[other]\npeers = 3\n\n[analysts]\npeers = 40   # how many to compare\n[risk]\naccount = 5000.0\n"
     )
 
 
-def test_with_setting_adds_the_key_or_the_section_when_missing():
-    from oracle.config import with_setting
+def test_with_settings_adds_the_key_or_the_section_when_missing():
+    from oracle.config import with_settings
 
-    assert with_setting("[analysts]\n[risk]\naccount = 1.0\n", "analysts", "peers", "30") == (
+    assert with_settings("[analysts]\n[risk]\naccount = 1.0\n", "analysts", {"peers": 30}) == (
         "[analysts]\npeers = 30\n[risk]\naccount = 1.0\n"
     )
-    assert with_setting('db_path = "o.db"', "analysts", "peers", "30") == 'db_path = "o.db"\n\n[analysts]\npeers = 30\n'
-    assert with_setting("", "analysts", "peers", "30") == "[analysts]\npeers = 30\n"
+    assert with_settings('db_path = "o.db"', "analysts", {"peers": 30}) == 'db_path = "o.db"\n[analysts]\npeers = 30\n'
+    assert with_settings("", "analysts", {"peers": 30}) == "[analysts]\npeers = 30\n"
 
 
 def test_research_runs_on_local_ollama_by_default_and_each_llm_setting_can_change(tmp_path):
@@ -179,3 +179,19 @@ def test_claude_can_be_chosen_with_its_own_model_setting(tmp_path):
     path.write_text('[llm]\nclaude_model = ""\n', encoding="utf-8")
     with pytest.raises(ConfigError, match="llm.claude_model"):
         load_config(path, cwd=tmp_path)
+
+
+def test_scheduling_is_off_by_default_at_half_past_ten(tmp_path):
+    schedule = load_config(None, cwd=tmp_path)[0].schedule
+    assert (schedule.enabled, schedule.time) == (False, "22:30")
+
+
+def test_schedule_settings_are_checked(tmp_path):
+    path = tmp_path / "oracle.toml"
+    path.write_text('[schedule]\nenabled = true\ntime = "07:05"\n', encoding="utf-8")
+    schedule = load_config(path, cwd=tmp_path)[0].schedule
+    assert (schedule.enabled, schedule.time) == (True, "07:05")
+    for line in ('enabled = "yes"', 'time = "24:00"', 'time = "7:05"', "time = 2230", "every = 1"):
+        path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="schedule"):
+            load_config(path, cwd=tmp_path)

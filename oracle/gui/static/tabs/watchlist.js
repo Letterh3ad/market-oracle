@@ -89,7 +89,8 @@ function jobButton(label, path, summarise, pane) {
 function pricesSummary(r) {
   if (!r.listings.length) return ["Nothing watched yet."];
   return [
-    ...r.listings.map((o) => (o.error ? `${o.symbol}: FAILED (${o.error})` : `${o.symbol}: ${o.added} new days (from ${o.source})`)),
+    ...r.listings.map((o) => (o.skipped ? `${o.symbol}: skipped, ${o.skipped} (Check again on its page)`
+      : o.error ? `${o.symbol}: FAILED (${o.error})` : `${o.symbol}: ${o.added} new days (from ${o.source})`)),
     ...r.fx.map((f) => (f.source == null ? `${f.currency}: no rates (${f.error})` : `${f.currency}: ${f.added} new rates from ${f.source}`)),
     ...r.fills.map((f) => `${f.symbol}: paper ${f.side} ${f.status}${f.note ? ` (${f.note})` : ""}`),
   ];

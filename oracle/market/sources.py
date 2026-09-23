@@ -36,9 +36,12 @@ class SourceFailed(Exception):
 
 
 class AllFailed(Exception):
-    def __init__(self, failures: list[str]) -> None:
+    def __init__(self, failures: list[str], no_data: bool = False) -> None:
         super().__init__("; ".join(failures) or "no source enabled")
         self.failures = failures
+        self.no_data = no_data
+        """Every source answered and none had data: the symbol, not the network, is the
+        problem."""
 
 
 @dataclass(frozen=True)
@@ -71,10 +74,15 @@ async def first_success(
     cannot be parsed counts as that source failing, so one malformed answer never stops
     the chain."""
     failures = []
+    answered_empty = 0
     for source in sources:
         try:
             result = await call(source)
-        except (NoData, SourceFailed) as exc:
+        except NoData as exc:
+            failures.append(f"{source.name}: {exc}")
+            answered_empty += 1
+            continue
+        except SourceFailed as exc:
             failures.append(f"{source.name}: {exc}")
             continue
         except (KeyError, IndexError, TypeError, ValueError) as exc:
@@ -82,9 +90,10 @@ async def first_success(
             continue
         if empty_is_no_data and not result:
             failures.append(f"{source.name}: no data")
+            answered_empty += 1
             continue
         return result, source.name
-    raise AllFailed(failures)
+    raise AllFailed(failures, no_data=bool(failures) and answered_empty == len(failures))
 
 
 async def get(
