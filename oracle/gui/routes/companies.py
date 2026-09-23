@@ -14,6 +14,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.fx_service import credits
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
+from oracle.services.research_service import latest_research
 from oracle.services.settings_service import PEERS_RANGE
 from oracle.services.tags_service import add_tag, remove_tag
 
@@ -42,6 +43,12 @@ async def get_prices(symbol: str, days: int = Query(default=365, ge=1, le=5000),
         "rows": [{"date": c.bar.date, "close": c.bar.close, "close_base": c.close_base} for c in history],
         "credits": credits(c.rate_source for c in history),
     }
+
+
+@router.get("/{symbol}/research")
+async def get_research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The latest research run with its report and trace, or `run: null` before any."""
+    return shapes.research_run(latest_research(ctx, symbol))
 
 
 @router.get("/{symbol}/peers")

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+from urllib.parse import urlsplit
+
 from oracle.services.paper_service import Order
+from oracle.services.research_service import UNVALIDATED, ResearchRun
 
 
 def lean(lean, stale: bool) -> dict | None:
@@ -23,3 +27,23 @@ def next_step(has_price: bool, lean, stale: bool) -> str | None:
 
 def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
+
+
+def research_run(run: ResearchRun | None) -> dict:
+    if run is None:
+        return {"run": None}
+    report = run.report
+    return {"run": {
+        "id": run.id, "symbol": run.symbol, "status": run.status, "backend": run.backend, "model": run.model,
+        "started_at": run.started_at, "finished_at": run.finished_at, "as_of": run.as_of, "error": run.error,
+        "findings": run.findings, "queries": list(run.queries), "badge": UNVALIDATED,
+        "report": None if report is None else {
+            "day": report.day, "bull": report.bull and asdict(report.bull), "bear": report.bear and asdict(report.bear),
+            "findings": [asdict(c) for c in report.findings], "risks": [asdict(c) for c in report.risks],
+            "invalidated_if": report.invalidated_if,
+        },
+        # A link only for a web address: stored-data items have none, and nothing else may run.
+        "evidence": [{**asdict(e), "link": e.url if urlsplit(e.url).scheme in ("http", "https") else None}
+                     for e in run.evidence],
+        "steps": [asdict(s) for s in run.steps],
+    }}

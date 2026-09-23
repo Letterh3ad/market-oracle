@@ -1,7 +1,8 @@
 import { api } from "../lib/api.js";
 import { lineChart } from "../lib/chart.js";
-import { el, showError, clearError, companyLink } from "../lib/dom.js";
+import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
+import { researchSection } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
 
@@ -33,15 +34,6 @@ function job(label, path, pane, symbol) {
     // Only if this company is still the one on screen.
     if (current === symbol && pane.querySelector("#c-body")) load(pane, symbol);
   });
-}
-
-// Links only to web addresses: a website from the dataset could otherwise be a script.
-function safeUrl(url) {
-  try {
-    return ["http:", "https:"].includes(new URL(url).protocol) ? url : null;
-  } catch {
-    return null;
-  }
 }
 
 function header(v, pane, symbol) {
@@ -175,6 +167,7 @@ async function load(pane, symbol, refresh = false) {
   body.replaceChildren(
     header(v, pane, current), summary(v),
     el("div", { id: "c-chart", class: "card" }),
+    researchSection(current),
     el("h3", null, "Analysts"), signals(v),
     el("h3", null, "Fundamentals"), fundamentals(v),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),

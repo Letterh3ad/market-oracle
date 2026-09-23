@@ -818,3 +818,19 @@ headlines 2026".
   with roles now takes about a minute on the 4B model.
 **Alternatives:** Several debate rounds as in TradingAgents (rejected for a 4B model: each
 round costs a call and small models repeat themselves rather than rebut).
+
+## 2026-09-23 - Research in the GUI
+
+**Context:** Ticket 9 of phase 7.
+**Decision:**
+- `POST /api/jobs/research?symbol=` runs research inside the request under the job lock,
+  like the other job buttons (about a minute); `GET /api/companies/{symbol}/research`
+  returns the latest run with its report, evidence and trace.
+- A model backend that cannot answer is 503 (a service of this machine, not an upstream).
+- Evidence carries a `link` only for http(s) addresses, and the page checks again
+  (`safeUrl`, now shared in `dom.js`); links open in a new tab with `noopener noreferrer`.
+- The Company tab gains a Research section: bull and bear cases, findings by role, risks,
+  "invalidated if", cited evidence with in-page jumps from each [aN], and a collapsible
+  trace. Every part has a glossary tooltip; the unvalidated badge explains the gate.
+- A separate research tab was not added: the trace sits under its report on the Company
+  tab, where the symbol is already chosen.
