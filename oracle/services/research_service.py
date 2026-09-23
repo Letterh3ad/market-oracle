@@ -22,7 +22,7 @@ from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable
 from oracle.services.http import open_client
-from oracle.services.jobs_service import single_flight
+from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
     Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch, evidence_line,
     market_summary,
@@ -34,7 +34,7 @@ from oracle.store.universe import ListingProfile, UniverseRepo
 
 __all__ = [
     "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "latest_research", "report_history", "research",
-    "research_progress",
+    "research_progress", "sweep_interrupted",
 ]
 
 JOB = "research"
@@ -155,6 +155,14 @@ def research_progress(ctx: AppContext, listing: str) -> str | None:
         return "planning searches"
     last = run.steps[-1]
     return "writing the report" if last.action == "final" else f"step {last.n}: {last.action}"
+
+
+def sweep_interrupted(ctx: AppContext) -> None:
+    """Mark runs a stopped app left `running` as failed, unless another process is still
+    doing research (its lock is live), so no page shows a dead run as running forever."""
+    if any(s.job == JOB and s.stale_reason is None for s in job_statuses(ctx)):
+        return
+    ResearchRepo(ctx.conn).fail_running("interrupted: app closed", _now(ctx))
 
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:

@@ -710,3 +710,28 @@ async def test_a_model_failure_that_cannot_be_recorded_keeps_that_note(ctx, monk
     with pytest.raises(ModelUnavailable) as caught:
         await research(ctx, "AAPL", ScriptedModel(step("market_data"), ModelError("ollama is not reachable")))
     assert "database is locked" in "".join(caught.value.__notes__)
+
+
+async def test_runs_a_stopped_app_left_running_are_marked_interrupted(ctx):
+    from oracle.services.research_service import sweep_interrupted
+    from oracle.store.research import ResearchRepo
+
+    repo = ResearchRepo(ctx.conn)
+    stuck = repo.start("AAPL", "ollama", "m", "2026-09-23T10:00:00+00:00")
+    sweep_interrupted(ctx)
+    run = repo.get(stuck)
+    assert (run.status, run.error) == ("failed", "interrupted: app closed")
+
+
+async def test_a_run_another_process_is_still_doing_is_left_alone(ctx):
+    import os
+
+    from oracle.jobs import JobLock
+    from oracle.services.research_service import sweep_interrupted
+    from oracle.store.research import ResearchRepo
+
+    repo = ResearchRepo(ctx.conn)
+    live = repo.start("AAPL", "ollama", "m", "2026-09-23T10:00:00+00:00")
+    JobLock(ctx.conn, ctx.clock, pid=os.getppid()).acquire("research", 600)
+    sweep_interrupted(ctx)
+    assert repo.get(live).status == "running"

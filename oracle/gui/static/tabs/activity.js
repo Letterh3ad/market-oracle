@@ -69,7 +69,7 @@ async function load(box) {
   const done = jobs.filter((j) => !active.includes(j));
   box.replaceChildren(
     ...section("Now and next", active, "Nothing running or waiting.", box),
-    ...section("Finished", done, "Nothing has finished since the app started.", box));
+    ...section("Finished", done, "Nothing has finished yet.", box));
 }
 
 // Refreshes every 2 seconds while the tab is on screen.

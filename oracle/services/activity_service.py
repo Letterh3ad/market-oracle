@@ -19,13 +19,14 @@ from oracle.services.research_service import research, research_progress
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import resolve_symbol
+from oracle.store.job_history import JobHistoryRepo, JobRow
 
 __all__ = ["Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick"]
 
 log = logging.getLogger(__name__)
 
 RECENT = 50
-"""Finished jobs kept in the listing."""
+"""Finished jobs shown in the listing."""
 
 
 @dataclass(eq=False)
@@ -33,7 +34,8 @@ class Job:
     id: int
     kind: str
     label: str
-    work: Callable[[], Awaitable[Any]] = field(repr=False)
+    work: Callable[[], Awaitable[Any]] | None = field(default=None, repr=False)
+    """None for a job read back from history."""
     subject: str | None = None
     """What it works on (a symbol), so the same thing is never queued twice."""
     link: str | None = None
@@ -56,8 +58,10 @@ class Job:
 
 class JobRunner:
     def __init__(self, ctx: AppContext) -> None:
+        """Closes out what a previous server left queued or running: queued jobs never resume."""
         self._ctx = ctx
-        self._ids = 0
+        self._history = JobHistoryRepo(ctx.conn)
+        self._history.sweep(ctx.clock.utcnow())
         self._queues: dict[str, deque[Job]] = {}
         self._running: dict[str, Job] = {}
         self._workers: dict[str, asyncio.Task] = {}
@@ -71,8 +75,9 @@ class JobRunner:
             same = next((j for j in self.active(kind) if j.subject == subject), None)
             if same:
                 return same
-        self._ids += 1
-        job = Job(self._ids, kind, label, work, subject, link, progress, submitted_at=self._ctx.clock.utcnow())
+        now = self._ctx.clock.utcnow()
+        job_id = self._history.add(kind, label, subject, link, "queued", now)
+        job = Job(job_id, kind, label, work, subject, link, progress, submitted_at=now)
         self._queues.setdefault(kind, deque()).append(job)
         worker = self._workers.get(kind)
         if worker is None or worker.done():
@@ -80,12 +85,19 @@ class JobRunner:
         return job
 
     def jobs(self) -> list[Job]:
-        """Running, then queued in order, then finished newest first."""
+        """Running, then queued in order, then the last finished (earlier servers' too),
+        newest first."""
         queued = [j for q in self._queues.values() for j in q]
-        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *reversed(self._finished)]
+        here = {j.id: j for j in self._finished}
+        stored = [here.get(r.id) or _from_row(r) for r in self._history.finished(RECENT)]
+        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *stored]
 
     def get(self, job_id: int) -> Job | None:
-        return next((j for j in self.jobs() if j.id == job_id), None)
+        live = [*self._running.values(), *(j for q in self._queues.values() for j in q), *self._finished]
+        found = next((j for j in live if j.id == job_id), None)
+        if found is None and (row := self._history.get(job_id)) is not None:
+            found = _from_row(row)
+        return found
 
     async def wait(self, job_id: int) -> Job:
         job = self.get(job_id)
@@ -128,6 +140,7 @@ class JobRunner:
         while queue:
             job = queue.popleft()
             job.state, job.started_at = "running", self._ctx.clock.utcnow()
+            self._history.update(job.id, job.state, None, job.started_at, None)
             self._running[kind] = job
             # Its own task, so cancelling the job leaves this worker free for the next.
             job.task = asyncio.create_task(job.work())
@@ -148,8 +161,16 @@ class JobRunner:
 
     def _finish(self, job: Job, state: str, error: str | None) -> None:
         job.state, job.error, job.finished_at = state, error, self._ctx.clock.utcnow()
+        self._history.update(job.id, state, error, job.started_at, job.finished_at)
         self._finished.append(job)
         job.finished.set()
+
+
+def _from_row(r: JobRow) -> Job:
+    job = Job(r.id, r.kind, r.label, None, r.subject, r.link, None, r.submitted_at, r.started_at, r.finished_at,
+              r.state, r.error)
+    job.finished.set()
+    return job
 
 
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:

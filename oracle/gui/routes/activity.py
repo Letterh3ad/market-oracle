@@ -31,7 +31,7 @@ async def activity(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depen
 async def get_job(job_id: int, runner: JobRunner = Depends(get_runner)) -> dict:
     job = runner.get(job_id)
     if job is None:
-        raise UnknownJob(f"no job {job_id}: finished jobs are kept only while the app runs")
+        raise UnknownJob(f"no job {job_id}")
     return shapes.job(job)
 
 

@@ -217,3 +217,37 @@ async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gate
     assert skipped.outcome == "skipped" and "already queued or running" in skipped.note
     gated_stages.set()
     await runner.wait(manual.id)
+
+
+async def test_finished_jobs_survive_a_restart(ctx, runner):
+    gate = Gate("a", [])
+    job = runner.submit("research", "Research A", gate, link="#company/A")
+    gate.open.set()
+    await runner.wait(job.id)
+    await runner.stop()
+    later = JobRunner(ctx)
+    [kept] = later.jobs()
+    assert (kept.id, kept.label, kept.state, kept.link) == (job.id, "Research A", "done", "#company/A")
+    assert later.get(job.id).finished_at == job.finished_at
+    await later.stop()
+
+
+async def test_a_new_runner_sweeps_jobs_a_stopped_server_left_queued_or_running(ctx):
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    running = repo.add("research", "Research A", None, None, "running", NOW)
+    queued = repo.add("research", "Research B", None, None, "queued", NOW)
+    runner = JobRunner(ctx)
+    states = {j.id: (j.state, j.error) for j in runner.jobs()}
+    assert states[running] == ("cancelled", "interrupted: app closed")
+    assert states[queued] == ("cancelled", "not run: app closed")
+    await runner.stop()
+
+
+async def test_new_job_ids_follow_the_stored_ones(ctx, runner):
+    first = runner.submit("research", "Research A", Gate("a", []))
+    await runner.stop()
+    later = JobRunner(ctx)
+    assert later.submit("research", "Research B", Gate("b", [])).id > first.id
+    await later.stop()
