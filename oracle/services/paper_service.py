@@ -11,7 +11,7 @@ from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
-from oracle.market.fx import pick_rate
+from oracle.market.fx import RateSeries, pick_rate
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.prices_service import price_history_in_base
@@ -313,8 +313,8 @@ def _fill_rate_sources(ctx: AppContext, repo: PaperRepo, account: str) -> set[st
     fx = FxRepo(ctx.conn, ctx.config.base_currency)
     out = set()
     for currency, dates in days.items():
-        history = fx.history(currency)
-        out |= {r.source for d in dates if (r := pick_rate(history, d))}
+        history = RateSeries(fx.history(currency))
+        out |= {r.source for d in dates if (r := history.pick(d))}
     return out
 
 

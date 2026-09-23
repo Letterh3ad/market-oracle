@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -17,6 +17,7 @@ from oracle.jobs import pid_alive
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
+from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.research_service import research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
@@ -37,7 +38,7 @@ class Job:
     id: int
     kind: str
     label: str
-    work: Callable[[], Awaitable[Any]] | None = field(default=None, repr=False)
+    work: Work | None = field(default=None, repr=False)
     """None for a job read back from history."""
     subject: str | None = None
     """What it works on (a symbol), so the same thing is never queued twice."""
@@ -60,15 +61,18 @@ class Job:
 
 
 class JobRunner:
-    def __init__(self, ctx: AppContext) -> None:
+    def __init__(self, ctx: AppContext, executor: Executor | None = None) -> None:
+        """`executor` runs each job's work; by default on this loop (the GUI server passes a
+        thread executor)."""
         self._ctx = ctx
+        self._executor = executor or InlineExecutor(ctx)
         self._history = JobHistoryRepo(ctx.conn)
         self._queues: dict[str, deque[Job]] = {}
         self._running: dict[str, Job] = {}
         self._workers: dict[str, asyncio.Task] = {}
         self._finished: deque[Job] = deque(maxlen=RECENT)
 
-    def submit(self, kind: str, label: str, work: Callable[[], Awaitable[Any]], *, subject: str | None = None,
+    def submit(self, kind: str, label: str, work: Work, *, subject: str | None = None,
                link: str | None = None, progress: Callable[[], str | None] | None = None) -> Job:
         """Queue `work`; a job of the same kind and subject still waiting or running is
         returned instead of a second one."""
@@ -146,7 +150,7 @@ class JobRunner:
             self._history.update(job.id, job.state, None, job.started_at, None)
             self._running[kind] = job
             # Its own task, so cancelling the job leaves this worker free for the next.
-            job.task = asyncio.create_task(job.work())
+            job.task = asyncio.create_task(self._executor.run(job.work))
             try:
                 job.result = await job.task
             except asyncio.CancelledError:
@@ -193,27 +197,27 @@ def sweep_leftovers(ctx: AppContext) -> None:
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
     """Queue one research run; an unknown symbol is refused now, not when its turn comes."""
     listing = resolve_symbol(ctx, symbol).symbol
-    return runner.submit("research", f"Research {listing}", lambda: research(ctx, listing), subject=listing,
+    return runner.submit("research", f"Research {listing}", lambda c: research(c, listing), subject=listing,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
 
 
 def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
     """Every watched listing, or one listing (watched or not)."""
     if symbol is None:
-        return runner.submit("prices", "Update prices (watchlists)", lambda: update_prices(ctx), subject="*",
+        return runner.submit("prices", "Update prices (watchlists)", update_prices, subject="*",
                              link="#watchlist")
     listing = resolve_symbol(ctx, symbol).symbol
-    return runner.submit("prices", f"Update prices {listing}", lambda: update_listing_prices(ctx, listing),
+    return runner.submit("prices", f"Update prices {listing}", lambda c: update_listing_prices(c, listing),
                          subject=listing, link=f"#company/{listing}")
 
 
 def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
     if symbol is None:
-        return runner.submit("analyse", "Analyse (watchlists)", lambda: analyse_watched(ctx), subject="*",
+        return runner.submit("analyse", "Analyse (watchlists)", analyse_watched, subject="*",
                              link="#watchlist")
     listing = resolve_symbol(ctx, symbol).symbol
-    async def one() -> list[WatchedAnalysis]:
-        return [WatchedAnalysis(listing, await analyse_listing(ctx, listing), None)]
+    async def one(c: AppContext) -> list[WatchedAnalysis]:
+        return [WatchedAnalysis(listing, await analyse_listing(c, listing), None)]
 
     return runner.submit("analyse", f"Analyse {listing}", one, subject=listing, link=f"#company/{listing}")
 
@@ -223,13 +227,13 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
     ticks), a tick held by another process is recorded as skipped instead of failing."""
     stage: list[str] = []
 
-    async def work():
+    async def work(c: AppContext):
         try:
-            return await run_tick(ctx, trigger, on_stage=lambda name: stage.append(name))
+            return await run_tick(c, trigger, on_stage=lambda name: stage.append(name))
         except JobAlreadyRunning as exc:
             if not skip_if_busy:
                 raise
-            return record_skipped(ctx, trigger, f"skipped: {exc}")
+            return record_skipped(c, trigger, f"skipped: {exc}")
 
     return runner.submit("tick", f"Tick ({trigger})", work, subject="tick", link="#watchlist",
                          progress=lambda: stage[-1] if stage else None)

@@ -7,7 +7,7 @@ from datetime import date
 from oracle.config import PRICE_SOURCES
 from oracle.market import registry
 from oracle.market.bars import Bar
-from oracle.market.fx import pick_rate
+from oracle.market.fx import RateSeries
 from oracle.market.sources import REFETCH_OVERLAP, AllFailed, Instrument, first_success
 from oracle.net.client import RateLimitedClient
 from oracle.services.context import AppContext
@@ -125,15 +125,15 @@ def price_history_in_base(ctx: AppContext, symbol: str, days: int | None = None)
     """Stored bars with each close converted to the base currency at that day's rate."""
     base = ctx.config.base_currency
     fx = FxRepo(ctx.conn, base)
-    series: dict[str, list] = {}
+    series: dict[str, RateSeries] = {}
     out = []
     for b in price_history(ctx, symbol, days):
         if b.currency == base:
             out.append(ConvertedBar(b, 1.0, b.close))
             continue
         if b.currency not in series:
-            series[b.currency] = fx.history(b.currency)
-        picked = pick_rate(series[b.currency], b.date)
+            series[b.currency] = RateSeries(fx.history(b.currency))
+        picked = series[b.currency].pick(b.date)
         if picked is None:
             out.append(ConvertedBar(b, None, None))
         else:

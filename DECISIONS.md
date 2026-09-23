@@ -1102,3 +1102,17 @@ when its server stops or dies ends `interrupted`; queued ones end `cancelled`, "
 A scheduled tick cancelled before it starts is recorded as skipped, so it is not resubmitted.
 **Alternatives:** A heartbeat per job row (more writes for the same answer on one machine);
 keeping `cancelled` with the reason in the error text (the state column then lies).
+
+## 2026-09-23 - GUI jobs run on worker threads with their own connection
+**Context:** A watchlist Analyse held the server's event loop for ~30 s on the real DB, so
+every page stalled until it finished. The job runner ran work as tasks on that loop.
+**Decision:** A job's work takes the context it runs with, and the runner runs it through
+an executor. The GUI server uses a thread executor: one thread per running job, its own
+event loop and SQLite connection, same config, clock and transport. Cancel reaches the
+worker's task across threads, and the runner waits for the job's cleanup before recording
+the outcome. Queue-logic tests use an inline executor. Measured on a real-DB copy: 158 page
+loads during a 32 s Analyse, worst 56 ms.
+**Alternatives:** A process pool (pickling contexts and results, no shared clock or fake
+transport in tests); chunking long loops with `await asyncio.sleep(0)` (every future long
+stretch would need the same care); running only the analysis in `to_thread` (fixes one job,
+not the class).

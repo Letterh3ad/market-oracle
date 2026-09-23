@@ -40,14 +40,25 @@ class FxSource(Protocol):
     async def daily_rates(self, base: str, currency: str, since: date | None, now: datetime) -> list[FxRate]: ...
 
 
+class RateSeries:
+    """One currency's rates, sorted by date, for many lookups: the date index is built once."""
+
+    def __init__(self, rates: list[FxRate]) -> None:
+        self._rates = rates
+        self._dates = [r.date for r in rates]
+
+    def pick(self, day: date) -> FxRate | None:
+        """The rate for `day`, or the last one before it within MAX_RATE_AGE."""
+        i = bisect.bisect_right(self._dates, day)
+        if i == 0:
+            return None
+        rate = self._rates[i - 1]
+        return rate if day - rate.date <= MAX_RATE_AGE else None
+
+
 def pick_rate(rates: list[FxRate], day: date) -> FxRate | None:
-    """The rate for `day`, or the last one before it within MAX_RATE_AGE. `rates` is
-    sorted by date."""
-    i = bisect.bisect_right([r.date for r in rates], day)
-    if i == 0:
-        return None
-    rate = rates[i - 1]
-    return rate if day - rate.date <= MAX_RATE_AGE else None
+    """One lookup; `rates` is sorted by date."""
+    return RateSeries(rates).pick(day)
 
 
 class YahooFx:

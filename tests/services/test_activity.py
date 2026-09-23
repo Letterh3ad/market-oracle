@@ -31,7 +31,7 @@ class Gate:
         self.name, self.log, self.fail = name, log, fail
         self.open = asyncio.Event()
 
-    async def __call__(self):
+    async def __call__(self, ctx=None):
         self.log.append(f"start {self.name}")
         await self.open.wait()
         self.log.append(f"end {self.name}")

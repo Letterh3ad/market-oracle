@@ -13,6 +13,7 @@ from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import activity, companies, jobs, ledgers, settings, status, universe, watchlists
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.context import AppContext
+from oracle.services.job_executor import ThreadExecutor
 from oracle.services.schedule_service import Scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -31,7 +32,7 @@ class _Static(StaticFiles):
 def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
     """With `schedule`, the scheduler runs for as long as the server does (tests leave it
     off). Jobs still running when the server stops are cancelled."""
-    runner = JobRunner(ctx)
+    runner = JobRunner(ctx, ThreadExecutor(ctx))
     scheduler = Scheduler(ctx, runner=runner) if schedule else None
 
     @asynccontextmanager

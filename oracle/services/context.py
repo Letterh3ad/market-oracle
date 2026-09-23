@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterator
 
@@ -49,5 +49,16 @@ def open_context(
             raise DatabaseTooNew(str(exc)) from exc
         MetaRepo(conn).setdefault("created_at", to_utc_iso(clock.utcnow()))
         yield AppContext(config, config_source, conn, clock, transport)
+    finally:
+        conn.close()
+
+
+@contextmanager
+def worker_context(ctx: AppContext) -> Iterator[AppContext]:
+    """`ctx` over a connection of its own, for work on another thread: a SQLite connection
+    stays on the thread that opened it."""
+    conn = connect(ctx.config.db_path)
+    try:
+        yield replace(ctx, conn=conn)
     finally:
         conn.close()
