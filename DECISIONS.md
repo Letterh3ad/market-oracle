@@ -611,3 +611,14 @@ have run on two days, positions, waiting orders with their notes, sells, and the
 strategy's decision log. Read-only; trading is ticket 07.
 **Alternatives:** Storing realised P&L per sell (rejected: derived data, replayed like the
 rest of the ledger).
+
+## 2026-09-23 - Ledgers trading: the page trades the manual account only
+
+**Context:** Ticket 07.
+**Decision:** The buy and sell routes are fixed to the manual account and refuse any
+`account` field (a 400 naming it) rather than ignore it; the strategy account moves only
+through "Strategy step", which runs the same rules engine as `oracle paper step`.
+Refusals from the service (amount not positive, not held, too many shares) appear under
+the form that caused them. "Fill now" and "Strategy step" report each outcome.
+**Alternatives:** An account picker on the forms (rejected: manual trades on the strategy
+account would spoil the track record the validation gate relies on).
