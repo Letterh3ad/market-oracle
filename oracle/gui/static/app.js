@@ -1,4 +1,5 @@
 import { el, clearError } from "./lib/dom.js";
+import * as control from "./lib/control.js";
 import * as status from "./lib/status.js";
 import universeTab from "./tabs/universe.js";
 import watchlistTab from "./tabs/watchlist.js";
@@ -35,4 +36,5 @@ document.getElementById("error-close").addEventListener("click", clearError);
 // Back, forward and typed #tab addresses switch tabs too.
 window.addEventListener("hashchange", () => selectTab(location.hash.slice(1)));
 status.start();
+control.mount();
 selectTab(location.hash.slice(1));

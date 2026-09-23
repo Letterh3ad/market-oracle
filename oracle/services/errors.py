@@ -61,3 +61,7 @@ class NoPrices(ServiceError):
 
 class ModelUnavailable(ServiceError):
     pass
+
+
+class CannotRestart(ServiceError):
+    pass

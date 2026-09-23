@@ -11,7 +11,9 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import activity, companies, jobs, ledgers, settings, status, universe, watchlists
+from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
+from oracle.services.app_service import AppControl, server_launch
 from oracle.services.context import AppContext
 from oracle.services.job_executor import ThreadExecutor
 from oracle.services.schedule_service import Scheduler
@@ -29,9 +31,10 @@ class _Static(StaticFiles):
         return response
 
 
-def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
+def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | None = None) -> FastAPI:
     """With `schedule`, the scheduler runs for as long as the server does (tests leave it
-    off). Jobs still running when the server stops are cancelled."""
+    off). Jobs still running when the server stops are interrupted. `control` restarts the
+    server; by default it starts this server's own command."""
     runner = JobRunner(ctx, ThreadExecutor(ctx))
     scheduler = Scheduler(ctx, runner=runner) if schedule else None
 
@@ -52,9 +55,11 @@ def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
     app = FastAPI(title="Market Oracle", lifespan=lifespan)
     app.state.ctx = ctx
     app.state.runner = runner
+    app.state.control = control or AppControl(server_launch(ctx))
     install_error_handlers(app)
     app.include_router(status.router)
     app.include_router(activity.router)
+    app.include_router(app_control.router)
     app.include_router(universe.router)
     app.include_router(companies.router)
     app.include_router(watchlists.router)

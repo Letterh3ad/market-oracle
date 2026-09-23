@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from oracle.gui.deps import get_ctx
+from oracle.gui.deps import get_control, get_ctx
 from oracle.gui.routes import shapes
+from oracle.services.app_service import AppControl
 from oracle.services.context import AppContext
 from oracle.services.net_service import source_statuses
 from oracle.services.schedule_service import schedule_status
@@ -19,9 +20,11 @@ router = APIRouter(prefix="/api")
 # Every route is `async def`: sync routes run in a thread pool, and the SQLite connection
 # belongs to the event loop's thread.
 @router.get("/status")
-async def get_status(ctx: AppContext = Depends(get_ctx)) -> dict:
+async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = Depends(get_control)) -> dict:
     universe = universe_brief(ctx)
     return {
+        # Which server answered, so a restarting page can tell the new one from the old.
+        "server": {"pid": control.pid, "started_at": _iso(control.started_at)},
         "base_currency": status(ctx).base_currency,
         "universe": {
             "loaded": universe.loaded,

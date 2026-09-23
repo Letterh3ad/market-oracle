@@ -1116,3 +1116,15 @@ loads during a 32 s Analyse, worst 56 ms.
 transport in tests); chunking long loops with `await asyncio.sleep(0)` (every future long
 stretch would need the same care); running only the analysis in `to_thread` (fixes one job,
 not the class).
+
+## 2026-09-23 - Restart spawns a detached copy that waits for the port
+**Context:** app-control 01. The server must restart itself from the page, and the new copy
+must outlive whatever started the old one (a Claude session included).
+**Decision:** The server starts its own command (interpreter, absolute config, working
+folder, spelled out rather than copied from `sys.argv`) in its own minimised console, out of
+the parent's job object when Windows allows it, then asks uvicorn to exit gracefully. The
+new copy binds its own socket, retrying for 30 s while the old one lets go. `/api/status`
+names the answering server's pid, so the page reloads only once a new one answers.
+**Alternatives:** A supervisor process that restarts the server (a second thing to keep
+alive); `os.execv` in place (Windows starts a new process anyway, and the old one's port and
+jobs would not shut down cleanly first); no console window (the log would go nowhere).
