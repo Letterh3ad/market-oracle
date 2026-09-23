@@ -72,3 +72,18 @@ async def test_status_gives_the_running_version_and_the_one_on_disk(ctx):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         server = (await c.get("/api/status")).json()["server"]
     assert (server["version"], server["version_on_disk"]) == ("abc1234", "def5678")
+
+
+async def test_the_start_at_login_toggle_reads_and_sets_the_launcher(ctx, tmp_path):
+    from oracle.gui.app import build_app
+    from oracle.services.app_service import Autostart
+
+    cmd = LaunchCommand(("python",), ".")
+    control = AppControl(cmd, spawn=lambda c: None, read_version=lambda: "abc1234",
+                         autostart=Autostart(tmp_path, cmd, write=lambda link, c, d: link.write_text("lnk")))
+    app = build_app(ctx, control=control)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+        assert (await c.get("/api/app/autostart")).json()["enabled"] is False
+        assert (await c.put("/api/app/autostart", json={"enabled": True})).json()["enabled"] is True
+        assert (tmp_path / "Market Oracle.lnk").exists()
+        assert (await c.put("/api/app/autostart", json={"enabled": False})).json()["enabled"] is False

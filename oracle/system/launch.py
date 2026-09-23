@@ -24,16 +24,23 @@ def server_command(config_source: Path | None, cwd: Path) -> LaunchCommand:
 
 def spawn_detached(cmd: LaunchCommand) -> int:
     """Start `cmd` so it outlives this process and whatever started it; returns its pid."""
+    proc = _popen(cmd)
+    # Never waited on, by design; this stops Python warning about a child left running.
+    proc.returncode = 0
+    return proc.pid
+
+
+def _popen(cmd: LaunchCommand) -> subprocess.Popen:
     if os.name != "nt":
         return subprocess.Popen(cmd.argv, cwd=cmd.cwd, start_new_session=True, stdin=subprocess.DEVNULL,
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).pid
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     # Its own console, minimised without taking focus, so its log can still be read.
     info = subprocess.STARTUPINFO(dwFlags=subprocess.STARTF_USESHOWWINDOW, wShowWindow=7)  # SW_SHOWMINNOACTIVE
     flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
     try:
         # Out of this process's job object, which may be killed with whatever started us.
         return subprocess.Popen(cmd.argv, cwd=cmd.cwd, startupinfo=info,
-                                creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB).pid
+                                creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)
     except OSError:
         # The job forbids breaking away; the process is still detached from our console.
-        return subprocess.Popen(cmd.argv, cwd=cmd.cwd, startupinfo=info, creationflags=flags).pid
+        return subprocess.Popen(cmd.argv, cwd=cmd.cwd, startupinfo=info, creationflags=flags)

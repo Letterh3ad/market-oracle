@@ -1128,3 +1128,15 @@ names the answering server's pid, so the page reloads only once a new one answer
 **Alternatives:** A supervisor process that restarts the server (a second thing to keep
 alive); `os.execv` in place (Windows starts a new process anyway, and the old one's port and
 jobs would not shut down cleanly first); no console window (the log would go nowhere).
+
+## 2026-09-23 - Start at login is a Startup-folder shortcut that runs the loaded code's folder
+**Context:** app-control 03. Oracle should start with Windows without admin rights or new
+dependencies, and must run the live worktree even if the current server was started from
+another folder.
+**Decision:** A `Market Oracle.lnk` in the user's Startup folder, written through
+PowerShell's WScript.Shell with values passed as environment variables; its presence is the
+setting. It starts the running interpreter with the absolute config, minimised, in the
+folder the `oracle` package was loaded from. Restart uses the same command.
+**Alternatives:** A Task Scheduler entry (more moving parts, harder to see and delete by
+hand); a `.vbs` launcher (VBScript is being removed from Windows); a `.cmd` (flashes a
+console); pywin32 for the shortcut (a dependency for one call).

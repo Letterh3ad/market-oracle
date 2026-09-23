@@ -46,3 +46,45 @@ def test_the_version_on_disk_is_read_at_most_once_a_minute():
     assert control.version_on_disk() == "abc1234"
     clock[0] = 61
     assert control.version_on_disk() == "def5678" and control.version == "abc1234"
+
+
+def test_start_at_login_writes_the_launcher_removes_it_and_reads_its_state_from_the_file(tmp_path):
+    from oracle.services.app_service import Autostart
+
+    written = []
+
+    def write(link, cmd, description):
+        written.append((link.name, cmd))
+        link.write_text("lnk")
+
+    autostart = Autostart(tmp_path, CMD, write=write)
+    assert not autostart.enabled()
+    autostart.set(True)
+    assert autostart.enabled() and written == [("Market Oracle.lnk", CMD)]
+    (tmp_path / "Market Oracle.lnk").unlink()  # the user deletes it by hand
+    assert not autostart.enabled()
+    autostart.set(True)
+    autostart.set(False)
+    autostart.set(False)
+    assert not autostart.enabled()
+
+
+def test_start_at_login_without_a_startup_folder_says_so():
+    from oracle.services.app_service import Autostart
+    from oracle.services.errors import ServiceError
+
+    with pytest.raises(ServiceError, match="Windows"):
+        Autostart(None, CMD).set(True)
+
+
+def test_the_launch_command_runs_the_code_this_server_was_loaded_from(tmp_path):
+    from oracle.config import Config
+    from oracle.services.app_service import server_launch
+    from oracle.services.context import open_context
+    from oracle.system.version import CODE_ROOT
+
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text("", encoding="utf-8")
+    with open_context(Config(db_path=tmp_path / "o.db"), cfg) as ctx:
+        cmd = server_launch(ctx)
+    assert cmd.cwd == CODE_ROOT and str(cfg.resolve()) in cmd.argv

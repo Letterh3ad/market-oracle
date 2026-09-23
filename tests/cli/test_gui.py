@@ -58,3 +58,18 @@ def test_restart_asks_the_running_server_and_says_when_none_is_running(tmp_path,
     monkeypatch.setattr(gui.httpx, "post", refused)
     assert cli_main.main(["--config", str(cfg), "gui", "--restart"]) == 1
     assert "no Market Oracle GUI is running on http://127.0.0.1:9001" in capsys.readouterr().err
+
+
+def test_autostart_on_and_off_from_the_command_line(tmp_path, monkeypatch, capsys):
+    from oracle.services import app_service
+
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"\n', encoding="utf-8")
+    startup = tmp_path / "Startup"
+    startup.mkdir()
+    monkeypatch.setattr(app_service, "startup_folder", lambda: startup)
+    monkeypatch.setattr(app_service, "write_shortcut", lambda link, cmd, d: link.write_text("lnk"))
+    assert cli_main.main(["--config", str(cfg), "gui", "--autostart", "on"]) == 0
+    assert (startup / "Market Oracle.lnk").exists() and "starts when Windows starts" in capsys.readouterr().out
+    assert cli_main.main(["--config", str(cfg), "gui", "--autostart", "off"]) == 0
+    assert not (startup / "Market Oracle.lnk").exists()

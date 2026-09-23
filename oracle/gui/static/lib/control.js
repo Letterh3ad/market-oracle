@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { sendJson } from "./ui.js";
 import { el, showError } from "./dom.js";
 
 const BACK_WITHIN_MS = 60_000;
@@ -74,4 +75,35 @@ function show(status) {
   if (!asking) idle();
 }
 
-export { idle as mount, show };
+// "Start Oracle when Windows starts": the launcher file's presence is the setting.
+async function mountSettings() {
+  const pane = document.getElementById("app-settings");
+  const toggle = el("input", { type: "checkbox" });
+  const where = el("span", { class: "dim small" });
+  const paint = (a) => {
+    toggle.checked = a.enabled;
+    toggle.disabled = !a.supported;
+    where.textContent = !a.supported ? "only set up for Windows so far" : a.enabled ? `launcher: ${a.path}` : "";
+  };
+  toggle.addEventListener("change", async () => {
+    try {
+      paint(await sendJson("/api/app/autostart", { enabled: toggle.checked }, "PUT"));
+    } catch (err) {
+      showError(`start with Windows: ${err.message}`);
+      paint(await api("/api/app/autostart"));
+    }
+  });
+  pane.replaceChildren(el("div", { class: "row" }, el("label", null, toggle, " Start Oracle when Windows starts"), where));
+  try {
+    paint(await api("/api/app/autostart"));
+  } catch (err) {
+    where.textContent = err.message;
+  }
+}
+
+function mount() {
+  idle();
+  mountSettings();
+}
+
+export { mount, show };
