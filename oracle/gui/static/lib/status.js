@@ -24,13 +24,15 @@ async function refresh() {
       el("td", null, s.source),
       el("td", null, s.state + (s.paused_until ? ` until ${new Date(s.paused_until).toLocaleTimeString()}` : "")),
       el("td", null, s.reason || ""),
+      el("td", { class: "num" }, `${s.rate_per_second}/s`),
       el("td", { class: "num" }, String(s.requests_last_hour)))));
 }
 
 function start() {
   document.getElementById("sources-head").replaceChildren(el("tr", null,
     el("th", null, tip("Source", "source")), el("th", null, tip("State", "source_state")),
-    el("th", null, "Why"), el("th", null, tip("Last hour", "requests_last_hour"))));
+    el("th", null, "Why"), el("th", null, tip("Allowed", "source_rate")),
+    el("th", null, tip("Last hour", "requests_last_hour"))));
   refresh();
   setInterval(refresh, 30_000);
 }

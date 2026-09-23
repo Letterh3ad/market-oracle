@@ -89,7 +89,6 @@ class StrategyConfig:
     """Sell a position this far below its average cost."""
 
 
-# Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 @dataclass(frozen=True)
 class GuiConfig:
     host: str = "127.0.0.1"
@@ -97,6 +96,7 @@ class GuiConfig:
     port: int = 8740
 
 
+# Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
 
@@ -229,11 +229,14 @@ def _analysts(raw: object) -> AnalystsConfig:
     if not isinstance(raw, dict):
         raise ConfigError("analysts must be an [analysts] table")
     _reject_unknown(raw, AnalystsConfig, "[analysts]")
-    peers = raw.get("peers", AnalystsConfig.peers)
+    return AnalystsConfig(peers=check_peers(raw.get("peers", AnalystsConfig.peers)))
+
+
+def check_peers(peers: object) -> int:
     low, high = PEERS_RANGE
     if isinstance(peers, bool) or not isinstance(peers, int) or not low <= peers <= high:
         raise ConfigError(f"analysts.peers must be a whole number from {low} to {high}, got {peers!r}")
-    return AnalystsConfig(peers=peers)
+    return peers
 
 
 def _risk(raw: object) -> RiskConfig:

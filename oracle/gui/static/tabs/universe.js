@@ -1,6 +1,7 @@
 import { api } from "../lib/api.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
+import { sendJson } from "../lib/ui.js";
 
 const PAGE = 50;
 const LABELS = {
@@ -119,7 +120,7 @@ function row(h, pane) {
   })), newTag(h, pane));
   const watchBtn = el("button", { type: "button", onclick: async (e) => {
     try {
-      const w = await api(`/api/watchlists/${encodeURIComponent(state.list)}/items`, json({ symbol: h.symbol }));
+      const w = await sendJson(`/api/watchlists/${encodeURIComponent(state.list)}/items`, { symbol: h.symbol });
       e.target.textContent = w.added ? "Watching" : "Already watched";
       e.target.disabled = true;
     } catch (err) { showError(err.message); }
@@ -135,7 +136,7 @@ function newTag(h, pane) {
   const input = el("input", { class: "tag-input", placeholder: "+ tag", size: "6", "aria-label": `Tag ${h.symbol}` });
   input.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter" || !input.value.trim()) return;
-    try { await api(`/api/companies/${encodeURIComponent(h.symbol)}/tags`, json({ tag: input.value })); run(pane); }
+    try { await sendJson(`/api/companies/${encodeURIComponent(h.symbol)}/tags`, { tag: input.value }); run(pane); }
     catch (err) { showError(err.message); }
   });
   return input;
@@ -147,10 +148,6 @@ function pages(more, pane) {
     el("button", { type: "button", disabled: state.offset ? null : "", onclick: () => move(-PAGE) }, "Previous"),
     el("span", { class: "dim" }, `from ${state.offset + 1}`),
     el("button", { type: "button", disabled: more ? null : "", onclick: () => move(PAGE) }, "Next"));
-}
-
-function json(body) {
-  return { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 
 async function render(pane) {

@@ -23,12 +23,17 @@ async def test_after_analysis_each_signal_explains_itself_and_the_lean_is_curren
     body = (await analysed.get("/api/companies/AAPL")).json()
     trend = next(s for s in body["signals"] if s["analyst"] == "trend")
     assert trend["direction"] == "bullish" and trend["reason"] and not trend["stale"]
-    assert all(len(pair) == 2 for pair in trend["figures"])
+    for s in body["signals"]:
+        for f in s["figures"]:
+            assert f["meaning"] != "No explanation written for this figure yet.", (s["analyst"], f["name"])
+    assert {f["name"] for f in trend["figures"]} == {"close", "sma50", "sma200", "momentum_12_1"}
     assert body["lean"]["source"] == "baseline" and not body["lean"]["stale"] and body["next"] is None
 
 
 async def test_the_price_series_comes_in_date_order_with_base_currency_closes(analysed):
-    rows = (await analysed.get("/api/companies/AAPL/prices", params={"days": 30})).json()
+    body = (await analysed.get("/api/companies/AAPL/prices", params={"days": 30})).json()
+    assert (body["currency"], body["base_currency"], body["credits"]) == ("USD", "GBP", [])
+    rows = body["rows"]
     assert len(rows) == 30 and rows[-1]["date"] == DAYS[-1].isoformat()
     assert rows[-1]["close_base"] == pytest.approx(rows[-1]["close"] / 1.25)
 
@@ -54,3 +59,12 @@ async def test_one_listing_can_be_priced_and_analysed_without_being_watched(pric
     ran = (await priced.post("/api/jobs/analyse", params={"symbol": "aapl"})).json()
     assert ran["listings"][0]["symbol"] == "AAPL" and ran["listings"][0]["lean"]["label"]
     assert (await priced.get("/api/watchlists/main")).json()["items"] == []
+
+
+@pytest.mark.parametrize(("path", "job"), [("/api/jobs/prices", "prices_update"), ("/api/jobs/analyse", "analyse")])
+async def test_a_single_listing_job_waits_its_turn_like_the_watchlist_one(ctx, priced, path, job):
+    from oracle.services.jobs_service import single_flight
+
+    with single_flight(ctx, job, 60.0):
+        response = await priced.post(path, params={"symbol": "AAPL"})
+    assert response.status_code == 409 and "already running" in response.json()["error"]

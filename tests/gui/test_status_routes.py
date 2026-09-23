@@ -13,7 +13,7 @@ async def test_each_source_reports_its_health_and_a_tripped_breaker_says_why(ctx
     for _ in range(3):
         gate.record("yahoo", 429)
     sources = {s["source"]: s for s in (await client.get("/api/status")).json()["sources"]}
-    assert sources["ecb"]["state"] == "ok"
+    assert (sources["ecb"]["state"], sources["ecb"]["rate_per_second"]) == ("ok", 0.5)
     assert sources["yahoo"]["state"] == "paused"
     assert "429" in sources["yahoo"]["reason"] and sources["yahoo"]["paused_until"].endswith("Z")
 

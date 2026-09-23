@@ -43,6 +43,8 @@ class AccountView:
     pending: tuple[Order, ...]
     realised: float
     """Profit or loss locked in by sells, in the base currency, after all costs."""
+    rate_sources: tuple[str, ...] = ()
+    """Where the rates valuing the positions came from, for attribution."""
 
     @property
     def holdings(self) -> float:
@@ -231,8 +233,9 @@ def _record_equity(ctx: AppContext) -> None:
 def account_view(ctx: AppContext, account: str) -> AccountView:
     repo = PaperRepo(ctx.conn)
     held, realised = _replay(repo, account)
-    return AccountView(account, _cash(ctx, repo, account), tuple(_positions(ctx, held)), tuple(repo.pending(account)),
-                       realised)
+    positions, sources = _positions(ctx, held)
+    return AccountView(account, _cash(ctx, repo, account), tuple(positions), tuple(repo.pending(account)),
+                       realised, tuple(sorted(sources)))
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
@@ -325,11 +328,14 @@ def sells(ctx: AppContext, account: str) -> list[Sell]:
     return _replay_sells(PaperRepo(ctx.conn), account)[1]
 
 
-def _positions(ctx: AppContext, held: dict[str, list]) -> list[Position]:
-    out = []
+def _positions(ctx: AppContext, held: dict[str, list]) -> tuple[list[Position], set[str]]:
+    """Positions at their last close, and the rate sources those values used."""
+    out, sources = [], set()
     for symbol, (shares, cost) in sorted(held.items()):
         if shares:
             last = price_history_in_base(ctx, symbol, days=1)
             value = shares * last[-1].close_base if last and last[-1].close_base is not None else None
+            if value is not None and last[-1].rate_source:
+                sources.add(last[-1].rate_source)
             out.append(Position(symbol, int(shares), cost, value))
-    return out
+    return out, sources

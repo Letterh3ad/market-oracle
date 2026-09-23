@@ -622,3 +622,29 @@ Refusals from the service (amount not positive, not held, too many shares) appea
 the form that caused them. "Fill now" and "Strategy step" report each outcome.
 **Alternatives:** An account picker on the forms (rejected: manual trades on the strategy
 account would spoil the track record the validation gate relies on).
+
+## 2026-09-23 - Phase 6 review round 1
+
+**Context:** Two-axis review of phase 6 against `main`.
+**Decision:**
+- Single-listing price and analyse jobs take the same one-at-a-time locks as the
+  watchlist runs (CLI `oracle analyse SYMBOL` too); "update prices" for one listing also
+  runs fills for both accounts, as the watchlist run does (strategy orders still come only
+  from its rules).
+- Every figure carries a tooltip: analyst figures from `analysts/meanings.py` (keyed by
+  analyst and name), ledger figures from the page glossary; the strategy tooltip is built
+  from the configured rules, not hard-coded numbers.
+- FX credits appear wherever converted values do: ledgers (from the rates valuing
+  positions) and the price chart (from every rate in its history). The chart names its
+  currency and falls back to the listing's own when a day lacks a rate.
+- "Fill now" lists orders still waiting for their next opening price, with the reason.
+- The status panel shows each source's allowed rate. Its "why" is the breaker's reason
+  while paused; no last-error history is kept (the phase 10 job model can add one).
+- Settings writes are atomic (staged file, checked to load, then renamed) and keep the
+  file's line endings.
+- Website links are followed only for http and https addresses.
+- Late answers never repaint a tab the user has left; shared JS helpers for formatting,
+  JSON requests and busy buttons.
+**Alternatives:** Deferred as low: the ledgers route replays fills three times per
+account (fine at paper-account sizes); a watch line shows no lean when a listing has no
+prices (a lean cannot exist without them).

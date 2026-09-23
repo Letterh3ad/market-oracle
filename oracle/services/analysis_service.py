@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from oracle.analysts import factors
 from oracle.analysts.indicators import closes
+from oracle.analysts.meanings import figure_meaning
 from oracle.analysts.risk import Series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
 from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
@@ -28,7 +29,7 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Analysis", "AnalystSignal", "Direction", "Lean", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
-    "analyse_watched", "latest_lean", "latest_signals", "signal_history",
+    "analyse_listing", "analyse_watched", "figure_meaning", "latest_lean", "latest_signals", "signal_history",
 ]
 
 JOB = "analyse"
@@ -127,6 +128,12 @@ def _base_series(ctx: AppContext, symbol: str) -> Series:
     """Adjusted closes in the base currency; days without a rate are left out."""
     converted = [c for c in price_history_in_base(ctx, symbol) if c.rate]
     return [(c.bar.date, close / c.rate) for c, close in zip(converted, closes([c.bar for c in converted]))]
+
+
+async def analyse_listing(ctx: AppContext, symbol: str) -> Analysis:
+    """`analyse` for one listing, under the same one-at-a-time lock as the watchlist run."""
+    with single_flight(ctx, JOB, LEASE_S):
+        return await analyse(ctx, symbol)
 
 
 async def analyse_watched(ctx: AppContext) -> list[WatchedAnalysis]:

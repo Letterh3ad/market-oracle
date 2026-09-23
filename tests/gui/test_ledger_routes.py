@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 
 from oracle.services.paper_service import place_buy, strategy_step
@@ -43,3 +44,19 @@ async def test_the_decision_log_lists_the_strategy_steps_newest_first(ctx, price
     strategy_step(ctx)
     [d] = (await priced.get("/api/ledgers/decisions")).json()
     assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: run `oracle analyse`")
+
+
+async def test_ledgers_carry_the_credits_their_rates_require(ctx, loaded, monkeypatch):
+    from oracle.gui.routes import ledgers
+
+    real = ledgers.account_view
+    monkeypatch.setattr(ledgers, "account_view", lambda c, name: replace(real(c, name), rate_sources=("open_er_api",)))
+    body = (await loaded.get("/api/ledgers")).json()
+    assert body["credits"] == ["Rates By Exchange Rate API (https://www.exchangerate-api.com)"]
+
+
+async def test_the_strategy_rules_shown_are_the_configured_ones(ctx, loaded):
+    ctx.config = replace(ctx.config, strategy=replace(ctx.config.strategy, max_positions=7))
+    rules = (await loaded.get("/api/ledgers")).json()["rules"]
+    assert rules == {"min_probability": 0.6, "max_positions": 7, "max_position": 0.1, "cash_floor": 0.2,
+                     "stop_loss": 0.08}

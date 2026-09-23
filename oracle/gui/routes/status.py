@@ -30,8 +30,10 @@ async def get_status(ctx: AppContext = Depends(get_ctx)) -> dict:
             {
                 "source": s.source,
                 "state": s.state,
+                "rate_per_second": s.rate_per_second,
                 "reason": s.reason,
-                "paused_until": _iso(datetime.fromtimestamp(s.open_until, timezone.utc)) if s.open_until else None,
+                "paused_until": _iso(datetime.fromtimestamp(s.open_until, timezone.utc))
+                if s.open_until is not None else None,
                 "requests_last_hour": s.requests_last_hour,
             }
             for s in source_statuses(ctx)

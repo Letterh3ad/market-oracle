@@ -1,7 +1,9 @@
 import { api } from "../lib/api.js";
-import { el, showError, clearError } from "../lib/dom.js";
 import { lineChart } from "../lib/chart.js";
+import { el, showError, clearError, companyLink } from "../lib/dom.js";
+import { big, money } from "../lib/fmt.js";
 import { tip, tipText } from "../lib/tip.js";
+import { busyButton, sendJson } from "../lib/ui.js";
 
 const LABELS = {
   technicals: "Technicals (combined)", trend: "Trend", rsi: "RSI", macd: "MACD", volatility: "Volatility",
@@ -11,18 +13,6 @@ let current = null; // the symbol shown last, reopened when the tab is picked wi
 let chart = null;
 let seq = 0;
 
-function money(v, digits = 2) {
-  return v == null ? "n/a" : v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
-
-function big(v, currency) {
-  if (v == null) return "n/a";
-  for (const [size, suffix] of [[1e12, "T"], [1e9, "B"], [1e6, "M"]]) {
-    if (Math.abs(v) >= size) return `${currency} ${(v / size).toFixed(2)}${suffix}`;
-  }
-  return `${currency} ${money(v, 0)}`;
-}
-
 function figure(value, kind, currency) {
   if (value == null) return "n/a";
   if (kind === "pct") return `${(value * 100).toFixed(2)}%`;
@@ -31,9 +21,7 @@ function figure(value, kind, currency) {
 }
 
 function job(label, path, pane, symbol) {
-  const button = el("button", { type: "button", onclick: async () => {
-    button.disabled = true;
-    button.textContent = `${label}: running...`;
+  return busyButton(label, async () => {
     try {
       const r = await api(`${path}?symbol=${encodeURIComponent(symbol)}`, { method: "POST" });
       const failed = r.listings.find((o) => o.error);
@@ -41,11 +29,19 @@ function job(label, path, pane, symbol) {
       else clearError();
     } catch (err) {
       showError(err.message);
-    } finally {
-      if (pane.querySelector("#c-body")) load(pane, symbol);
     }
-  } }, label);
-  return button;
+    // Only if this company is still the one on screen.
+    if (current === symbol && pane.querySelector("#c-body")) load(pane, symbol);
+  });
+}
+
+// Links only to web addresses: a website from the dataset could otherwise be a script.
+function safeUrl(url) {
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 function header(v, pane, symbol) {
@@ -57,7 +53,7 @@ function header(v, pane, symbol) {
     el("div", { class: "dim" }, place),
     el("div", { class: "dim small" }, `${p.listings} listing${p.listings === 1 ? "" : "s"}${main}`,
       p.tags.length ? `; tags: ${p.tags.join(", ")}` : "",
-      p.website ? el("span", null, "; ", el("a", { href: p.website, target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
+      safeUrl(p.website) ? el("span", null, "; ", el("a", { href: safeUrl(p.website), target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
     el("div", { class: "row", style: "margin-top: 8px" },
       job("Update prices", "/api/jobs/prices", pane, symbol),
       job("Analyse", "/api/jobs/analyse", pane, symbol),
@@ -93,8 +89,8 @@ function signals(v) {
       el("td", { class: "num" }, s.score.toFixed(2)),
       el("td", { class: "num" }, `${Math.round(s.confidence * 100)}%`),
       el("td", null, s.reason,
-        s.figures.length ? el("div", { class: "dim small mono" },
-          s.figures.map(([n, x]) => `${n} ${Number.isInteger(x) ? x : x.toFixed(3)}`).join("  ")) : null)))));
+        s.figures.length ? el("div", { class: "dim small mono figures" }, ...s.figures.map((f) =>
+          el("span", null, tipText(f.name, f.meaning), ` ${Number.isInteger(f.value) ? f.value : f.value.toFixed(3)}`))) : null)))));
 }
 
 function fundamentals(v) {
@@ -122,9 +118,7 @@ async function peers(pane, symbol, message = "") {
   const saved = el("span", { class: "dim small" }, message);
   const save = el("button", { type: "button", onclick: async () => {
     try {
-      const r = await api("/api/settings/peers", {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count: Number(count.value) }),
-      });
+      const r = await sendJson("/api/settings/peers", { count: Number(count.value) }, "PUT");
       peers(pane, symbol, `${r.note} (written to ${r.path})`);
     } catch (err) { showError(err.message); }
   } }, "Save");
@@ -133,24 +127,28 @@ async function peers(pane, symbol, message = "") {
     p.basis ? el("p", { class: "dim small" }, `${p.basis}${p.fell_back ? " (industry group too small, so the whole sector)" : ""}`)
       : el("p", { class: "dim small" }, p.note),
     el("div", { class: "peers" }, ...p.peers.map((r) =>
-      el("span", { class: "chip" }, el("a", { href: `#company/${encodeURIComponent(r.symbol)}` }, r.symbol), ` ${r.name}`))));
+      el("span", { class: "chip" }, companyLink(r.symbol), ` ${r.name}`))));
 }
 
 async function drawChart(pane, symbol, base) {
   const box = pane.querySelector("#c-chart");
   if (chart) { chart.remove(); chart = null; }
-  let rows;
+  let body;
   try {
-    rows = await api(`/api/companies/${encodeURIComponent(symbol)}/prices?days=365`);
+    body = await api(`/api/companies/${encodeURIComponent(symbol)}/prices?days=365`);
   } catch (err) {
     box.replaceChildren(el("p", { class: "dim" }, err.message));
     return;
   }
   if (!pane.contains(box)) return;
-  const inBase = rows.filter((r) => r.close_base != null);
-  const useBase = inBase.length === rows.length && rows.length > 0;
+  const rows = body.rows;
+  // Plotted in the base currency only when every day has a rate; otherwise in the listing's own.
+  const useBase = rows.length > 0 && rows.every((r) => r.close_base != null);
   const points = rows.map((r) => ({ time: r.date, value: useBase ? r.close_base : r.close }));
-  box.replaceChildren(el("div", { class: "dim small" }, `Last year's closes${useBase ? ` in ${base}` : ""}`));
+  const shown = useBase ? base : body.currency;
+  box.replaceChildren(el("div", { class: "dim small" }, `Last year's closes in ${shown}`,
+    useBase || !body.currency ? "" : ` (some days have no ${base} rate yet)`),
+    ...(useBase ? body.credits : []).map((c) => el("div", { class: "dim small" }, c)));
   if (points.length < 2) {
     box.append(el("p", { class: "dim" }, "Not enough prices to chart yet."));
     return;

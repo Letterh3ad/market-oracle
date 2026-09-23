@@ -9,8 +9,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends
 
 from oracle.gui.deps import get_ctx
-from oracle.services.analysis_service import WatchedAnalysis, analyse_watched
-from oracle.services.analysis_service import analyse as analyse_one
+from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.context import AppContext
 from oracle.services.routine_service import update_listing_prices, update_prices
 
@@ -33,7 +32,7 @@ async def prices(symbol: str | None = None, ctx: AppContext = Depends(get_ctx)) 
 async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx)) -> dict:
     """Every watched listing, or just `symbol` (watched or not)."""
     if symbol:
-        result = await analyse_one(ctx, symbol)
+        result = await analyse_listing(ctx, symbol)
         runs = [WatchedAnalysis(result.symbol, result, None)]
     else:
         runs = await analyse_watched(ctx)

@@ -3,11 +3,12 @@ it) and applied to the running context."""
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import replace
 from pathlib import Path
 
-from oracle.config import DEFAULT_CONFIG_NAME, PEERS_RANGE, AnalystsConfig, ConfigError, load_config, with_setting
+from oracle.config import DEFAULT_CONFIG_NAME, PEERS_RANGE, ConfigError, check_peers, load_config, with_setting
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 
@@ -17,23 +18,33 @@ __all__ = ["PEERS_RANGE", "set_peer_count"]
 def set_peer_count(ctx: AppContext, count: int) -> Path:
     """How many peers the value, quality and growth analysts compare against. Returns the
     file written; without one, it is made where `oracle` looks for it (the working folder)."""
-    low, high = PEERS_RANGE
-    if isinstance(count, bool) or not low <= count <= high:
-        raise InvalidQuery(f"peers must be a whole number from {low} to {high}, not {count}")
+    try:
+        check_peers(count)
+    except ConfigError as exc:
+        raise InvalidQuery(str(exc)) from exc
     path = ctx.config_source or Path.cwd() / DEFAULT_CONFIG_NAME
-    text = path.read_text(encoding="utf-8") if path.is_file() else ""
-    updated = with_setting(text, "analysts", "peers", str(count))
+    _write_setting(path, "analysts", "peers", str(count))
+    ctx.config = replace(ctx.config, analysts=replace(ctx.config.analysts, peers=count))
+    ctx.config_source = path
+    return path
+
+
+def _write_setting(path: Path, section: str, key: str, literal: str) -> None:
+    """Change one setting in place, keeping the file's line endings. The new file replaces
+    the old only once complete and loadable, so a crash or a bad edit never leaves the user
+    with a truncated or unreadable oracle.toml."""
+    raw = path.read_bytes() if path.is_file() else b""
+    eol = "\r\n" if b"\r\n" in raw else "\n"
+    updated = with_setting(raw.decode("utf-8").replace("\r\n", "\n"), section, key, literal)
     try:
         tomllib.loads(updated)
     except tomllib.TOMLDecodeError as exc:
-        # Never leave a file oracle cannot read; the user's file is left untouched.
-        raise InvalidQuery(f"could not update {path} safely ({exc}); set [analysts] peers by hand") from exc
-    path.write_text(updated, encoding="utf-8")
+        raise InvalidQuery(f"could not update {path} safely ({exc}); set [{section}] {key} by hand") from exc
+    staged = path.with_name(path.name + ".new")
+    staged.write_bytes(updated.replace("\n", eol).encode("utf-8"))
     try:
-        load_config(path)
+        load_config(staged, cwd=path.parent)
     except ConfigError as exc:
-        path.write_text(text, encoding="utf-8")
-        raise InvalidQuery(f"{path} would not load after the change ({exc}); it was put back") from exc
-    ctx.config = replace(ctx.config, analysts=AnalystsConfig(peers=count))
-    ctx.config_source = path
-    return path
+        staged.unlink()
+        raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
+    os.replace(staged, path)

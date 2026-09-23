@@ -374,3 +374,11 @@ async def test_each_sell_records_its_own_realised_result_by_hand(ctx, yahoo, clo
     assert second.proceeds == pytest.approx(538.46 * 0.998 / 1.25)
     assert second.cost == pytest.approx(half_cost)
     assert first.realised + second.realised == pytest.approx(account_view(ctx, "manual").realised)
+
+
+async def test_an_account_names_the_rate_sources_behind_its_position_values(ctx, yahoo, clock):
+    assert account_view(ctx, "manual").rate_sources == ()
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    assert account_view(ctx, "manual").rate_sources == ("yahoo",)

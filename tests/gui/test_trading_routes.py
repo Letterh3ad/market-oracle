@@ -29,7 +29,9 @@ async def test_selling_what_is_not_held_is_refused(loaded):
 async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(ctx, priced, yahoo, clock):
     await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})
     await priced.post("/api/ledgers/manual/buy", json={"symbol": "AAPL", "amount": 1000})
-    assert (await priced.post("/api/ledgers/fill")).json() == []  # no later bar yet: still waiting
+    [waiting] = (await priced.post("/api/ledgers/fill")).json()  # no later bar yet
+    assert (waiting["symbol"], waiting["status"]) == ("AAPL", "pending")
+    assert waiting["note"] == "waiting for the next opening price after it was placed"
     tomorrow = (clock.utcnow() + timedelta(days=1)).date().isoformat()
     yahoo.series["AAPL"].bars.append(bar(tomorrow, 150.0))
     yahoo.series["GBPUSD=X"].bars.append(bar(tomorrow, 1.25))

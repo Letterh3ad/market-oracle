@@ -7,12 +7,14 @@ from pydantic import BaseModel, ConfigDict
 
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
+from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, account_score, account_view, equity_history, fill_pending, place_buy, place_sell, sells, strategy_log,
+    ACCOUNTS, AccountView, account_score, account_view, equity_history, fill_pending, place_buy, place_sell, sells, strategy_log,
     strategy_step,
 )
 
 router = APIRouter(prefix="/api/ledgers")
+WAITING = "waiting for the next opening price after it was placed"
 
 
 # The page trades the manual account only: the strategy account moves through its rules
@@ -42,9 +44,13 @@ async def sell(body: Sell, ctx: AppContext = Depends(get_ctx)) -> dict:
 
 @router.post("/fill")
 async def fill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    """Fill every order whose next bar is stored; ones still waiting for it are left out."""
-    return [{"symbol": o.order.symbol, "account": o.order.account, "side": o.order.side, "status": o.status,
-             "note": o.note} for o in fill_pending(ctx)]
+    """Fill every order whose next bar is stored, and list the ones still waiting for it."""
+    outcomes = fill_pending(ctx)
+    reported = {o.order.id for o in outcomes}
+    rows = [(o.order, o.status, o.note) for o in outcomes]
+    rows += [(o, o.status, WAITING) for a in ACCOUNTS for o in account_view(ctx, a).pending if o.id not in reported]
+    return [{"symbol": o.symbol, "account": o.account, "side": o.side, "status": status, "note": note}
+            for o, status, note in rows]
 
 
 @router.post("/step")
@@ -56,7 +62,20 @@ async def step(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
 @router.get("")
 async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
     """Both paper accounts, strategy first, with the same figures side by side."""
-    return {"base_currency": ctx.config.base_currency, "accounts": [_account(ctx, name) for name in ACCOUNTS]}
+    views = {name: account_view(ctx, name) for name in ACCOUNTS}
+    return {
+        "base_currency": ctx.config.base_currency,
+        "accounts": [_account(ctx, name, view) for name, view in views.items()],
+        "credits": credits(s for v in views.values() for s in v.rate_sources),
+        # The strategy's rules as configured, so the page explains the ones actually in force.
+        "rules": {
+            "min_probability": ctx.config.strategy.min_probability,
+            "max_positions": ctx.config.strategy.max_positions,
+            "max_position": ctx.config.risk.max_position,
+            "cash_floor": ctx.config.risk.cash_floor,
+            "stop_loss": ctx.config.strategy.stop_loss,
+        },
+    }
 
 
 @router.get("/decisions")
@@ -65,8 +84,8 @@ async def get_decisions(limit: int = Query(default=50, ge=1, le=500), ctx: AppCo
     return [asdict(d) for d in strategy_log(ctx, limit)]
 
 
-def _account(ctx: AppContext, name: str) -> dict:
-    score, view = account_score(ctx, name), account_view(ctx, name)
+def _account(ctx: AppContext, name: str, view: AccountView) -> dict:
+    score = account_score(ctx, name)
     return {
         "name": name, "equity": score.equity, "start": score.start, "return": score.return_,
         "cash": view.cash, "realised": score.realised, "unrealised": score.unrealised,

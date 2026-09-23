@@ -1,12 +1,16 @@
 import { api } from "../lib/api.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
+import { money, tone } from "../lib/fmt.js";
 import { tip } from "../lib/tip.js";
+import { busyButton } from "../lib/ui.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
 const SHORT = { technicals: "tech", volatility: "vol", quality: "qual", growth: "grow" };
 let list = "main";
+let seq = 0;
 
 async function load(pane) {
+  const mine = ++seq;
   let body, lists;
   try {
     [body, lists] = await Promise.all([api(`/api/watchlists/${encodeURIComponent(list)}`), api("/api/watchlists")]);
@@ -14,7 +18,8 @@ async function load(pane) {
     showError(err.message);
     return;
   }
-  if (!pane.querySelector("#w-table")) return; // another tab owns the pane now
+  // A newer load (another list picked) answered already, or another tab owns the pane.
+  if (mine !== seq || !pane.querySelector("#w-table")) return;
   const picker = pane.querySelector("#w-list");
   const names = lists.map((w) => w.name);
   if (!names.includes(list)) names.unshift(list);
@@ -38,7 +43,6 @@ function table(body, pane) {
 }
 
 function row(i, pane) {
-  const money = (v) => (v == null ? "" : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const day = i.day_change == null ? "" : `${i.day_change >= 0 ? "+" : ""}${(i.day_change * 100).toFixed(2)}%`;
   const remove = el("button", { type: "button", "aria-label": `Stop watching ${i.symbol}`, onclick: async () => {
     try {
@@ -50,8 +54,8 @@ function row(i, pane) {
     el("td", null, companyLink(i.symbol), el("div", { class: "dim small" }, i.exchange ?? "")),
     el("td", { class: "name" }, i.name ?? "", i.missing ? " (gone from the universe)" : i.delisted ? " (delisted)" : null),
     el("td", { class: "num" }, i.last_close == null ? "" : `${money(i.last_close)} ${i.price_currency}`),
-    el("td", { class: "num" }, money(i.close_base)),
-    el("td", { class: `num ${i.day_change > 0 ? "up" : i.day_change < 0 ? "down" : ""}` }, day),
+    el("td", { class: "num" }, i.close_base == null ? "" : money(i.close_base)),
+    el("td", { class: `num ${tone(i.day_change)}` }, day),
     el("td", null, i.last_date ?? "", i.stale ? el("span", { class: "badge warn" }, "stale ", tip("", "stale_price")) : null),
     el("td", { class: "mono sigs" }, ...i.signals.map((s) =>
       el("span", { class: `sig ${s.direction}${s.stale ? " faded" : ""}`, title: `${s.analyst}: ${s.direction}${s.stale ? ", out of date" : ""}` },
@@ -70,23 +74,16 @@ function lean(l) {
 }
 
 function jobButton(label, path, summarise, pane) {
-  const button = el("button", { type: "button", onclick: async () => {
-    button.disabled = true;
-    button.textContent = `${label}: running...`;
-    const out = pane.querySelector("#w-result");
+  return busyButton(label, async () => {
     try {
       const result = await api(path, { method: "POST" });
       clearError();
-      out.replaceChildren(...summarise(result).map((line) => el("div", null, line)));
+      pane.querySelector("#w-result")?.replaceChildren(...summarise(result).map((line) => el("div", null, line)));
     } catch (err) {
       showError(err.message);
-    } finally {
-      button.disabled = false;
-      button.textContent = label;
-      if (pane.querySelector("#w-table")) load(pane);
     }
-  } }, label);
-  return button;
+    if (pane.querySelector("#w-table")) load(pane);
+  });
 }
 
 function pricesSummary(r) {

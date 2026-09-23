@@ -7,6 +7,7 @@ const GLOSSARY = {
   source_state:
     "ok: ready. waiting: holding back to stay under the speed limit. " +
     "paused: the source refused or failed several times in a row, so requests stop for a while.",
+  source_rate: "The most requests per second Market Oracle lets itself send there, set in oracle.toml.",
   requests_last_hour: "How many requests went to this source in the last hour, from every Market Oracle process.",
   universe: "Every listed company Market Oracle knows about, from FinanceDatabase. Search and screening run over it.",
   market_cap:
@@ -28,11 +29,13 @@ const GLOSSARY = {
   lean_stale: "Older than the latest price, so the strategy will not trade on it until you press Analyse.",
   score: "From -1 (strongly down) to +1 (strongly up). Between -0.2 and +0.2 counts as no clear direction.",
   confidence: "How much the analyst's own inputs agree with each other, from 0% to 100%.",
-  strategy_account:
-    "Trades by itself on the leans, under fixed rules (buy at 60% or more, at most 10 positions of up to 10% " +
-    "each, 20% always kept in cash, sell on a sell lean or 8% below cost). Its record is the honest test.",
   manual_account: "Your own paper trades, scored the same way, so you can compare your picks with the strategy.",
   equity: "Cash plus every position at its last closing price, in your base currency.",
+  return: "Equity now against the starting amount: +5% means 10,000 has become 10,500.",
+  cash: "Money not in any position. Waiting buys have not spent theirs yet.",
+  position_cost: "What the shares cost, fees and other costs included (the average if bought more than once).",
+  position_value: "The shares at their last closing price, converted at that day's exchange rate.",
+  proceeds: "Cash received for the shares sold, after fees, the exchange spread and slippage.",
   realised: "Profit or loss locked in by selling, after every cost.",
   unrealised: "Profit or loss on shares still held, if they were sold at the last close (before selling costs).",
   costs:

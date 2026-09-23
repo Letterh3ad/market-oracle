@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from oracle.gui.deps import get_ctx
+from oracle.services.analysis_service import figure_meaning
 from oracle.services.company_service import FIGURES, CompanyView, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -31,9 +32,15 @@ async def get_company(symbol: str, refresh: bool = False, ctx: AppContext = Depe
 
 @router.get("/{symbol}/prices")
 async def get_prices(symbol: str, days: int = Query(default=365, ge=1, le=5000),
-                     ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    return [{"date": c.bar.date, "close": c.bar.close, "close_base": c.close_base}
-            for c in price_history_in_base(ctx, symbol, days)]
+                     ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Closes in the listing's currency and the base one; `credits` covers every rate used."""
+    history = price_history_in_base(ctx, symbol, days)
+    return {
+        "currency": history[-1].bar.currency if history else None,
+        "base_currency": ctx.config.base_currency,
+        "rows": [{"date": c.bar.date, "close": c.bar.close, "close_base": c.close_base} for c in history],
+        "credits": credits(c.rate_source for c in history),
+    }
 
 
 @router.get("/{symbol}/peers")
@@ -77,7 +84,9 @@ def _view(v: CompanyView, base: str) -> dict:
         "fundamentals_note": v.fundamentals_note,
         "signals": [{
             "analyst": s.signal.analyst, "direction": s.signal.direction.value, "score": s.signal.score,
-            "confidence": s.signal.confidence, "reason": s.signal.reason, "figures": s.signal.figures,
+            "confidence": s.signal.confidence, "reason": s.signal.reason,
+            "figures": [{"name": n, "value": x, "meaning": figure_meaning(s.signal.analyst, n)}
+                        for n, x in s.signal.figures],
             "as_of": s.signal.as_of, "stale": s.stale,
         } for s in v.signals],
         "lean": None if lean is None else {

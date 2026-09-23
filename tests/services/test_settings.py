@@ -43,3 +43,15 @@ def with_db(config, tmp_path):
     from dataclasses import replace
 
     return replace(config, db_path=tmp_path / "o.db")
+
+
+@pytest.mark.parametrize("eol", [b"\r\n", b"\n"])
+def test_line_endings_survive_and_no_temporary_file_is_left(tmp_path, eol):
+    path = tmp_path / "oracle.toml"
+    lines = [f'db_path = "{(tmp_path / "o.db").as_posix()}"'.encode(), b"[analysts]", b"peers = 20", b""]
+    path.write_bytes(eol.join(lines))
+    config, source = load_settings(path)
+    with open_context(config, source) as ctx:
+        set_peer_count(ctx, 40)
+    assert path.read_bytes() == eol.join(lines[:2] + [b"peers = 40", b""])
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith("oracle")] == ["oracle.toml"]
