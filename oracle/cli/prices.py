@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 
-from oracle.cli.paper import print_fills
+from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import fill_pending

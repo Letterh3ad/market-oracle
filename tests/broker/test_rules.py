@@ -67,3 +67,9 @@ def test_a_held_or_pending_listing_is_not_bought_again():
 def test_no_risk_size_means_no_buy():
     d = run([lean("A")], sizes={})
     assert d["A"].action == "skip" and "risk" in d["A"].reason
+
+
+def test_a_pending_buy_takes_a_position_slot():
+    holdings = [Holding(f"H{i}", 1, 100.0, 100.0) for i in range(9)]
+    d = run([lean("A")], holdings, cash=9000.0, pending=["P"])
+    assert d["A"].action == "skip" and "10 positions" in d["A"].reason

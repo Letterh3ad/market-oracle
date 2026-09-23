@@ -5,18 +5,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from oracle.analysts.signals import AnalystSignal
+from oracle.analysts.signals import NEUTRAL_BAND, AnalystSignal
 from oracle.broker.rules import Lean
 
 SOURCE = "baseline"
 INPUTS = ("technicals", "value", "quality", "growth")
-# Matches AnalystSignal.direction: +-0.2 is where neutral ends, +-0.6 where strong begins.
-STRONG, LEANING = 0.6, 0.2
+LEANING = NEUTRAL_BAND
+STRONG = 0.6
 
 
 def baseline_lean(symbol: str, signals: Sequence[AnalystSignal]) -> Lean | None:
     """None without a technicals signal: factors alone say nothing about timing."""
-    used = [s for s in signals if s.analyst in INPUTS]
+    used = inputs(signals)
     technicals = next((s for s in used if s.analyst == "technicals"), None)
     if technicals is None:
         return None
@@ -26,6 +26,11 @@ def baseline_lean(symbol: str, signals: Sequence[AnalystSignal]) -> Lean | None:
     agreeing = sum(s.confidence for s in used if s.score * score > 0)
     probability = 0.5 + 0.5 * agreeing / len(INPUTS)
     return Lean(symbol, technicals.as_of, _label(score), round(probability, 4), SOURCE)
+
+
+def inputs(signals: Sequence[AnalystSignal]) -> list[AnalystSignal]:
+    """The signals a baseline lean is built from."""
+    return [s for s in signals if s.analyst in INPUTS]
 
 
 def _label(score: float) -> str:

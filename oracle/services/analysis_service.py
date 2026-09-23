@@ -9,7 +9,7 @@ from oracle.analysts.risk import Series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
 from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
 from oracle.analysts.trend import trend
-from oracle.broker.baseline import INPUTS, baseline_lean
+from oracle.broker.baseline import baseline_lean, inputs
 from oracle.broker.rules import Lean
 from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
@@ -83,7 +83,7 @@ def _baseline(ctx: AppContext, listing: str, computed_at: str) -> Lean | None:
     current = [s.signal for s in latest_signals(ctx, listing) if not s.stale]
     lean = baseline_lean(listing, current)
     if lean is not None:
-        used = ", ".join(s.analyst for s in current if s.analyst in INPUTS)
+        used = ", ".join(s.analyst for s in inputs(current))
         LeanRepo(ctx.conn).save([lean], f"from {used}", computed_at)
     return lean
 

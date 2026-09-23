@@ -452,6 +452,7 @@ and source so AI leans can sit beside the baseline.
 Counting pending sell proceeds (rejected: optimistic; a sell can still be rejected).
 
 ## 2026-09-23 - Baseline lean from technicals and factors, never traded when out of date
+
 **Context:** Ticket 05: until AI leans exist, the strategy account needs a lean.
 **Decision:** `oracle analyse` builds a `baseline` lean from the current stored signals:
 technicals plus value, quality and growth, averaged by confidence. Score bands match
@@ -464,3 +465,24 @@ dated by the last bar; `paper step` skips a watched listing whose lean is older 
 last bar, or that has none, and logs why. Stops still apply to held listings either way.
 **Alternatives:** Only this run's signals (rejected: a transient fetch failure would drop
 the factors). Trading on the last lean regardless of age (rejected: never trade on stale data).
+
+## 2026-09-23 - Phase 5 review round 1
+
+**Context:** Two-axis review of phase 5 against `main`.
+**Decision:**
+- Pending strategy buys reserve their cash and take a position slot, so repeated
+  `paper step` runs before a fill cannot break the cash floor or the position cap.
+- A buy must spend more than nothing. A bar with no open is skipped; the order fills at
+  the next bar that has one, rather than waiting forever.
+- A listing gone from the universe still fills, at the dearest fee band.
+- A stop on a listing whose lean is out of date logs only the sell.
+- `paper buy SYMBOL AMOUNT` takes a positional amount in the configured base currency,
+  not the ticket's `--gbp` (the base currency is not always GBP).
+- Equity is recorded once per day that fills run (`prices update` or `paper fill`), not
+  on a daily timer; the largest fall is measured over those days. `oracle tick`
+  (phase 10) will run fills daily, closing the gaps.
+- A sell whose fee exceeds its proceeds leaves cash lower, as a real broker would.
+**Alternatives:** Deferred as follow-ups: a per-sell realised P&L figure (only the running
+total is shown), side-by-side account columns (phase 6 GUI), enums for side, status and
+action strings, merging `Holding` and `Position`, store-level tests for paper and lean
+repos. A position that has never had a rate counts as nothing in equity until one arrives.

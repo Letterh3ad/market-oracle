@@ -58,7 +58,8 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: flo
            sizes: Mapping[str, float], rules: Rules, pending: set[str]) -> list[Decision]:
     """Sells first (stops, then sell leans), then buys by probability. `sizes` is the risk
     analyst's suggested share of equity per listing; sell proceeds are not counted until
-    they fill."""
+    they fill. `cash` excludes what pending buys will spend, and a pending buy takes a
+    position slot."""
     out = []
     for symbol, h in sorted(holdings.items()):
         if symbol in pending:
@@ -69,7 +70,7 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: flo
                                                       f"past the {rules.stop_loss:.0%} limit"))
         elif lean is not None and lean.label in SELL_LABELS:
             out.append(Decision(symbol, "sell", None, f"{lean.source} lean is {lean.label}"))
-    positions = len(holdings)
+    positions = len(holdings.keys() | pending)
     spendable = cash - rules.cash_floor * equity
     wanted = [x for x in leans.values() if x.label in BUY_LABELS and x.symbol not in holdings
               and x.symbol not in pending]

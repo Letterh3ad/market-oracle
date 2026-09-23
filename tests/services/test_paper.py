@@ -223,3 +223,57 @@ async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock)
     [d] = strategy_step(ctx)
     assert (d.action, d.reason) == ("skip", "baseline lean is out of date: run `oracle analyse`")
     assert account_view(ctx, "strategy").pending == ()
+
+
+async def test_cash_in_pending_buys_is_not_spent_twice(ctx):
+    from dataclasses import replace
+
+    from oracle.services.watch_service import watch
+    ctx.config = replace(ctx.config, risk=replace(ctx.config.risk, cash_floor=0.85))
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy", size_share=0.5)
+    [d] = strategy_step(ctx)
+    assert d.cash == pytest.approx(1000.0)
+    watch(ctx, "VOD.L")
+    seed(ctx, "VOD.L", "buy", size_share=0.5)
+    [d] = [d for d in strategy_step(ctx) if d.symbol == "VOD.L"]
+    assert d.cash == pytest.approx(500.0)
+
+
+async def test_a_buy_of_nothing_or_less_is_refused(ctx):
+    for amount in (0.0, -500.0):
+        with pytest.raises(InvalidQuery, match="more than nothing"):
+            place_buy(ctx, "AAPL", amount)
+
+
+async def test_a_bar_without_an_open_waits_for_the_next_one(ctx, yahoo, clock):
+    from oracle.store.paper import PaperRepo
+
+    place_buy(ctx, "AAPL", 1000.0)
+    for day, row in (("2026-09-22", (date(2026, 9, 22), None, 100.0, 100.0, 100.0, 100.0, 1000)),
+                     ("2026-09-23", ohlc("2026-09-23", 101.0, 101.0))):
+        yahoo.series["AAPL"].bars.append(row)
+        yahoo.series["GBPUSD=X"].bars.append(bar(day, 1.25))
+        clock.advance(86400)
+        await update_listing(ctx, "AAPL")
+        await update_fx(ctx)
+        outcomes = fill_pending(ctx)
+    [outcome] = outcomes
+    assert outcome.status == "filled"
+    assert PaperRepo(ctx.conn).fills("manual")[0].date == date(2026, 9, 23)
+
+
+async def test_a_stop_on_an_out_of_date_lean_logs_only_the_sell(ctx, yahoo, clock):
+    from oracle.services.watch_service import watch
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    strategy_step(ctx)
+    await next_day(ctx, yahoo, clock, aapl_open=100.0)
+    fill_pending(ctx)
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 50.0, 50.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    [d] = strategy_step(ctx)
+    assert d.action == "sell" and d.reason.startswith("stop")

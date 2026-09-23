@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 
+from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, FillOutcome, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
+    ACCOUNTS, Order, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
     strategy_log, strategy_step,
 )
 
@@ -53,13 +54,6 @@ def _size(order: Order, base: str) -> str:
 def fill_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     print_fills(fill_pending(ctx))
     return 0
-
-
-def print_fills(outcomes: list[FillOutcome]) -> None:
-    for o in outcomes:
-        what = {"filled": "bought" if o.order.side == "buy" else "sold", "rejected": "REJECTED",
-                "pending": "waiting"}[o.status]
-        print(f"{o.order.symbol}: {what}" + (f" ({o.note})" if o.note else ""))
 
 
 def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:

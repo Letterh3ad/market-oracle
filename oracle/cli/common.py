@@ -5,6 +5,7 @@ import textwrap
 from collections.abc import Callable
 
 from oracle.services.analysis_service import AnalystSignal
+from oracle.services.paper_service import FillOutcome
 
 
 def add_status_command(
@@ -25,3 +26,10 @@ def print_signal(s: AnalystSignal, indent: int, note: str = "") -> None:
     print(f"{' ' * indent}{s.analyst:<12}{s.direction.value:<9}score {s.score:+.2f}  confidence {s.confidence:.0%}"
           f"  {s.as_of.isoformat()}{note}")
     print(textwrap.fill(s.reason, 88, initial_indent=" " * (indent + 2), subsequent_indent=" " * (indent + 2)))
+
+
+def print_fills(outcomes: list[FillOutcome]) -> None:
+    for o in outcomes:
+        what = {"filled": "bought" if o.order.side == "buy" else "sold", "rejected": "REJECTED",
+                "pending": "waiting"}[o.status]
+        print(f"{o.order.symbol}: {what}" + (f" ({o.note})" if o.note else ""))
