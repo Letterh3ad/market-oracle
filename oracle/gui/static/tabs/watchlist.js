@@ -74,9 +74,9 @@ function lean(l) {
 }
 
 function jobButton(label, path, summarise, pane) {
-  return busyButton(label, async () => {
+  return busyButton(label, async (onState) => {
     try {
-      const result = await runJob(path);
+      const result = await runJob(path, onState);
       clearError();
       pane.querySelector("#w-result")?.replaceChildren(...summarise(result).map((line) => el("div", null, line)));
     } catch (err) {

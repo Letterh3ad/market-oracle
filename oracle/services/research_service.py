@@ -29,6 +29,7 @@ from oracle.services.research_tools import (
 )
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso, transaction
+from oracle.store.job_history import INTERRUPTED
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 
@@ -162,7 +163,7 @@ def sweep_interrupted(ctx: AppContext) -> None:
     doing research (its lock is live), so no page shows a dead run as running forever."""
     if any(s.job == JOB and s.stale_reason is None for s in job_statuses(ctx)):
         return
-    ResearchRepo(ctx.conn).fail_running("interrupted: app closed", _now(ctx))
+    ResearchRepo(ctx.conn).fail_running(INTERRUPTED, _now(ctx))
 
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:

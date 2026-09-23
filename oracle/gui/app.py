@@ -11,9 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import activity, companies, jobs, ledgers, settings, status, universe, watchlists
-from oracle.services.activity_service import JobRunner
+from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.context import AppContext
-from oracle.services.research_service import sweep_interrupted
 from oracle.services.schedule_service import Scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -37,7 +36,7 @@ def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        sweep_interrupted(ctx)
+        sweep_leftovers(ctx)
         task = asyncio.create_task(scheduler.run()) if scheduler else None
         app.state.scheduler_task = task
         try:

@@ -6,22 +6,25 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from oracle.jobs import pid_alive
 from oracle.services.context import AppContext
-from oracle.services.analysis_service import analyse_listing, analyse_watched
+from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
-from oracle.services.research_service import research, research_progress
+from oracle.services.research_service import research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import resolve_symbol
-from oracle.store.job_history import JobHistoryRepo, JobRow
+from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
-__all__ = ["Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick"]
+__all__ = ["Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
+           "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -40,12 +43,12 @@ class Job:
     """What it works on (a symbol), so the same thing is never queued twice."""
     link: str | None = None
     """Where its result shows in the GUI."""
-    watch: Callable[[], str | None] | None = field(default=None, repr=False)
+    progress_fn: Callable[[], str | None] | None = field(default=None, repr=False)
     submitted_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
     state: str = "queued"
-    """queued, running, done, failed or cancelled."""
+    """queued, running, done, failed, cancelled, or interrupted (the app closed mid-run)."""
     error: str | None = None
     result: Any = field(default=None, repr=False)
     finished: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
@@ -53,15 +56,13 @@ class Job:
 
     def progress(self) -> str | None:
         """What a running job is doing now, when its kind can tell."""
-        return self.watch() if self.state == "running" and self.watch else None
+        return self.progress_fn() if self.state == "running" and self.progress_fn else None
 
 
 class JobRunner:
     def __init__(self, ctx: AppContext) -> None:
-        """Closes out what a previous server left queued or running: queued jobs never resume."""
         self._ctx = ctx
         self._history = JobHistoryRepo(ctx.conn)
-        self._history.sweep(ctx.clock.utcnow())
         self._queues: dict[str, deque[Job]] = {}
         self._running: dict[str, Job] = {}
         self._workers: dict[str, asyncio.Task] = {}
@@ -76,8 +77,8 @@ class JobRunner:
             if same:
                 return same
         now = self._ctx.clock.utcnow()
-        job_id = self._history.add(kind, label, subject, link, "queued", now)
-        job = Job(job_id, kind, label, work, subject, link, progress, submitted_at=now)
+        job_id = self._history.add(kind, label, subject, link, "queued", now, os.getpid())
+        job = Job(job_id, kind, label, work, subject=subject, link=link, progress_fn=progress, submitted_at=now)
         self._queues.setdefault(kind, deque()).append(job)
         worker = self._workers.get(kind)
         if worker is None or worker.done():
@@ -87,13 +88,13 @@ class JobRunner:
     def jobs(self) -> list[Job]:
         """Running, then queued in order, then the last finished (earlier servers' too),
         newest first."""
-        queued = [j for q in self._queues.values() for j in q]
+        queued = self._queued()
         here = {j.id: j for j in self._finished}
         stored = [here.get(r.id) or _from_row(r) for r in self._history.finished(RECENT)]
         return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *stored]
 
     def get(self, job_id: int) -> Job | None:
-        live = [*self._running.values(), *(j for q in self._queues.values() for j in q), *self._finished]
+        live = [*self._running.values(), *self._queued(), *self._finished]
         found = next((j for j in live if j.id == job_id), None)
         if found is None and (row := self._history.get(job_id)) is not None:
             found = _from_row(row)
@@ -102,7 +103,7 @@ class JobRunner:
     async def wait(self, job_id: int) -> Job:
         job = self.get(job_id)
         if job is None:
-            raise KeyError(job_id)
+            raise UnknownJob(f"no job {job_id}")
         await job.finished.wait()
         return job
 
@@ -111,6 +112,8 @@ class JobRunner:
         job = self.get(job_id)
         if job is None:
             raise UnknownJob(f"no job {job_id}")
+        if job.work is None and job.state in ("queued", "running"):
+            raise InvalidQuery(f"{job.label} belongs to another copy of the app still running; stop it there")
         if job.state == "queued":
             self._queues[job.kind].remove(job)
             self._finish(job, "cancelled", "cancelled before it started")
@@ -124,7 +127,7 @@ class JobRunner:
         """Cancel running work and drop what is queued; used when the server stops."""
         for queue in self._queues.values():
             while queue:
-                self._finish(queue.popleft(), "cancelled", "not run: app closed")
+                self._finish(queue.popleft(), "cancelled", NOT_RUN)
         workers = list(self._workers.values())
         for worker in workers:
             worker.cancel()
@@ -147,9 +150,10 @@ class JobRunner:
             try:
                 job.result = await job.task
             except asyncio.CancelledError:
+                if asyncio.current_task().cancelling():  # the server is stopping
+                    self._finish(job, "interrupted", INTERRUPTED)
+                    raise
                 self._finish(job, "cancelled", "cancelled")
-                if asyncio.current_task().cancelling():
-                    raise  # the server is stopping
             except Exception as exc:
                 if not isinstance(exc, ServiceError):
                     log.exception("job %s failed", job.label)
@@ -159,6 +163,9 @@ class JobRunner:
             finally:
                 self._running.pop(kind, None)
 
+    def _queued(self) -> list[Job]:
+        return [j for q in self._queues.values() for j in q]
+
     def _finish(self, job: Job, state: str, error: str | None) -> None:
         job.state, job.error, job.finished_at = state, error, self._ctx.clock.utcnow()
         self._history.update(job.id, state, error, job.started_at, job.finished_at)
@@ -167,10 +174,20 @@ class JobRunner:
 
 
 def _from_row(r: JobRow) -> Job:
-    job = Job(r.id, r.kind, r.label, None, r.subject, r.link, None, r.submitted_at, r.started_at, r.finished_at,
-              r.state, r.error)
+    job = Job(r.id, r.kind, r.label, subject=r.subject, link=r.link, submitted_at=r.submitted_at,
+              started_at=r.started_at, finished_at=r.finished_at, state=r.state, error=r.error)
     job.finished.set()
     return job
+
+
+def sweep_leftovers(ctx: AppContext) -> None:
+    """At server start: close jobs and research runs that a server no longer running left
+    queued or running, so none shows as going forever."""
+    # Our own pid can only be an earlier runner in this process (or a reused pid): nothing
+    # of this server's is queued yet.
+    me = os.getpid()
+    JobHistoryRepo(ctx.conn).sweep(ctx.clock.utcnow(), lambda pid: pid is None or pid == me or not pid_alive(pid))
+    sweep_interrupted(ctx)
 
 
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
@@ -195,8 +212,10 @@ def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None
         return runner.submit("analyse", "Analyse (watchlists)", lambda: analyse_watched(ctx), subject="*",
                              link="#watchlist")
     listing = resolve_symbol(ctx, symbol).symbol
-    return runner.submit("analyse", f"Analyse {listing}", lambda: analyse_listing(ctx, listing), subject=listing,
-                         link=f"#company/{listing}")
+    async def one() -> list[WatchedAnalysis]:
+        return [WatchedAnalysis(listing, await analyse_listing(ctx, listing), None)]
+
+    return runner.submit("analyse", f"Analyse {listing}", one, subject=listing, link=f"#company/{listing}")
 
 
 def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:

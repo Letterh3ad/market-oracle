@@ -105,14 +105,6 @@ async def test_the_same_subject_already_waiting_is_not_queued_twice(runner):
     assert again is first and len(runner.jobs()) == 1
 
 
-async def test_stop_cancels_running_work(runner):
-    gate = Gate("a", [])
-    job = runner.submit("research", "Research A", gate)
-    await settle()
-    await runner.stop()
-    assert job.state == "cancelled"
-
-
 async def test_cancelling_a_queued_job_means_it_never_runs(runner):
     log = []
     a, b = Gate("a", log), Gate("b", log)
@@ -195,7 +187,7 @@ def london_scheduler(ctx, runner):
 
     # NOW is Wednesday 21:00 in London; the run is due at 21:30 there (20:30 UTC).
     ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time="21:30"))
-    return Scheduler(ctx, tz=ZoneInfo("Europe/London"), runner=runner)
+    return Scheduler(ctx, runner, tz=ZoneInfo("Europe/London"))
 
 
 async def test_a_due_tick_runs_as_a_job_listed_in_activity(runner, ctx):
@@ -232,17 +224,79 @@ async def test_finished_jobs_survive_a_restart(ctx, runner):
     await later.stop()
 
 
-async def test_a_new_runner_sweeps_jobs_a_stopped_server_left_queued_or_running(ctx):
+DEAD_PID = 999_999_999
+
+
+async def test_a_starting_server_sweeps_jobs_a_stopped_server_left_queued_or_running(ctx):
+    from oracle.services.activity_service import sweep_leftovers
     from oracle.store.job_history import JobHistoryRepo
 
     repo = JobHistoryRepo(ctx.conn)
-    running = repo.add("research", "Research A", None, None, "running", NOW)
-    queued = repo.add("research", "Research B", None, None, "queued", NOW)
+    running = repo.add("research", "Research A", None, None, "running", NOW, DEAD_PID)
+    queued = repo.add("research", "Research B", None, None, "queued", NOW, DEAD_PID)
+    sweep_leftovers(ctx)
     runner = JobRunner(ctx)
     states = {j.id: (j.state, j.error) for j in runner.jobs()}
-    assert states[running] == ("cancelled", "interrupted: app closed")
+    assert states[running] == ("interrupted", "interrupted: app closed")
     assert states[queued] == ("cancelled", "not run: app closed")
     await runner.stop()
+
+
+async def test_the_sweep_leaves_another_live_servers_jobs_and_they_cannot_be_cancelled_here(ctx, runner, monkeypatch):
+    from oracle.services import activity_service
+    from oracle.services.activity_service import sweep_leftovers
+    from oracle.services.errors import InvalidQuery
+    from oracle.store.job_history import JobHistoryRepo
+
+    other = JobHistoryRepo(ctx.conn).add("research", "Research A", "A", None, "queued", NOW, 4242)
+    monkeypatch.setattr(activity_service, "pid_alive", lambda pid: pid == 4242)
+    sweep_leftovers(ctx)
+    assert runner.get(other).state == "queued"
+    with pytest.raises(InvalidQuery, match="another copy of the app"):
+        runner.cancel(other)
+
+
+async def test_a_job_running_when_the_server_stops_is_interrupted_not_cancelled(ctx):
+    runner = JobRunner(ctx)
+    job = runner.submit("research", "Research A", Gate("a", []))
+    waiting = runner.submit("research", "Research B", Gate("b", []))
+    await settle()
+    await runner.stop()
+    assert (job.state, job.error) == ("interrupted", "interrupted: app closed")
+    assert (waiting.state, waiting.error) == ("cancelled", "not run: app closed")
+
+
+async def test_activity_lists_only_the_last_50_finished(ctx, runner):
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    for n in range(55):
+        job_id = repo.add("prices", f"Job {n}", None, None, "queued", NOW, DEAD_PID)
+        repo.update(job_id, "done", None, NOW, NOW)
+    listed = runner.jobs()
+    assert len(listed) == 50 and listed[0].label == "Job 54"
+
+
+async def test_waiting_on_an_unknown_job_says_so(runner):
+    from oracle.services.errors import UnknownJob
+
+    with pytest.raises(UnknownJob):
+        await runner.wait(12345)
+
+
+async def test_a_scheduled_tick_cancelled_before_it_starts_is_recorded_so_it_is_not_resubmitted(runner, ctx):
+    from oracle.services.tick_service import last_tick
+
+    scheduler = london_scheduler(ctx, runner)
+    ctx.clock.advance(31 * 60)
+    check = asyncio.create_task(scheduler.check())
+    await asyncio.sleep(0)  # the check has submitted; the runner has not started it yet
+    [queued] = runner.active("tick")
+    assert queued.state == "queued"
+    runner.cancel(queued.id)
+    run = await check
+    assert run.outcome == "skipped" and "cancelled" in run.note and last_tick(ctx).id == run.id
+    assert await scheduler.check() is None
 
 
 async def test_new_job_ids_follow_the_stored_ones(ctx, runner):

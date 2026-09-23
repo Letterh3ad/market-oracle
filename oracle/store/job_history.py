@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
 from oracle.store.db import to_utc_iso, transaction
+
+NOT_RUN = "not run: app closed"
+INTERRUPTED = "interrupted: app closed"
 
 
 @dataclass(frozen=True)
@@ -26,11 +30,11 @@ class JobHistoryRepo:
         self._conn = conn
 
     def add(self, kind: str, label: str, subject: str | None, link: str | None, state: str,
-            submitted_at: datetime) -> int:
+            submitted_at: datetime, pid: int) -> int:
         with transaction(self._conn):
             cur = self._conn.execute(
-                "INSERT INTO jobs (kind, label, subject, link, state, submitted_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (kind, label, subject, link, state, to_utc_iso(submitted_at)),
+                "INSERT INTO jobs (kind, label, subject, link, state, submitted_at, pid) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (kind, label, subject, link, state, to_utc_iso(submitted_at), pid),
             )
         return int(cur.lastrowid)
 
@@ -43,14 +47,16 @@ class JobHistoryRepo:
                  job_id),
             )
 
-    def sweep(self, at: datetime) -> None:
-        """Close what a stopped server left behind: queued never ran, running was cut off."""
+    def sweep(self, at: datetime, dead: Callable[[int | None], bool]) -> None:
+        """Close what a stopped server left behind (its pid is `dead`): queued never ran,
+        running was cut off. A live server's jobs are its own to finish."""
         with transaction(self._conn):
-            for state, error in (("queued", "not run: app closed"), ("running", "interrupted: app closed")):
-                self._conn.execute(
-                    "UPDATE jobs SET state = 'cancelled', error = ?, finished_at = ? WHERE state = ?",
-                    (error, to_utc_iso(at), state),
-                )
+            rows = self._conn.execute("SELECT id, state, pid FROM jobs WHERE state IN ('queued', 'running')")
+            for job_id, state, pid in rows.fetchall():
+                if dead(pid):
+                    closed = ("cancelled", NOT_RUN) if state == "queued" else ("interrupted", INTERRUPTED)
+                    self._conn.execute("UPDATE jobs SET state = ?, error = ?, finished_at = ? WHERE id = ?",
+                                       (*closed, to_utc_iso(at), job_id))
 
     def finished(self, limit: int) -> list[JobRow]:
         rows = self._conn.execute(

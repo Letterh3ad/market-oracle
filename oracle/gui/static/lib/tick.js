@@ -27,9 +27,9 @@ function mount(refresh) {
   toggle.addEventListener("change", save);
   time.addEventListener("change", () => { if (time.value) save(); });
   document.getElementById("tick-controls").replaceChildren(
-    busyButton("Run tick now", async () => {
+    busyButton("Run tick now", async (onState) => {
       try {
-        await runJob("/api/jobs/tick");
+        await runJob("/api/jobs/tick", onState);
       } catch (err) {
         showError(`tick: ${err.message}`);
       }

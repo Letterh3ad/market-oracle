@@ -5,14 +5,14 @@ function sendJson(path, body, method = "POST") {
   return api(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
 }
 
-// A button that shows "running..." and stays disabled while `action` runs, so a slow job
-// cannot be started twice from the same page.
+// A button that stays disabled while `action` runs, so a slow job cannot be started twice
+// from the same page. `action` gets a callback for runJob that shows the job's state.
 function busyButton(label, action) {
   const button = el("button", { type: "button", onclick: async () => {
     button.disabled = true;
     button.textContent = `${label}: running...`;
     try {
-      await action();
+      await action((job) => { button.textContent = `${label}: ${job.state}...`; });
     } finally {
       button.disabled = false;
       button.textContent = label;

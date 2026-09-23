@@ -735,3 +735,20 @@ async def test_a_run_another_process_is_still_doing_is_left_alone(ctx):
     JobLock(ctx.conn, ctx.clock, pid=os.getppid()).acquire("research", 600)
     sweep_interrupted(ctx)
     assert repo.get(live).status == "running"
+
+
+async def test_progress_follows_a_running_runs_steps_and_is_none_once_it_ends(ctx):
+    from oracle.research.trace import RunStatus, Step
+    from oracle.services.research_service import research_progress
+    from oracle.store.research import ResearchRepo
+
+    repo = ResearchRepo(ctx.conn)
+    assert research_progress(ctx, "AAPL") is None
+    run = repo.start("AAPL", "ollama", "m", "2026-09-23T10:00:00+00:00")
+    assert research_progress(ctx, "AAPL") == "planning searches"
+    repo.add_step(run, Step(1, "t", "news_search", "q", "o"))
+    assert research_progress(ctx, "AAPL") == "step 1: news_search"
+    repo.add_step(run, Step(2, "t", "final", "", None))
+    assert research_progress(ctx, "AAPL") == "writing the report"
+    repo.finish(run, RunStatus.DONE, None, None, "2026-09-23T10:01:00+00:00")
+    assert research_progress(ctx, "AAPL") is None

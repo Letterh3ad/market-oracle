@@ -22,9 +22,9 @@ function figure(value, kind, currency) {
 }
 
 function job(label, path, pane, symbol) {
-  return busyButton(label, async () => {
+  return busyButton(label, async (onState) => {
     try {
-      const r = await runJob(`${path}?symbol=${encodeURIComponent(symbol)}`);
+      const r = await runJob(`${path}?symbol=${encodeURIComponent(symbol)}`, onState);
       const failed = r.listings.find((o) => o.error);
       if (failed) showError(`${failed.symbol}: ${failed.error}`);
       else clearError();

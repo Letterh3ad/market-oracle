@@ -1091,3 +1091,14 @@ Market Oracle desktop / Start-menu shortcut to start it again.
 start, stop and keep in sync, for no saving: the idle server costs nothing); relying on
 the schedule toggle alone (later automation, AI research and discovery auto mode, would
 each need its own switch).
+
+## 2026-09-23 - Jobs record their server's pid; interrupted is its own outcome
+**Context:** Activity review gate. A starting server closed every queued or running job row,
+including a second live server's (app-control's Restart will overlap two servers briefly).
+Work cut off by the app closing showed as "cancelled", the same as a user's Cancel.
+**Decision:** `jobs.pid` (m0029) names the owning server; the startup sweep closes only rows
+whose pid is gone, and a live server's rows cannot be cancelled from another. A job running
+when its server stops or dies ends `interrupted`; queued ones end `cancelled`, "not run".
+A scheduled tick cancelled before it starts is recorded as skipped, so it is not resubmitted.
+**Alternatives:** A heartbeat per job row (more writes for the same answer on one machine);
+keeping `cancelled` with the reason in the error text (the state column then lies).

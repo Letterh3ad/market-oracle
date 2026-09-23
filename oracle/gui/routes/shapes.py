@@ -45,23 +45,28 @@ def job(j: Job) -> dict:
     }
 
 
-def _result(j: Job) -> dict | list | None:
-    """What a finished job's button shows; research shows its report on the company page."""
-    if j.kind == "prices":
-        run = j.result
-        return {"listings": [asdict(o) for o in run.update.listings], "fx": [asdict(f) for f in run.update.fx],
-                "fills": [order_outcome(f.order, f.status, f.note) for f in run.fills]}
-    if j.kind == "analyse":
-        runs = j.result if isinstance(j.result, list) else [WatchedAnalysis(j.result.symbol, j.result, None)]
-        return {"listings": [
-            {"symbol": r.symbol, "error": r.error,
-             "lean": None if r.analysis is None or r.analysis.lean is None
-             else {"label": r.analysis.lean.label, "probability": r.analysis.lean.probability}}
-            for r in runs
-        ]}
-    if j.kind == "tick":
-        return tick(j.result)
-    return None
+def _prices(run) -> dict:
+    return {"listings": [asdict(o) for o in run.update.listings], "fx": [asdict(f) for f in run.update.fx],
+            "fills": [order_outcome(f.order, f.status, f.note) for f in run.fills]}
+
+
+def _analysed(runs: list[WatchedAnalysis]) -> dict:
+    return {"listings": [
+        {"symbol": r.symbol, "error": r.error,
+         "lean": None if r.analysis is None or r.analysis.lean is None
+         else {"label": r.analysis.lean.label, "probability": r.analysis.lean.probability}}
+        for r in runs
+    ]}
+
+
+# What a finished job's button shows, by kind; research shows its report on the company page.
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick}
+
+
+def _result(j: Job) -> dict | None:
+    """None for a job an earlier server ran: only its outcome was kept, not its result."""
+    shape = _RESULTS.get(j.kind)
+    return shape(j.result) if shape and j.result is not None else None
 
 
 def schedule(view: ScheduleView) -> dict:

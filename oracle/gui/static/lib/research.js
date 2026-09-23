@@ -111,7 +111,8 @@ function researchSection(symbol) {
     }
     if (!box.isConnected) return;
     run.disabled = false;
-    status.textContent = job.state === "failed" ? `Failed: ${job.error}` : job.state === "cancelled" ? "Cancelled." : "";
+    status.textContent = job.state === "failed" || job.state === "interrupted" ? `Failed: ${job.error}`
+      : job.state === "cancelled" ? "Cancelled." : "";
     reload();
   };
   const run = el("button", { type: "button", onclick: async () => {

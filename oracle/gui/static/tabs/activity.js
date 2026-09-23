@@ -1,11 +1,18 @@
 import { api } from "../lib/api.js";
 import { el, showError } from "../lib/dom.js";
 
-const STATE_CLASS = { running: "up", "running elsewhere": "up", queued: "dim", done: "", failed: "down", cancelled: "dim" };
+const STATE_CLASS = {
+  running: "up", "running elsewhere": "up", queued: "dim", done: "", failed: "down", cancelled: "dim", interrupted: "down",
+};
 let timer = null;
 
-function time(iso) {
-  return iso ? new Date(iso).toLocaleTimeString(undefined, { timeStyle: "short" }) : "";
+// Today's jobs show the time alone; history from earlier days needs the date too.
+function when(iso) {
+  if (!iso) return "";
+  const at = new Date(iso);
+  return at.toDateString() === new Date().toDateString()
+    ? at.toLocaleTimeString(undefined, { timeStyle: "short" })
+    : at.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
 function took(j) {
@@ -37,7 +44,7 @@ function row(j, box) {
     el("td", null, what),
     el("td", { class: STATE_CLASS[j.state] ?? "" }, j.state),
     el("td", { class: "small" }, detail),
-    el("td", { class: "small dim" }, time(j.submitted_at)),
+    el("td", { class: "small dim" }, when(j.submitted_at)),
     el("td", { class: "num small" }, took(j)),
     el("td", null, cancelButton(j, box)));
 }
