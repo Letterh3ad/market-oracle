@@ -6,15 +6,18 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from datetime import date
+from urllib.parse import urlsplit
 
 from oracle.clock import Clock
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
+from oracle.net.gate import SourceGate
 from oracle.research.news import (
     GDELT_DOC, GOOGLE_NEWS, Article, FeedUnreadable, end_of, gdelt_params, google_news_params, parse_gdelt,
     parse_google_news,
 )
 from oracle.research.tools import ToolError
+from oracle.research.web import WebSearcher, WebSearchFailed, page_text, unsafe_url
 from oracle.services.company_service import FIGURES, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
@@ -25,6 +28,13 @@ from oracle.store.db import to_utc_iso
 # Enough to see a story's shape without flooding a small model's context.
 MAX_ARTICLES = 8
 MAX_TITLE = 140
+MAX_SNIPPET = 100
+# Fewer than news: with a snippet each, five fill an observation.
+WEB_RESULTS = 5
+# A page is read up to here (bytes) and shown up to MAX_PAGE_TEXT characters.
+MAX_PAGE_BYTES = 2_000_000
+MAX_PAGE_TEXT = 1300
+READABLE = ("text/html", "application/xhtml+xml", "text/plain")
 # Trading days of history behind the "3 months" move, plus the last close.
 RECENT_BARS = 64
 
@@ -98,23 +108,36 @@ class Shelf:
         self._on_shown = on_shown
         self.as_of = as_of
 
-    def show(self, found: list[Article], source: str, query: str) -> str:
+    def show(self, found: list[Article], source: str, query: str, limit: int = MAX_ARTICLES) -> str:
         if self.as_of:
             # An undated article might be from after the cutoff, so it cannot be used.
             cutoff = end_of(self.as_of)
             found = [a for a in found if a.published is not None and a.published < cutoff]
-        newest = sorted(found, key=lambda a: (a.published is not None, a.published), reverse=True)[:MAX_ARTICLES]
+        newest = sorted(found, key=lambda a: (a.published is not None, a.published), reverse=True)[:limit]
         if not newest:
             return f"No articles found for {query!r}."
-        ids = self._articles.save(newest, source, to_utc_iso(self._clock.utcnow()))
+        return "\n".join(_line(i, a) for i, a in zip(self.keep(newest, source), newest))
+
+    def keep(self, articles: list[Article], source: str) -> list[int]:
+        """Store and mark as shown to the run; the ids, in order."""
+        ids = self._articles.save(articles, source, to_utc_iso(self._clock.utcnow()))
         self._on_shown(ids)
-        return "\n".join(_line(i, a) for i, a in zip(ids, newest))
+        return ids
 
 
 def _line(article_id: int, a: Article) -> str:
     day = a.published.date().isoformat() if a.published else "undated"
-    title = a.title if len(a.title) <= MAX_TITLE else a.title[: MAX_TITLE - 1] + "…"
-    return f"[a{article_id}] {day} {a.outlet or 'unknown outlet'}: {title}"
+    line = f"[a{article_id}] {day} {a.outlet or 'unknown outlet'}: {_cut(a.title, MAX_TITLE)}"
+    return f"{line} | {_cut(a.summary, MAX_SNIPPET)}" if a.summary else line
+
+
+def _cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _domain(url: str) -> str:
+    host = urlsplit(url).hostname or ""
+    return host[4:] if host.startswith("www.") else host
 
 
 async def _fetch(client: RateLimitedClient, source: str, label: str, url: str, params: dict) -> str:
@@ -174,3 +197,66 @@ class GdeltSearch:
         except FeedUnreadable as exc:
             raise ToolError(f"GDELT refused the query: {exc}") from exc
         return self._shelf.show(found, "gdelt", query)
+
+
+class WebSearch:
+    """The open web through `ddgs`. It makes its own HTTP calls, so the gate is driven here."""
+
+    name = "web_search"
+    description = "web pages matching a query, with a snippet each (undated); input: a search query"
+
+    def __init__(self, searcher: WebSearcher, gate: SourceGate, shelf: Shelf) -> None:
+        self._searcher = searcher
+        self._gate = gate
+        self._shelf = shelf
+
+    async def run(self, input: str) -> str:
+        query = _query(input)
+        try:
+            await self._gate.acquire("ddgs")
+        except CircuitOpen as exc:
+            raise ToolError(f"web search unavailable ({exc}); try another tool") from exc
+        try:
+            results = await self._searcher.search(query, WEB_RESULTS)
+        except WebSearchFailed as exc:
+            if exc.rate_limited:
+                self._gate.record("ddgs", 429)
+                raise ToolError(f"web search is rate limited ({exc}); try another tool") from exc
+            self._gate.record_transport_error("ddgs")
+            raise ToolError(f"web search failed ({exc})") from exc
+        self._gate.record("ddgs", 200)
+        found = [Article(r.url, r.title or r.url, _domain(r.url), None, r.snippet or None) for r in results]
+        return self._shelf.show(found, "ddgs", query, WEB_RESULTS)
+
+
+class ReadPage:
+    """A web page as plain text, stored as evidence like an article."""
+
+    name = "read_page"
+    description = "the text of a web page; input: its http(s) address from a search result"
+
+    def __init__(self, client: RateLimitedClient, shelf: Shelf) -> None:
+        self._client = client
+        self._shelf = shelf
+
+    async def run(self, input: str) -> str:
+        url = input.strip(" '\"<>")
+        if why := unsafe_url(url):
+            raise ToolError(why)
+        if _domain(url) == "news.google.com":
+            raise ToolError("Google News links only redirect; search its headline with web_search instead")
+        try:
+            resp = await self._client.get("web", url, max_bytes=MAX_PAGE_BYTES)
+        except (CircuitOpen, RequestFailed) as exc:
+            raise ToolError(f"could not read the page ({exc})") from exc
+        if resp.status_code != 200:
+            raise ToolError(f"the page answered HTTP {resp.status_code}")
+        kind = resp.headers.get("content-type", "").split(";")[0].strip().lower()
+        if kind not in READABLE:
+            raise ToolError(f"not a web page ({kind or 'unknown type'})")
+        title, text = page_text(resp.text) if kind != "text/plain" else ("", resp.text.strip())
+        title = _cut(title or url, 300)
+        [article_id] = self._shelf.keep([Article(url, title, _domain(url), None)], "web")
+        cut = len(text) > MAX_PAGE_TEXT or resp.extensions.get("oracle_truncated", False)
+        body = (text[:MAX_PAGE_TEXT] + (" [cut]" if cut else "")) or "(no readable text)"
+        return f"[a{article_id}] {_domain(url)}: {title}\n{body}"

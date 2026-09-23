@@ -36,6 +36,9 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
     "sec_edgar": SourceConfig(rate_per_second=5.0),
+    # Pages the research loop reads, on any site. A short cooldown: three paywalled 403s in
+    # a row say little about the next site.
+    "web": SourceConfig(rate_per_second=1.0, cooldown_s=120.0, max_retries=1),
     "financedatabase": SourceConfig(rate_per_second=0.5),
 }
 

@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from datetime import date
 
+from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
 from oracle.research.engine import react
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.trace import ResearchRun, RunStatus, Step
+from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable
 from oracle.services.jobs_service import single_flight
-from oracle.services.research_tools import GdeltSearch, MarketData, NewsSearch, Shelf
+from oracle.services.research_tools import GdeltSearch, MarketData, NewsSearch, ReadPage, Shelf, WebSearch
 from oracle.services.http import open_client
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
@@ -27,7 +29,7 @@ LEASE_S = 3600.0
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
-                   as_of: date | None = None) -> ResearchRun:
+                   as_of: date | None = None, searcher: WebSearcher | None = None) -> ResearchRun:
     """One run over the listing, one at a time across processes. `model` defaults to the
     configured backend. With `as_of`, the run replays that day: every tool sees only what
     existed by its end, for backtests after the model's training cutoff."""
@@ -48,6 +50,10 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
         async with open_client(ctx) as client:
             shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
             tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf)]
+            if as_of is None:
+                # Web pages carry no reliable date, so a replay cannot use them.
+                gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
+                tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf)]
             try:
                 outcome = await react(model, tools, _task(ctx, listing, as_of or today), ctx.config.llm.max_steps,
                                       lambda s: repo.add_step(run_id, s))

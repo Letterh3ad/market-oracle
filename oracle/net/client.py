@@ -65,13 +65,17 @@ class RateLimitedClient:
         *,
         params: dict | None = None,
         headers: dict | None = None,
+        max_bytes: int | None = None,
     ) -> httpx.Response:
+        """With `max_bytes`, reading stops there (an arbitrary page can be any size);
+        `extensions["oracle_truncated"]` says whether it was cut."""
         retries = self._gate.config(source).max_retries
         for attempt in range(retries + 1):
             last = attempt == retries
             await self._gate.acquire(source)
             try:
-                resp = await self._http.get(url, params=params, headers=headers)
+                resp = await (self._http.get(url, params=params, headers=headers) if max_bytes is None
+                              else self._get_capped(url, params, headers, max_bytes))
             except httpx.TransportError as exc:
                 self._gate.record_transport_error(source)
                 if last:
@@ -92,6 +96,21 @@ class RateLimitedClient:
             if last:
                 raise RequestFailed(source, resp.status_code, f"HTTP {resp.status_code}")
         raise AssertionError("unreachable")
+
+    async def _get_capped(self, url: str, params: dict | None, headers: dict | None,
+                          max_bytes: int) -> httpx.Response:
+        async with self._http.stream("GET", url, params=params, headers=headers) as resp:
+            body = bytearray()
+            async for chunk in resp.aiter_bytes():
+                body += chunk
+                if len(body) >= max_bytes:
+                    break
+            truncated = len(body) > max_bytes or (len(body) == max_bytes and not resp.is_stream_consumed)
+        # The body is already decompressed and may be cut, so its encoding and length no
+        # longer describe it.
+        kept = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-encoding", "content-length")}
+        return httpx.Response(resp.status_code, headers=kept, content=bytes(body[:max_bytes]),
+                              request=resp.request, extensions={"oracle_truncated": truncated})
 
     async def aclose(self) -> None:
         await self._http.aclose()

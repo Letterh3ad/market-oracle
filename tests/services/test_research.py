@@ -13,6 +13,7 @@ from tests.fakes.gdelt import FakeGdelt
 from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import ScriptedModel, step
 from tests.fakes.web import FakeWeb
+from tests.fakes.web_search import FakePages, FakeSearcher
 from tests.fakes.yahoo import FakeYahoo, bar
 
 NOW = datetime(2026, 9, 21, 20, 0, tzinfo=timezone.utc)
@@ -29,10 +30,20 @@ def gdelt():
 
 
 @pytest.fixture
-async def ctx(tmp_path, news, gdelt):
+def searcher():
+    return FakeSearcher()
+
+
+@pytest.fixture
+def pages():
+    return FakePages()
+
+
+@pytest.fixture
+async def ctx(tmp_path, news, gdelt, pages):
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt)
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt, pages)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -227,3 +238,82 @@ async def test_citations_written_in_round_brackets_still_count(ctx, news):
                                                     step("final", "Beat estimates (a1); grew (a7).")))
     assert run.findings == "Beat estimates [a1]; grew."
     assert [(e.id, e.cited) for e in run.evidence] == [(1, True)]
+
+
+async def test_web_search_results_are_undated_evidence_with_a_snippet(ctx, searcher):
+    from oracle.research.web import WebResult
+
+    searcher.results["Apple supplier"] = [WebResult("https://www.tsmc.com/a", "TSMC and Apple", "Apple is TSMC's largest customer.")]
+    model = ScriptedModel(step("web_search", "Apple supplier"), step("final", "Key supplier [a1]."))
+    run = await research(ctx, "AAPL", model, searcher=searcher)
+    assert run.steps[0].observation == "[a1] undated tsmc.com: TSMC and Apple | Apple is TSMC's largest customer."
+    assert [(e.url, e.outlet, e.cited) for e in run.evidence] == [("https://www.tsmc.com/a", "tsmc.com", True)]
+
+
+async def test_a_rate_limited_web_search_trips_its_breaker_and_then_is_not_called(ctx, searcher):
+    from oracle.research.web import WebSearchFailed
+
+    searcher.fail = WebSearchFailed("202 Ratelimit", rate_limited=True)
+    model = ScriptedModel(*[step("web_search", "Apple")] * 4, step("final", "Nothing."))
+    run = await research(ctx, "AAPL", model, searcher=searcher)
+    assert "rate limited" in run.steps[0].observation
+    assert "circuit open" in run.steps[3].observation and len(searcher.queries) == 3
+
+
+async def test_a_page_is_read_as_plain_text_and_can_be_cited(ctx, pages):
+    pages.pages["https://news.test/story"] = ("text/html; charset=utf-8", (
+        "<html><head><title>Apple results</title><style>p{}</style></head><body><nav>Home | Markets</nav>"
+        "<article><h1>Apple beats</h1><p>Revenue rose 8%.</p><script>track()</script></article>"
+        "<footer>Cookies</footer></body></html>"))
+    model = ScriptedModel(step("read_page", "https://news.test/story"), step("final", "Rose 8% [a1]."))
+    run = await research(ctx, "AAPL", model)
+    assert run.steps[0].observation == "[a1] news.test: Apple results\nApple beats\nRevenue rose 8%."
+    assert [(e.title, e.cited) for e in run.evidence] == [("Apple results", True)]
+
+
+@pytest.mark.parametrize("url, says", [
+    ("file:///C:/secrets.txt", "only http and https"),
+    ("http://localhost:11434/api/tags", "local addresses"),
+    ("http://192.168.1.1/admin", "private and local network"),
+    ("https://news.google.com/rss/articles/CBMi", "search its headline"),
+])
+async def test_pages_that_must_not_or_cannot_be_read_are_refused(ctx, url, says):
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
+    assert says in run.steps[0].observation
+
+
+async def test_a_page_that_is_not_text_is_refused_and_a_long_one_is_marked_cut(ctx, pages):
+    pages.pages["https://files.test/report.pdf"] = ("application/pdf", "%PDF-1.7")
+    pages.pages["https://news.test/long"] = ("text/html", "<title>Long</title><p>" + "word " * 3000 + "</p>")
+    model = ScriptedModel(step("read_page", "https://files.test/report.pdf"), step("read_page", "https://news.test/long"),
+                          step("final", "Done."))
+    pdf, long = (await research(ctx, "AAPL", model)).steps[:2]
+    assert "not a web page (application/pdf)" in pdf.observation
+    assert long.observation.endswith("[cut]") and len(long.observation) <= 1510
+
+
+async def test_an_as_of_replay_has_no_web_tools_as_pages_carry_no_date(ctx, searcher):
+    from datetime import date
+
+    model = ScriptedModel(step("web_search", "Apple"), step("final", "Done."))
+    run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 18), searcher=searcher)
+    assert "No tool named 'web_search'" in run.steps[0].observation and searcher.queries == []
+    assert "read_page" not in model.calls[0][0][0]["content"]
+
+
+async def test_a_page_built_by_scripts_still_gives_its_description(ctx, pages):
+    pages.pages["https://app.test/news"] = ("text/html", (
+        '<html><head><title>Newsroom</title><meta property="og:description" content="Official news from Apple.">'
+        '</head><body><div id="root"></div><script>render()</script></body></html>'))
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", "https://app.test/news"), step("final", "Done.")))
+    assert run.steps[0].observation == "[a1] app.test: Newsroom\nOfficial news from Apple."
+
+
+async def test_a_full_page_of_web_results_fits_one_observation_uncut(ctx, searcher):
+    from oracle.research.web import WebResult
+
+    searcher.results["Apple"] = [WebResult(f"https://s{i}.test/{'p' * 80}", "T" * 200, "S" * 400) for i in range(10)]
+    run = await research(ctx, "AAPL", ScriptedModel(step("web_search", "Apple"), step("final", "Done.")),
+                         searcher=searcher)
+    lines = run.steps[0].observation.splitlines()
+    assert len(lines) == 5 and not lines[-1].endswith("[cut]") and lines[-1].endswith("S" * 99 + "…")

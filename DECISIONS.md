@@ -727,3 +727,27 @@ for backtests after the model's training cutoff.
 - GDELT's DOC API covers roughly the last three months, so older replays rely on Google.
 - Citations written `(a3)` count like `[a3]` and are rewritten as `[a3]` (seen live).
 **Alternatives:** Cutting only news at the as-of date (rejected: prices leak the outcome).
+
+## 2026-09-23 - Web search and the page reader
+
+**Context:** Ticket 4 of phase 7: the open web beyond news feeds.
+**Decision:**
+- `web_search` through `ddgs` (MIT; intake in THIRD_PARTY.md). It makes its own HTTP calls,
+  so the tool drives the `ddgs` gate itself: a slot before each search, 429 on its rate
+  limit, a transport error otherwise. Five results with 100-character snippets, sized so a
+  full list fits one observation (eight with longer snippets were cut mid-line live).
+- `read_page` fetches through a new `web` source (1 per second, one retry, 2-minute
+  cooldown: three paywalled 403s in a row say little about the next site). It reads at
+  most 2 MB, shows at most 1300 characters, and accepts HTML or plain text only.
+- The reader refuses non-http(s), `localhost`, `.local`/`.internal` names and non-public IP
+  literals: links come from pages the model read, so they may point into this machine or
+  the LAN. DNS names resolving to private addresses are not checked (personal tool).
+- Pages lead with their meta description when the body is thin (script-built pages).
+- Google News links only redirect by script, so the reader asks the model to search the
+  headline instead.
+- As-of replays get neither tool: web pages and results carry no reliable date.
+- Our user agent carries no contact address; sites that require one (Wikipedia) refuse it.
+  Adding the user's email to requests to arbitrary sites was not done without asking.
+- `RateLimitedClient.get` gains `max_bytes` (streams and stops; drops the encoding and
+  length headers of the cut, already-decoded body).
+**Alternatives:** ddgs's own `extract` for pages (rejected: bypasses the gate and breaker).

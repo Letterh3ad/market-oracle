@@ -132,3 +132,21 @@ async def test_real_gdelt_doc_api_answers_in_artlist_json():
     articles = parse_gdelt(resp.text)
     assert len(articles) > 5
     assert all(a.outlet and a.published is not None for a in articles)
+
+
+async def test_real_ddgs_web_search_returns_links_with_snippets():
+    from oracle.research.web import DdgsSearcher
+
+    results = await DdgsSearcher().search("Apple Inc investor relations", 5)
+    assert results and all(r.url.startswith("http") and r.title for r in results)
+
+
+async def test_real_page_reads_as_text_without_scripts():
+    import httpx
+
+    from oracle.research.web import page_text
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        resp = await http.get("https://example.com/")
+    title, text = page_text(resp.text)
+    assert title == "Example Domain" and "documentation" in text and "{" not in text

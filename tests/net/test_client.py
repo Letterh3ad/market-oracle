@@ -148,3 +148,29 @@ async def test_secret_query_parameters_never_reach_the_http_log(conn, caplog):
     await client.aclose()
     assert "HTTP Request" in caplog.text
     assert "sk-secret-1" not in caplog.text and "api_token=***" in caplog.text
+
+
+async def test_a_body_past_max_bytes_is_cut_there_and_marked(conn, clock):
+    gate = SourceGate(conn, clock, {"src": SourceConfig(rate_per_second=10.0)})
+
+    def handler(request):
+        return httpx.Response(200, content=b"x" * 5000)
+
+    client = RateLimitedClient(gate, clock, user_agent="t", transport=httpx.MockTransport(handler))
+    resp = await client.get("src", URL, max_bytes=1000)
+    assert resp.content == b"x" * 1000 and resp.extensions["oracle_truncated"] is True
+    whole = await client.get("src", URL, max_bytes=10_000)
+    assert len(whole.content) == 5000 and whole.extensions["oracle_truncated"] is False
+
+
+async def test_a_compressed_body_is_capped_after_decompressing(conn, clock):
+    import gzip
+
+    gate = SourceGate(conn, clock, {"src": SourceConfig(rate_per_second=10.0)})
+
+    def handler(request):
+        return httpx.Response(200, content=gzip.compress(b"<p>" + b"y" * 3000), headers={"Content-Encoding": "gzip"})
+
+    client = RateLimitedClient(gate, clock, user_agent="t", transport=httpx.MockTransport(handler))
+    resp = await client.get("src", URL, max_bytes=100)
+    assert resp.text == "<p>" + "y" * 97

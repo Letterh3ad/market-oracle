@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
@@ -25,6 +25,8 @@ class Article:
     outlet: str | None
     published: datetime | None
     """Timezone-aware, or None when the feed gave no usable date."""
+    summary: str | None = field(default=None, compare=False)
+    """A search snippet, shown with the article but not stored."""
 
 
 def end_of(day: date) -> datetime:
