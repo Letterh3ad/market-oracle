@@ -22,18 +22,20 @@ from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable
 from oracle.services.http import open_client
-from oracle.services.jobs_service import single_flight
+from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
     Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch, evidence_line,
     market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso, transaction
+from oracle.store.job_history import INTERRUPTED
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 
 __all__ = [
     "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "latest_research", "report_history", "research",
+    "research_progress", "sweep_interrupted",
 ]
 
 JOB = "research"
@@ -143,6 +145,25 @@ def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: st
         gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
         tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
     return tools
+
+
+def research_progress(ctx: AppContext, listing: str) -> str | None:
+    """Where the listing's running research is, for a progress line; None when none runs."""
+    run = ResearchRepo(ctx.conn).latest(listing)
+    if run is None or run.status != RunStatus.RUNNING:
+        return None
+    if not run.steps:
+        return "planning searches"
+    last = run.steps[-1]
+    return "writing the report" if last.action == "final" else f"step {last.n}: {last.action}"
+
+
+def sweep_interrupted(ctx: AppContext) -> None:
+    """Mark runs a stopped app left `running` as failed, unless another process is still
+    doing research (its lock is live), so no page shows a dead run as running forever."""
+    if any(s.job == JOB and s.stale_reason is None for s in job_statuses(ctx)):
+        return
+    ResearchRepo(ctx.conn).fail_running(INTERRUPTED, _now(ctx))
 
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:

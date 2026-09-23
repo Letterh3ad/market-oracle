@@ -1066,3 +1066,39 @@ job locks. Queued jobs are dropped on restart ("not run: app closed"); finished 
 kept. Built before `ai-account`, whose tick research and Stop build on it.
 **Alternatives:** Refusing a busy research click (today); running research in parallel (an
 8GB GPU does one run well); resuming queued jobs on restart (surprising).
+
+## 2026-09-23 - App control: restart, new-version banner, start at login
+**Context:** The live GUI runs detached from a `main` worktree; updating it means killing a
+process by hand, nothing says when newer code is on disk (F5 reloads page files, not the
+server), and it stops at every reboot.
+**Decision:** A small `app-control` stream right after `activity`: a Restart button (the
+server starts a copy of itself, then exits; the copy waits for the port), a banner when
+the code on disk differs from the running version, and a "Start Oracle when Windows
+starts" toggle writing a launcher to the user's Startup folder (no admin, no dependency).
+Each has a CLI equivalent; OS-specific parts sit behind small interfaces.
+**Alternatives:** A Windows service (admin rights, harder to see); Task Scheduler at logon
+(works, but a Startup-folder file is visible and easy to remove by hand); auto-restarting
+on new code (would cancel running research without asking).
+
+## 2026-09-23 - Turning the system off: an automation switch and Shut down, no daemon split
+**Context:** User wants to turn the whole system off, as the stalker's daemon could be
+stopped from its GUI. Oracle's automation runs inside the GUI server.
+**Decision:** `app-control` 04: an Automation On/Off master switch in the header
+(`[automation] enabled`; nothing starts by itself while off, manual work still runs; every
+automatic job source checks it), and a Shut down button that ends the process, with a
+Market Oracle desktop / Start-menu shortcut to start it again.
+**Alternatives:** A separate scheduler daemon controlled from the GUI (a second process to
+start, stop and keep in sync, for no saving: the idle server costs nothing); relying on
+the schedule toggle alone (later automation, AI research and discovery auto mode, would
+each need its own switch).
+
+## 2026-09-23 - Jobs record their server's pid; interrupted is its own outcome
+**Context:** Activity review gate. A starting server closed every queued or running job row,
+including a second live server's (app-control's Restart will overlap two servers briefly).
+Work cut off by the app closing showed as "cancelled", the same as a user's Cancel.
+**Decision:** `jobs.pid` (m0029) names the owning server; the startup sweep closes only rows
+whose pid is gone, and a live server's rows cannot be cancelled from another. A job running
+when its server stops or dies ends `interrupted`; queued ones end `cancelled`, "not run".
+A scheduled tick cancelled before it starts is recorded as skipped, so it is not resubmitted.
+**Alternatives:** A heartbeat per job row (more writes for the same answer on one machine);
+keeping `cancelled` with the reason in the error text (the state column then lies).

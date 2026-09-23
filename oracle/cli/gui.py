@@ -7,7 +7,6 @@ from fastapi import FastAPI
 
 from oracle.gui.app import build_app
 from oracle.services.context import AppContext
-from oracle.services.schedule_service import Scheduler
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -17,7 +16,7 @@ def register(parser: argparse.ArgumentParser) -> None:
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
     host, port = ctx.config.gui.host, ctx.config.gui.port
     print(f"Market Oracle GUI on http://{host}:{port} (Ctrl+C to stop)")
-    serve(build_app(ctx, Scheduler(ctx)), host, port)
+    serve(build_app(ctx, schedule=True), host, port)
     return 0
 
 

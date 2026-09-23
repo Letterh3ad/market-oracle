@@ -2,7 +2,6 @@
 import { api } from "./api.js";
 import { el, showError, clearError, safeUrl } from "./dom.js";
 import { tip } from "./tip.js";
-import { busyButton } from "./ui.js";
 
 const ROLES = { fundamental_analyst: "Fundamentals", technical_analyst: "Price action", news_analyst: "News" };
 
@@ -68,6 +67,7 @@ function view(r, failed) {
   const note = failed ? el("p", { class: "badge warn" }, `The last attempt failed: ${failed.error ?? "unknown error"}`) : null;
   if (!r) return [el("p", { class: "dim" }, "No research yet. Press Research: the AI model searches the news, " +
     "filings and the web, then writes a report. It never changes the lean.")];
+  if (r.status === "running") return [el("p", { class: "dim" }, "Research is running now; follow it in the Activity tab.")];
   const when = r.as_of ? `replay as of ${r.as_of}` : `researched ${r.started_at.slice(0, 16).replace("T", " ")} UTC`;
   return [
     note,
@@ -79,26 +79,57 @@ function view(r, failed) {
   ];
 }
 
+const ACTIVE = ["queued", "running"];
+
+function jobLine(job) {
+  if (job.state === "queued") return "Queued behind other research (see Activity).";
+  if (job.state === "running") return `Running${job.progress ? `: ${job.progress}` : ""}...`;
+  return "";
+}
+
 function researchSection(symbol) {
   const body = el("div", null, el("p", { class: "dim" }, "Loading research..."));
+  const status = el("span", { class: "dim small" }, "about a minute");
   const box = el("div", { class: "card", id: "c-research" });
   // Late answers paint only while this section is still on screen.
   const show = (r) => { if (box.isConnected) body.replaceChildren(...view(r.run, r.failed).filter(Boolean)); };
   const reload = () => api(`/api/companies/${encodeURIComponent(symbol)}/research`)
     .then(show)
     .catch((err) => { if (box.isConnected) body.replaceChildren(el("p", { class: "dim" }, err.message)); });
-  const run = busyButton("Research", async () => {
+  // Follows the job until it ends, however the page came to it (a click, or a run already going).
+  const follow = async (job) => {
+    run.disabled = true;
+    while (box.isConnected && ACTIVE.includes(job.state)) {
+      status.textContent = jobLine(job);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      try {
+        job = await api(`/api/activity/${job.id}`);
+      } catch (err) {
+        status.textContent = err.message;
+        break;
+      }
+    }
+    if (!box.isConnected) return;
+    run.disabled = false;
+    status.textContent = job.state === "failed" || job.state === "interrupted" ? `Failed: ${job.error}`
+      : job.state === "cancelled" ? "Cancelled." : "";
+    reload();
+  };
+  const run = el("button", { type: "button", onclick: async () => {
     try {
-      show(await api(`/api/jobs/research?symbol=${encodeURIComponent(symbol)}`, { method: "POST" }));
       clearError();
+      await follow(await api(`/api/jobs/research?symbol=${encodeURIComponent(symbol)}`, { method: "POST" }));
     } catch (err) {
       showError(err.message);
-      reload();
+      run.disabled = false;
     }
-  });
-  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run,
-    el("span", { class: "dim small" }, "about a minute")), body);
+  } }, "Research");
+  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, status), body);
   reload();
+  api("/api/activity").then(({ jobs }) => {
+    const going = jobs.find((j) => j.kind === "research" && j.subject === symbol && ACTIVE.includes(j.state));
+    if (going) follow(going);
+  }).catch(() => {});
   return box;
 }
 

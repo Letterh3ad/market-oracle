@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict
 from urllib.parse import urlsplit
 
+from oracle.services.activity_service import Job
+from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView
@@ -33,6 +35,38 @@ def tick(run: TickRun | None) -> dict | None:
         "outcome": run.outcome, "first_error": run.first_error, "note": run.note,
         "stages": [asdict(s) for s in run.stages],
     }
+
+
+def job(j: Job) -> dict:
+    return {
+        "id": j.id, "kind": j.kind, "label": j.label, "subject": j.subject, "link": j.link, "state": j.state,
+        "progress": j.progress(), "error": j.error, "submitted_at": j.submitted_at, "started_at": j.started_at,
+        "finished_at": j.finished_at, "result": _result(j) if j.state == "done" else None,
+    }
+
+
+def _prices(run) -> dict:
+    return {"listings": [asdict(o) for o in run.update.listings], "fx": [asdict(f) for f in run.update.fx],
+            "fills": [order_outcome(f.order, f.status, f.note) for f in run.fills]}
+
+
+def _analysed(runs: list[WatchedAnalysis]) -> dict:
+    return {"listings": [
+        {"symbol": r.symbol, "error": r.error,
+         "lean": None if r.analysis is None or r.analysis.lean is None
+         else {"label": r.analysis.lean.label, "probability": r.analysis.lean.probability}}
+        for r in runs
+    ]}
+
+
+# What a finished job's button shows, by kind; research shows its report on the company page.
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick}
+
+
+def _result(j: Job) -> dict | None:
+    """None for a job an earlier server ran: only its outcome was kept, not its result."""
+    shape = _RESULTS.get(j.kind)
+    return shape(j.result) if shape and j.result is not None else None
 
 
 def schedule(view: ScheduleView) -> dict:

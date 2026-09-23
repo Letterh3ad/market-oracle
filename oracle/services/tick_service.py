@@ -72,14 +72,18 @@ async def _step(ctx: AppContext) -> tuple[str, str | None]:
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse, "step": _step}
 
 
-async def run_tick(ctx: AppContext, trigger: str = "manual") -> TickRun:
-    """Run every stage once, in one process at a time, and store the outcome."""
+async def run_tick(ctx: AppContext, trigger: str = "manual",
+                   on_stage: Callable[[str], None] | None = None) -> TickRun:
+    """Run every stage once, in one process at a time, and store the outcome. `on_stage` is
+    told each stage's name as it starts."""
     started = ctx.clock.utcnow()
     stages: list[Stage] = []
     with single_flight(ctx, JOB, LEASE_S) as held:
         try:
             for name, stage in STAGES.items():
                 held.check()
+                if on_stage:
+                    on_stage(name)
                 stages.append(await _run_stage(ctx, name, stage))
         except BaseException as exc:
             # Stopped part way (server shutdown, lock taken over): still leave a record.

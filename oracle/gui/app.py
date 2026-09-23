@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
-from oracle.gui.routes import companies, jobs, ledgers, settings, status, universe, watchlists
+from oracle.gui.routes import activity, companies, jobs, ledgers, settings, status, universe, watchlists
+from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.context import AppContext
 from oracle.services.schedule_service import Scheduler
 
@@ -27,11 +28,15 @@ class _Static(StaticFiles):
         return response
 
 
-def build_app(ctx: AppContext, scheduler: Scheduler | None = None) -> FastAPI:
-    """`scheduler` runs for as long as the server does; tests leave it out."""
+def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
+    """With `schedule`, the scheduler runs for as long as the server does (tests leave it
+    off). Jobs still running when the server stops are cancelled."""
+    runner = JobRunner(ctx)
+    scheduler = Scheduler(ctx, runner=runner) if schedule else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        sweep_leftovers(ctx)
         task = asyncio.create_task(scheduler.run()) if scheduler else None
         app.state.scheduler_task = task
         try:
@@ -41,11 +46,14 @@ def build_app(ctx: AppContext, scheduler: Scheduler | None = None) -> FastAPI:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
+            await runner.stop()
 
     app = FastAPI(title="Market Oracle", lifespan=lifespan)
     app.state.ctx = ctx
+    app.state.runner = runner
     install_error_handlers(app)
     app.include_router(status.router)
+    app.include_router(activity.router)
     app.include_router(universe.router)
     app.include_router(companies.router)
     app.include_router(watchlists.router)

@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from oracle.config import Config, ScheduleConfig
+from oracle.services.activity_service import JobRunner
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.jobs_service import single_flight
@@ -51,7 +52,7 @@ def ctx(tmp_path):
 
 
 def scheduler(ctx):
-    return Scheduler(ctx, tz=LONDON)
+    return Scheduler(ctx, JobRunner(ctx), tz=LONDON)
 
 
 async def test_a_due_tick_fires_once_not_twice(ctx):

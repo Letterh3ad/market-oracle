@@ -72,6 +72,13 @@ class ResearchRepo:
                  run_id),
             )
 
+    def fail_running(self, error: str, finished_at: str) -> None:
+        with transaction(self._conn):
+            self._conn.execute(
+                "UPDATE research_runs SET status = ?, error = ?, finished_at = ? WHERE status = ?",
+                (RunStatus.FAILED, error, finished_at, RunStatus.RUNNING),
+            )
+
     def get(self, run_id: int) -> ResearchRun | None:
         row = self._conn.execute(f"SELECT {_RUN} FROM research_runs WHERE id = ?", (run_id,)).fetchone()
         return self._run(row) if row else None

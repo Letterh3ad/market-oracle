@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -10,6 +11,11 @@ from oracle.services.errors import JobAlreadyRunning
 
 def job_statuses(ctx: AppContext) -> list[JobStatus]:
     return JobLock(ctx.conn, ctx.clock).statuses()
+
+
+def held_elsewhere(ctx: AppContext) -> list[JobStatus]:
+    """Live locks another process holds (a CLI run, say): shown, never cancellable here."""
+    return [s for s in job_statuses(ctx) if s.pid != os.getpid() and s.stale_reason is None]
 
 
 class Held:

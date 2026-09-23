@@ -2,6 +2,7 @@ import pytest
 
 from oracle.services.jobs_service import single_flight
 from tests.gui.conftest import DAYS
+from tests.gui.jobs import run_job
 
 
 @pytest.fixture
@@ -17,14 +18,14 @@ async def test_an_unpriced_listing_shows_and_says_how_to_price_it(watching):
 
 
 async def test_updating_prices_then_analysing_fills_in_price_signals_and_lean(watching):
-    prices = (await watching.post("/api/jobs/prices")).json()
+    prices = (await run_job(watching, "/api/jobs/prices"))["result"]
     assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}]
     assert prices["fills"] == []
     [item] = (await watching.get("/api/watchlists/main")).json()["items"]
     assert item["last_date"] == DAYS[-1].isoformat() and not item["stale"] and item["close_base"] is not None
     assert item["next"] == "analyse"
 
-    ran = (await watching.post("/api/jobs/analyse")).json()
+    ran = (await run_job(watching, "/api/jobs/analyse"))["result"]
     assert [(r["symbol"], r["error"]) for r in ran["listings"]] == [("AAPL", None)]
     [item] = (await watching.get("/api/watchlists/main")).json()["items"]
     assert item["lean"]["source"] == "baseline" and not item["lean"]["stale"] and item["next"] is None
@@ -34,8 +35,8 @@ async def test_updating_prices_then_analysing_fills_in_price_signals_and_lean(wa
 
 async def test_a_job_another_process_holds_answers_already_running(ctx, watching):
     with single_flight(ctx, "prices_update", 60.0):
-        response = await watching.post("/api/jobs/prices")
-    assert response.status_code == 409 and "already running" in response.json()["error"]
+        job = await run_job(watching, "/api/jobs/prices")
+    assert job["state"] == "failed" and "already running" in job["error"]
 
 
 async def test_removing_a_listing_empties_the_list(watching):

@@ -3,6 +3,7 @@ from datetime import timedelta
 import pytest
 
 from tests.fakes.yahoo import bar
+from tests.gui.jobs import run_job
 
 
 async def test_a_buy_queues_on_the_manual_account(loaded):
@@ -27,7 +28,7 @@ async def test_selling_what_is_not_held_is_refused(loaded):
 
 
 async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(ctx, priced, yahoo, clock):
-    await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
     await priced.post("/api/ledgers/manual/buy", json={"symbol": "AAPL", "amount": 1000})
     [waiting] = (await priced.post("/api/ledgers/fill")).json()  # no later bar yet
     assert (waiting["symbol"], waiting["status"]) == ("AAPL", "pending")
@@ -36,7 +37,7 @@ async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(
     yahoo.series["AAPL"].bars.append(bar(tomorrow, 150.0))
     yahoo.series["GBPUSD=X"].bars.append(bar(tomorrow, 1.25))
     clock.advance(2 * 86400)
-    await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})  # fills on the way in
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")  # fills on the way in
     [position] = (await priced.get("/api/ledgers")).json()["accounts"][1]["positions"]
     sell = (await priced.post("/api/ledgers/manual/sell", json={"symbol": "AAPL", "shares": 2})).json()
     assert (sell["side"], sell["shares"], position["shares"] > 2) == ("sell", 2, True)
