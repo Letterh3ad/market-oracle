@@ -325,3 +325,20 @@ async def test_scheduled_ticks_are_automatic_and_manual_ones_are_not(runner, ctx
     gated_stages.set()
     await runner.wait(scheduled.id)
     assert scheduled.automatic and not submit_tick(ctx, runner).automatic
+
+
+async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from oracle.research.trace import RunStatus
+    from oracle.services import activity_service
+    from oracle.services.activity_service import submit_research
+
+    async def unusable(c, listing):
+        return SimpleNamespace(status=RunStatus.FAILED, error="the model's answers were unusable")
+
+    monkeypatch.setattr(activity_service, "research", unusable)
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    job = submit_research(ctx, runner, "AAPL")
+    await runner.wait(job.id)
+    assert (job.state, job.error) == ("failed", "the model's answers were unusable")
