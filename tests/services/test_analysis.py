@@ -205,3 +205,27 @@ async def test_no_technicals_means_no_lean_is_stored(ctx, yahoo):
     result = await analyse(ctx, "MSFT")
     assert "technicals" in [k.analyst for k in result.skipped]
     assert result.lean is None and LeanRepo(ctx.conn).latest("MSFT") is None
+
+
+async def test_analysing_the_watchlist_runs_in_one_process_at_a_time(ctx):
+    from oracle.services.errors import JobAlreadyRunning
+    from oracle.services.jobs_service import single_flight
+
+    with single_flight(ctx, "analyse", 60.0):
+        with pytest.raises(JobAlreadyRunning):
+            await analyse_watched(ctx)
+    assert await analyse_watched(ctx) == []
+
+
+async def test_watch_lines_carry_the_baseline_lean_and_flag_it_once_a_newer_bar_arrives(ctx, yahoo, clock):
+    from oracle.services.watch_service import show_watchlist
+
+    watch(ctx, "AAPL")
+    assert (show_watchlist(ctx)[0].lean, show_watchlist(ctx)[0].lean_stale) == (None, False)
+    lean = (await analyse(ctx, "AAPL")).lean
+    line = show_watchlist(ctx)[0]
+    assert (line.lean, line.lean_stale) == (lean, False)
+    yahoo.series["AAPL"].bars.append(bar(weekdays(301, date(2025, 7, 1))[-1].isoformat(), 200.0))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    assert show_watchlist(ctx)[0].lean_stale

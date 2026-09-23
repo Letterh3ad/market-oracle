@@ -26,7 +26,7 @@ def test_a_second_refresh_process_is_refused_while_the_first_runs(tmp_path):
             cwd=ROOT, capture_output=True, text=True, timeout=60,
         )
         assert second.returncode == 1, second.stdout + second.stderr
-        assert "universe_refresh is held" in second.stderr
+        assert "universe refresh is already running" in second.stderr
 
         release.write_text("go")
         assert first.wait(timeout=30) == 0

@@ -15,6 +15,7 @@ from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, ServiceError
 from oracle.services.fundamentals_service import PEER_MAX_AGE, fetch_fundamentals
+from oracle.services.jobs_service import single_flight
 from oracle.services.peers_service import choose_peers, with_fundamentals
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
@@ -30,6 +31,9 @@ __all__ = [
     "analyse_watched", "latest_signals", "signal_history",
 ]
 
+JOB = "analyse"
+# Far longer than a run takes; a crashed holder is freed by the pid check instead.
+LEASE_S = 1800.0
 FACTOR_NAMES = tuple(f.name for f in factors.FACTORS)
 # Display order: price-based first, then the peer comparisons.
 ORDER = ("technicals", "trend", "rsi", "macd", "volatility", "risk", "value", "quality", "growth")
@@ -126,13 +130,15 @@ def _base_series(ctx: AppContext, symbol: str) -> Series:
 
 
 async def analyse_watched(ctx: AppContext) -> list[WatchedAnalysis]:
-    """Every watched listing; one failing never stops the rest."""
-    out = []
-    for symbol in WatchlistRepo(ctx.conn).all_symbols():
-        try:
-            out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
-        except ServiceError as exc:
-            out.append(WatchedAnalysis(symbol, None, str(exc)))
+    """Every watched listing, in one process at a time; one failing never stops the rest."""
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        out = []
+        for symbol in WatchlistRepo(ctx.conn).all_symbols():
+            held.check()
+            try:
+                out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
+            except ServiceError as exc:
+                out.append(WatchedAnalysis(symbol, None, str(exc)))
     return out
 
 

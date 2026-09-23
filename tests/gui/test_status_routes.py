@@ -16,3 +16,13 @@ async def test_each_source_reports_its_health_and_a_tripped_breaker_says_why(ctx
     assert sources["ecb"]["state"] == "ok"
     assert sources["yahoo"]["state"] == "paused"
     assert "429" in sources["yahoo"]["reason"] and sources["yahoo"]["paused_until"].endswith("Z")
+
+
+async def test_a_loaded_universe_reports_its_listings_and_when_it_was_refreshed(ctx, loaded):
+    from oracle.services.universe_service import universe_status
+
+    universe = (await loaded.get("/api/status")).json()["universe"]
+    assert universe["loaded"] and universe["next"] is None
+    full = universe_status(ctx)
+    assert universe["listings"] == full.listings
+    assert universe["refreshed_at"] == full.refreshed_at.isoformat().replace("+00:00", "Z")

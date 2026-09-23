@@ -8,7 +8,7 @@ from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.net_service import source_statuses
 from oracle.services.status_service import status
-from oracle.services.universe_service import universe_status
+from oracle.services.universe_service import universe_brief
 
 router = APIRouter(prefix="/api")
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api")
 # belongs to the event loop's thread.
 @router.get("/status")
 async def get_status(ctx: AppContext = Depends(get_ctx)) -> dict:
-    universe = universe_status(ctx)
+    universe = universe_brief(ctx)
     return {
         "base_currency": status(ctx).base_currency,
         "universe": {

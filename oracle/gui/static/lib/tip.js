@@ -15,15 +15,29 @@ const GLOSSARY = {
   listings: "The same company can trade on several exchanges. One row per company shows its main listing.",
   tags: "Your own labels on a company, shared by all its listings. Filter by several to require every one.",
   sort_direction: "Ascending: A to Z, smallest first. Descending: Z to A, biggest first. Relevance has one direction.",
+  last_close: "The price at the end of the last trading day stored, in the currency the exchange quotes.",
+  in_base: "That price converted to your base currency at the same day's exchange rate.",
+  day_change: "How far the last close moved from the one before it.",
+  stale_price: "Out of date: the last stored price is more than two weekdays old. Press Update prices.",
+  signals:
+    "What each analyst concluded, from the latest analysis: + leans up (bullish), - leans down (bearish), " +
+    "= no clear direction. Faded ones are out of date. The Company tab explains each.",
+  lean:
+    "The overall call (strong sell to strong buy) with how likely it is to be right. Baseline means it comes " +
+    "from price patterns and company figures only, before any AI research. The strategy account trades on it.",
+  lean_stale: "Older than the latest price, so the strategy will not trade on it until you press Analyse.",
 };
 
 // A label followed by a small "?" that explains it on hover or keyboard focus.
 function tip(label, key) {
   const text = GLOSSARY[key];
   if (!text) throw new Error(`no glossary entry for "${key}"`);
-  return el("span", { class: "tip-wrap" },
-    label,
-    el("span", { class: "tip", tabindex: "0", role: "note", "aria-label": text, "data-tip": text }, "?"));
+  const mark = el("span", { class: "tip", tabindex: "0", role: "note", "aria-label": text, "data-tip": text }, "?");
+  // Open towards whichever side has room, so the text is never cut off at the window edge.
+  const place = () => mark.classList.toggle("tip-left", mark.getBoundingClientRect().right + 300 > window.innerWidth);
+  mark.addEventListener("mouseenter", place);
+  mark.addEventListener("focus", place);
+  return el("span", { class: "tip-wrap" }, label, mark);
 }
 
 export { tip, GLOSSARY };

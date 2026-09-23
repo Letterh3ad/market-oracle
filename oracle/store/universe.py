@@ -136,6 +136,9 @@ class UniverseRepo:
             )
             self._conn.execute("INSERT INTO listings_fts (listings_fts) VALUES ('rebuild')")
 
+    def listing_count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+
     def counts(self) -> UniverseCounts:
         row = self._conn.execute(
             "SELECT COUNT(*), COUNT(DISTINCT company_key), COALESCE(SUM(delisted), 0) FROM listings"

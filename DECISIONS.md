@@ -555,3 +555,20 @@ reuses the ReAct loop and tools (7) and the graph plus Laya screening (8).
 **Alternatives:** Building it in phase 7 (rejected: would duplicate the graph and
 screening that phase 8 adds). Leaving it until after v1 (rejected: it is how the user
 means to find companies).
+
+## 2026-09-23 - Watchlist tab: jobs run in the request, analysis locked, symbol index
+
+**Context:** Ticket 04, plus two slow spots found checking it in the browser.
+**Decision:** "Update prices" and "Analyse" run inside their request under the
+single-flight job lock; the server keeps answering other requests while a job awaits the
+network (no transaction is held across an `await`, checked by a scan of the code), and a
+job running anywhere answers 409 at once. `analyse_watched` now takes an `analyse` job
+lock too, for the CLI as well. "Update watched prices, then fill paper orders" moved from
+the CLI into `routine_service.update_prices`, shared by both frontends and the base for
+`oracle tick`. The job-busy message is plain English. Watch lines carry the latest lean
+and flag it when older than the last bar. Migration 0017 adds a case-insensitive symbol
+index: every symbol lookup was scanning the whole universe (~100ms each; now ~1ms). The
+status line counts listings with a plain `COUNT(*)` (the full per-company counts took
+~570ms on every 30-second poll).
+**Alternatives:** Background jobs with a job-state table and polling (deferred: the
+phase 10 job model owns job history and force rerun; progress here is "running").
