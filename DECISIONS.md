@@ -587,3 +587,27 @@ the stalker's. Symbols link to `#company/SYMBOL`; tabs take an argument after th
 **Alternatives:** Settings in the database overriding the file (rejected: two sources of
 truth, and the CLI would disagree with the GUI). A TOML writer dependency (rejected: it
 would drop the user's comments).
+
+## 2026-09-23 - Penny shares opt-in for v2; day trading stays a non-goal
+
+**Context:** The user asked about penny shares and day trading, later or in v2.
+**Decision:** Penny shares become a v2 opt-in with guardrails: a liquidity floor,
+spread-based costs (flat 0.1% slippage would make paper profits fiction), a promotion-risk
+flag, strategy account excluded by default. Day trading stays out: the system is a daily
+loop with minutes of local-model time per company, free intraday data is delayed and
+short, costs eat intraday moves, and the AI's edge (news, filings, supply chains) plays
+out over days to weeks. The practical form is a 1-3 day swing horizon on daily data (v2).
+**Alternatives:** A small intraday paper sandbox for learning, much later, never the main
+strategy (left open).
+
+## 2026-09-23 - Ledgers view: realised result per sell
+
+**Context:** Ticket 06, and the phase 5 follow-up asking for realised P&L per sell.
+**Decision:** The average-cost replay now also yields each sell (date, shares, proceeds,
+cost of the shares sold, realised), so the running total is the sum of the per-sell
+figures by construction; hand-checked against the phase 5 worked example. The ledgers tab
+shows both accounts in two columns with the same metrics, an equity chart once fills
+have run on two days, positions, waiting orders with their notes, sells, and the
+strategy's decision log. Read-only; trading is ticket 07.
+**Alternatives:** Storing realised P&L per sell (rejected: derived data, replayed like the
+rest of the ledger).

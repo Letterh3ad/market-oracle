@@ -1,5 +1,6 @@
 import { api } from "../lib/api.js";
 import { el, showError, clearError } from "../lib/dom.js";
+import { lineChart } from "../lib/chart.js";
 import { tip, tipText } from "../lib/tip.js";
 
 const LABELS = {
@@ -150,22 +151,13 @@ async function drawChart(pane, symbol, base) {
   const useBase = inBase.length === rows.length && rows.length > 0;
   const points = rows.map((r) => ({ time: r.date, value: useBase ? r.close_base : r.close }));
   box.replaceChildren(el("div", { class: "dim small" }, `Last year's closes${useBase ? ` in ${base}` : ""}`));
-  if (points.length < 2 || !window.LightweightCharts) {
-    box.append(el("p", { class: "dim" }, points.length < 2 ? "Not enough prices to chart yet." : "Chart unavailable."));
+  if (points.length < 2) {
+    box.append(el("p", { class: "dim" }, "Not enough prices to chart yet."));
     return;
   }
   const holder = el("div");
   box.append(holder);
-  const css = getComputedStyle(document.documentElement);
-  const c = (name) => css.getPropertyValue(name).trim();
-  chart = window.LightweightCharts.createChart(holder, {
-    width: holder.clientWidth, height: 260,
-    layout: { background: { color: c("--bg-inset") }, textColor: c("--text-dim") },
-    grid: { vertLines: { color: c("--border") }, horzLines: { color: c("--border") } },
-    timeScale: { borderColor: c("--border") }, rightPriceScale: { borderColor: c("--border") },
-  });
-  chart.addLineSeries({ color: c("--accent"), lineWidth: 2 }).setData(points);
-  chart.timeScale().fitContent();
+  chart = lineChart(holder, points);
 }
 
 async function load(pane, symbol, refresh = false) {

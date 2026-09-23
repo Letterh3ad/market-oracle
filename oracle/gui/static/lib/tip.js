@@ -28,6 +28,18 @@ const GLOSSARY = {
   lean_stale: "Older than the latest price, so the strategy will not trade on it until you press Analyse.",
   score: "From -1 (strongly down) to +1 (strongly up). Between -0.2 and +0.2 counts as no clear direction.",
   confidence: "How much the analyst's own inputs agree with each other, from 0% to 100%.",
+  strategy_account:
+    "Trades by itself on the leans, under fixed rules (buy at 60% or more, at most 10 positions of up to 10% " +
+    "each, 20% always kept in cash, sell on a sell lean or 8% below cost). Its record is the honest test.",
+  manual_account: "Your own paper trades, scored the same way, so you can compare your picks with the strategy.",
+  equity: "Cash plus every position at its last closing price, in your base currency.",
+  realised: "Profit or loss locked in by selling, after every cost.",
+  unrealised: "Profit or loss on shares still held, if they were sold at the last close (before selling costs).",
+  costs:
+    "Everything trading has cost: broker fees, UK stamp duty on London buys, the currency exchange spread " +
+    "and slippage (filling a little worse than the opening price).",
+  max_fall: "The largest drop from a high point in the daily equity record: how bad it got along the way.",
+  pending: "Orders waiting for the next opening price. They fill when Update prices brings in that day.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

@@ -1,16 +1,16 @@
 import { el, clearError } from "./lib/dom.js";
 import * as status from "./lib/status.js";
-import { placeholder } from "./tabs/placeholder.js";
 import universeTab from "./tabs/universe.js";
 import watchlistTab from "./tabs/watchlist.js";
 import companyTab from "./tabs/company.js";
+import ledgersTab from "./tabs/ledgers.js";
 
 // Order here is the order in the rail.
 const TABS = [
   universeTab,
   watchlistTab,
   companyTab,
-  placeholder("ledgers", "Ledgers"),
+  ledgersTab,
 ];
 
 // "#company/7203.T" opens a tab with an argument.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date
 
 from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
@@ -26,8 +27,9 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AccountScore", "Action", "AccountView", "FillOutcome", "Order", "Position", "Side", "Status", "account_score", "account_view",
-    "equity_history", "fill_pending", "place_buy", "place_sell", "strategy_log", "strategy_step",
+    "ACCOUNTS", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
+    "Status", "account_score", "account_view", "equity_history", "fill_pending", "place_buy", "place_sell",
+    "sells", "strategy_log", "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "manual")
@@ -68,6 +70,21 @@ class AccountScore:
     @property
     def return_(self) -> float:
         return self.equity / self.start - 1
+
+
+@dataclass(frozen=True)
+class Sell:
+    date: date
+    symbol: str
+    shares: int
+    proceeds: float
+    """Cash received in the base currency, after all costs."""
+    cost: float
+    """What the shares sold had cost, at the average cost basis."""
+
+    @property
+    def realised(self) -> float:
+        return self.proceeds - self.cost
 
 
 @dataclass(frozen=True)
@@ -285,17 +302,27 @@ def _held_shares(repo: PaperRepo, account: str, symbol: str) -> int:
 
 def _replay(repo: PaperRepo, account: str) -> tuple[dict[str, list], float]:
     """({symbol: [shares, cost]}, realised) from the account's fills, at average cost."""
+    held, done = _replay_sells(repo, account)
+    return held, sum(s.realised for s in done)
+
+
+def _replay_sells(repo: PaperRepo, account: str) -> tuple[dict[str, list], list[Sell]]:
     held: dict[str, list] = {}
-    realised = 0.0
+    done = []
     for f in repo.fills(account):
         shares, cost = held.get(f.symbol, [0, 0.0])
         if f.side == Side.BUY:
             held[f.symbol] = [shares + f.shares, cost - f.cash]
         else:
             sold_cost = cost * f.shares / shares
-            realised += f.cash - sold_cost
+            done.append(Sell(f.date, f.symbol, f.shares, f.cash, sold_cost))
             held[f.symbol] = [shares - f.shares, cost - sold_cost]
-    return held, realised
+    return held, done
+
+
+def sells(ctx: AppContext, account: str) -> list[Sell]:
+    """Every filled sell on the account with what it realised, oldest first."""
+    return _replay_sells(PaperRepo(ctx.conn), account)[1]
 
 
 def _positions(ctx: AppContext, held: dict[str, list]) -> list[Position]:
