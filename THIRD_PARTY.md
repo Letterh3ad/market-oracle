@@ -28,6 +28,8 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | FastAPI | MIT | GUI web API (`oracle/gui`) |
 | uvicorn | BSD-3-Clause | serves the GUI (`oracle gui`) |
 | Starlette, pydantic, pydantic-core, anyio (via FastAPI) | BSD-3-Clause, MIT, MIT, MIT | FastAPI's own dependencies |
+| anthropic 1.8 (Anthropic Python SDK) | MIT | Claude backend for research (`oracle/research/claude.py`); checked 2026-09-23 |
+| httpx2, httpcore2, jiter, docstring-parser, truststore (via anthropic) | BSD-3-Clause, BSD-3-Clause, MIT, MIT, MIT | the SDK's own dependencies (the rest were already here) |
 | ddgs 9.16 | MIT | web search for research (`oracle/research/web.py`); checked 2026-09-23 |
 | primp, click, lxml, colorama (via ddgs; colorama on Windows only) | MIT, BSD-3-Clause, BSD-3-Clause, BSD-3-Clause | ddgs's own dependencies |
 | TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |

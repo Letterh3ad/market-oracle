@@ -168,3 +168,14 @@ def test_a_contact_for_sec_is_unset_by_default_and_must_hold_an_email(tmp_path):
         path.write_text(f"[research]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="research"):
             load_config(path, cwd=tmp_path)
+
+
+def test_claude_can_be_chosen_with_its_own_model_setting(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].llm.claude_model == "claude-opus-5"
+    path = tmp_path / "oracle.toml"
+    path.write_text('[llm]\nbackend = "claude"\nclaude_model = "claude-sonnet-5"\n', encoding="utf-8")
+    llm = load_config(path, cwd=tmp_path)[0].llm
+    assert (llm.backend, llm.claude_model) == ("claude", "claude-sonnet-5")
+    path.write_text('[llm]\nclaude_model = ""\n', encoding="utf-8")
+    with pytest.raises(ConfigError, match="llm.claude_model"):
+        load_config(path, cwd=tmp_path)

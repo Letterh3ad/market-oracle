@@ -1,0 +1,85 @@
+"""The Claude backend against a fake of the SDK's async client: no network in the suite."""
+
+from types import SimpleNamespace
+
+import anthropic
+import httpx2
+import pytest
+
+from oracle.research.claude import ClaudeChat
+from oracle.research.llm import ModelError
+
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "action": {"type": "string", "enum": ["news_search", "final"]},
+        "findings": {"type": "array", "maxItems": 3,
+                     "items": {"type": "object", "properties": {"text": {"type": "string"}}}},
+    },
+    "required": ["action"],
+}
+
+
+class FakeClient:
+    """Stands in for AsyncAnthropic: records each request, answers or raises as told."""
+
+    def __init__(self, *answers) -> None:
+        self.answers = list(answers)
+        self.requests: list[dict] = []
+        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
+
+    async def _create(self, **request):
+        self.requests.append(request)
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def message(*blocks, stop_reason="end_turn"):
+    return SimpleNamespace(content=list(blocks), stop_reason=stop_reason)
+
+
+def text(value):
+    return SimpleNamespace(type="text", text=value)
+
+
+def status_error(cls, code):
+    response = httpx2.Response(code, request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    return cls("refused", response=response, body=None)
+
+
+async def test_a_reply_is_json_constrained_to_the_schema_with_refusal_fallbacks_on():
+    client = FakeClient(message(SimpleNamespace(type="thinking", thinking=""), text('{"action": "final"}')))
+    chat = ClaudeChat("claude-opus-5", 60.0, client)
+    reply = await chat.reply([{"role": "system", "content": "Be brief."}, {"role": "user", "content": "Go."},
+                              {"role": "assistant", "content": "{}"}, {"role": "user", "content": "Again."}], SCHEMA)
+    assert reply == {"action": "final"}
+    [request] = client.requests
+    assert request["model"] == "claude-opus-5" and request["system"] == "Be brief."
+    assert [m["role"] for m in request["messages"]] == ["user", "assistant", "user"]
+    assert request["fallbacks"] == "default" and request["betas"] == ["server-side-fallback-2026-07-01"]
+    sent = request["output_config"]["format"]
+    assert sent["type"] == "json_schema"
+    # Structured outputs need closed objects, and take no array-length limits.
+    assert sent["schema"]["additionalProperties"] is False
+    findings = sent["schema"]["properties"]["findings"]
+    assert "maxItems" not in findings and findings["items"]["additionalProperties"] is False
+    assert findings["items"]["required"] == ["text"]
+    assert SCHEMA["properties"]["findings"]["maxItems"] == 3  # the caller's schema is left alone
+
+
+async def test_a_refusal_is_handed_back_as_no_answer_for_the_loop_to_reject():
+    client = FakeClient(message(stop_reason="refusal"))
+    assert not isinstance(await ClaudeChat("claude-opus-5", 60.0, client).reply([], SCHEMA), dict)
+
+
+@pytest.mark.parametrize("error, says", [
+    (status_error(anthropic.AuthenticationError, 401), "ANTHROPIC_API_KEY"),
+    (status_error(anthropic.RateLimitError, 429), "rate limiting"),
+    (status_error(anthropic.InternalServerError, 529), "HTTP 529"),
+    (anthropic.AnthropicError("Could not resolve authentication method."), "ANTHROPIC_API_KEY"),
+])
+async def test_api_failures_are_plain_model_errors(error, says):
+    with pytest.raises(ModelError, match=says):
+        await ClaudeChat("claude-opus-5", 60.0, FakeClient(error)).reply([], SCHEMA)

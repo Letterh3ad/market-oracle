@@ -113,6 +113,8 @@ class LlmConfig:
     """Per reply; a cold model load on 8GB is slow."""
     context: int = 8192
     """Tokens of context asked of the model; Ollama's own default is too small for a run."""
+    claude_model: str = "claude-opus-5"
+    """The model when backend is "claude"; its key comes from ANTHROPIC_API_KEY, never this file."""
 
 
 @dataclass(frozen=True)
@@ -315,7 +317,7 @@ def _gui(raw: object) -> GuiConfig:
     return GuiConfig(host=host, port=port)
 
 
-LLM_BACKENDS = ("ollama",)
+LLM_BACKENDS = ("ollama", "claude")
 
 
 def _llm(raw: object) -> LlmConfig:
@@ -327,7 +329,7 @@ def _llm(raw: object) -> LlmConfig:
         whole = isinstance(value, int) and not isinstance(value, bool)
         if key == "backend":
             ok, wanted = value in LLM_BACKENDS, f"one of {', '.join(LLM_BACKENDS)}"
-        elif key == "model":
+        elif key in ("model", "claude_model"):
             ok, wanted = isinstance(value, str) and bool(value.strip()), "a model name like qwen3:8b"
         elif key == "base_url":
             ok, wanted = isinstance(value, str) and re.match(r"https?://", value) is not None, "an http(s) URL"

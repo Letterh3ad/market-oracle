@@ -551,3 +551,13 @@ async def test_report_history_lists_each_run_newest_first(ctx, news):
         model.roles["bull"] = {"case": case, "cites": ["a1"]}
         await research(ctx, "AAPL", model)
     assert [r.report.bull.text for r in report_history(ctx, "AAPL")] == ["Second view", "First view"]
+
+
+def test_the_configured_backend_decides_which_model_runs(ctx):
+    from dataclasses import replace
+
+    from oracle.services.research_service import configured_model
+
+    assert (configured_model(ctx).name, configured_model(ctx).model) == ("ollama", "qwen3:4b-instruct-2507-q8_0")
+    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
+    assert (configured_model(ctx).name, configured_model(ctx).model) == ("claude", "claude-opus-5")

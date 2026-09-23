@@ -834,3 +834,22 @@ round costs a call and small models repeat themselves rather than rebut).
   trace. Every part has a glossary tooltip; the unvalidated badge explains the gate.
 - A separate research tab was not added: the trace sits under its report on the Company
   tab, where the symbol is already chosen.
+
+## 2026-09-23 - Claude as a research backend
+
+**Context:** Ticket 10 of phase 7: `[llm] backend = "claude"` runs the same loop, query
+generator and roles on Claude.
+**Decision:**
+- Through the official Anthropic Python SDK (MIT), not raw HTTP. Credentials come from
+  `ANTHROPIC_API_KEY` or an `ant auth login` profile; nothing is stored in oracle.toml.
+- `claude_model` defaults to `claude-opus-5`, a separate setting from the Ollama `model`
+  so switching backend needs one line. Paid per token; Ollama stays the default.
+- Replies use structured outputs (`output_config.format` with the step or role schema),
+  closed with `additionalProperties: false` and all fields required; array-length limits
+  are dropped for Claude (unsupported) as callers cap lengths themselves.
+- Refusals fall back server-side (`fallbacks: "default"`, beta
+  `server-side-fallback-2026-07-01`), routed by category. A request refused even so is
+  handed back as no answer, which the loop treats as not understood.
+- Credential, rate-limit, status and connection failures become plain ModelErrors naming
+  the fix. Tests fake the SDK client (the SDK runs on httpx2, so the httpx fake web cannot
+  stand in); the live check runs only with `ORACLE_CLAUDE_SMOKE=1`, as it costs money.

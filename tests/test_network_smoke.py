@@ -167,3 +167,16 @@ async def test_real_sec_edgar_lists_apples_filings():
         filings = edgar.parse_filings((await http.get(edgar.submissions_url(cik))).json(), cik)
     assert cik == 320193 and any(f.form == "10-Q" for f in filings)
     assert all(f.url.startswith(edgar.ARCHIVES) for f in filings)
+
+
+async def test_real_claude_answers_inside_the_research_schema():
+    """Costs a fraction of a cent; runs only with ORACLE_CLAUDE_SMOKE=1 set."""
+    if not os.environ.get("ORACLE_CLAUDE_SMOKE"):
+        pytest.skip("set ORACLE_CLAUDE_SMOKE=1 (and Claude credentials) to check Claude live")
+    from oracle.config import LlmConfig
+    from oracle.research.claude import ClaudeChat
+    from oracle.research.engine import step_schema
+
+    reply = await ClaudeChat(LlmConfig().claude_model, 120.0).reply(
+        [{"role": "user", "content": "Reply with action final and input 'ok'."}], step_schema(["market_data", "final"]))
+    assert isinstance(reply, dict) and reply["action"] in ("market_data", "final")

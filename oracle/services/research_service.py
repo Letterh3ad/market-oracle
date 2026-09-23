@@ -7,6 +7,7 @@ from datetime import date, datetime, time, timezone
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
+from oracle.research.claude import ClaudeChat
 from oracle.research.engine import react
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
@@ -47,7 +48,7 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
     today = ctx.clock.utcnow().date()
     if as_of and as_of > today:
         raise InvalidQuery(f"as-of date {as_of.isoformat()} is in the future (today is {today.isoformat()})")
-    model = model or _configured_model(ctx)
+    model = model or configured_model(ctx)
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
         run_id = repo.start(listing, model.name, model.model, _now(ctx), as_of)
@@ -120,8 +121,11 @@ def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:
     return ResearchRepo(ctx.conn).latest(resolve_symbol(ctx, symbol).symbol)
 
 
-def _configured_model(ctx: AppContext) -> ChatModel:
+def configured_model(ctx: AppContext) -> ChatModel:
+    """The model `[llm] backend` names."""
     llm = ctx.config.llm
+    if llm.backend == "claude":
+        return ClaudeChat(llm.claude_model, llm.timeout_s)
     return OllamaChat(llm.model, llm.base_url, llm.timeout_s, llm.context, transport=ctx.transport)
 
 
