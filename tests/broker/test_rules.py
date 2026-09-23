@@ -61,12 +61,14 @@ def test_a_stop_sells_even_while_the_lean_is_still_buy():
 
 def test_a_held_or_pending_listing_is_not_bought_again():
     assert "H" not in run([lean("H")], [Holding("H", 5, 500.0, 500.0)])
-    assert run([lean("A")], pending=["A"]).get("A") is None
+    d = run([lean("A"), lean("H", "sell")], [Holding("H", 5, 500.0, 500.0)], pending=["A", "H"])
+    assert [(d[s].action, d[s].reason) for s in "AH"] == [("skip", "an order is already pending")] * 2
 
 
 def test_no_risk_size_means_no_buy():
-    d = run([lean("A")], sizes={})
-    assert d["A"].action == "skip" and "risk" in d["A"].reason
+    for sizes in ({}, {"A": 0.0}):
+        d = run([lean("A")], sizes=sizes)
+        assert d["A"].action == "skip" and "risk" in d["A"].reason
 
 
 def test_a_pending_buy_takes_a_position_slot():

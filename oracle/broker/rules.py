@@ -10,6 +10,7 @@ from datetime import date
 LABELS = ("strong sell", "sell", "hold", "buy", "strong buy")
 BUY_LABELS = frozenset({"buy", "strong buy"})
 SELL_LABELS = frozenset({"sell", "strong sell"})
+PENDING = "an order is already pending"
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: flo
     analyst's suggested share of equity per listing; sell proceeds are not counted until
     they fill. `cash` excludes what pending buys will spend, and a pending buy takes a
     position slot."""
-    out = []
+    out = [Decision(s, "skip", None, PENDING) for s in sorted(pending) if s in holdings or s in leans]
     for symbol, h in sorted(holdings.items()):
         if symbol in pending:
             continue
@@ -92,7 +93,7 @@ def _why_not(lean: Lean, positions: int, spendable: float, sizes: Mapping[str, f
         return f"probability {lean.probability:.0%} is under the {rules.min_probability:.0%} threshold"
     if positions >= rules.max_positions:
         return f"already {rules.max_positions} positions"
-    if lean.symbol not in sizes:
+    if sizes.get(lean.symbol, 0.0) <= 0:
         return "no risk size yet: run `oracle analyse`"
     if spendable <= 0:
         return "no cash above the cash floor"

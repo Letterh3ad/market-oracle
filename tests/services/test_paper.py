@@ -1,7 +1,10 @@
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 import pytest
 
+from oracle.analysts.signals import AnalystSignal
+from oracle.broker.rules import Lean
 from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, UnknownSymbol
@@ -12,6 +15,11 @@ from oracle.services.paper_service import (
 )
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
+from oracle.services.watch_service import watch
+from oracle.store.leans import LeanRepo
+from oracle.store.paper import PaperRepo
+from oracle.store.signals import SignalRepo
+from oracle.store.universe import UniverseRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
@@ -169,11 +177,6 @@ async def test_the_largest_fall_in_equity(ctx, yahoo, clock):
 
 
 def seed(ctx, symbol, label, probability=0.7, size_share=0.05, as_of=date(2026, 9, 21)):
-    from oracle.analysts.signals import AnalystSignal
-    from oracle.broker.rules import Lean
-    from oracle.store.leans import LeanRepo
-    from oracle.store.signals import SignalRepo
-
     LeanRepo(ctx.conn).save([Lean(symbol, as_of, label, probability, "baseline")], "because", "2026-09-21T20:00:00Z")
     SignalRepo(ctx.conn).save([AnalystSignal("risk", symbol, as_of, 0.0, 1.0, "r", (("size_share", size_share),))],
                               "2026-09-21T20:00:00Z")
@@ -182,7 +185,6 @@ def seed(ctx, symbol, label, probability=0.7, size_share=0.05, as_of=date(2026, 
 async def test_a_strategy_step_buys_on_a_lean_and_logs_every_decision(ctx, yahoo, clock):
     seed(ctx, "AAPL", "buy")
     seed(ctx, "VOD.L", "buy", probability=0.5)
-    from oracle.services.watch_service import watch
     watch(ctx, "AAPL")
     watch(ctx, "VOD.L")
     decisions = {d.symbol: d for d in strategy_step(ctx)}
@@ -195,7 +197,6 @@ async def test_a_strategy_step_buys_on_a_lean_and_logs_every_decision(ctx, yahoo
 
 
 async def test_a_strategy_step_sells_on_a_sell_lean(ctx, yahoo, clock):
-    from oracle.services.watch_service import watch
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "buy")
     strategy_step(ctx)
@@ -208,7 +209,6 @@ async def test_a_strategy_step_sells_on_a_sell_lean(ctx, yahoo, clock):
 
 
 async def test_a_step_skips_a_watched_listing_without_a_lean(ctx):
-    from oracle.services.watch_service import watch
     watch(ctx, "AAPL")
     [d] = strategy_step(ctx)
     assert (d.symbol, d.action) == ("AAPL", "skip") and "no lean yet" in d.reason
@@ -216,7 +216,6 @@ async def test_a_step_skips_a_watched_listing_without_a_lean(ctx):
 
 
 async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock):
-    from oracle.services.watch_service import watch
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "strong buy", probability=0.9)
     await next_day(ctx, yahoo, clock)
@@ -226,9 +225,6 @@ async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock)
 
 
 async def test_cash_in_pending_buys_is_not_spent_twice(ctx):
-    from dataclasses import replace
-
-    from oracle.services.watch_service import watch
     ctx.config = replace(ctx.config, risk=replace(ctx.config.risk, cash_floor=0.85))
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "buy", size_share=0.5)
@@ -241,14 +237,12 @@ async def test_cash_in_pending_buys_is_not_spent_twice(ctx):
 
 
 async def test_a_buy_of_nothing_or_less_is_refused(ctx):
-    for amount in (0.0, -500.0):
+    for amount in (0.0, -500.0, float("nan"), float("inf")):
         with pytest.raises(InvalidQuery, match="more than nothing"):
             place_buy(ctx, "AAPL", amount)
 
 
 async def test_a_bar_without_an_open_waits_for_the_next_one(ctx, yahoo, clock):
-    from oracle.store.paper import PaperRepo
-
     place_buy(ctx, "AAPL", 1000.0)
     for day, row in (("2026-09-22", (date(2026, 9, 22), None, 100.0, 100.0, 100.0, 100.0, 1000)),
                      ("2026-09-23", ohlc("2026-09-23", 101.0, 101.0))):
@@ -264,7 +258,6 @@ async def test_a_bar_without_an_open_waits_for_the_next_one(ctx, yahoo, clock):
 
 
 async def test_a_stop_on_an_out_of_date_lean_logs_only_the_sell(ctx, yahoo, clock):
-    from oracle.services.watch_service import watch
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "buy")
     strategy_step(ctx)
@@ -277,3 +270,20 @@ async def test_a_stop_on_an_out_of_date_lean_logs_only_the_sell(ctx, yahoo, cloc
     await update_fx(ctx)
     [d] = strategy_step(ctx)
     assert d.action == "sell" and d.reason.startswith("stop")
+
+
+async def test_a_listing_gone_from_the_universe_sells_but_is_not_bought(ctx, yahoo, clock, monkeypatch):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    place_sell(ctx, "AAPL", None)
+    place_buy(ctx, "AAPL", 1000.0)
+    monkeypatch.setattr(UniverseRepo, "profile", lambda self, symbol: None)
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 100.0, 100.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    outcomes = {o.order.side: o for o in fill_pending(ctx)}
+    assert outcomes["sell"].status == "filled"
+    assert (outcomes["buy"].status, outcomes["buy"].note) == ("rejected", "AAPL is no longer in the universe")

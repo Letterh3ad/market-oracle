@@ -10,7 +10,6 @@ from oracle.broker.rules import Lean
 
 SOURCE = "baseline"
 INPUTS = ("technicals", "value", "quality", "growth")
-LEANING = NEUTRAL_BAND
 STRONG = 0.6
 
 
@@ -36,8 +35,8 @@ def inputs(signals: Sequence[AnalystSignal]) -> list[AnalystSignal]:
 def _label(score: float) -> str:
     if score <= -STRONG:
         return "strong sell"
-    if score <= -LEANING:
+    if score <= -NEUTRAL_BAND:
         return "sell"
-    if score < LEANING:
+    if score < NEUTRAL_BAND:
         return "hold"
     return "buy" if score < STRONG else "strong buy"

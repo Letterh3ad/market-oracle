@@ -474,7 +474,8 @@ the factors). Trading on the last lean regardless of age (rejected: never trade 
   `paper step` runs before a fill cannot break the cash floor or the position cap.
 - A buy must spend more than nothing. A bar with no open is skipped; the order fills at
   the next bar that has one, rather than waiting forever.
-- A listing gone from the universe still fills, at the dearest fee band.
+- A listing gone from the universe: a held position still sells, at the dearest fee band;
+  a buy is rejected (its exchange, and so any stamp duty, is unknown).
 - A stop on a listing whose lean is out of date logs only the sell.
 - `paper buy SYMBOL AMOUNT` takes a positional amount in the configured base currency,
   not the ticket's `--gbp` (the base currency is not always GBP).
@@ -486,3 +487,15 @@ the factors). Trading on the last lean regardless of age (rejected: never trade 
 total is shown), side-by-side account columns (phase 6 GUI), enums for side, status and
 action strings, merging `Holding` and `Position`, store-level tests for paper and lean
 repos. A position that has never had a rate counts as nothing in equity until one arrives.
+
+## 2026-09-23 - Phase 5 review round 2
+
+**Context:** Second two-axis review of phase 5, mostly the round 1 fixes.
+**Decision:**
+- A buy amount must be finite as well as positive (`nan` would have crashed every fill run).
+- A zero risk size means no buy, like a missing one.
+- A listing with a pending order gets a logged skip ("an order is already pending") on
+  each step, so every step explains every watched or held listing.
+- Strategy decisions are logged as each order is placed, not after the loop.
+**Alternatives:** Moving `print_fills` out of `cli/common.py` again (kept: it is shared by
+`paper` and `prices`, which is what common is for).

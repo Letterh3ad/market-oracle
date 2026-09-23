@@ -3,6 +3,7 @@ pessimistic costs."""
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from oracle.analysts.risk import max_drawdown
@@ -51,9 +52,13 @@ class AccountView:
     """Profit or loss locked in by sells, in the base currency, after all costs."""
 
     @property
+    def holdings(self) -> float:
+        """Positions at their last close; one without a rate yet counts as nothing."""
+        return sum(p.value for p in self.positions if p.value is not None)
+
+    @property
     def equity(self) -> float:
-        """Cash plus positions at their last close; one without a rate yet counts as nothing."""
-        return self.cash + sum(p.value for p in self.positions if p.value is not None)
+        return self.cash + self.holdings
 
 
 @dataclass(frozen=True)
@@ -84,7 +89,7 @@ class FillOutcome:
 
 def place_buy(ctx: AppContext, symbol: str, cash: float, account: str = "manual", source: str = "manual") -> Order:
     """Queue a buy of `cash` (base currency); it fills at the next open."""
-    if cash <= 0:
+    if not (math.isfinite(cash) and cash > 0):
         raise InvalidQuery(f"a buy must spend more than nothing, not {cash:,.2f}")
     listing = resolve_symbol(ctx, symbol).symbol
     now = ctx.clock.utcnow()
@@ -128,15 +133,15 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, rules, {o.symbol for o in orders})
     sold = {d.symbol for d in decided if d.action == "sell"}
     decisions = [d for d in unusable if d.symbol not in sold] + decided
-    today, logged = ctx.clock.utcnow().date(), []
+    today, log = ctx.clock.utcnow().date(), DecisionRepo(ctx.conn)
     for d in decisions:
         order = None
         if d.action == "buy":
             order = place_buy(ctx, d.symbol, d.cash, account, source=account)
         elif d.action == "sell":
             order = place_sell(ctx, d.symbol, None, account, source=account)
-        logged.append(LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None))
-    DecisionRepo(ctx.conn).log(logged)
+        # Logged as each order is placed, so one failing never leaves an order unexplained.
+        log.log([LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None)])
     return decisions
 
 
@@ -199,7 +204,7 @@ def _record_equity(ctx: AppContext) -> None:
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
         view = account_view(ctx, account)
-        EquityRepo(ctx.conn).record(account, today, view.cash, view.equity - view.cash)
+        EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
 
 
 def account_view(ctx: AppContext, account: str) -> AccountView:
@@ -220,10 +225,15 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
         note = f"no {bar.currency} rate for {bar.date.isoformat()}: run `oracle fx update`"
         repo.set_status(order.id, "pending", note)
         return FillOutcome(order, "pending", note)
-    # A listing gone from the universe still fills; its fees fall back to the dearest band.
     profile = UniverseRepo(ctx.conn).profile(order.symbol)
-    exchange = profile.exchange if profile else None
-    country = exchange_country(exchange) or (profile.country if profile else None) or ""
+    if profile is None:
+        if order.side == "buy":
+            return _reject(repo, order, f"{order.symbol} is no longer in the universe")
+        # A held listing gone from the universe still sells, at the dearest fee band.
+        exchange, country = "", ""
+    else:
+        exchange = profile.exchange or ""
+        country = exchange_country(exchange) or profile.country or ""
     if order.side == "sell":
         held = _held_shares(repo, order.account, order.symbol)
         shares = order.shares if order.shares is not None else held
@@ -235,7 +245,7 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
     cash = _cash(ctx, repo, order.account)
     if order.cash > cash:
         return _reject(repo, order, f"not enough cash: {order.cash:,.2f} asked, {cash:,.2f} available")
-    fill = buy_fill(order.cash, open_price=bar.open, rate=rate, country=country, exchange=exchange or "",
+    fill = buy_fill(order.cash, open_price=bar.open, rate=rate, country=country, exchange=exchange,
                     costs=COSTS)
     if fill.shares == 0:
         return _reject(repo, order, f"{order.cash:,.2f} buys no whole share at {bar.open:,.2f} {bar.currency} after costs")
