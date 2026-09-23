@@ -572,3 +572,18 @@ status line counts listings with a plain `COUNT(*)` (the full per-company counts
 ~570ms on every 30-second poll).
 **Alternatives:** Background jobs with a job-state table and polling (deferred: the
 phase 10 job model owns job history and force rerun; progress here is "running").
+
+## 2026-09-23 - Company tab: GUI settings written to oracle.toml, single-listing jobs
+
+**Context:** Ticket 05. The peer count must be adjustable from the page, and a company
+you do not watch still needs prices and analysis.
+**Decision:** GUI-changed settings are written into `oracle.toml` itself (one line edited
+by `config.with_setting`, comments and other settings kept; the section or file is made
+when missing, where `oracle` looks for it), checked to load before it is kept, and applied
+to the running app. The job routes take an optional `symbol` to price or analyse one
+listing, watched or not; one listing's price update also fetches its currency's FX and
+runs fills. The chart is TradingView Lightweight Charts 4.2.3 (Apache-2.0), vendored like
+the stalker's. Symbols link to `#company/SYMBOL`; tabs take an argument after the slash.
+**Alternatives:** Settings in the database overriding the file (rejected: two sources of
+truth, and the CLI would disagree with the GUI). A TOML writer dependency (rejected: it
+would drop the user's comments).

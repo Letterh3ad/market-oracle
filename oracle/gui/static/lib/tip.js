@@ -26,12 +26,22 @@ const GLOSSARY = {
     "The overall call (strong sell to strong buy) with how likely it is to be right. Baseline means it comes " +
     "from price patterns and company figures only, before any AI research. The strategy account trades on it.",
   lean_stale: "Older than the latest price, so the strategy will not trade on it until you press Analyse.",
+  score: "From -1 (strongly down) to +1 (strongly up). Between -0.2 and +0.2 counts as no clear direction.",
+  confidence: "How much the analyst's own inputs agree with each other, from 0% to 100%.",
+  peers:
+    "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
+    "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",
 };
 
 // A label followed by a small "?" that explains it on hover or keyboard focus.
 function tip(label, key) {
   const text = GLOSSARY[key];
   if (!text) throw new Error(`no glossary entry for "${key}"`);
+  return tipText(label, text);
+}
+
+// The same, for explanations the server sends (each fundamentals figure carries its own).
+function tipText(label, text) {
   const mark = el("span", { class: "tip", tabindex: "0", role: "note", "aria-label": text, "data-tip": text }, "?");
   // Open towards whichever side has room, so the text is never cut off at the window edge.
   const place = () => mark.classList.toggle("tip-left", mark.getBoundingClientRect().right + 300 > window.innerWidth);
@@ -40,4 +50,4 @@ function tip(label, key) {
   return el("span", { class: "tip-wrap" }, label, mark);
 }
 
-export { tip, GLOSSARY };
+export { tip, tipText, GLOSSARY };

@@ -26,6 +26,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | FastAPI | MIT | GUI web API (`oracle/gui`) |
 | uvicorn | BSD-3-Clause | serves the GUI (`oracle gui`) |
 | Starlette, pydantic, pydantic-core, anyio (via FastAPI) | BSD-3-Clause, MIT, MIT, MIT | FastAPI's own dependencies |
+| TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |
 
 ## Data
 

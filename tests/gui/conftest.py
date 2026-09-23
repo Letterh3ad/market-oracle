@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -7,12 +7,15 @@ from oracle.config import Config
 from oracle.gui.app import build_app
 from oracle.services.context import open_context
 from oracle.services.universe_service import refresh_universe
+from tests.analysts.bars import geometric
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import UNIVERSE, FakeFinanceDatabase
 from tests.fakes.web import FakeWeb
-from tests.fakes.yahoo import FakeYahoo
+from tests.fakes.yahoo import FakeYahoo, bar
 
 NOW = datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc)
+# 300 weekdays ending the day before NOW, so the prices are current.
+DAYS = sorted(d for d in (NOW.date() - timedelta(n) for n in range(1, 430)) if d.weekday() < 5)[-300:]
 
 
 @pytest.fixture
@@ -47,3 +50,11 @@ async def loaded(ctx, client):
     """A client over the fake FinanceDatabase universe (see tests/fakes/financedatabase.py)."""
     await refresh_universe(ctx)
     return client
+
+
+@pytest.fixture
+async def priced(loaded, yahoo):
+    """AAPL (USD) with a year of rising prices and a GBP rate for every day, not yet fetched."""
+    yahoo.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, geometric(300, 0.001))])
+    yahoo.add("GBPUSD=X", "USD", "Europe/London", [bar(d.isoformat(), 1.25) for d in DAYS])
+    return loaded

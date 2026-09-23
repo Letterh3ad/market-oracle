@@ -1,5 +1,5 @@
 import { api } from "../lib/api.js";
-import { el, showError, clearError } from "../lib/dom.js";
+import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
@@ -47,7 +47,7 @@ function row(i, pane) {
     } catch (err) { showError(err.message); }
   } }, "Remove");
   return el("tr", { class: i.missing || i.delisted ? "delisted" : null },
-    el("td", { class: "mono" }, i.symbol, el("div", { class: "dim small" }, i.exchange ?? "")),
+    el("td", null, companyLink(i.symbol), el("div", { class: "dim small" }, i.exchange ?? "")),
     el("td", { class: "name" }, i.name ?? "", i.missing ? " (gone from the universe)" : i.delisted ? " (delisted)" : null),
     el("td", { class: "num" }, i.last_close == null ? "" : `${money(i.last_close)} ${i.price_currency}`),
     el("td", { class: "num" }, money(i.close_base)),

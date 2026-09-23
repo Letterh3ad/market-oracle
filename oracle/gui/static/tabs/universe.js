@@ -1,5 +1,5 @@
 import { api } from "../lib/api.js";
-import { el, showError, clearError } from "../lib/dom.js";
+import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
 
 const PAGE = 50;
@@ -125,7 +125,7 @@ function row(h, pane) {
     } catch (err) { showError(err.message); }
   } }, "Watch");
   return el("tr", { class: h.delisted ? "delisted" : null },
-    el("td", { class: "mono" }, h.symbol), el("td", null, h.name, others, h.delisted ? " (delisted)" : null),
+    el("td", null, companyLink(h.symbol)), el("td", null, h.name, others, h.delisted ? " (delisted)" : null),
     el("td", null, h.country ?? ""), el("td", null, h.exchange ?? ""),
     el("td", null, h.sector ?? h.category ?? ""), el("td", null, (h.market_cap ?? "?").replace(" Cap", "")),
     tagCell, el("td", null, watchBtn));

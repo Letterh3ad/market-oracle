@@ -35,4 +35,8 @@ function el(tag, attrs, ...children) {
   return node;
 }
 
-export { el, showError, clearError };
+function companyLink(symbol) {
+  return el("a", { class: "mono", href: `#company/${encodeURIComponent(symbol)}` }, symbol);
+}
+
+export { el, showError, clearError, companyLink };

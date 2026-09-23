@@ -28,7 +28,7 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Analysis", "AnalystSignal", "Direction", "Lean", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
-    "analyse_watched", "latest_signals", "signal_history",
+    "analyse_watched", "latest_lean", "latest_signals", "signal_history",
 ]
 
 JOB = "analyse"
@@ -155,6 +155,14 @@ def latest_signals(ctx: AppContext, symbol: str) -> list[StoredSignal]:
 
     found = sorted(SignalRepo(ctx.conn).latest(listing), key=lambda s: ORDER.index(s.analyst))
     return [StoredSignal(s, stale(s)) for s in found]
+
+
+def latest_lean(ctx: AppContext, symbol: str) -> tuple[Lean | None, bool]:
+    """The listing's latest lean, and whether it is older than the last stored bar (the
+    strategy will not trade on it then). Reads only."""
+    lean = LeanRepo(ctx.conn).latest(symbol)
+    last_bar = BarRepo(ctx.conn).last_date(symbol)
+    return lean, lean is not None and last_bar is not None and lean.as_of < last_bar
 
 
 def signal_history(ctx: AppContext, symbol: str, analyst: str) -> list[AnalystSignal]:

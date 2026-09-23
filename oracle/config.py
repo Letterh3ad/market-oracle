@@ -133,6 +133,26 @@ class Config:
     keys: Keys = field(default_factory=Keys)
 
 
+def with_setting(text: str, section: str, key: str, literal: str) -> str:
+    """`text` (an oracle.toml) with `key` in `[section]` set to `literal`, written as TOML.
+    Everything else, comments included, is kept as it was."""
+    lines = text.splitlines()
+    header = re.compile(r"\s*\[([^\]]+)\]")
+    start = next((i for i, line in enumerate(lines) if (m := header.match(line)) and m.group(1).strip() == section), None)
+    if start is None:
+        body = "\n".join(lines)
+        return (body + "\n\n" if body.strip() else "") + f"[{section}]\n{key} = {literal}\n"
+    end = next((i for i in range(start + 1, len(lines)) if header.match(lines[i])), len(lines))
+    assign = re.compile(rf"(\s*{re.escape(key)}\s*=\s*)([^#]*?)(\s*(#.*)?)$")
+    for i in range(start + 1, end):
+        if m := assign.match(lines[i]):
+            lines[i] = f"{m.group(1)}{literal}{m.group(3)}"
+            break
+    else:
+        lines.insert(start + 1, f"{key} = {literal}")
+    return "\n".join(lines) + "\n"
+
+
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
     """Return the config and the file it came from, or None when defaults were used."""
     cwd = cwd or Path.cwd()

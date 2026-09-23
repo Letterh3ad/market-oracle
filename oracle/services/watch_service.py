@@ -5,14 +5,13 @@ from datetime import date
 
 from oracle.broker.rules import Lean
 from oracle.market.bars import is_stale
-from oracle.services.analysis_service import StoredSignal, latest_signals
+from oracle.services.analysis_service import StoredSignal, latest_lean, latest_signals
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidWatchlistName, UnknownWatchlist
 from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
-from oracle.store.leans import LeanRepo
 from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
@@ -89,14 +88,14 @@ def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:
     if not recent:
         return WatchLine(**asdict(item))
     last = recent[-1]
-    lean = LeanRepo(ctx.conn).latest(item.symbol)
+    lean, lean_stale = latest_lean(ctx, item.symbol)
     return WatchLine(
         **asdict(item),
         last_date=last.bar.date, last_close=last.bar.close, price_currency=last.bar.currency,
         close_base=last.close_base, rate_source=last.rate_source, day_change=day_change(recent),
         stale=is_stale(last.bar.date, ctx.clock.utcnow().date()),
         signals=tuple(latest_signals(ctx, item.symbol)),
-        lean=lean, lean_stale=lean is not None and lean.as_of < last.bar.date,
+        lean=lean, lean_stale=lean_stale,
     )
 
 

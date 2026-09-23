@@ -1,22 +1,13 @@
-from datetime import timedelta
-
 import pytest
 
 from oracle.services.jobs_service import single_flight
-from tests.analysts.bars import geometric
-from tests.fakes.yahoo import bar
-from tests.gui.conftest import NOW
-
-# 300 weekdays ending the day before NOW, so the prices are current.
-DAYS = sorted(d for d in (NOW.date() - timedelta(n) for n in range(1, 430)) if d.weekday() < 5)[-300:]
+from tests.gui.conftest import DAYS
 
 
 @pytest.fixture
-async def watching(loaded, yahoo):
-    yahoo.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, geometric(300, 0.001))])
-    yahoo.add("GBPUSD=X", "USD", "Europe/London", [bar(d.isoformat(), 1.25) for d in DAYS])
-    await loaded.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
-    return loaded
+async def watching(priced):
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    return priced
 
 
 async def test_an_unpriced_listing_shows_and_says_how_to_price_it(watching):
