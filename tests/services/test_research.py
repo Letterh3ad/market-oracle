@@ -576,6 +576,13 @@ async def test_a_redirect_into_this_machine_or_the_lan_is_refused_at_each_hop(ct
     assert all(r.url.host != "127.0.0.1" for r in pages.requests)
 
 
+async def test_a_redirect_that_names_no_target_is_an_error_not_a_page(ctx, pages):
+    pages.pages["https://news.test/lost"] = ("redirect", "")
+    model = ScriptedModel(step("read_page", "https://news.test/lost"), step("final", "Done."))
+    [lost] = (await research(ctx, "AAPL", model)).steps[:1]
+    assert "without saying where to go" in lost.observation
+
+
 async def test_the_sec_contact_is_not_carried_to_another_host_by_a_redirect(ctx, sec, pages):
     with_contact(ctx)
     url = f"{ARCHIVE}/000032019326000077/moved.htm"
@@ -606,9 +613,62 @@ async def test_an_unexpected_failure_still_marks_the_run_failed(ctx):
 
 async def test_a_model_that_fell_back_is_named_in_the_run(ctx):
     model = ScriptedModel(step("final", "Done."))
-    model.fell_back_to = {"claude-opus-4-8"}
+    model.falls_back_to = "claude-opus-4-8"
     run = await research(ctx, "AAPL", model)
-    assert run.model == "script (fell back to claude-opus-4-8 when refused)"
+    assert run.model == "script" and run.fell_back_to == ("claude-opus-4-8",)
+
+
+async def test_a_fallback_is_recorded_on_a_failed_run_too(ctx):
+    model = ScriptedModel(step("market_data"), RuntimeError("disk full"))
+    model.falls_back_to = "claude-opus-4-8"
+    with pytest.raises(RuntimeError):
+        await research(ctx, "AAPL", model)
+    assert latest_research(ctx, "AAPL").fell_back_to == ("claude-opus-4-8",)
+
+
+async def test_a_reused_model_starts_each_run_without_the_last_ones_fallback(ctx):
+    model = ScriptedModel(step("final", "Done."))
+    model.falls_back_to = "claude-opus-4-8"
+    await research(ctx, "AAPL", model)
+    model.falls_back_to = None
+    model.replies = [step("final", "Again.")]
+    assert (await research(ctx, "AAPL", model)).fell_back_to == ()
+
+
+@pytest.mark.parametrize("stage", ["profile", "save_report"])
+async def test_a_failure_outside_the_loop_still_marks_the_run_failed(ctx, monkeypatch, stage):
+    from oracle.store.research import ResearchRepo
+    from oracle.store.universe import UniverseRepo
+
+    def boom(*_args):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(UniverseRepo if stage == "profile" else ResearchRepo, stage, boom)
+    with pytest.raises(RuntimeError):
+        await research(ctx, "AAPL", ScriptedModel(step("final", "Done.")))
+    run = latest_research(ctx, "AAPL")
+    assert run.status == "failed" and "disk full" in run.error and run.report is None
+
+
+async def test_a_cancelled_run_says_so_plainly(ctx):
+    import asyncio
+
+    with pytest.raises(asyncio.CancelledError):
+        await research(ctx, "AAPL", ScriptedModel(step("market_data"), asyncio.CancelledError()))
+    run = latest_research(ctx, "AAPL")
+    assert run.status == "failed" and run.error == "cancelled"
+
+
+async def test_a_run_that_cannot_be_marked_failed_still_raises_the_original_error(ctx, monkeypatch):
+    from oracle.store.research import ResearchRepo
+
+    def locked(*_args):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(ResearchRepo, "finish", locked)
+    with pytest.raises(RuntimeError, match="disk full") as caught:
+        await research(ctx, "AAPL", ScriptedModel(step("market_data"), RuntimeError("disk full")))
+    assert "database is locked" in "".join(caught.value.__notes__)
 
 
 async def test_the_trace_itself_says_when_the_step_limit_was_hit(ctx):

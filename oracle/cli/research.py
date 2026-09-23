@@ -51,7 +51,7 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
             print(textwrap.indent(textwrap.fill(line, WIDTH), "   > "))
     if r.status == RunStatus.STEP_CAP:
         print(f"stopped at the {max_steps}-step limit; findings asked for then")
-    print(f"Findings ({r.backend} {r.model}):")
+    print(f"Findings ({_model(r)}):")
     _wrapped(r.findings or "(none given)", "  ")
     if r.report:
         print_report(r.report)
@@ -85,7 +85,7 @@ def print_history(runs: list[ResearchRun], symbol: str) -> None:
         print(f"no research reports for {symbol.upper()} yet: run `oracle research {symbol}`")
     for r in runs:
         replay = " (replay)" if r.as_of else ""
-        print(f"{r.report.day.isoformat()}{replay}  {r.backend} {r.model}")
+        print(f"{r.report.day.isoformat()}{replay}  {_model(r)}")
         for label, case in (("bull", r.report.bull), ("bear", r.report.bear)):
             _wrapped(f"{label}: {case.text if case else '(none)'}", "  ")
 
@@ -96,3 +96,8 @@ def _claim(c: Claim) -> str:
 
 def _wrapped(text: str, indent: str) -> None:
     print(textwrap.fill(text, WIDTH, initial_indent=indent, subsequent_indent=indent + "  "))
+
+
+def _model(r: ResearchRun) -> str:
+    fell_back = f" ({', '.join(r.fell_back_to)} answered when it refused)" if r.fell_back_to else ""
+    return f"{r.backend} {r.model}{fell_back}"

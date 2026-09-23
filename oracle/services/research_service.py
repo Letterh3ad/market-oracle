@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date, datetime, time, timezone
 
 from oracle.net.client import RateLimitedClient
@@ -27,7 +28,7 @@ from oracle.services.research_tools import (
     market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
-from oracle.store.db import to_utc_iso
+from oracle.store.db import to_utc_iso, transaction
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 
@@ -52,40 +53,56 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
     model = model or configured_model(ctx)
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
+        model.fell_back_to.clear()
         run_id = repo.start(listing, model.name, model.model, _now(ctx), as_of)
-        shown: set[int] = set()
-
-        def on_shown(ids: list[int]) -> None:
-            shown.update(ids)
-            repo.add_evidence(run_id, ids)
-
-        day = as_of or today
-        profile = UniverseRepo(ctx.conn).profile(listing)
         try:
-            queries = plan(seed_queries(profile.name, profile.country),
-                           await suggest(model, _about(profile, day), profile.country))
-            repo.set_queries(run_id, queries)
-            shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
-            async with open_client(ctx) as client:
-                tools = _tools(ctx, client, shelf, listing, as_of, searcher)
-                outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
-                                      lambda s: repo.add_step(run_id, s))
-            findings, cited = keep_citations(outcome.findings, shown)
-            evidence = await _evidence(ctx, shelf, repo, run_id, listing, as_of, day, findings)
-            report = await write_report(model, evidence, shown, day)
-        except ModelError as exc:
-            repo.finish(run_id, RunStatus.FAILED, None, str(exc), _now(ctx))
-            raise ModelUnavailable(str(exc)) from exc
+            await _run(ctx, repo, run_id, listing, model, as_of or today, as_of, searcher)
         except BaseException as exc:
-            # Never leave a run marked running: the GUI would show it as the latest forever.
-            repo.finish(run_id, RunStatus.FAILED, None, f"unexpected error: {exc!r}", _now(ctx))
+            _record_failure(ctx, repo, run_id, model, exc)
+            if isinstance(exc, ModelError):
+                raise ModelUnavailable(str(exc)) from exc
             raise
-        if fell_back := getattr(model, "fell_back_to", None):
-            repo.set_model(run_id, f"{model.model} (fell back to {', '.join(sorted(fell_back))} when refused)")
+        return repo.get(run_id)
+
+
+async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, model: ChatModel, day: date,
+               as_of: date | None, searcher: WebSearcher | None) -> None:
+    shown: set[int] = set()
+
+    def on_shown(ids: list[int]) -> None:
+        shown.update(ids)
+        repo.add_evidence(run_id, ids)
+
+    profile = UniverseRepo(ctx.conn).profile(listing)
+    queries = plan(seed_queries(profile.name, profile.country),
+                   await suggest(model, _about(profile, day), profile.country))
+    repo.set_queries(run_id, queries)
+    shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
+    async with open_client(ctx) as client:
+        tools = _tools(ctx, client, shelf, listing, as_of, searcher)
+        outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
+                              lambda s: repo.add_step(run_id, s))
+    findings, cited = keep_citations(outcome.findings, shown)
+    evidence = await _evidence(ctx, shelf, repo, run_id, listing, as_of, day, findings)
+    report = await write_report(model, evidence, shown, day)
+    # One transaction, so a run never ends up failed beside a half-saved report.
+    with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)
         repo.set_cited(run_id, cited | report.cites)
-        repo.finish(run_id, outcome.status, findings, None, _now(ctx))
-        return repo.get(run_id)
+        repo.finish(run_id, outcome.status, findings, None, _now(ctx), model.fell_back_to)
+
+
+def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: ChatModel, exc: BaseException) -> None:
+    """Never leave a run marked running (the GUI would show it as the latest forever), and
+    never let a failure to record that hide the error itself."""
+    if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+        error = "cancelled"
+    else:
+        error = str(exc) if isinstance(exc, ModelError) else f"unexpected error: {exc!r}"
+    try:
+        repo.finish(run_id, RunStatus.FAILED, None, error, _now(ctx), model.fell_back_to)
+    except Exception as also:
+        exc.add_note(f"the run could not be marked failed either: {also!r}")
 
 
 async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: int, listing: str,

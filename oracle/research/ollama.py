@@ -26,6 +26,8 @@ class OllamaChat:
         self._timeout = timeout_s
         self._context = context
         self._transport = transport
+        self.fell_back_to: set[str] = set()
+        """Always empty: Ollama never hands a request to another model."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         payload = {

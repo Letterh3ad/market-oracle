@@ -14,6 +14,8 @@ class ChatModel(Protocol):
     name: str
     """The backend, e.g. "ollama"."""
     model: str
+    fell_back_to: set[str]
+    """Models that answered in this one's place after a refusal; the caller clears it per run."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         """The model's next message, parsed from JSON constrained to `schema`."""

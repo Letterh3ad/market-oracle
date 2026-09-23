@@ -93,3 +93,5 @@ class ResearchRun:
     queries: tuple[str, ...] = ()
     """The searches the run was told to start from."""
     report: Report | None = None
+    fell_back_to: tuple[str, ...] = ()
+    """Models that answered after `model` refused."""

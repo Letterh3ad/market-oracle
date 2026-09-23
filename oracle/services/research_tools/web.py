@@ -71,13 +71,13 @@ class ReadPage:
         # the SEC contact goes to sec.gov alone.
         for _ in range(MAX_REDIRECTS + 1):
             resp = await self._get(url)
-            if resp.status_code not in REDIRECTS or not resp.headers.get("location"):
+            if resp.status_code not in REDIRECTS:
                 break
+            if not resp.headers.get("location"):
+                raise ToolError(f"the page answered HTTP {resp.status_code} without saying where to go")
             url = urljoin(url, resp.headers["location"])
         else:
             raise ToolError(f"the page redirected more than {MAX_REDIRECTS} times")
-        if resp.status_code != 200:
-            raise ToolError(f"the page answered HTTP {resp.status_code}")
         kind = resp.headers.get("content-type", "").split(";")[0].strip().lower()
         if kind not in READABLE:
             raise ToolError(f"not a web page ({kind or 'unknown type'})")
@@ -93,7 +93,7 @@ class ReadPage:
             raise ToolError(why)
         if domain(url) == "news.google.com":
             raise ToolError("Google News links only redirect; search its headline with web_search instead")
-        # Uncompressed, so the size cap bounds what is actually held in memory.
+        # Uncompressed, so the bytes read over the wire are the bytes the cap counts.
         source, headers = "web", {"Accept-Encoding": "identity"}
         if edgar.is_sec(url):
             # SEC refuses requests without a declared contact, and has its own budget.

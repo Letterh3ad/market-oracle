@@ -27,7 +27,6 @@ class ClaudeChat:
         self._timeout = timeout_s
         self._client = client
         self.fell_back_to: set[str] = set()
-        """Models that answered in this one's place after a refusal, for the run's record."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         request = {
@@ -56,9 +55,10 @@ class ClaudeChat:
         except anthropic.AnthropicError as exc:
             # Raised before any request when no credential source resolves.
             raise ModelError(f"Claude could not start ({exc}): {NO_CREDENTIALS}") from exc
-        served = getattr(response, "model", None)
-        if served and not served.startswith(self.model):
-            self.fell_back_to.add(served)
+        # The served id alone cannot tell: an alias comes back as a longer dated id.
+        iterations = getattr(getattr(response, "usage", None), "iterations", None) or []
+        if any(i.type == "fallback_message" for i in iterations):
+            self.fell_back_to.add(response.model)
         if response.stop_reason == "refusal":
             # Declined even after the fallback: no answer, which the loop treats as not understood.
             return None

@@ -877,3 +877,23 @@ generator and roles on Claude.
 graph adds it); seeds carry a local-language word, not a native-script name (the model is
 asked for that); a per-run scope type for the tool wiring. Server-side refusal fallbacks
 stay on for Claude (Anthropic's guidance for Opus 5), the user can turn them down.
+
+## 2026-09-23 - Phase 7 review round 2 fixes
+
+**Context:** Round 2 found runs that could still be left running, a fallback model written
+as prose into `model`, a newer replay hidden behind an older live report, and the step-limit
+note missing from the GUI trace.
+**Decision:**
+- One guard covers a whole run after it starts. A failure to mark it failed is added as a
+  note on the original error, never raised in its place. A cancelled run says "cancelled".
+- The report, citations and finish are written in one transaction.
+- Fallback models get their own column (`fell_back_to`, m0025) and a `ChatModel` protocol
+  field, cleared per run and recorded on failed runs too. Claude detects a fallback by the
+  API's `usage.iterations` `fallback_message` entry, not by comparing model ids (an alias
+  can come back as a longer dated id).
+- The Company tab shows the newest reported run by when it ran, not by report day.
+- The GUI trace shows the forced final step's note; evidence shows the query that found it.
+- A redirect with no Location is its own error; the duplicate status check is gone.
+**Alternatives:** Comparing served and configured ids for equality (the review's
+suggestion) would flag every dated alias as a fallback. Showing both a live report and a
+replay was left for later.

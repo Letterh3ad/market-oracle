@@ -88,9 +88,21 @@ async def test_api_failures_are_plain_model_errors(error, says):
 async def test_an_answer_from_a_fallback_model_is_remembered():
     served = message(text('{"action": "final"}'))
     served.model = "claude-opus-4-8"
+    served.usage = SimpleNamespace(iterations=[SimpleNamespace(type="message"),
+                                               SimpleNamespace(type="fallback_message")])
     chat = ClaudeChat("claude-opus-5", 60.0, FakeClient(served))
     await chat.reply([], SCHEMA)
     assert chat.fell_back_to == {"claude-opus-4-8"}
+
+
+async def test_a_served_id_that_differs_without_a_fallback_is_not_one():
+    # An alias can come back as a longer dated id; only the API's own fallback record counts.
+    served = message(text('{"action": "final"}'))
+    served.model = "claude-opus-5-20260801"
+    served.usage = SimpleNamespace(iterations=None)
+    chat = ClaudeChat("claude-opus-5", 60.0, FakeClient(served))
+    await chat.reply([], SCHEMA)
+    assert chat.fell_back_to == set()
 
 
 async def test_a_reply_too_slow_is_called_a_timeout():

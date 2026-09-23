@@ -45,19 +45,21 @@ function evidence(r) {
       const title = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
       return el("li", { id: `ev-${e.id}` }, el("span", { class: "mono" }, `[a${e.id}] `),
         `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title,
+        e.query ? el("span", { class: "dim" }, ` (found by "${e.query}")`) : null,
         e.body ? el("details", null, el("summary", { class: "dim" }, "what it read"),
           el("pre", { class: "observation" }, e.body)) : null);
     })));
 }
 
 function trace(r) {
-  const steps = r.steps.filter((s) => s.action !== "final");
+  // A final step has an observation only when the step limit forced it, and that note belongs in the trace.
+  const steps = r.steps.filter((s) => s.action !== "final" || s.observation);
   return el("details", null,
     el("summary", null, tip(`How it got there (${steps.length} step${steps.length === 1 ? "" : "s"})`, "research_trace")),
     r.queries.length ? el("p", { class: "dim small" }, `Planned searches: ${r.queries.join("; ")}`) : null,
     el("ol", { class: "small" }, ...steps.map((s) => el("li", null,
       el("div", null, s.thought || "(no thought)"),
-      s.action ? el("div", { class: "mono" }, `${s.action}(${s.input})`) : null,
+      s.action && s.action !== "final" ? el("div", { class: "mono" }, `${s.action}(${s.input})`) : null,
       el("pre", { class: "observation" }, s.observation ?? "")))),
     r.findings ? el("p", { class: "small" }, el("strong", null, "The researcher's notes: "), r.findings) : null);
 }
@@ -69,7 +71,8 @@ function view(r, failed) {
   const when = r.as_of ? `replay as of ${r.as_of}` : `researched ${r.started_at.slice(0, 16).replace("T", " ")} UTC`;
   return [
     note,
-    el("div", { class: "dim small" }, `${when} by ${r.backend} ${r.model}`,
+    el("div", { class: "dim small" }, `${when} by ${r.backend} ${r.model}` +
+      (r.fell_back_to.length ? ` (${r.fell_back_to.join(", ")} answered when it refused)` : ""),
       el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")),
       r.status === "step_cap" ? el("span", { class: "badge" }, "stopped at the step limit") : null,
       r.status === "failed" ? el("span", { class: "badge warn" }, "failed") : null),

@@ -96,3 +96,16 @@ async def test_the_stored_data_a_report_cites_comes_with_its_text(ready):
     run = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()["run"]
     [data] = [e for e in run["evidence"] if e["outlet"] == "stored data"]
     assert data["body"].startswith("AAPL: Apple Inc.")
+
+
+async def test_a_replay_run_after_a_live_report_is_the_one_shown(ready, ctx, clock, ollama):
+    from datetime import date
+
+    from oracle.services.research_service import research
+
+    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    clock.advance(60)
+    ollama.contents = [step("final", "Replayed.")]
+    replay = await research(ctx, "AAPL", as_of=date(2026, 1, 5))
+    body = (await ready.get("/api/companies/AAPL/research")).json()
+    assert body["run"]["id"] == replay.id and body["run"]["as_of"] == "2026-01-05"

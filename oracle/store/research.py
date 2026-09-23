@@ -7,7 +7,7 @@ from datetime import date, datetime
 from oracle.research.trace import Claim, Evidence, Report, ResearchRun, RunStatus, Step
 from oracle.store.db import transaction
 
-_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of"
+_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
 
 
 class ResearchRepo:
@@ -61,16 +61,14 @@ class ResearchRepo:
                 [(run_id, a) for a in article_ids],
             )
 
-    def set_model(self, run_id: int, model: str) -> None:
-        with transaction(self._conn):
-            self._conn.execute("UPDATE research_runs SET model = ? WHERE id = ?", (model, run_id))
-
     def finish(self, run_id: int, status: RunStatus, findings: str | None, error: str | None,
-               finished_at: str) -> None:
+               finished_at: str, fell_back_to: set[str] = frozenset()) -> None:
         with transaction(self._conn):
             self._conn.execute(
-                "UPDATE research_runs SET status = ?, findings = ?, error = ?, finished_at = ? WHERE id = ?",
-                (status, findings, error, finished_at, run_id),
+                "UPDATE research_runs SET status = ?, findings = ?, error = ?, finished_at = ?, fell_back_to = ? "
+                "WHERE id = ?",
+                (status, findings, error, finished_at, json.dumps(sorted(fell_back_to)) if fell_back_to else None,
+                 run_id),
             )
 
     def get(self, run_id: int) -> ResearchRun | None:
@@ -98,7 +96,7 @@ class ResearchRepo:
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),
-                           self._report(row[0]))
+                           self._report(row[0]), tuple(json.loads(row[10])) if row[10] else ())
 
     def _report(self, run_id: int) -> Report | None:
         row = self._conn.execute("SELECT day, body FROM research_reports WHERE run_id = ?", (run_id,)).fetchone()
