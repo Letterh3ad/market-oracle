@@ -34,6 +34,7 @@ from oracle.store.universe import ListingProfile, UniverseRepo
 
 __all__ = [
     "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "latest_research", "report_history", "research",
+    "research_progress",
 ]
 
 JOB = "research"
@@ -143,6 +144,17 @@ def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: st
         gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
         tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
     return tools
+
+
+def research_progress(ctx: AppContext, listing: str) -> str | None:
+    """Where the listing's running research is, for a progress line; None when none runs."""
+    run = ResearchRepo(ctx.conn).latest(listing)
+    if run is None or run.status != RunStatus.RUNNING:
+        return None
+    if not run.steps:
+        return "planning searches"
+    last = run.steps[-1]
+    return "writing the report" if last.action == "final" else f"step {last.n}: {last.action}"
 
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:

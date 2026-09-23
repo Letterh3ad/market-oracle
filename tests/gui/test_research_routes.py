@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 import pytest
@@ -44,14 +45,30 @@ async def ready(ctx, client, ollama, news):
     return client
 
 
+async def finish(client, symbol="AAPL", job=None) -> dict:
+    """Queue research (unless `job` is given) and wait for the job, as the company page
+    does by polling."""
+    job = job or (await client.post("/api/jobs/research", params={"symbol": symbol})).json()
+    while job["state"] in ("queued", "running"):
+        await asyncio.sleep(0.01)
+        job = (await client.get(f"/api/activity/{job['id']}")).json()
+    return job
+
+
+async def researched(client, symbol="AAPL") -> dict:
+    await finish(client, symbol)
+    return (await client.get(f"/api/companies/{symbol}/research")).json()["run"]
+
+
 async def test_nothing_is_shown_before_the_first_run(ready):
     assert (await ready.get("/api/companies/AAPL/research")).json() == {"run": None, "failed": None}
 
 
 async def test_research_runs_on_request_and_its_report_and_trace_come_back(ready):
-    response = await ready.post("/api/jobs/research", params={"symbol": "aapl"})
-    run = response.json()["run"]
-    assert response.status_code == 200 and run["symbol"] == "AAPL" and run["status"] == "done"
+    job = await finish(ready, "aapl")
+    assert (job["state"], job["label"], job["link"]) == ("done", "Research AAPL", "#company/AAPL")
+    run = (await ready.get("/api/companies/AAPL/research")).json()["run"]
+    assert run["symbol"] == "AAPL" and run["status"] == "done"
     assert run["badge"].startswith("unvalidated")
     report = run["report"]
     assert report["bull"] == {"text": "Earnings momentum", "cites": [1], "role": "bull"}
@@ -59,11 +76,10 @@ async def test_research_runs_on_request_and_its_report_and_trace_come_back(ready
     assert report["invalidated_if"] == "Next quarter misses"
     assert [(s["action"], s["thought"]) for s in run["steps"]][0] == ("news_search", "check the news")
     assert run["queries"][:2] == ["Apple shares", "Apple earnings outlook"]
-    assert (await ready.get("/api/companies/AAPL/research")).json()["run"] == run
 
 
 async def test_only_web_addresses_become_links(ready):
-    run = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()["run"]
+    run = await researched(ready)
     links = {e["title"]: e["link"] for e in run["evidence"]}
     assert links["Apple beats estimates"] == "https://reut.rs/1"
     assert links["AAPL stored prices, fundamentals and analyst signals"] is None
@@ -73,27 +89,27 @@ async def test_a_run_going_elsewhere_answers_already_running(ready, ctx):
     from oracle.services.jobs_service import single_flight
 
     with single_flight(ctx, "research", 60):
-        response = await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
-    assert response.status_code == 409 and "already running" in response.json()["error"]
+        job = await finish(ready)
+    assert job["state"] == "failed" and "already running" in job["error"]
 
 
 async def test_a_model_backend_that_is_down_is_a_plain_503(ready, ollama):
     ollama.down = True
-    response = await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
-    assert response.status_code == 503 and "ollama serve" in response.json()["error"]
+    job = await finish(ready)
+    assert job["state"] == "failed" and "ollama serve" in job["error"]
 
 
 async def test_a_failed_retry_keeps_the_last_report_on_screen_and_says_it_failed(ready, ollama):
-    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    await finish(ready)
     ollama.down = True
-    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    await finish(ready)
     body = (await ready.get("/api/companies/AAPL/research")).json()
     assert body["run"]["report"]["bull"]["text"] == "Earnings momentum"
     assert body["failed"]["status"] == "failed" and "ollama serve" in body["failed"]["error"]
 
 
 async def test_the_stored_data_a_report_cites_comes_with_its_text(ready):
-    run = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()["run"]
+    run = await researched(ready)
     [data] = [e for e in run["evidence"] if e["outlet"] == "stored data"]
     assert data["body"].startswith("AAPL: Apple Inc.")
 
@@ -103,9 +119,27 @@ async def test_a_replay_run_after_a_live_report_is_the_one_shown(ready, ctx, clo
 
     from oracle.services.research_service import research
 
-    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    await finish(ready)
     clock.advance(60)
     ollama.contents = [step("final", "Replayed.")]
     replay = await research(ctx, "AAPL", as_of=date(2026, 1, 5))
     body = (await ready.get("/api/companies/AAPL/research")).json()
     assert body["run"]["id"] == replay.id and body["run"]["as_of"] == "2026-01-05"
+
+
+async def test_queueing_answers_at_once_with_the_job(ready):
+    response = await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    assert response.status_code == 202 and response.json()["state"] == "queued"
+
+
+async def test_an_unknown_symbol_is_refused_before_it_queues(ready):
+    response = await ready.post("/api/jobs/research", params={"symbol": "NOPE"})
+    assert response.status_code == 404 and (await ready.get("/api/activity")).json()["jobs"] == []
+
+
+async def test_research_is_listed_in_activity_with_its_progress_then_its_outcome(ready):
+    job = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
+    [listed] = (await ready.get("/api/activity")).json()["jobs"]
+    assert (listed["id"], listed["kind"]) == (job["id"], "research")
+    done = await finish(ready, job=job)
+    assert done["state"] == "done" and done["progress"] is None and done["finished_at"]

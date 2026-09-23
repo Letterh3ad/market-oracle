@@ -8,11 +8,11 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
 
-from oracle.gui.deps import get_ctx
+from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.context import AppContext
-from oracle.services.research_service import research as run_research
+from oracle.services.activity_service import JobRunner, submit_research
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import run_tick
 
@@ -46,10 +46,11 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx))
     ]}
 
 
-@router.post("/research")
-async def research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """One research run with its report; about a minute on the default local model."""
-    return shapes.research_run(await run_research(ctx, symbol))
+@router.post("/research", status_code=202)
+async def research(symbol: str, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue one research run (about a minute each on the default local model); the job
+    is listed in Activity and its report shows on the company page when done."""
+    return shapes.job(submit_research(ctx, runner, symbol))
 
 
 @router.post("/tick")

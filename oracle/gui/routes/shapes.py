@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from urllib.parse import urlsplit
 
+from oracle.services.activity_service import Job
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView
@@ -32,6 +33,14 @@ def tick(run: TickRun | None) -> dict | None:
         "trigger": run.trigger, "started_at": run.started_at, "finished_at": run.finished_at,
         "outcome": run.outcome, "first_error": run.first_error, "note": run.note,
         "stages": [asdict(s) for s in run.stages],
+    }
+
+
+def job(j: Job) -> dict:
+    return {
+        "id": j.id, "kind": j.kind, "label": j.label, "subject": j.subject, "link": j.link, "state": j.state,
+        "progress": j.progress(), "error": j.error, "submitted_at": j.submitted_at, "started_at": j.started_at,
+        "finished_at": j.finished_at,
     }
 
 

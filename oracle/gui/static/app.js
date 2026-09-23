@@ -4,6 +4,7 @@ import universeTab from "./tabs/universe.js";
 import watchlistTab from "./tabs/watchlist.js";
 import companyTab from "./tabs/company.js";
 import ledgersTab from "./tabs/ledgers.js";
+import activityTab from "./tabs/activity.js";
 
 // Order here is the order in the rail.
 const TABS = [
@@ -11,6 +12,7 @@ const TABS = [
   watchlistTab,
   companyTab,
   ledgersTab,
+  activityTab,
 ];
 
 // "#company/7203.T" opens a tab with an argument.

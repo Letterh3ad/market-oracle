@@ -39,6 +39,10 @@ class UnknownWatchlist(ServiceError):
     pass
 
 
+class UnknownJob(ServiceError):
+    pass
+
+
 class InvalidWatchlistName(ServiceError):
     pass
 
