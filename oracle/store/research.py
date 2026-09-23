@@ -1,23 +1,23 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 
 from oracle.research.trace import Evidence, ResearchRun, RunStatus, Step
 from oracle.store.db import transaction
 
-_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error"
+_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of"
 
 
 class ResearchRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def start(self, symbol: str, backend: str, model: str, started_at: str) -> int:
+    def start(self, symbol: str, backend: str, model: str, started_at: str, as_of: date | None = None) -> int:
         with transaction(self._conn):
             cur = self._conn.execute(
-                "INSERT INTO research_runs (symbol, backend, model, started_at, status) VALUES (?, ?, ?, ?, ?)",
-                (symbol, backend, model, started_at, RunStatus.RUNNING),
+                "INSERT INTO research_runs (symbol, backend, model, started_at, status, as_of) VALUES (?, ?, ?, ?, ?, ?)",
+                (symbol, backend, model, started_at, RunStatus.RUNNING, as_of.isoformat() if as_of else None),
             )
         return cur.lastrowid
 
@@ -71,4 +71,5 @@ class ResearchRepo:
         )
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
                            tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c))
-                                 for i, u, t, o, p, c in evidence))
+                                 for i, u, t, o, p, c in evidence),
+                           date.fromisoformat(row[9]) if row[9] else None)

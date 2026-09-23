@@ -40,6 +40,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0017_symbol_nocase,
     m0018_research,
     m0019_articles,
+    m0020_research_as_of,
 )
 
 MIGRATIONS = [
@@ -62,4 +63,5 @@ MIGRATIONS = [
     m0017_symbol_nocase,
     m0018_research,
     m0019_articles,
+    m0020_research_as_of,
 ]

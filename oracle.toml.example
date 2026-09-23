@@ -8,12 +8,12 @@ base_currency = "GBP"
 
 # Per-source request pacing, shared by every oracle process on this database.
 # Override any field of a built-in source, or add a new one (rate_per_second required).
-# Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.2, google_news 0.5, ddgs 0.2, sec_edgar 5.0,
+# Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.1, google_news 0.5, ddgs 0.2, sec_edgar 5.0,
 # financedatabase 0.5 (GitHub, used by `oracle universe refresh`)
 [sources.gdelt]
-rate_per_second = 0.2   # GDELT asks for at most one request every 5 seconds
+rate_per_second = 0.1   # GDELT asks for one request per 5 seconds and locks out quicker ones
 cooldown_s = 900        # how long a tripped breaker stays open
-max_retries = 3         # retries on 429/5xx before giving up
+max_retries = 1         # retries on 429/5xx before giving up
 
 # Where daily prices come from, tried in order per listing until one has data.
 # Keyed sources are skipped until their key is set below.

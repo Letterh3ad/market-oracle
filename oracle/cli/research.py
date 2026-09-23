@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import textwrap
+from datetime import date
 
 from oracle.services.context import AppContext
 from oracle.services.research_service import ResearchRun, RunStatus, research
@@ -10,16 +11,26 @@ from oracle.services.research_service import ResearchRun, RunStatus, research
 
 def register(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("symbol", help="the listing to research")
+    parser.add_argument("--as-of", type=_day, default=None, metavar="YYYY-MM-DD",
+                        help="replay that day: only news and prices from by its end are used")
     parser.set_defaults(handler=run)
 
 
+def _day(text: str) -> date:
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"not a date like 2026-09-18: {text!r}") from exc
+
+
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
-    print_run(asyncio.run(research(ctx, args.symbol)), ctx.config.llm.max_steps)
+    print_run(asyncio.run(research(ctx, args.symbol, as_of=args.as_of)), ctx.config.llm.max_steps)
     return 0
 
 
 def print_run(r: ResearchRun, max_steps: int) -> None:
-    print(f"{r.symbol}, researched {r.started_at}")
+    replay = f", as of {r.as_of.isoformat()}" if r.as_of else ""
+    print(f"{r.symbol}{replay}, researched {r.started_at}")
     for s in r.steps:
         if s.action == "final":
             continue

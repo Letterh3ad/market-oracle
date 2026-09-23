@@ -85,3 +85,16 @@ def test_each_article_shown_gets_its_own_line(run, ollama, news):
     ollama.contents = [step("news_search", "Apple"), step("final", "Done.")]
     _, out, _ = run("research", "AAPL")
     assert "   > [a1] undated X: First\n   > [a2] undated X: Second\n" in out
+
+
+def test_a_replay_as_of_a_past_day_says_so(run, ollama):
+    ollama.contents = [step("final", "Done.")]
+    code, out, _ = run("research", "AAPL", "--as-of", "2026-09-18")
+    assert code == 0 and "AAPL, as of 2026-09-18, researched" in out
+
+
+def test_an_as_of_date_must_be_a_real_past_date(run, ollama):
+    code, _, err = run("research", "AAPL", "--as-of", "2999-01-01")
+    assert code == 1 and "in the future" in err
+    with pytest.raises(SystemExit):
+        run("research", "AAPL", "--as-of", "18/09/2026")

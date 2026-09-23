@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import re
 
-_CITE = re.compile(r"\s?\[a(\d+)\]")
+# Small models write (a3) as often as [a3]; both are read, and kept as [a3].
+_CITE = re.compile(r"(\s?)[\[(]a(\d+)[\])]")
 
 
 def keep_citations(findings: str, shown: set[int]) -> tuple[str, set[int]]:
@@ -13,10 +14,10 @@ def keep_citations(findings: str, shown: set[int]) -> tuple[str, set[int]]:
     kept: set[int] = set()
 
     def check(m: re.Match) -> str:
-        article = int(m.group(1))
-        if article in shown:
-            kept.add(article)
-            return m.group(0)
-        return ""
+        article = int(m.group(2))
+        if article not in shown:
+            return ""
+        kept.add(article)
+        return f"{m.group(1)}[a{article}]"
 
     return _CITE.sub(check, findings), kept

@@ -117,3 +117,18 @@ async def test_real_google_news_feed_parses_into_dated_articles():
     assert len(articles) > 5
     assert all(a.outlet and not a.title.endswith(f" - {a.outlet}") for a in articles)
     assert all(a.published is not None and a.published.tzinfo is not None for a in articles)
+
+
+async def test_real_gdelt_doc_api_answers_in_artlist_json():
+    import httpx
+
+    from oracle.research.news import GDELT_DOC, gdelt_params, parse_gdelt
+
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as http:
+        resp = await http.get(GDELT_DOC, params=gdelt_params('"Apple Inc"'))
+    if resp.status_code == 429:
+        # A quick rerun lengthens GDELT's lockout; wait a few minutes before trying again.
+        pytest.skip("GDELT is throttling this address")
+    articles = parse_gdelt(resp.text)
+    assert len(articles) > 5
+    assert all(a.outlet and a.published is not None for a in articles)

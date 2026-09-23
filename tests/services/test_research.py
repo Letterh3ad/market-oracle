@@ -9,6 +9,7 @@ from oracle.services.research_service import latest_research, research
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
+from tests.fakes.gdelt import FakeGdelt
 from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import ScriptedModel, step
 from tests.fakes.web import FakeWeb
@@ -23,10 +24,15 @@ def news():
 
 
 @pytest.fixture
-async def ctx(tmp_path, news):
+def gdelt():
+    return FakeGdelt()
+
+
+@pytest.fixture
+async def ctx(tmp_path, news, gdelt):
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news)
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -169,3 +175,55 @@ async def test_only_the_newest_eight_are_shown_with_long_titles_cut(ctx, news):
     news.results["Apple"] = [("https://x.com/old", "L" * 300, "Y", None)]
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("final", "Done.")))
     assert run.steps[0].observation.endswith("undated Y: " + "L" * 139 + "…")
+
+
+async def test_gdelt_search_shows_worldwide_articles_like_any_news(ctx, gdelt):
+    gdelt.results["Apple"] = [("https://lemonde.fr/1", "Apple dévoile un iPhone pliable", "lemonde.fr", utc("2026-09-20"))]
+    run = await research(ctx, "AAPL", ScriptedModel(step("gdelt_search", "Apple"), step("final", "Foldable [a1].")))
+    assert run.steps[0].observation == "[a1] 2026-09-20 lemonde.fr: Apple dévoile un iPhone pliable"
+    assert [(e.url, e.cited) for e in run.evidence] == [("https://lemonde.fr/1", True)]
+    assert gdelt.params[0]["mode"].lower() == "artlist" and gdelt.params[0]["format"] == "json"
+
+
+async def test_a_gdelt_complaint_about_the_query_is_shown_to_the_model(ctx, gdelt):
+    gdelt.error_text = "Your search contained phrases that were too short."
+    run = await research(ctx, "AAPL", ScriptedModel(step("gdelt_search", "AI"), step("final", "Done.")))
+    assert "too short" in run.steps[0].observation and run.status == "done"
+
+
+async def test_as_of_a_date_nothing_published_later_is_seen_even_in_market_data(ctx, news, gdelt):
+    from datetime import date
+
+    news.results["Apple before:2026-09-19"] = [
+        ("https://x.com/early", "Early story", "X", utc("2026-09-18", 23)),
+        ("https://x.com/late", "Leaked later story", "X", utc("2026-09-19", 1)),
+        ("https://x.com/undated", "Undated story", "X", None),
+    ]
+    gdelt.results["Apple"] = [("https://y.com/late", "Later GDELT story", "y.com", utc("2026-09-20"))]
+    model = ScriptedModel(step("news_search", "Apple"), step("gdelt_search", "Apple"), step("market_data"),
+                          step("final", "Done."))
+    run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 18))
+    google, world, market, _ = run.steps
+    assert google.observation == "[a1] 2026-09-18 X: Early story"
+    assert world.observation == "No articles found for 'Apple'."
+    assert gdelt.params[0]["enddatetime"] == "20260918235959"
+    assert "Last close 100.00 USD on 2026-09-18" in market.observation and "105" not in market.observation
+    assert "2026-09-18" in model.calls[0][0][1]["content"]
+    assert run.as_of == date(2026, 9, 18) and latest_research(ctx, "AAPL").as_of == date(2026, 9, 18)
+
+
+async def test_an_as_of_date_in_the_future_is_refused(ctx):
+    from datetime import date
+
+    from oracle.services.errors import InvalidQuery
+
+    with pytest.raises(InvalidQuery, match="future"):
+        await research(ctx, "AAPL", ScriptedModel(), as_of=date(2026, 9, 22))
+
+
+async def test_citations_written_in_round_brackets_still_count(ctx, news):
+    news.results["Apple"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20"))]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
+                                                    step("final", "Beat estimates (a1); grew (a7).")))
+    assert run.findings == "Beat estimates [a1]; grew."
+    assert [(e.id, e.cited) for e in run.evidence] == [(1, True)]

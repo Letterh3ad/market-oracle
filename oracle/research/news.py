@@ -3,12 +3,19 @@ expands no external entities and raises on undefined ones, so entity attacks fai
 
 from __future__ import annotations
 
+import json
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 GOOGLE_NEWS = "https://news.google.com/rss/search"
+GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
+GDELT_RECORDS = 50
+
+
+class FeedUnreadable(ValueError):
+    """The source answered, but not with results (GDELT explains bad queries in plain text)."""
 
 
 @dataclass(frozen=True)
@@ -20,15 +27,56 @@ class Article:
     """Timezone-aware, or None when the feed gave no usable date."""
 
 
-def google_news_params(query: str) -> dict:
-    return {"q": query, "hl": "en-GB", "gl": "GB", "ceid": "GB:en"}
+def end_of(day: date) -> datetime:
+    """The first instant after `day`, UTC: an as-of run sees only what came before it."""
+    return datetime.combine(day + timedelta(days=1), datetime.min.time(), timezone.utc)
+
+
+def google_news_params(query: str, as_of: date | None = None) -> dict:
+    # Google's `before:` narrows the search; results are still filtered on their dates.
+    q = f"{query} before:{(as_of + timedelta(days=1)).isoformat()}" if as_of else query
+    return {"q": q, "hl": "en-GB", "gl": "GB", "ceid": "GB:en"}
+
+
+def gdelt_params(query: str, as_of: date | None = None) -> dict:
+    params = {"query": query, "mode": "ArtList", "format": "json", "maxrecords": str(GDELT_RECORDS),
+              "sort": "DateDesc"}
+    if as_of:
+        # GDELT's DOC API searches roughly the last three months at most.
+        params["startdatetime"] = (as_of - timedelta(days=90)).strftime("%Y%m%d000000")
+        params["enddatetime"] = as_of.strftime("%Y%m%d235959")
+    return params
+
+
+def parse_gdelt(text: str) -> list[Article]:
+    try:
+        body = json.loads(text)
+    except ValueError as exc:
+        raise FeedUnreadable(text.strip()[:200] or "empty answer") from exc
+    out = []
+    for a in body.get("articles", []) if isinstance(body, dict) else []:
+        url, title = (a.get("url") or "").strip(), (a.get("title") or "").strip()
+        if url and title:
+            out.append(Article(url, title, a.get("domain") or None, _gdelt_seen(a.get("seendate"))))
+    return out
+
+
+def _gdelt_seen(raw: str | None) -> datetime | None:
+    try:
+        return datetime.strptime(raw or "", "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 def parse_google_news(xml: str) -> list[Article]:
     """Items as articles. Google titles read "Headline - Outlet"; the outlet also comes
     in <source>, so the suffix is dropped when they agree."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError as exc:
+        raise FeedUnreadable(str(exc)) from exc
     out = []
-    for item in ET.fromstring(xml).iter("item"):
+    for item in root.iter("item"):
         url = (item.findtext("link") or "").strip()
         title = (item.findtext("title") or "").strip()
         if not url or not title:

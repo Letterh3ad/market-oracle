@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 
 
@@ -55,3 +55,5 @@ class ResearchRun:
     steps: tuple[Step, ...]
     evidence: tuple[Evidence, ...] = ()
     """Newest first."""
+    as_of: date | None = None
+    """Set for a replay: the run saw only what existed by the end of that day."""

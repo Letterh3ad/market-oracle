@@ -710,3 +710,20 @@ the constrained JSON step works on every backend).
 - Links are Google News redirect URLs. Resolving them to the publisher is left to the page
   reader (ticket 4).
 **Alternatives:** Keeping invented citations flagged (rejected: a reader skims past a flag).
+
+## 2026-09-23 - GDELT and as-of research runs
+
+**Context:** Ticket 3 of phase 7: worldwide news, and research replayable as of a past day
+for backtests after the model's training cutoff.
+**Decision:**
+- `gdelt_search` uses the DOC API (ArtList JSON); outlet is the domain, date is when GDELT
+  first saw it. A plain-text answer (GDELT's way of refusing a query) is shown to the model.
+- GDELT paced at one request per 10 seconds with one retry: it asks for one per 5 seconds
+  and answers a quicker one with a lockout that each further request lengthens.
+- An as-of run sees only what existed by the end of that day (UTC) in every tool, not just
+  news: `market_data` drops later bars, fundamentals and leans, else a replay would read
+  the future from the price. Undated articles are dropped, as they may be later. The task
+  prompt names the day and tells the model not to use what it knows from after it.
+- GDELT's DOC API covers roughly the last three months, so older replays rely on Google.
+- Citations written `(a3)` count like `[a3]` and are rewritten as `[a3]` (seen live).
+**Alternatives:** Cutting only news at the as-of date (rejected: prices leak the outcome).

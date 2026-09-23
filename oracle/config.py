@@ -30,7 +30,9 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "frankfurter": SourceConfig(rate_per_second=0.5),
     # Its free tier asks for about one call a day; one update makes one call.
     "open_er_api": SourceConfig(rate_per_second=0.05),
-    "gdelt": SourceConfig(rate_per_second=0.2),
+    # Asks for one request per 5 seconds and answers a quicker one with a longer lockout
+    # (seen 2026-09-23), so half that pace and one retry.
+    "gdelt": SourceConfig(rate_per_second=0.1, max_retries=1),
     "google_news": SourceConfig(rate_per_second=0.5),
     "ddgs": SourceConfig(rate_per_second=0.2),
     "sec_edgar": SourceConfig(rate_per_second=5.0),

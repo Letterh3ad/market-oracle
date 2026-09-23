@@ -15,8 +15,8 @@ def test_sources_default_to_the_built_in_set(tmp_path):
 
 
 def test_a_source_override_changes_only_what_it_sets(tmp_path):
-    config = _load(tmp_path, "[sources.gdelt]\nrate_per_second = 0.1\n")
-    assert config.sources["gdelt"].rate_per_second == 0.1
+    config = _load(tmp_path, "[sources.gdelt]\nrate_per_second = 0.05\n")
+    assert config.sources["gdelt"].rate_per_second == 0.05
     assert config.sources["gdelt"].cooldown_s == 900.0
     assert config.sources["yahoo"].rate_per_second == 0.5
 
