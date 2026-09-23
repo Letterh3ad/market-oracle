@@ -64,7 +64,11 @@ class DdgsSearcher:
 def unsafe_url(url: str) -> str | None:
     """Why the page reader must not open `url`, or None. Links come from web pages the
     model read, so they may point back into this machine or the local network."""
-    parts = urlsplit(url)
+    try:
+        parts = urlsplit(url)
+        _ = parts.port  # raises for a malformed port, as urlsplit does for a bad host
+    except ValueError:
+        return "that is not a valid address"
     if parts.scheme not in ("http", "https"):
         return "only http and https pages can be read"
     host = (parts.hostname or "").lower()

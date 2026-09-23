@@ -9,6 +9,11 @@ import re
 _CITE = re.compile(r"(\s?)[\[(]\s*(a\d+(?:\s*,\s*a\d+)*)\s*[\])]")
 
 
+def cited(ids) -> str:
+    """How citations are written: [a3] [a7]."""
+    return " ".join(f"[a{i}]" for i in ids)
+
+
 def keep_citations(findings: str, shown: set[int]) -> tuple[str, set[int]]:
     """The findings with citations of anything not shown removed, and the ids kept."""
     kept: set[int] = set()
@@ -17,6 +22,6 @@ def keep_citations(findings: str, shown: set[int]) -> tuple[str, set[int]]:
         ids = [int(a.strip()[1:]) for a in m.group(2).split(",")]
         good = [i for i in ids if i in shown]
         kept.update(good)
-        return f"{m.group(1)}{' '.join(f'[a{i}]' for i in good)}" if good else ""
+        return f"{m.group(1)}{cited(good)}" if good else ""
 
     return _CITE.sub(check, findings), kept

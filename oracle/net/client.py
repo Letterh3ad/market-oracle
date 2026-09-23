@@ -66,6 +66,7 @@ class RateLimitedClient:
         params: dict | None = None,
         headers: dict | None = None,
         max_bytes: int | None = None,
+        follow_redirects: bool = True,
     ) -> httpx.Response:
         """With `max_bytes`, reading stops there (an arbitrary page can be any size);
         `extensions["oracle_truncated"]` says whether it was cut."""
@@ -74,8 +75,9 @@ class RateLimitedClient:
             last = attempt == retries
             await self._gate.acquire(source)
             try:
-                resp = await (self._http.get(url, params=params, headers=headers) if max_bytes is None
-                              else self._get_capped(url, params, headers, max_bytes))
+                resp = await (
+                    self._http.get(url, params=params, headers=headers, follow_redirects=follow_redirects)
+                    if max_bytes is None else self._get_capped(url, params, headers, max_bytes, follow_redirects))
             except httpx.TransportError as exc:
                 self._gate.record_transport_error(source)
                 if last:
@@ -97,15 +99,17 @@ class RateLimitedClient:
                 raise RequestFailed(source, resp.status_code, f"HTTP {resp.status_code}")
         raise AssertionError("unreachable")
 
-    async def _get_capped(self, url: str, params: dict | None, headers: dict | None,
-                          max_bytes: int) -> httpx.Response:
-        async with self._http.stream("GET", url, params=params, headers=headers) as resp:
+    async def _get_capped(self, url: str, params: dict | None, headers: dict | None, max_bytes: int,
+                          follow_redirects: bool) -> httpx.Response:
+        async with self._http.stream("GET", url, params=params, headers=headers,
+                                     follow_redirects=follow_redirects) as resp:
             body = bytearray()
             async for chunk in resp.aiter_bytes():
                 body += chunk
-                if len(body) >= max_bytes:
+                # One byte past the cap is enough to know the body was cut.
+                if len(body) > max_bytes:
                     break
-            truncated = len(body) > max_bytes or (len(body) == max_bytes and not resp.is_stream_consumed)
+            truncated = len(body) > max_bytes
         # The body is already decompressed and may be cut, so its encoding and length no
         # longer describe it.
         kept = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-encoding", "content-length")}

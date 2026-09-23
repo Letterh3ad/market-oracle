@@ -83,3 +83,17 @@ async def test_a_refusal_is_handed_back_as_no_answer_for_the_loop_to_reject():
 async def test_api_failures_are_plain_model_errors(error, says):
     with pytest.raises(ModelError, match=says):
         await ClaudeChat("claude-opus-5", 60.0, FakeClient(error)).reply([], SCHEMA)
+
+
+async def test_an_answer_from_a_fallback_model_is_remembered():
+    served = message(text('{"action": "final"}'))
+    served.model = "claude-opus-4-8"
+    chat = ClaudeChat("claude-opus-5", 60.0, FakeClient(served))
+    await chat.reply([], SCHEMA)
+    assert chat.fell_back_to == {"claude-opus-4-8"}
+
+
+async def test_a_reply_too_slow_is_called_a_timeout():
+    error = anthropic.APITimeoutError(request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
+    with pytest.raises(ModelError, match="took longer than 60s"):
+        await ClaudeChat("claude-opus-5", 60.0, FakeClient(error)).reply([], SCHEMA)

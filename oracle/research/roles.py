@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
+from oracle.research.citations import cited
 from oracle.research.llm import ChatModel
 from oracle.research.trace import Claim, Report
 
@@ -95,4 +96,4 @@ def _claim(item: object, text_field: str, role: str, shown: set[int]) -> Claim |
 
 
 def _listed(claims: list[Claim]) -> str:
-    return "\n".join(f"- ({c.role}) {c.text} {' '.join(f'[a{i}]' for i in c.cites)}" for c in claims) or "(none)"
+    return "\n".join(f"- ({c.role}) {c.text} {cited(c.cites)}" for c in claims) or "(none)"

@@ -16,6 +16,7 @@ class ScriptedModel:
         self.roles: dict[str, object] = {}
         """Role name -> its answer, for the report calls after the loop; others answer {}."""
         self.calls: list[tuple[list[dict], dict]] = []
+        self.fell_back_to: set[str] = set()
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         self.calls.append(([dict(m) for m in messages], schema))
@@ -26,7 +27,7 @@ class ScriptedModel:
         if not self.replies:
             raise AssertionError("the script ran out of replies")
         reply = self.replies.pop(0)
-        if isinstance(reply, ModelError):
+        if isinstance(reply, Exception):
             raise reply
         return reply
 

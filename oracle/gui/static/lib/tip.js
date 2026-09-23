@@ -44,8 +44,9 @@ const GLOSSARY = {
   max_fall: "The largest drop from a high point in the daily equity record: how bad it got along the way.",
   pending: "Orders waiting for the next opening price. They fill when Update prices brings in that day.",
   research:
-    "The local AI model searches news, filings and the web about the company, then a small team of AI roles " +
-    "writes a report from what it found. It takes about a minute and runs on this machine.",
+    "An AI model searches news, filings and the web about the company, then a small team of AI roles writes a " +
+    "report from what it found. By default the model runs on this machine (Ollama) and takes about a minute; " +
+    "[llm] backend in oracle.toml can switch it to Claude.",
   research_unvalidated:
     "Unvalidated: AI research has not yet proven itself. It will count only once the strategy account, using " +
     "it, beats price patterns and company figures alone over enough paper trades. It never changes the lean.",

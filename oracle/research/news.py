@@ -27,6 +27,8 @@ class Article:
     """Timezone-aware, or None when the feed gave no usable date."""
     summary: str | None = field(default=None, compare=False)
     """A search snippet, shown with the article but not stored."""
+    body: str | None = field(default=None, compare=False)
+    """Stored text, for evidence written by Market Oracle itself."""
 
 
 def end_of(day: date) -> datetime:

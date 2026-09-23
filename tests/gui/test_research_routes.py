@@ -45,7 +45,7 @@ async def ready(ctx, client, ollama, news):
 
 
 async def test_nothing_is_shown_before_the_first_run(ready):
-    assert (await ready.get("/api/companies/AAPL/research")).json() == {"run": None}
+    assert (await ready.get("/api/companies/AAPL/research")).json() == {"run": None, "failed": None}
 
 
 async def test_research_runs_on_request_and_its_report_and_trace_come_back(ready):
@@ -81,3 +81,18 @@ async def test_a_model_backend_that_is_down_is_a_plain_503(ready, ollama):
     ollama.down = True
     response = await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
     assert response.status_code == 503 and "ollama serve" in response.json()["error"]
+
+
+async def test_a_failed_retry_keeps_the_last_report_on_screen_and_says_it_failed(ready, ollama):
+    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    ollama.down = True
+    await ready.post("/api/jobs/research", params={"symbol": "AAPL"})
+    body = (await ready.get("/api/companies/AAPL/research")).json()
+    assert body["run"]["report"]["bull"]["text"] == "Earnings momentum"
+    assert body["failed"]["status"] == "failed" and "ollama serve" in body["failed"]["error"]
+
+
+async def test_the_stored_data_a_report_cites_comes_with_its_text(ready):
+    run = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()["run"]
+    [data] = [e for e in run["evidence"] if e["outlet"] == "stored data"]
+    assert data["body"].startswith("AAPL: Apple Inc.")

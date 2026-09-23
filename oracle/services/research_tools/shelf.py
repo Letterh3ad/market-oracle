@@ -1,0 +1,98 @@
+"""What every research tool shares: where found evidence is stored and how it is shown,
+one way to fetch through the rate gate, and forgiving input handling."""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Callable
+from datetime import date, datetime
+from urllib.parse import urlsplit
+
+import httpx
+
+from oracle.clock import Clock
+from oracle.net.client import RateLimitedClient
+from oracle.net.errors import CircuitOpen, RequestFailed
+from oracle.research.news import Article, end_of
+from oracle.research.tools import ToolError
+from oracle.store.articles import ArticleRepo
+from oracle.store.db import to_utc_iso
+
+# Enough to see a story's shape without flooding a small model's context.
+MAX_ARTICLES = 8
+MAX_TITLE = 140
+MAX_SNIPPET = 100
+
+
+class Shelf:
+    """Where tools put what they find: stored once per URL, cut to the as-of date, newest
+    first, and shown with the ids findings cite."""
+
+    def __init__(self, conn: sqlite3.Connection, clock: Clock, on_shown: Callable[[list[int]], None],
+                 as_of: date | None = None) -> None:
+        self._articles = ArticleRepo(conn)
+        self._clock = clock
+        self._on_shown = on_shown
+        self.as_of = as_of
+
+    def show(self, found: list[Article], source: str, query: str, limit: int = MAX_ARTICLES) -> str:
+        if self.as_of:
+            # An undated article might be from after the cutoff, so it cannot be used.
+            cutoff = end_of(self.as_of)
+            found = [a for a in found if a.published is not None and a.published < cutoff]
+        newest = sorted(found, key=lambda a: (a.published is not None, a.published), reverse=True)[:limit]
+        if not newest:
+            return f"No articles found for {query!r}."
+        return "\n".join(_line(i, a) for i, a in zip(self.keep(newest, source, query), newest))
+
+    def keep(self, articles: list[Article], source: str, query: str | None = None) -> list[int]:
+        """Store and mark as shown to the run; the ids, in order."""
+        ids = self._articles.save(articles, source, to_utc_iso(self._clock.utcnow()), query)
+        self._on_shown(ids)
+        return ids
+
+
+def evidence_line(article_id: int, published: datetime | None, outlet: str | None, title: str) -> str:
+    """How an item of evidence reads to the model, wherever it is listed."""
+    day = published.date().isoformat() if published else "undated"
+    return f"[a{article_id}] {day} {outlet or 'unknown outlet'}: {cut(title, MAX_TITLE)}"
+
+
+def _line(article_id: int, a: Article) -> str:
+    line = evidence_line(article_id, a.published, a.outlet, a.title)
+    return f"{line} | {cut(a.summary, MAX_SNIPPET)}" if a.summary else line
+
+
+def cut(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def domain(url: str) -> str:
+    host = urlsplit(url).hostname or ""
+    return host[4:] if host.startswith("www.") else host
+
+
+def symbol(input: str, default: str) -> str:
+    # Small models sometimes leak JSON punctuation into the input.
+    return input.strip(" '\"{}[]") or default
+
+
+def query(input: str) -> str:
+    text = input.strip()
+    if not text:
+        raise ToolError("give a search query")
+    return text
+
+
+async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *, params: dict | None = None,
+                headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = True,
+                accept: tuple[int, ...] = (200,)) -> httpx.Response:
+    """A GET through the gate whose failures read as tool errors the model can act on."""
+    try:
+        resp = await client.get(source, url, params=params, headers=headers, max_bytes=max_bytes,
+                                follow_redirects=follow_redirects)
+    except (CircuitOpen, RequestFailed) as exc:
+        raise ToolError(f"{label} unavailable ({exc}); try another tool") from exc
+    if resp.status_code not in accept:
+        raise ToolError(f"{label} answered HTTP {resp.status_code}")
+    return resp

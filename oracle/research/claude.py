@@ -26,17 +26,25 @@ class ClaudeChat:
         self.model = model
         self._timeout = timeout_s
         self._client = client
+        self.fell_back_to: set[str] = set()
+        """Models that answered in this one's place after a refusal, for the run's record."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
-        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-        turns = [m for m in messages if m["role"] != "system"]
+        request = {
+            "model": self.model, "max_tokens": MAX_TOKENS, "messages": [m for m in messages if m["role"] != "system"],
+            "system": "\n\n".join(m["content"] for m in messages if m["role"] == "system"),
+            "output_config": {"format": {"type": "json_schema", "schema": _closed(schema)}},
+            "betas": [FALLBACK_BETA], "fallbacks": "default",
+        }
         try:
-            client = self._client or anthropic.AsyncAnthropic(timeout=self._timeout)
-            response = await client.beta.messages.create(
-                model=self.model, max_tokens=MAX_TOKENS, system=system, messages=turns,
-                output_config={"format": {"type": "json_schema", "schema": _closed(schema)}},
-                betas=[FALLBACK_BETA], fallbacks="default",
-            )
+            if self._client is not None:
+                response = await self._client.beta.messages.create(**request)
+            else:
+                async with anthropic.AsyncAnthropic(timeout=self._timeout) as client:
+                    response = await client.beta.messages.create(**request)
+        except anthropic.APITimeoutError as exc:
+            raise ModelError(f"Claude took longer than {self._timeout:.0f}s to answer; "
+                             "raise [llm] timeout_s") from exc
         except anthropic.AuthenticationError as exc:
             raise ModelError(f"Claude refused the credentials: {NO_CREDENTIALS}") from exc
         except anthropic.RateLimitError as exc:
@@ -48,6 +56,9 @@ class ClaudeChat:
         except anthropic.AnthropicError as exc:
             # Raised before any request when no credential source resolves.
             raise ModelError(f"Claude could not start ({exc}): {NO_CREDENTIALS}") from exc
+        served = getattr(response, "model", None)
+        if served and not served.startswith(self.model):
+            self.fell_back_to.add(served)
         if response.stop_reason == "refusal":
             # Declined even after the fallback: no answer, which the loop treats as not understood.
             return None

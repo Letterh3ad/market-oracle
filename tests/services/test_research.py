@@ -304,6 +304,7 @@ async def test_a_page_is_read_as_plain_text_and_can_be_cited(ctx, pages):
     ("http://localhost:11434/api/tags", "local addresses"),
     ("http://192.168.1.1/admin", "private and local network"),
     ("https://news.google.com/rss/articles/CBMi", "search its headline"),
+    ("http://[bad", "not a valid address"),
 ])
 async def test_pages_that_must_not_or_cannot_be_read_are_refused(ctx, url, says):
     run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
@@ -561,3 +562,68 @@ def test_the_configured_backend_decides_which_model_runs(ctx):
     assert (configured_model(ctx).name, configured_model(ctx).model) == ("ollama", "qwen3:4b-instruct-2507-q8_0")
     ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
     assert (configured_model(ctx).name, configured_model(ctx).model) == ("claude", "claude-opus-5")
+
+
+async def test_a_redirect_into_this_machine_or_the_lan_is_refused_at_each_hop(ctx, pages):
+    pages.pages["https://evil.test/r"] = ("redirect", "http://127.0.0.1:11434/api/tags")
+    pages.pages["https://news.test/old"] = ("redirect", "https://news.test/new")
+    pages.pages["https://news.test/new"] = ("text/html", "<title>Moved</title><p>Here now.</p>")
+    model = ScriptedModel(step("read_page", "https://evil.test/r"), step("read_page", "https://news.test/old"),
+                          step("final", "Done."))
+    evil, moved = (await research(ctx, "AAPL", model)).steps[:2]
+    assert "private and local network addresses cannot be read" in evil.observation
+    assert moved.observation.endswith("Here now.")
+    assert all(r.url.host != "127.0.0.1" for r in pages.requests)
+
+
+async def test_the_sec_contact_is_not_carried_to_another_host_by_a_redirect(ctx, sec, pages):
+    with_contact(ctx)
+    url = f"{ARCHIVE}/000032019326000077/moved.htm"
+    sec.documents[url] = None
+    pages.pages["https://mirror.test/doc"] = ("text/html", "<p>Filing text.</p>")
+
+    def moved(request, original=sec.handle):
+        import httpx
+
+        if str(request.url) == url:
+            return httpx.Response(301, headers={"Location": "https://mirror.test/doc"})
+        return original(request)
+
+    sec.handle = moved
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
+    assert run.steps[0].observation.endswith("Filing text.")
+    [mirror] = [r for r in pages.requests if r.url.host == "mirror.test"]
+    assert "faye@example.com" not in mirror.headers.get("user-agent", "")
+
+
+async def test_an_unexpected_failure_still_marks_the_run_failed(ctx):
+    model = ScriptedModel(step("market_data"), RuntimeError("disk full"))
+    with pytest.raises(RuntimeError):
+        await research(ctx, "AAPL", model)
+    run = latest_research(ctx, "AAPL")
+    assert run.status == "failed" and "disk full" in run.error
+
+
+async def test_a_model_that_fell_back_is_named_in_the_run(ctx):
+    model = ScriptedModel(step("final", "Done."))
+    model.fell_back_to = {"claude-opus-4-8"}
+    run = await research(ctx, "AAPL", model)
+    assert run.model == "script (fell back to claude-opus-4-8 when refused)"
+
+
+async def test_the_trace_itself_says_when_the_step_limit_was_hit(ctx):
+    with_steps(ctx, 1)
+    run = await research(ctx, "AAPL", ScriptedModel(step("market_data"), step("final", "Partial.")))
+    assert run.steps[-1].observation == "Stopped at the 1-step limit; the findings were asked for then."
+
+
+async def test_the_stored_data_a_run_read_is_kept_with_it(ctx):
+    run = await research(ctx, "AAPL", ScriptedModel(step("final", "Done.")))
+    [data] = [e for e in run.evidence if e.outlet == "stored data"]
+    assert "Last close 105.00 USD" in data.body
+
+
+async def test_each_article_keeps_the_query_that_first_found_it(ctx, news):
+    news.results["Apple earnings"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20"))]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple earnings"), step("final", "Done.")))
+    assert articles(run)[0].query == "Apple earnings"

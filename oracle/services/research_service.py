@@ -23,7 +23,8 @@ from oracle.services.errors import InvalidQuery, ModelUnavailable
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
 from oracle.services.research_tools import (
-    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch,
+    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch, evidence_line,
+    market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
@@ -75,6 +76,12 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
         except ModelError as exc:
             repo.finish(run_id, RunStatus.FAILED, None, str(exc), _now(ctx))
             raise ModelUnavailable(str(exc)) from exc
+        except BaseException as exc:
+            # Never leave a run marked running: the GUI would show it as the latest forever.
+            repo.finish(run_id, RunStatus.FAILED, None, f"unexpected error: {exc!r}", _now(ctx))
+            raise
+        if fell_back := getattr(model, "fell_back_to", None):
+            repo.set_model(run_id, f"{model.model} (fell back to {', '.join(sorted(fell_back))} when refused)")
         repo.save_report(run_id, listing, report)
         repo.set_cited(run_id, cited | report.cites)
         repo.finish(run_id, outcome.status, findings, None, _now(ctx))
@@ -83,20 +90,18 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
 
 async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: int, listing: str,
                     as_of: date | None, day: date, notes: str) -> str:
-    """What the roles read: the stored data as one citable item, every article the run was
-    shown (newest first), and the loop's own notes."""
+    """What the roles read: the stored data as one citable item (kept with the run, so the
+    report can be checked later), every article the run was shown, and the loop's notes."""
     signals = "; ".join(f"{s.signal.analyst}: {s.signal.direction.value} ({s.signal.reason})"
                         + (" [out of date]" if s.stale else "")
                         for s in latest_signals(ctx, listing) if s.signal.as_of <= day)
-    data = await MarketData(ctx, listing, as_of).run("") + (f" Analyst signals: {signals}." if signals else "")
-    [data_id] = shelf.keep([Article(f"oracle:data/{listing}/{day.isoformat()}",
+    data = await market_summary(ctx, listing, as_of) + (f" Analyst signals: {signals}." if signals else "")
+    [data_id] = shelf.keep([Article(f"oracle:data/{listing}/run-{run_id}",
                                     f"{listing} stored prices, fundamentals and analyst signals", "stored data",
-                                    datetime.combine(day, time(), timezone.utc))], "oracle")
+                                    datetime.combine(day, time(), timezone.utc), body=data)], "oracle")
     lines = [f"[a{data_id}] {day.isoformat()} stored data: {data}"]
-    for e in repo.get(run_id).evidence:
-        if e.id != data_id:
-            lines.append(f"[a{e.id}] {e.published.date().isoformat() if e.published else 'undated'} "
-                         f"{e.outlet or 'unknown outlet'}: {e.title}")
+    lines += [evidence_line(e.id, e.published, e.outlet, e.title) for e in repo.get(run_id).evidence
+              if e.id != data_id]
     return "Evidence:\n" + "\n".join(lines) + f"\n\nResearcher's notes: {notes or '(none)'}"
 
 

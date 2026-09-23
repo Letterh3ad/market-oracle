@@ -44,7 +44,9 @@ function evidence(r) {
       const link = safeUrl(e.link);
       const title = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
       return el("li", { id: `ev-${e.id}` }, el("span", { class: "mono" }, `[a${e.id}] `),
-        `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title);
+        `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title,
+        e.body ? el("details", null, el("summary", { class: "dim" }, "what it read"),
+          el("pre", { class: "observation" }, e.body)) : null);
     })));
 }
 
@@ -60,11 +62,13 @@ function trace(r) {
     r.findings ? el("p", { class: "small" }, el("strong", null, "The researcher's notes: "), r.findings) : null);
 }
 
-function view(r) {
-  if (!r) return [el("p", { class: "dim" }, "No research yet. Press Research: the local model searches the news, " +
+function view(r, failed) {
+  const note = failed ? el("p", { class: "badge warn" }, `The last attempt failed: ${failed.error ?? "unknown error"}`) : null;
+  if (!r) return [el("p", { class: "dim" }, "No research yet. Press Research: the AI model searches the news, " +
     "filings and the web, then writes a report. It never changes the lean.")];
   const when = r.as_of ? `replay as of ${r.as_of}` : `researched ${r.started_at.slice(0, 16).replace("T", " ")} UTC`;
   return [
+    note,
     el("div", { class: "dim small" }, `${when} by ${r.backend} ${r.model}`,
       el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")),
       r.status === "step_cap" ? el("span", { class: "badge" }, "stopped at the step limit") : null,
@@ -77,20 +81,22 @@ function researchSection(symbol) {
   const body = el("div", null, el("p", { class: "dim" }, "Loading research..."));
   const box = el("div", { class: "card", id: "c-research" });
   // Late answers paint only while this section is still on screen.
-  const show = (r) => { if (box.isConnected) body.replaceChildren(...view(r)); };
+  const show = (r) => { if (box.isConnected) body.replaceChildren(...view(r.run, r.failed).filter(Boolean)); };
+  const reload = () => api(`/api/companies/${encodeURIComponent(symbol)}/research`)
+    .then(show)
+    .catch((err) => { if (box.isConnected) body.replaceChildren(el("p", { class: "dim" }, err.message)); });
   const run = busyButton("Research", async () => {
     try {
-      show((await api(`/api/jobs/research?symbol=${encodeURIComponent(symbol)}`, { method: "POST" })).run);
+      show(await api(`/api/jobs/research?symbol=${encodeURIComponent(symbol)}`, { method: "POST" }));
       clearError();
     } catch (err) {
       showError(err.message);
+      reload();
     }
   });
   box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run,
     el("span", { class: "dim small" }, "about a minute")), body);
-  api(`/api/companies/${encodeURIComponent(symbol)}/research`)
-    .then((r) => show(r.run))
-    .catch((err) => { if (box.isConnected) body.replaceChildren(el("p", { class: "dim" }, err.message)); });
+  reload();
   return box;
 }
 

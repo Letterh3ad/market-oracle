@@ -23,7 +23,8 @@ class FakePages:
 
     def __init__(self) -> None:
         self.pages: dict[str, tuple[str, str]] = {}
-        """url -> (content type, body)"""
+        """url -> (content type, body), or ("redirect", where to)"""
+        self.requests: list = []
 
     @property
     def hosts(self) -> set[str]:
@@ -34,8 +35,11 @@ class FakePages:
     def handle(self, request):
         import httpx
 
+        self.requests.append(request)
         found = self.pages.get(str(request.url))
         if found is None:
             return httpx.Response(404)
         kind, body = found
+        if kind == "redirect":
+            return httpx.Response(302, headers={"Location": body})
         return httpx.Response(200, text=body, headers={"Content-Type": kind})

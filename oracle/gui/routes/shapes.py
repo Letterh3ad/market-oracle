@@ -29,11 +29,13 @@ def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
 
 
-def research_run(run: ResearchRun | None) -> dict:
+def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> dict:
+    """`failed`: a newer run that failed, shown beside the last report rather than instead of it."""
     if run is None:
-        return {"run": None}
+        return {"run": None, "failed": None}
     report = run.report
-    return {"run": {
+    return {"failed": failed and {"id": failed.id, "status": failed.status, "error": failed.error,
+                                  "started_at": failed.started_at}, "run": {
         "id": run.id, "symbol": run.symbol, "status": run.status, "backend": run.backend, "model": run.model,
         "started_at": run.started_at, "finished_at": run.finished_at, "as_of": run.as_of, "error": run.error,
         "findings": run.findings, "queries": list(run.queries), "badge": UNVALIDATED,

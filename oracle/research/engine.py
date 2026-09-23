@@ -55,7 +55,8 @@ async def react(model: ChatModel, tools: Sequence[Tool], task: str, max_steps: i
     messages.append({"role": "user", "content": FORCE_FINAL})
     parsed = _parse(await model.reply(messages, step_schema([FINAL])))
     thought, findings = (parsed[0], parsed[2]) if parsed else ("", "")
-    on_step(Step(max_steps + 1, thought, FINAL, findings, None))
+    on_step(Step(max_steps + 1, thought, FINAL, findings,
+                 f"Stopped at the {max_steps}-step limit; the findings were asked for then."))
     return Outcome(RunStatus.STEP_CAP, findings)
 
 

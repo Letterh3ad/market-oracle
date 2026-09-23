@@ -61,6 +61,10 @@ class ResearchRepo:
                 [(run_id, a) for a in article_ids],
             )
 
+    def set_model(self, run_id: int, model: str) -> None:
+        with transaction(self._conn):
+            self._conn.execute("UPDATE research_runs SET model = ? WHERE id = ?", (model, run_id))
+
     def finish(self, run_id: int, status: RunStatus, findings: str | None, error: str | None,
                finished_at: str) -> None:
         with transaction(self._conn):
@@ -84,13 +88,13 @@ class ResearchRepo:
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
         evidence = self._conn.execute(
-            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited FROM research_evidence e "
+            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query FROM research_evidence e "
             "JOIN articles a ON a.id = e.article_id WHERE e.run_id = ? "
             "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (row[0],),
         )
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
-                           tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c))
-                                 for i, u, t, o, p, c in evidence),
+                           tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c), b, q)
+                                 for i, u, t, o, p, c, b, q in evidence),
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),

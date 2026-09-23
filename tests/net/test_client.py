@@ -174,3 +174,11 @@ async def test_a_compressed_body_is_capped_after_decompressing(conn, clock):
     client = RateLimitedClient(gate, clock, user_agent="t", transport=httpx.MockTransport(handler))
     resp = await client.get("src", URL, max_bytes=100)
     assert resp.text == "<p>" + "y" * 97
+
+
+async def test_a_body_of_exactly_max_bytes_is_not_marked_cut(conn, clock):
+    gate = SourceGate(conn, clock, {"src": SourceConfig(rate_per_second=10.0)})
+    client = RateLimitedClient(gate, clock, user_agent="t",
+                               transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"x" * 1000)))
+    resp = await client.get("src", URL, max_bytes=1000)
+    assert len(resp.content) == 1000 and resp.extensions["oracle_truncated"] is False

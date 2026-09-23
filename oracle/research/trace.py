@@ -26,7 +26,7 @@ class Step:
     """A tool's name, or FINAL."""
     input: str
     observation: str | None
-    """What the tool returned; None for the final answer."""
+    """What the tool returned; for the final answer, None unless the step limit forced it."""
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,10 @@ class Evidence:
     outlet: str | None
     published: datetime | None
     cited: bool
+    body: str | None = None
+    """Only for evidence Market Oracle wrote itself: the stored data a run read."""
+    query: str | None = None
+    """The search that first found it."""
 
 
 @dataclass(frozen=True)

@@ -853,3 +853,27 @@ generator and roles on Claude.
 - Credential, rate-limit, status and connection failures become plain ModelErrors naming
   the fix. Tests fake the SDK client (the SDK runs on httpx2, so the httpx fake web cannot
   stand in); the live check runs only with `ORACLE_CLAUDE_SMOKE=1`, as it costs money.
+
+## 2026-09-23 - Phase 7 review round 1
+
+**Context:** Two-axis review of `phase-7-research` against `main`.
+**Decision:**
+- `read_page` follows redirects itself, one hop at a time (at most 5), re-checking each
+  target: a public page could otherwise bounce the reader into this machine or the LAN,
+  and carry the SEC contact to another host. Pages are asked for uncompressed, so the 2 MB
+  cap bounds memory; a body of exactly the cap is no longer flagged cut.
+- A malformed address (`http://[bad`) is refused as invalid instead of crashing the run.
+- Any failure, not only a model error, marks the run failed (never left "running").
+- The run's model names any fallback that answered after a refusal on Claude.
+- Claude timeouts read as timeouts; its client is closed after each call.
+- Articles keep the query that first found them; the stored-data item a report cites is
+  kept per run with its text, so a report can be checked later.
+- A capped run says so in the trace's last step, not only in its status.
+- The Company tab keeps the last report on screen when a newer run fails, with the error.
+- `research_tools` split into a package (shelf, market, news, web, filings) with one fetch
+  helper, one evidence-line format and one citation writer; wording no longer assumes a
+  local model; the adapted HTML stripper is credited in THIRD_PARTY.md.
+**Alternatives:** Deferred as low: `related_companies` has no country basis (the phase 8
+graph adds it); seeds carry a local-language word, not a native-script name (the model is
+asked for that); a per-run scope type for the tool wiring. Server-side refusal fallbacks
+stay on for Claude (Anthropic's guidance for Opus 5), the user can turn them down.
