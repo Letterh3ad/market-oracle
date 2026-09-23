@@ -1079,3 +1079,15 @@ Each has a CLI equivalent; OS-specific parts sit behind small interfaces.
 **Alternatives:** A Windows service (admin rights, harder to see); Task Scheduler at logon
 (works, but a Startup-folder file is visible and easy to remove by hand); auto-restarting
 on new code (would cancel running research without asking).
+
+## 2026-09-23 - Turning the system off: an automation switch and Shut down, no daemon split
+**Context:** User wants to turn the whole system off, as the stalker's daemon could be
+stopped from its GUI. Oracle's automation runs inside the GUI server.
+**Decision:** `app-control` 04: an Automation On/Off master switch in the header
+(`[automation] enabled`; nothing starts by itself while off, manual work still runs; every
+automatic job source checks it), and a Shut down button that ends the process, with a
+Market Oracle desktop / Start-menu shortcut to start it again.
+**Alternatives:** A separate scheduler daemon controlled from the GUI (a second process to
+start, stop and keep in sync, for no saving: the idle server costs nothing); relying on
+the schedule toggle alone (later automation, AI research and discovery auto mode, would
+each need its own switch).
