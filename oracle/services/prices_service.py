@@ -131,7 +131,9 @@ def price_history_in_base(ctx: AppContext, symbol: str, days: int | None = None)
         if b.currency == base:
             out.append(ConvertedBar(b, 1.0, b.close))
             continue
-        picked = pick_rate(series.setdefault(b.currency, fx.history(b.currency)), b.date)
+        if b.currency not in series:
+            series[b.currency] = fx.history(b.currency)
+        picked = pick_rate(series[b.currency], b.date)
         if picked is None:
             out.append(ConvertedBar(b, None, None))
         else:

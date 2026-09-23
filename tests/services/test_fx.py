@@ -8,6 +8,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.fx_service import fx_history, update_fx
 from oracle.services.prices_service import price_history_in_base, update_listing
 from oracle.services.universe_service import refresh_universe
+from oracle.store.fx import FxRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.eodhd import FakeEodhd
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
@@ -252,3 +253,12 @@ async def test_converted_bars_name_the_rates_source_for_attribution(ctx, yahoo):
     last = price_history_in_base(ctx, "2330.TW")[-1]
     assert last.rate_source == "open_er_api"
     assert price_history_in_base(ctx, "VOD.L")[-1].rate_source is None
+
+
+async def test_conversion_loads_each_currencys_rates_once(ctx, monkeypatch):
+    await update_fx(ctx)
+    calls = []
+    real = FxRepo.history
+    monkeypatch.setattr(FxRepo, "history", lambda self, cur, limit=None: calls.append(cur) or real(self, cur, limit))
+    assert len(price_history_in_base(ctx, "AAPL")) == 3
+    assert calls == ["USD"]
