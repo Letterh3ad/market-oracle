@@ -1042,3 +1042,15 @@ no-data days are UTC dates (same day as local for UK evening runs); tick states 
 triggers are strings, not enums; the dead-listing wording repeats across frontends;
 `ListingOutcome` carries `error` and `skipped` side by side.
 **Alternatives:** Local no-data days (needs the zone threaded into the price service).
+
+## 2026-09-23 - Discovery moves up; ticks warn before heavy work
+**Context:** User wants evidence and autonomy first, and the AI account will make ticks use
+the GPU for up to the research budget while they may be using the PC.
+**Decision:** Order is now `ai-account`, `discovery`, `gui-parity`, `universe-quality`,
+`models-and-deep`, `backtest`, then phase 8. `ai-account` gains a ticket: a browser
+notification and banner before each scheduled tick (default 10 minutes) with Postpone 1
+hour and Skip today, a Stop button while a tick runs, and an opt-in to research only when
+the PC is idle. Ticks stay once a day at 22:30 local: every stage works on daily bars and
+fills at the next open, so more ticks add nothing.
+**Alternatives:** Windows toast now (new dependency, deferred to packaging); ticks several
+times a day (no gain on daily data).
