@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
+from oracle.config import AutomationConfig, ScheduleConfig
+
 from oracle.services.context import AppContext
 from oracle.services.activity_service import JobRunner, submit_tick
 from oracle.services.settings_service import reload_live_settings
@@ -104,7 +106,7 @@ class Scheduler:
         # not, and without one this due time would be submitted again on the next poll.
         return last_tick(ctx) if ticked_since(ctx, due) else record_skipped(ctx, trigger, f"skipped: {job.error}")
 
-    def _live_setting(self) -> tuple:
+    def _live_setting(self) -> tuple[ScheduleConfig, AutomationConfig]:
         return self._ctx.config.schedule, self._ctx.config.automation
 
     def _stamp(self) -> int | None:

@@ -16,6 +16,8 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.state:
         path = set_automation(ctx, args.state == "on")
         print(f"saved to {path}; a running `oracle gui` picks it up within a minute")
+        if args.state == "off":
+            print("work already running carries on: stop it from the Activity tab if needed")
     if ctx.config.automation.enabled:
         print("automation on: scheduled work runs when due")
     else:

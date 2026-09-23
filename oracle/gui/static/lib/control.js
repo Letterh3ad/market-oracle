@@ -49,16 +49,15 @@ async function waitForNewServer(oldPid) {
 }
 
 async function restart() {
-  const oldPid = status?.server.pid;
   try {
+    const oldPid = (status ?? await api("/api/status")).server.pid;
     await api("/api/app/restart", { method: "POST" });
+    box().replaceChildren(el("span", { class: "warn-text" }, "Restarting..."));
+    waitForNewServer(oldPid);
   } catch (err) {
     showError(`restart: ${err.message}`);
     idle();
-    return;
   }
-  box().replaceChildren(el("span", { class: "warn-text" }, "Restarting..."));
-  waitForNewServer(oldPid);
 }
 
 async function shutDown() {
@@ -88,9 +87,9 @@ async function setAutomation(enabled, stopRunning = false) {
 
 // Turning off: automatic work already going may be stopped too, or left to finish.
 async function automationOff() {
+  asking = true; // a status refresh must not tick the switch back while this is asked
   const automatic = (await activeJobs()).filter((j) => j.automatic).map((j) => j.label);
   if (!automatic.length) return setAutomation(false);
-  asking = true;
   box().replaceChildren(
     el("span", { class: "small" }, `Automation off. Also stop ${automatic.join(", ")}?`),
     button("Stop it", () => setAutomation(false, true)), button("Let it finish", () => setAutomation(false)));
@@ -108,8 +107,8 @@ function idle() {
     el("label", { class: automation.enabled ? "small" : "small warn-text",
       title: "Off: nothing starts by itself (scheduled ticks); buttons still work" },
     switchBox, automation.enabled ? " Automation on" : " Automation off"),
-    fresh ? el("span", { class: "warn-text small", title: `running ${server.version}, on disk ${server.version_on_disk}` },
-      "New version ready") : null,
+    fresh ? el("span", { class: "warn-text small" },
+      `New version ready (${server.version} \u2192 ${server.version_on_disk})`) : null,
     button(fresh ? "Restart to update" : "Restart", () => confirmStop("Restart", restart),
       "Stop Oracle and start it again, picking up new code"),
     button("Shut down", () => confirmStop("Shut down", shutDown), "Stop Oracle completely"),
@@ -128,17 +127,21 @@ async function mountSettings() {
   const pane = document.getElementById("app-settings");
   const toggle = el("input", { type: "checkbox" });
   const where = el("span", { class: "dim small" });
+  const about = el("div", { class: "dim small" });
   const paint = (a) => {
     toggle.checked = a.enabled;
     toggle.disabled = !a.supported;
     where.textContent = !a.supported ? "only set up for Windows so far" : a.enabled ? `launcher: ${a.path}` : "";
+    // The launcher and shortcuts start the code in this folder: the one this server runs.
+    about.textContent = `Running version ${a.version}. Launcher and shortcuts start Oracle from ${a.folder}.`;
   };
+  const repaint = () => api("/api/app/autostart").then(paint).catch((err) => { where.textContent = err.message; });
   toggle.addEventListener("change", async () => {
     try {
       paint(await sendJson("/api/app/autostart", { enabled: toggle.checked }, "PUT"));
     } catch (err) {
       showError(`start with Windows: ${err.message}`);
-      paint(await api("/api/app/autostart"));
+      repaint();
     }
   });
   const written = el("span", { class: "dim small" });
@@ -151,12 +154,8 @@ async function mountSettings() {
   });
   pane.replaceChildren(
     el("div", { class: "row" }, el("label", null, toggle, " Start Oracle when Windows starts"), where),
-    el("div", { class: "row" }, shortcuts, written));
-  try {
-    paint(await api("/api/app/autostart"));
-  } catch (err) {
-    where.textContent = err.message;
-  }
+    el("div", { class: "row" }, shortcuts, written), about);
+  repaint();
 }
 
 function mount() {

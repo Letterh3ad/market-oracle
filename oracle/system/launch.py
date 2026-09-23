@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -7,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 __all__ = ["LaunchCommand", "server_command", "spawn_detached"]
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -42,5 +45,6 @@ def _popen(cmd: LaunchCommand) -> subprocess.Popen:
         return subprocess.Popen(cmd.argv, cwd=cmd.cwd, startupinfo=info,
                                 creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB)
     except OSError:
-        # The job forbids breaking away; the process is still detached from our console.
+        log.warning("could not start %s outside this process's job; it may stop when whatever started "
+                    "this server exits", cmd.argv[0])
         return subprocess.Popen(cmd.argv, cwd=cmd.cwd, startupinfo=info, creationflags=flags)

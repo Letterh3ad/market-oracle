@@ -26,8 +26,10 @@ VERSION_TTL_S = 60.0
 
 def server_launch(ctx: AppContext) -> LaunchCommand:
     """How to start this GUI server again: same interpreter and config, in the folder its
-    code was loaded from (the live worktree), whatever folder this one was started in."""
-    return server_command(ctx.config_source, CODE_ROOT)
+    code was loaded from (the live worktree), whatever folder this one was started in.
+    Without a config file the settings, database included, come from the working folder,
+    so that one is kept."""
+    return server_command(ctx.config_source, CODE_ROOT if ctx.config_source else Path.cwd())
 
 
 class Autostart:
@@ -50,13 +52,19 @@ class Autostart:
     def set(self, on: bool) -> None:
         if self.path is None:
             raise ServiceError("starting with the computer is only set up for Windows so far")
-        if not on:
+        if on:
+            _write_links([self.path], self._command, self._write)
+        else:
             self.path.unlink(missing_ok=True)
-            return
-        try:
-            (self._write or write_shortcut)(self.path, self._command, APP_NAME)
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise ServiceError(f"could not write the startup launcher: {exc}") from exc
+
+
+def _write_links(links: list[Path], command: LaunchCommand,
+                 write: Callable[[Path, LaunchCommand, str], None] | None) -> None:
+    try:
+        for link in links:
+            (write or write_shortcut)(link, command, APP_NAME)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ServiceError(f"could not write {link}: {exc}") from exc
 
 
 def install_shortcuts(command: LaunchCommand, folders: list[Path] | None = None,
@@ -67,11 +75,7 @@ def install_shortcuts(command: LaunchCommand, folders: list[Path] | None = None,
     if not folders:
         raise ServiceError("shortcuts are only set up for Windows so far")
     links = [f / f"{APP_NAME}.lnk" for f in folders]
-    try:
-        for link in links:
-            (write or write_shortcut)(link, command, APP_NAME)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ServiceError(f"could not write a shortcut: {exc}") from exc
+    _write_links(links, command, write)
     return links
 
 
@@ -94,6 +98,7 @@ class AppControl:
         self.started_at = datetime.now(timezone.utc)
         self.on_exit: Callable[[], None] | None = None
         """Set by whatever serves the app: asks the server to stop once in-flight answers are sent."""
+        self._stopping = False
 
     def version_on_disk(self) -> str:
         """The code in the folder now; differs from `version` once new code has landed."""
@@ -103,18 +108,24 @@ class AppControl:
 
     def restart(self) -> None:
         """Start a detached copy, then stop this server; the copy waits for the port."""
-        exit_ = self._exit_hook()
+        stop = self._exit_hook()
         try:
             self._spawn(self.command)
         except OSError as exc:
             raise CannotRestart(f"could not start a new copy: {exc}") from exc
-        exit_()
+        self._stopping = True
+        stop()
 
     def shut_down(self) -> None:
         """Stop this server for good; the desktop shortcut starts it again."""
-        self._exit_hook()()
+        stop = self._exit_hook()
+        self._stopping = True
+        stop()
 
     def _exit_hook(self) -> Callable[[], None]:
+        # A double click, or the CLI and the page together, must not start two copies.
+        if self._stopping:
+            raise CannotRestart("Oracle is already restarting or shutting down")
         if self.on_exit is None:
             raise CannotRestart("this server cannot stop itself (it was not started by `oracle gui`)")
         return self.on_exit

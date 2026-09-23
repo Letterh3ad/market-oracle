@@ -1140,3 +1140,17 @@ folder the `oracle` package was loaded from. Restart uses the same command.
 **Alternatives:** A Task Scheduler entry (more moving parts, harder to see and delete by
 hand); a `.vbs` launcher (VBScript is being removed from Windows); a `.cmd` (flashes a
 console); pywin32 for the shortcut (a dependency for one call).
+
+## 2026-09-23 - Automation switch stops only automatic work; shortcuts use Windows' folders
+**Context:** app-control 04 and its review gate.
+**Decision:** Jobs carry an `automatic` flag (scheduled and catch-up ticks today); turning
+automation off from the GUI offers "Stop it" / "Let it finish" for those only, and the CLI
+switch leaves running work alone and says so. A tick that fell due while automation was off
+never fires late. Desktop, Start-menu and Startup folders come from `SHGetFolderPathW`
+(OneDrive-redirected desktops work). Restart, Shut down and the automation switch sit in
+the always-visible header; start-at-login and shortcuts in the App section, which names the
+running version and the folder the launchers start. A launcher written from a server in the
+dev checkout points at the dev checkout: set them from the live GUI's App section.
+**Alternatives:** Cancelling every job on "off" (manual work is the user's own); asking
+every time even with nothing automatic running (noise); `%USERPROFILE%\Desktop` (wrong under
+OneDrive).

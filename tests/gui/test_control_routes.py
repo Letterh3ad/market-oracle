@@ -119,3 +119,31 @@ async def test_shortcuts_are_installed_from_the_page(app_client, tmp_path, monke
     monkeypatch.setattr(app_service, "write_shortcut", lambda link, cmd, d: None)
     answer = (await app_client.post("/api/app/shortcuts")).json()
     assert answer == {"written": [str(tmp_path / "Desktop" / "Market Oracle.lnk")]}
+
+
+async def test_status_polls_never_read_the_code_folder(app_client, monkeypatch):
+    from oracle.services import status_service
+
+    def forbidden(*a):
+        raise AssertionError("read the code folder on a status poll")
+
+    monkeypatch.setattr(status_service, "code_version", forbidden)
+    assert (await app_client.get("/api/status")).status_code == 200
+
+
+async def test_work_running_when_oracle_shuts_down_is_recorded_interrupted(ctx, control):
+    from oracle.gui.app import build_app
+
+    app = build_app(ctx, control=control)
+    started = threading.Event()
+
+    async def forever(c):
+        started.set()
+        await asyncio.Event().wait()
+
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
+            job = app.state.runner.submit("research", "Research X", forever)
+            await asyncio.to_thread(started.wait)
+            answer = (await c.post("/api/app/shutdown")).json()
+    assert answer["cut_off"] == ["Research X"] and job.state == "interrupted"

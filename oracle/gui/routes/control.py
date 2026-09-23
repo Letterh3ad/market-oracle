@@ -64,4 +64,5 @@ async def put_autostart(body: AutostartBody, control: AppControl = Depends(get_c
 
 def _autostart(control: AppControl) -> dict:
     path = control.autostart.path
-    return {"enabled": control.autostart.enabled(), "supported": path is not None, "path": str(path) if path else None}
+    return {"enabled": control.autostart.enabled(), "supported": path is not None, "path": str(path) if path else None,
+            "folder": str(control.command.cwd), "version": control.version}

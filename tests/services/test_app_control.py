@@ -113,3 +113,24 @@ def test_shortcuts_without_windows_folders_say_so():
 
     with pytest.raises(ServiceError, match="Windows"):
         install_shortcuts(CMD, [])
+
+
+def test_a_second_restart_or_shut_down_while_stopping_is_refused():
+    spawned = []
+    control = AppControl(CMD, spawn=spawned.append)
+    control.on_exit = lambda: None
+    control.restart()
+    for again in (control.restart, control.shut_down):
+        with pytest.raises(CannotRestart, match="already"):
+            again()
+    assert spawned == [CMD]
+
+
+def test_without_a_config_file_a_restart_keeps_the_folder_the_defaults_came_from(tmp_path, monkeypatch):
+    from oracle.config import Config
+    from oracle.services.app_service import server_launch
+    from oracle.services.context import open_context
+
+    monkeypatch.chdir(tmp_path)
+    with open_context(Config(db_path=tmp_path / "o.db"), None) as ctx:
+        assert server_launch(ctx).cwd == tmp_path

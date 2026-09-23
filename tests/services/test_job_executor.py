@@ -79,3 +79,24 @@ async def test_the_runner_runs_jobs_on_the_thread_executor(ctx):
     await runner.wait(job.id)
     assert job.state == "done" and job.result != threading.get_ident()
     await runner.stop()
+
+
+async def test_a_second_cancel_still_waits_for_the_jobs_cleanup(ctx):
+    started, cleaned = threading.Event(), []
+
+    async def long(c):
+        started.set()
+        try:
+            await asyncio.sleep(30)
+        finally:
+            time.sleep(0.3)  # cleanup stuck in a synchronous stretch
+            cleaned.append(True)
+
+    job = asyncio.create_task(ThreadExecutor(ctx).run(long))
+    await asyncio.to_thread(started.wait)
+    job.cancel()
+    await asyncio.sleep(0.05)
+    job.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await job
+    assert cleaned == [True]
