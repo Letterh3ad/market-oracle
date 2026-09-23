@@ -65,9 +65,11 @@ class Scheduler:
         self._ctx = ctx
         self._tz = tz
         self._setting = ctx.config.schedule
-        # Only due times from here on count, so turning scheduling on or moving its time
-        # never fires at once for a time already passed.
-        self._floor = self._polled = ctx.clock.utcnow()
+        self._started = self._polled = ctx.clock.utcnow()
+        # Due times before the floor never fire, so turning scheduling on or moving its time
+        # never runs at once for a time already passed. At start there is none: the run
+        # missed while the app was closed (only the latest) runs once, as a catch-up.
+        self._floor = datetime.min.replace(tzinfo=timezone.utc)
 
     async def check(self) -> TickRun | None:
         """One poll: run a tick if one is due and none has run since."""
@@ -83,10 +85,13 @@ class Scheduler:
         last = last_tick(ctx)
         if due < self._floor or (last is not None and last.started_at >= due):
             return None
+        trigger = "catch-up" if due < self._started else "scheduled"
+        if trigger == "catch-up" and last is None:
+            return None  # never ticked, so nothing was missed
         try:
-            return await run_tick(ctx, "scheduled")
+            return await run_tick(ctx, trigger)
         except JobAlreadyRunning as exc:
-            return record_skipped(ctx, "scheduled", f"skipped: {exc}")
+            return record_skipped(ctx, trigger, f"skipped: {exc}")
 
     async def run(self) -> None:
         while True:

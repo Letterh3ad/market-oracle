@@ -10,7 +10,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.jobs_service import single_flight
 from oracle.services.schedule_service import Scheduler, last_due, next_due, schedule_status
 from oracle.services.settings_service import set_schedule
-from oracle.services.tick_service import last_tick
+from oracle.services.tick_service import last_tick, run_tick
 from tests.fakes.clock import FakeClock
 
 LONDON = ZoneInfo("Europe/London")
@@ -123,3 +123,36 @@ async def test_the_loop_polls_until_a_run_is_due(ctx):
     task.cancel()
     assert last_tick(ctx).trigger == "scheduled"
     assert last_tick(ctx).started_at >= utc(2026, 9, 21, 21, 30)
+
+
+async def test_closed_over_a_long_weekend_gives_one_catch_up_tick(ctx):
+    await run_tick(ctx)  # Monday 21:00 BST, then the app closes until Wednesday week
+    ctx.clock.advance(9 * 86400)
+    s = scheduler(ctx)
+    run = await s.check()
+    assert run.trigger == "catch-up"
+    assert await s.check() is None
+
+
+async def test_closed_for_an_hour_before_the_due_time_gives_none(ctx):
+    ctx.clock.advance(-86400)  # Sunday evening: Friday's run is the last due
+    await run_tick(ctx)
+    ctx.clock.advance(86400)  # back to Monday 21:00 BST, before today's run
+    assert await scheduler(ctx).check() is None
+
+
+async def test_no_catch_up_when_scheduling_is_off(ctx):
+    set_schedule(ctx, False, "22:30")
+    ctx.clock.advance(9 * 86400)
+    assert await scheduler(ctx).check() is None and last_tick(ctx) is None
+
+
+async def test_a_run_due_while_the_app_is_open_is_scheduled_not_catch_up(ctx):
+    await run_tick(ctx)
+    s = scheduler(ctx)
+    ctx.clock.advance(90 * 60)
+    assert (await s.check()).trigger == "scheduled"
+
+
+async def test_no_catch_up_before_the_first_tick_ever(ctx):
+    assert await scheduler(ctx).check() is None
