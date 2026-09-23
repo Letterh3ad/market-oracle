@@ -9,6 +9,8 @@ from oracle.analysts.risk import Series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
 from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
 from oracle.analysts.trend import trend
+from oracle.broker.baseline import INPUTS, baseline_lean
+from oracle.broker.rules import Lean
 from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, ServiceError
@@ -18,12 +20,13 @@ from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.leans import LeanRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
-    "Analysis", "AnalystSignal", "Direction", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
+    "Analysis", "AnalystSignal", "Direction", "Lean", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
     "analyse_watched", "latest_signals", "signal_history",
 ]
 
@@ -37,6 +40,8 @@ class Analysis:
     symbol: str
     signals: tuple[AnalystSignal, ...]
     skipped: tuple[Skipped, ...]
+    lean: Lean | None
+    """The baseline lean; None without a technicals signal."""
 
 
 @dataclass(frozen=True)
@@ -66,8 +71,21 @@ async def analyse(ctx: AppContext, symbol: str) -> Analysis:
     results.append(_risk(ctx, listing))
     results += await _factors(ctx, listing)
     signals = tuple(r for r in results if isinstance(r, AnalystSignal))
-    SignalRepo(ctx.conn).save(list(signals), to_utc_iso(ctx.clock.utcnow()))
-    return Analysis(listing, signals, tuple(r for r in results if isinstance(r, Skipped)))
+    now = to_utc_iso(ctx.clock.utcnow())
+    SignalRepo(ctx.conn).save(list(signals), now)
+    lean = _baseline(ctx, listing, now)
+    return Analysis(listing, signals, tuple(r for r in results if isinstance(r, Skipped)), lean)
+
+
+def _baseline(ctx: AppContext, listing: str, computed_at: str) -> Lean | None:
+    """From every stored signal still current, so a recent factor signal survives a run
+    whose fundamentals fetch failed."""
+    current = [s.signal for s in latest_signals(ctx, listing) if not s.stale]
+    lean = baseline_lean(listing, current)
+    if lean is not None:
+        used = ", ".join(s.analyst for s in current if s.analyst in INPUTS)
+        LeanRepo(ctx.conn).save([lean], f"from {used}", computed_at)
+    return lean
 
 
 async def _factors(ctx: AppContext, listing: str) -> list[AnalystSignal | Skipped]:

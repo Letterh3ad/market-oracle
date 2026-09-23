@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from oracle.analysts.risk import max_drawdown
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
-from oracle.broker.rules import Decision, Holding, Rules, decide
+from oracle.broker.rules import Decision, Holding, Lean, Rules, decide
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -111,13 +111,13 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
     repo, leans = PaperRepo(ctx.conn), LeanRepo(ctx.conn)
     view = account_view(ctx, account)
     watched = WatchlistRepo(ctx.conn).all_symbols()
-    found = {s: lean for s in watched if (lean := leans.latest(s)) is not None}
+    found, unusable = _usable_leans(ctx, leans, watched)
     holdings = {p.symbol: Holding(p.symbol, p.shares, p.cost, p.value) for p in view.positions}
     sizes = {s: size for s in watched if (size := _risk_size(ctx, s)) is not None}
     pending = {o.symbol for o in repo.pending(account)}
     rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
                   ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
-    decisions = decide(found, holdings, view.cash, view.cash + _holdings(view), sizes, rules, pending)
+    decisions = unusable + decide(found, holdings, view.cash, view.cash + _holdings(view), sizes, rules, pending)
     today, logged = ctx.clock.utcnow().date(), []
     for d in decisions:
         order = None
@@ -128,6 +128,21 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
         logged.append(LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None))
     DecisionRepo(ctx.conn).log(logged)
     return decisions
+
+
+def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple[dict[str, Lean], list[Decision]]:
+    """A lean older than the listing's last bar is out of date: never trade on it."""
+    bars, found, skips = BarRepo(ctx.conn), {}, []
+    for symbol in watched:
+        lean = leans.latest(symbol)
+        last = bars.last_date(symbol)
+        if lean is None:
+            skips.append(Decision(symbol, "skip", None, "no lean yet: run `oracle analyse`"))
+        elif last is not None and lean.as_of < last:
+            skips.append(Decision(symbol, "skip", None, f"{lean.source} lean is out of date: run `oracle analyse`"))
+        else:
+            found[symbol] = lean
+    return found, skips
 
 
 def strategy_log(ctx: AppContext, limit: int = 50) -> list[LoggedDecision]:

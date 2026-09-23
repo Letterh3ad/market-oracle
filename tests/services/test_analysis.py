@@ -172,3 +172,36 @@ async def test_a_watched_symbol_gone_from_the_universe_never_breaks_analysis(ctx
 async def test_analyse_fetches_company_and_peer_fundamentals_with_one_crumb(ctx, yahoo):
     await analyse(ctx, "AAPL")
     assert yahoo.crumbs_issued == 1
+
+
+async def test_analyse_stores_a_baseline_lean_dated_by_the_last_bar(ctx):
+    from oracle.broker.baseline import baseline_lean
+    from oracle.store.leans import LeanRepo
+
+    result = await analyse(ctx, "AAPL")
+    assert result.lean == baseline_lean("AAPL", result.signals)
+    assert (result.lean.as_of, result.lean.source) == (DAYS[-1], "baseline")
+    assert LeanRepo(ctx.conn).latest("AAPL") == result.lean
+
+
+async def test_the_lean_keeps_recent_factor_signals_but_not_stale_ones(ctx):
+    from oracle.analysts.signals import AnalystSignal
+    from oracle.broker.baseline import baseline_lean
+    from oracle.store.signals import SignalRepo
+
+    await update_listing(ctx, "NOSECT")
+    stale = AnalystSignal("value", "NOSECT", date(2026, 8, 1), 1.0, 1.0, "cheap", ())
+    recent = AnalystSignal("quality", "NOSECT", date(2026, 9, 20), -1.0, 1.0, "poor", ())
+    SignalRepo(ctx.conn).save([stale, recent], "2026-09-20T20:00:00Z")
+    result = await analyse(ctx, "NOSECT")
+    assert result.lean == baseline_lean("NOSECT", [*result.signals, recent])
+
+
+async def test_no_technicals_means_no_lean_is_stored(ctx, yahoo):
+    from oracle.store.leans import LeanRepo
+
+    yahoo.add("MSFT", "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in DAYS[-5:]])
+    await update_listing(ctx, "MSFT")
+    result = await analyse(ctx, "MSFT")
+    assert "technicals" in [k.analyst for k in result.skipped]
+    assert result.lean is None and LeanRepo(ctx.conn).latest("MSFT") is None

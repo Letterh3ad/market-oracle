@@ -205,3 +205,21 @@ async def test_a_strategy_step_sells_on_a_sell_lean(ctx, yahoo, clock):
     [d] = [d for d in strategy_step(ctx) if d.symbol == "AAPL"]
     assert d.action == "sell"
     assert account_view(ctx, "strategy").pending[0].side == "sell"
+
+
+async def test_a_step_skips_a_watched_listing_without_a_lean(ctx):
+    from oracle.services.watch_service import watch
+    watch(ctx, "AAPL")
+    [d] = strategy_step(ctx)
+    assert (d.symbol, d.action) == ("AAPL", "skip") and "no lean yet" in d.reason
+    assert [x.action for x in strategy_log(ctx)] == ["skip"]
+
+
+async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock):
+    from oracle.services.watch_service import watch
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "strong buy", probability=0.9)
+    await next_day(ctx, yahoo, clock)
+    [d] = strategy_step(ctx)
+    assert (d.action, d.reason) == ("skip", "baseline lean is out of date: run `oracle analyse`")
+    assert account_view(ctx, "strategy").pending == ()

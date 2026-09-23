@@ -450,3 +450,17 @@ Every decision, skips included, is logged with its reason. Thresholds are a
 and source so AI leans can sit beside the baseline.
 **Alternatives:** Topping up held positions (deferred: needs a rebalance rule).
 Counting pending sell proceeds (rejected: optimistic; a sell can still be rejected).
+
+## 2026-09-23 - Baseline lean from technicals and factors, never traded when out of date
+**Context:** Ticket 05: until AI leans exist, the strategy account needs a lean.
+**Decision:** `oracle analyse` builds a `baseline` lean from the current stored signals:
+technicals plus value, quality and growth, averaged by confidence. Score bands match
+signal direction (+-0.2 ends neutral, +-0.6 starts strong). Probability is 0.5 plus half
+the agreeing confidence out of all four inputs, so missing inputs lower it. No technicals
+signal means no lean (factors alone say nothing about timing). Stale signals (a newer bar
+stored, or fundamentals over a week old) are left out; a recent factor signal from an
+earlier run is kept, so one failed fundamentals fetch does not thin the lean. The lean is
+dated by the last bar; `paper step` skips a watched listing whose lean is older than its
+last bar, or that has none, and logs why. Stops still apply to held listings either way.
+**Alternatives:** Only this run's signals (rejected: a transient fetch failure would drop
+the factors). Trading on the last lean regardless of age (rejected: never trade on stale data).

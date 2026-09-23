@@ -91,7 +91,7 @@ def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     decisions = strategy_step(ctx)
     if not decisions:
-        print("no decisions: no watched listing has a lean yet (run `oracle analyse`)")
+        print("no decisions: nothing watched or held (add listings with `oracle watch add SYMBOL`)")
     for d in decisions:
         amount = f" for {d.cash:,.2f} {ctx.config.base_currency}" if d.cash is not None else ""
         print(f"{d.symbol}: {d.action}{amount} ({d.reason})")

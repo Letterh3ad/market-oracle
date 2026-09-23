@@ -32,9 +32,14 @@ def test_two_processes_share_one_sources_rate(tmp_path):
     for p in procs:
         assert p.wait(timeout=60) == 0
 
-    stamps = sorted(float(x) for out in outs for x in out.read_text().split())
+    # Spacing is judged on the slots the gate handed out: wake-up times after the sleep
+    # carry scheduler jitter, so under load two can land closer than the gate spaced them.
+    conn = connect(db)
+    slots = [r[0] for r in conn.execute("SELECT at FROM source_requests WHERE source = 'shared' ORDER BY at")]
+    conn.close()
     interval = 1.0 / RATE
-    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
-    assert len(stamps) == 2 * PER_PROCESS
-    assert min(gaps) >= interval - TIMER_SLACK
+    assert len(slots) == 2 * PER_PROCESS
+    assert min(b - a for a, b in zip(slots, slots[1:])) >= interval - 1e-6
+    # Nobody went early: each process woke no sooner than its own slots allow.
+    stamps = sorted(float(x) for out in outs for x in out.read_text().split())
     assert stamps[-1] - stamps[0] >= (len(stamps) - 1) * interval - TIMER_SLACK
