@@ -14,6 +14,7 @@ from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, a
 from oracle.services.context import AppContext
 from oracle.services.research_service import research as run_research
 from oracle.services.routine_service import update_listing_prices, update_prices
+from oracle.services.tick_service import run_tick
 
 router = APIRouter(prefix="/api/jobs")
 
@@ -49,3 +50,9 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx))
 async def research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     """One research run with its report; about a minute on the default local model."""
     return shapes.research_run(await run_research(ctx, symbol))
+
+
+@router.post("/tick")
+async def tick(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The whole routine once: prices, FX, fills, analysis, strategy step."""
+    return shapes.tick(await run_tick(ctx))

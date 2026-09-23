@@ -86,9 +86,9 @@ async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
         return await _update(ctx, client, symbol)
 
 
-async def update_watched(ctx: AppContext) -> WatchedUpdate:
-    """Every watched listing once, then the FX their currencies need, in one process at
-    a time. A listing that fails is reported and the rest carry on."""
+async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
+    """Every watched listing once, then (with `fx`) the FX their currencies need, in one
+    process at a time. A listing that fails is reported and the rest carry on."""
     with single_flight(ctx, JOB, LEASE_S) as held:
         outcomes = []
         async with open_client(ctx) as client:
@@ -101,8 +101,8 @@ async def update_watched(ctx: AppContext) -> WatchedUpdate:
                 else:
                     outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
         held.check()
-        fx = await update_fx(ctx) if outcomes else []
-    return WatchedUpdate(tuple(outcomes), tuple(fx))
+        rates = await update_fx(ctx) if fx and outcomes else []
+    return WatchedUpdate(tuple(outcomes), tuple(rates))
 
 
 def price_history(ctx: AppContext, symbol: str, days: int | None = None) -> list[Bar]:

@@ -1,5 +1,5 @@
-"""Sequences that span services, shared by the CLI and the GUI. `oracle tick` (phase 10)
-will own the full run: prices, FX, fills, analysis, strategy step."""
+"""Sequences that span services, shared by the CLI and the GUI. The full daily run lives in
+`tick_service`."""
 
 from __future__ import annotations
 
