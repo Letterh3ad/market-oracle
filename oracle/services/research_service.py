@@ -134,7 +134,10 @@ def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: st
            searcher: WebSearcher | None) -> list[Tool]:
     contact = ctx.config.research.contact
     tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
-             Filings(client, ctx.conn, ctx.clock, shelf, listing, contact), RelatedCompanies(ctx, listing)]
+             RelatedCompanies(ctx, listing)]
+    if contact:
+        # SEC refuses requests without one; offering the tool would only waste a step.
+        tools.append(Filings(client, ctx.conn, ctx.clock, shelf, listing, contact))
     if as_of is None:
         # Web pages carry no reliable date, so a replay cannot use them.
         gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
