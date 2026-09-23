@@ -58,6 +58,14 @@ class ResearchRepo:
         ).fetchone()
         return self.get(row[0]) if row else None
 
+    def latest_report(self, symbol: str) -> ResearchRun | None:
+        """The newest live run that wrote a report, with a verdict or not."""
+        row = self._conn.execute(
+            "SELECT r.id FROM research_runs r JOIN research_reports p ON p.run_id = r.id "
+            "WHERE r.symbol = ? AND r.as_of IS NULL ORDER BY r.started_at DESC, r.id DESC LIMIT 1", (symbol,),
+        ).fetchone()
+        return self.get(row[0]) if row else None
+
     def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
         with transaction(self._conn):
             self._conn.executemany(

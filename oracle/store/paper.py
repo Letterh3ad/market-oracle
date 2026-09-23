@@ -112,12 +112,18 @@ class EquityRepo:
 
 @dataclass(frozen=True)
 class LoggedDecision:
+    account: str
     day: date
     symbol: str
     action: Action
     cash: float | None
     reason: str
     order_id: int | None
+    report_id: int | None = None
+    """The research run whose verdict the AI account acted on."""
+
+
+_DECISION = "account, day, symbol, action, cash, reason, order_id, report_id"
 
 
 class DecisionRepo:
@@ -127,14 +133,14 @@ class DecisionRepo:
     def log(self, rows: list[LoggedDecision]) -> None:
         with transaction(self._conn):
             self._conn.executemany(
-                "INSERT INTO strategy_decisions (day, symbol, action, cash, reason, order_id) VALUES (?, ?, ?, ?, ?, ?)",
-                [(r.day.isoformat(), r.symbol, r.action, r.cash, r.reason, r.order_id) for r in rows],
+                f"INSERT INTO strategy_decisions ({_DECISION}) VALUES ({', '.join('?' * 8)})",
+                [(r.account, r.day.isoformat(), r.symbol, r.action, r.cash, r.reason, r.order_id, r.report_id)
+                 for r in rows],
             )
 
-    def recent(self, limit: int = 50) -> list[LoggedDecision]:
+    def recent(self, account: str, limit: int = 50) -> list[LoggedDecision]:
         """Newest first."""
         rows = self._conn.execute(
-            "SELECT day, symbol, action, cash, reason, order_id FROM strategy_decisions ORDER BY id DESC LIMIT ?",
-            (limit,),
+            f"SELECT {_DECISION} FROM strategy_decisions WHERE account = ? ORDER BY id DESC LIMIT ?", (account, limit),
         )
-        return [LoggedDecision(date.fromisoformat(r[0]), r[1], Action(r[2]), *r[3:]) for r in rows]
+        return [LoggedDecision(r[0], date.fromisoformat(r[1]), r[2], Action(r[3]), *r[4:]) for r in rows]

@@ -19,7 +19,9 @@ from oracle.services.errors import InvalidQuery
 
 log = logging.getLogger(__name__)
 
-__all__ = ["PEERS_RANGE", "reload_live_settings", "set_automation", "set_peer_count", "set_schedule"]
+__all__ = [
+    "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_automation", "set_peer_count", "set_schedule",
+]
 
 
 def set_peer_count(ctx: AppContext, count: int) -> Path:
@@ -49,8 +51,15 @@ def set_automation(ctx: AppContext, enabled: bool) -> Path:
     return path
 
 
+def set_ai_account(ctx: AppContext, enabled: bool) -> Path:
+    """Turn the AI paper account on or off; off, its step does nothing."""
+    path = _save(ctx, "ai_account", {"enabled": enabled})
+    ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=enabled))
+    return path
+
+
 def reload_live_settings(ctx: AppContext) -> None:
-    """Take `[schedule]` and `[automation]` from oracle.toml as they are now, so the CLI in
+    """Take `[schedule]`, `[automation]` and `[ai_account]` from oracle.toml as they are now, so the CLI in
     another process reaches a running GUI. A file that no longer loads keeps the current
     settings."""
     if ctx.config_source is None:
@@ -58,9 +67,10 @@ def reload_live_settings(ctx: AppContext) -> None:
     try:
         loaded = load_config(ctx.config_source)[0]
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
-        log.warning("oracle.toml no longer loads (%s); keeping the current schedule and automation", exc)
+        log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
-    ctx.config = replace(ctx.config, schedule=loaded.schedule, automation=loaded.automation)
+    ctx.config = replace(ctx.config, schedule=loaded.schedule, automation=loaded.automation,
+                         ai_account=loaded.ai_account)
 
 
 def _check(check, value) -> None:

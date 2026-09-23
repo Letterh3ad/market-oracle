@@ -1,4 +1,4 @@
-"""Paper trading: two ledgers in the base currency, orders filled at the next open with
+"""Paper trading: three ledgers in the base currency, orders filled at the next open with
 pessimistic costs."""
 
 from __future__ import annotations
@@ -21,18 +21,24 @@ from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
 from oracle.store.leans import LeanRepo
 from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision, Order, PaperRepo
+from oracle.store.research import ResearchRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
-    "Status", "account_score", "account_view", "equity_history", "fill_pending", "pending_orders", "place_buy",
-    "place_sell", "sells", "strategy_log", "strategy_step",
+    "ACCOUNTS", "AI_OFF", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
+    "Status", "TRADERS", "account_score", "account_view", "ai_step", "decision_log", "equity_history", "fill_pending",
+    "pending_orders", "place_buy", "place_sell", "sells", "strategy_step",
 ]
 
-ACCOUNTS = ("strategy", "manual")
+ACCOUNTS = ("strategy", "ai", "manual")
+TRADERS = ("strategy", "ai")
+"""The accounts that trade by themselves."""
+GONE = "no longer in the universe"
+AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
+          "or set [ai_account] enabled = true in oracle.toml")
 
 
 @dataclass(frozen=True)
@@ -140,14 +146,30 @@ def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> st
 def strategy_step(ctx: AppContext) -> list[Decision]:
     """Run the strategy rules over every watched listing's latest lean and queue the
     resulting orders on the strategy account. Every decision, skips included, is logged."""
-    account = "strategy"
-    repo, leans = PaperRepo(ctx.conn), LeanRepo(ctx.conn)
-    view = account_view(ctx, account)
     watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, unusable = _usable_leans(ctx, leans, watched)
+    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), watched)
+    return _step(ctx, "strategy", found, skips, {})
+
+
+def ai_step(ctx: AppContext) -> list[Decision] | None:
+    """The strategy's rules, limits and fills over each watched listing's latest research
+    verdict instead of its lean, on the AI account; None, doing nothing, while that account
+    is off. Every decision is logged with the research run its verdict came from."""
+    if not ctx.config.ai_account.enabled:
+        return None
+    watched = WatchlistRepo(ctx.conn).all_symbols()
+    found, skips, runs = _usable_verdicts(ctx, watched)
+    return _step(ctx, "ai", found, skips, runs)
+
+
+def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
+          reports: dict[str, int]) -> list[Decision]:
+    """Decide over `found` with the strategy's rules, queue the orders on `account` and log
+    every decision; `reports` maps a listing to the research run behind its decision."""
+    view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
-    sizes = {s: size for s in watched if (size := _risk_size(ctx, s)) is not None}
-    orders = repo.pending(account)
+    sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
+    orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
     rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
                   ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
@@ -163,7 +185,8 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
         elif d.action == Action.SELL:
             order = place_sell(ctx, d.symbol, None, account, source=account)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
-        log.log([LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None)])
+        log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
+                                reports.get(d.symbol))])
     return decisions
 
 
@@ -174,7 +197,7 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
         lean = leans.latest(symbol)
         last = bars.last_date(symbol)
         if universe.resolve(symbol) is None:
-            skips.append(Decision(symbol, Action.SKIP, None, "no longer in the universe"))
+            skips.append(Decision(symbol, Action.SKIP, None, GONE))
         elif lean is None:
             skips.append(Decision(symbol, Action.SKIP, None, "no lean yet: run `oracle analyse`"))
         elif last is not None and lean.as_of < last:
@@ -184,9 +207,37 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
     return found, skips
 
 
-def strategy_log(ctx: AppContext, limit: int = 50) -> list[LoggedDecision]:
-    """The strategy account's recent decisions, newest first."""
-    return DecisionRepo(ctx.conn).recent(limit)
+def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lean], list[Decision], dict[str, int]]:
+    """Each listing's newest valid live verdict as a lean, unless older than the configured
+    age; with the research run behind each, skips included."""
+    research, universe, today = ResearchRepo(ctx.conn), UniverseRepo(ctx.conn), ctx.clock.utcnow().date()
+    max_age = ctx.config.ai_account.max_verdict_age_days
+    found, skips, runs = {}, [], {}
+    for symbol in watched:
+        run = research.latest_verdict(symbol)
+        if universe.resolve(symbol) is None:
+            skips.append(Decision(symbol, Action.SKIP, None, GONE))
+        elif run is None:
+            latest = research.latest_report(symbol)
+            if latest is None:
+                skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it"))
+            else:
+                runs[symbol] = latest.id
+                skips.append(Decision(symbol, Action.SKIP, None, f"no verdict: {latest.report.no_verdict}"))
+        elif (today - run.report.day).days > max_age:
+            runs[symbol] = run.id
+            skips.append(Decision(symbol, Action.SKIP, None, f"the verdict is from {run.report.day.isoformat()}, older "
+                                                             f"than {max_age} days: run research on it again"))
+        else:
+            runs[symbol] = run.id
+            v = run.report.verdict
+            found[symbol] = Lean(symbol, run.report.day, v.label, v.confidence, "ai")
+    return found, skips, runs
+
+
+def decision_log(ctx: AppContext, account: str, limit: int = 50) -> list[LoggedDecision]:
+    """An account's recent decisions, newest first."""
+    return DecisionRepo(ctx.conn).recent(account, limit)
 
 
 def _risk_size(ctx: AppContext, symbol: str) -> float | None:

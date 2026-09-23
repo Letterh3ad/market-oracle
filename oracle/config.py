@@ -114,6 +114,18 @@ class AutomationConfig:
 
 
 @dataclass(frozen=True)
+class AiAccountConfig:
+    """The paper account that trades research verdicts. Off until the user turns it on."""
+
+    enabled: bool = False
+    max_verdict_age_days: int = 7
+    """An older verdict is never traded."""
+
+
+VERDICT_AGE_RANGE = (1, 90)
+
+
+@dataclass(frozen=True)
 class GuiConfig:
     host: str = "127.0.0.1"
     """Localhost only by default: nothing on the network can reach the GUI."""
@@ -178,6 +190,7 @@ class Config:
     gui: GuiConfig = field(default_factory=GuiConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     automation: AutomationConfig = field(default_factory=AutomationConfig)
+    ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
@@ -261,6 +274,9 @@ def _apply(raw: dict) -> Config:
             continue
         if name == "automation":
             values[name] = _automation(value)
+            continue
+        if name == "ai_account":
+            values[name] = _ai_account(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -347,6 +363,20 @@ def _automation(raw: object) -> AutomationConfig:
     if not isinstance(enabled, bool):
         raise ConfigError(f"automation.enabled must be true or false, got {enabled!r}")
     return AutomationConfig(enabled=enabled)
+
+
+def _ai_account(raw: object) -> AiAccountConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("ai_account must be an [ai_account] table")
+    _reject_unknown(raw, AiAccountConfig, "[ai_account]")
+    enabled = raw.get("enabled", AiAccountConfig.enabled)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"ai_account.enabled must be true or false, got {enabled!r}")
+    age = raw.get("max_verdict_age_days", AiAccountConfig.max_verdict_age_days)
+    low, high = VERDICT_AGE_RANGE
+    if isinstance(age, bool) or not isinstance(age, int) or not low <= age <= high:
+        raise ConfigError(f"ai_account.max_verdict_age_days must be a whole number from {low} to {high}, got {age!r}")
+    return AiAccountConfig(enabled=enabled, max_verdict_age_days=age)
 
 
 def _schedule(raw: object) -> ScheduleConfig:

@@ -10,8 +10,8 @@ from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.fx_service import update_fx
 from oracle.services.paper_service import (
-    account_score, account_view, equity_history, fill_pending, place_buy, place_sell, strategy_log,
-    strategy_step,
+    account_score, account_view, decision_log, equity_history, fill_pending, place_buy, place_sell,
+    ai_step, strategy_step,
 )
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
@@ -192,7 +192,7 @@ async def test_a_strategy_step_buys_on_a_lean_and_logs_every_decision(ctx, yahoo
     assert decisions["VOD.L"].action == "skip"
     [order] = account_view(ctx, "strategy").pending
     assert (order.symbol, order.source) == ("AAPL", "strategy")
-    logged = {d.symbol: d for d in strategy_log(ctx)}
+    logged = {d.symbol: d for d in decision_log(ctx, "strategy")}
     assert logged["VOD.L"].reason.startswith("probability") and logged["AAPL"].action == "buy"
 
 
@@ -212,7 +212,7 @@ async def test_a_step_skips_a_watched_listing_without_a_lean(ctx):
     watch(ctx, "AAPL")
     [d] = strategy_step(ctx)
     assert (d.symbol, d.action) == ("AAPL", "skip") and "no lean yet" in d.reason
-    assert [x.action for x in strategy_log(ctx)] == ["skip"]
+    assert [x.action for x in decision_log(ctx, "strategy")] == ["skip"]
 
 
 async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock):
@@ -317,7 +317,7 @@ async def test_decisions_before_a_failing_order_stay_logged(ctx, monkeypatch):
     monkeypatch.setattr(paper, "place_buy", lambda c, s, *a, **k: real(c, s, *a, **k) if s == "AAPL" else 1 / 0)
     with pytest.raises(ZeroDivisionError):
         strategy_step(ctx)
-    assert [(d.symbol, d.action) for d in strategy_log(ctx)] == [("AAPL", "buy")]
+    assert [(d.symbol, d.action) for d in decision_log(ctx, "strategy")] == [("AAPL", "buy")]
 
 
 def delist(ctx, symbol):
@@ -397,3 +397,113 @@ async def test_rates_used_by_past_fills_are_still_credited_once_nothing_is_held(
     fill_pending(ctx)
     view = account_view(ctx, "manual")
     assert view.positions == () and view.rate_sources == ("yahoo",)
+
+
+def ai_on(ctx, **changes):
+    ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=True, **changes))
+
+
+def verdict(ctx, symbol, label, confidence=0.7, day=date(2026, 9, 21), rejected=None):
+    """A finished live research run whose report carries this verdict (or why it has none)."""
+    from oracle.research.trace import Report, RunStatus, Verdict
+    from oracle.store.research import ResearchRepo
+
+    repo = ResearchRepo(ctx.conn)
+    run = repo.start(symbol, "ollama", "m", f"{day.isoformat()}T12:00:00Z")
+    call = None if rejected else Verdict(label, confidence, "Because [a1]", (1,), "it falls")
+    repo.save_report(run, symbol, Report(day, (), None, None, (), None, verdict=call, verdict_rejected=rejected))
+    repo.finish(run, RunStatus.DONE, "notes", None, f"{day.isoformat()}T12:05:00Z")
+    return run
+
+
+async def test_the_ai_account_starts_level_and_its_equity_is_recorded_with_the_others(ctx):
+    assert account_view(ctx, "ai").cash == 10_000.0
+    fill_pending(ctx)
+    assert equity_history(ctx, "ai") == [(date(2026, 9, 21), 10_000.0)]
+
+
+async def test_while_off_the_ai_step_does_nothing(ctx):
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    verdict(ctx, "AAPL", "buy", 0.9)
+    assert ai_step(ctx) is None
+    assert account_view(ctx, "ai").pending == () and decision_log(ctx, "ai") == []
+
+
+async def test_the_ai_step_buys_on_a_buy_verdict_under_the_strategy_rules_and_logs_the_report(ctx):
+    for s in ("AAPL", "VOD.L"):
+        watch(ctx, s)
+        seed(ctx, s, "sell")  # the leans say sell: the AI account never reads them
+    ai_on(ctx)
+    run = verdict(ctx, "AAPL", "buy", 0.8)
+    low = verdict(ctx, "VOD.L", "buy", 0.5)
+    decisions = {d.symbol: d for d in ai_step(ctx)}
+    assert decisions["AAPL"].action == "buy" and decisions["AAPL"].cash == pytest.approx(500.0)
+    assert decisions["AAPL"].reason == "ai lean buy at 80%"
+    assert decisions["VOD.L"].action == "skip" and decisions["VOD.L"].reason.startswith("probability 50%")
+    [order] = account_view(ctx, "ai").pending
+    assert (order.symbol, order.source) == ("AAPL", "ai")
+    logged = {d.symbol: d for d in decision_log(ctx, "ai")}
+    assert (logged["AAPL"].report_id, logged["AAPL"].order_id) == (run, order.id)
+    assert (logged["VOD.L"].report_id, logged["VOD.L"].account) == (low, "ai")
+    assert account_view(ctx, "strategy").pending == () and decision_log(ctx, "strategy") == []
+
+
+async def test_the_ai_step_sells_on_a_sell_verdict_and_holds_on_hold(ctx, yahoo, clock):
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    ai_on(ctx)
+    verdict(ctx, "AAPL", "buy", 0.9)
+    ai_step(ctx)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    later = verdict(ctx, "AAPL", "hold", 0.9, day=date(2026, 9, 22))
+    assert ai_step(ctx) == [] and decision_log(ctx, "ai")[0].report_id != later
+    run = verdict(ctx, "AAPL", "sell", 0.6, day=date(2026, 9, 22))
+    [d] = ai_step(ctx)
+    assert (d.action, d.reason) == ("sell", "ai lean is sell")
+    assert account_view(ctx, "ai").pending[0].side == "sell" and decision_log(ctx, "ai")[0].report_id == run
+    assert account_view(ctx, "strategy").positions == ()
+
+
+async def test_the_ai_account_keeps_the_position_limit(ctx):
+    ctx.config = replace(ctx.config, strategy=replace(ctx.config.strategy, max_positions=1))
+    ai_on(ctx)
+    for s, confidence in (("AAPL", 0.9), ("VOD.L", 0.8)):
+        watch(ctx, s)
+        seed(ctx, s, "hold")
+        verdict(ctx, s, "buy", confidence)
+    decisions = {d.symbol: d for d in ai_step(ctx)}
+    assert decisions["AAPL"].action == "buy"
+    assert (decisions["VOD.L"].action, decisions["VOD.L"].reason) == ("skip", "already 1 positions")
+
+
+async def test_the_ai_step_skips_what_it_has_no_usable_verdict_for(ctx, clock):
+    ai_on(ctx, max_verdict_age_days=3)
+    for s in ("AAPL", "VOD.L"):
+        watch(ctx, s)
+        seed(ctx, s, "buy")
+    [d] = [d for d in ai_step(ctx) if d.symbol == "AAPL"]
+    assert (d.action, d.reason) == ("skip", "no verdict yet: run research on it")
+    rejected = verdict(ctx, "AAPL", "", rejected="its reason cites no evidence")
+    [d] = [d for d in ai_step(ctx) if d.symbol == "AAPL"]
+    assert d.reason == "no verdict: the verdict was rejected: its reason cites no evidence"
+    assert {x.symbol: x.report_id for x in decision_log(ctx, "ai", limit=2)}["AAPL"] == rejected
+    old = verdict(ctx, "VOD.L", "buy", 0.9, day=date(2026, 9, 17))
+    [d] = [d for d in ai_step(ctx) if d.symbol == "VOD.L"]
+    assert d.reason == "the verdict is from 2026-09-17, older than 3 days: run research on it again"
+    assert {x.symbol: x.report_id for x in decision_log(ctx, "ai", limit=2)}["VOD.L"] == old
+    delist(ctx, "VOD.L")
+    [d] = [d for d in ai_step(ctx) if d.symbol == "VOD.L"]
+    assert d.reason == "no longer in the universe"
+    assert account_view(ctx, "ai").pending == ()
+
+
+async def test_a_strategy_step_never_touches_the_ai_account(ctx):
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    ai_on(ctx)
+    verdict(ctx, "AAPL", "sell")
+    strategy_step(ctx)
+    assert account_view(ctx, "ai").pending == () and decision_log(ctx, "ai") == []
+    assert account_view(ctx, "strategy").pending[0].symbol == "AAPL"

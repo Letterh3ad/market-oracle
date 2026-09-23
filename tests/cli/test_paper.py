@@ -29,7 +29,7 @@ def run(tmp_path, capsys, monkeypatch):
         out, err = capsys.readouterr()
         return code, out, err
 
-    _run.yahoo, _run.clock = yahoo, clock
+    _run.yahoo, _run.clock, _run.config = yahoo, clock, cfg
     _run("universe", "refresh")
     _run("watch", "add", "VOD.L")
     _run("prices", "update")
@@ -82,3 +82,23 @@ def test_step_with_nothing_watched_says_how_to_watch(run):
     run("watch", "remove", "VOD.L")
     code, out, _ = run("paper", "step")
     assert code == 0 and "oracle watch add" in out
+
+
+def test_the_ai_account_is_shown_and_its_step_says_when_it_is_off(run):
+    _, out, _ = run("paper", "show")
+    assert "ai: equity 10,000.00" in out
+    code, out, _ = run("paper", "step", "--account", "ai")
+    assert code == 0 and "the AI account is off" in out and "[ai_account] enabled = true" in out
+    _, out, _ = run("paper", "log", "--account", "ai")
+    assert out == ""
+
+
+def test_the_ai_step_logs_its_skips_per_account(run):
+    cfg = run.config
+    cfg.write_text(cfg.read_text(encoding="utf-8") + "[ai_account]\nenabled = true\n", encoding="utf-8")
+    code, out, _ = run("paper", "step", "--account", "ai")
+    assert code == 0 and "VOD.L: skip (no verdict yet: run research on it)" in out
+    _, out, _ = run("paper", "log", "--account", "ai")
+    assert "VOD.L" in out and "no verdict yet" in out
+    _, out, _ = run("paper", "log")
+    assert out == ""

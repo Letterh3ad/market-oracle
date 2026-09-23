@@ -206,3 +206,17 @@ def test_automation_is_on_by_default_and_checked(tmp_path):
         path.write_text(f"[automation]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="automation"):
             load_config(path, cwd=tmp_path)
+
+
+def test_the_ai_account_is_off_by_default_with_a_week_long_verdict_age(tmp_path):
+    ai = load_config(None, cwd=tmp_path)[0].ai_account
+    assert (ai.enabled, ai.max_verdict_age_days) == (False, 7)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nenabled = true\nmax_verdict_age_days = 3\n", encoding="utf-8")
+    ai = load_config(path, cwd=tmp_path)[0].ai_account
+    assert (ai.enabled, ai.max_verdict_age_days) == (True, 3)
+    for line in ('enabled = "yes"', "max_verdict_age_days = 0", "max_verdict_age_days = 2.5",
+                 "max_verdict_age_days = 91", "max_verdict_age_days = true", "later = 1"):
+        path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="ai_account"):
+            load_config(path, cwd=tmp_path)

@@ -3,16 +3,17 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool
 
 from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AccountView, account_score, account_view, equity_history, fill_pending, pending_orders, place_buy,
-    place_sell, sells, strategy_log, strategy_step,
+    ACCOUNTS, AI_OFF, TRADERS, AccountView, account_score, account_view, ai_step, decision_log, equity_history,
+    fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
+from oracle.services.settings_service import set_ai_account
 
 router = APIRouter(prefix="/api/ledgers")
 WAITING = "waiting for the next opening price after it was placed"
@@ -58,9 +59,27 @@ async def step(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     return [asdict(d) for d in strategy_step(ctx)]
 
 
+@router.post("/ai/step")
+async def step_ai(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Run the strategy's rules over the research verdicts on the AI account, unless it is off."""
+    decisions = ai_step(ctx)
+    return {"off": AI_OFF if decisions is None else None, "decisions": [asdict(d) for d in decisions or []]}
+
+
+class AiSwitch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool
+
+
+@router.put("/ai")
+async def put_ai(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_ai_account(ctx, body.enabled)
+    return {"enabled": ctx.config.ai_account.enabled}
+
+
 @router.get("")
 async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
-    """Both paper accounts, strategy first, with the same figures side by side."""
+    """Every paper account, strategy first, with the same figures side by side."""
     views = {name: account_view(ctx, name) for name in ACCOUNTS}
     return {
         "base_currency": ctx.config.base_currency,
@@ -74,13 +93,16 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
             "cash_floor": ctx.config.risk.cash_floor,
             "stop_loss": ctx.config.strategy.stop_loss,
         },
+        "ai_account": {"enabled": ctx.config.ai_account.enabled,
+                       "max_verdict_age_days": ctx.config.ai_account.max_verdict_age_days},
     }
 
 
 @router.get("/decisions")
-async def get_decisions(limit: int = Query(default=50, ge=1, le=500), ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    """The strategy account's decisions, newest first."""
-    return [asdict(d) for d in strategy_log(ctx, limit)]
+async def get_decisions(account: str = Query(default="strategy", pattern=f"^({'|'.join(TRADERS)})$"),
+                        limit: int = Query(default=50, ge=1, le=500), ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """An account's decisions, newest first."""
+    return [asdict(d) for d in decision_log(ctx, account, limit)]
 
 
 def _account(ctx: AppContext, name: str, view: AccountView) -> dict:

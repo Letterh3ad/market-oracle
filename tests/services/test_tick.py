@@ -6,7 +6,7 @@ from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import account_view, place_buy, strategy_log
+from oracle.services.paper_service import account_view, decision_log, place_buy
 from oracle.services.tick_service import STAGES, last_tick, run_tick
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
@@ -45,7 +45,7 @@ async def test_a_tick_runs_every_stage_in_order(ctx):
     assert [s.name for s in run.stages] == list(STAGES) == ["prices", "fx", "fill", "analyse", "step"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
-    assert [d.symbol for d in strategy_log(ctx)] == ["AAPL"]
+    assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
     assert run.stages[-1].summary == "0 buy, 0 sell, 1 skip, 0 no change"
 
 

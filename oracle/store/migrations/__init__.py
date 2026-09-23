@@ -50,6 +50,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0027_listing_health,
     m0028_jobs,
     m0029_job_pid,
+    m0030_decision_accounts,
 )
 
 MIGRATIONS = [
@@ -82,4 +83,5 @@ MIGRATIONS = [
     m0027_listing_health,
     m0028_jobs,
     m0029_job_pid,
+    m0030_decision_accounts,
 ]

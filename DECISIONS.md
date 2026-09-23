@@ -1197,3 +1197,20 @@ verdict, found with `json_extract`; as-of replays are excluded so a backtest nev
 **Alternatives:** A verdict column or table (a migration for one query `json_extract` serves);
 returning the newest report even when its verdict was rejected (ticket 02 can still apply its
 own age limit to the older valid one).
+
+## 2026-09-23 - The AI account shares the strategy's step; its verdicts become leans
+
+**Context:** Ticket 02 adds a third paper account, `ai`, trading research verdicts under the
+strategy's rules.
+**Decision:** `strategy_step` and `ai_step` share one decide/place/log helper; only the input
+step differs. A verdict becomes `Lean(symbol, report day, label, confidence, "ai")`, so buy,
+hold and sell go through the same pure `decide`, sizes (risk analyst), limits and stop loss.
+The AI step uses the newest valid live verdict even when a newer report's verdict was
+rejected (subject to the age limit); with no valid one it skips, quoting the newest report's
+rejection. Age is report day to today, at most `[ai_account] max_verdict_age_days` (default 7,
+1 to 90). Off, `ai_step` returns None and the CLI and GUI say so. `strategy_decisions` gains
+`account` (old rows `strategy`) and `report_id` (the research run) rather than a new table.
+`[ai_account]` reloads live like `[schedule]`.
+**Alternatives:** A second rule set for verdicts (drifts from the strategy's); skipping when the
+newest report's verdict was rejected (throws away a valid, still-fresh call); a separate
+`ai_decisions` table (two logs to query for ticket 04's comparison).
