@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from oracle.services.context import AppContext
-from oracle.services.errors import ServiceError
+from oracle.services.errors import InvalidQuery, ServiceError, UnknownJob
 from oracle.services.research_service import research, research_progress
 from oracle.services.universe_service import resolve_symbol
 
@@ -44,6 +44,7 @@ class Job:
     error: str | None = None
     result: Any = field(default=None, repr=False)
     finished: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    task: asyncio.Task | None = field(default=None, repr=False)
 
     def progress(self) -> str | None:
         """What a running job is doing now, when its kind can tell."""
@@ -90,6 +91,20 @@ class JobRunner:
         await job.finished.wait()
         return job
 
+    def cancel(self, job_id: int) -> Job:
+        """Drop a queued job, or cancel a running one; the queue then moves on."""
+        job = self.get(job_id)
+        if job is None:
+            raise UnknownJob(f"no job {job_id}")
+        if job.state == "queued":
+            self._queues[job.kind].remove(job)
+            self._finish(job, "cancelled", "cancelled before it started")
+        elif job.state == "running" and job.task is not None:
+            job.task.cancel()
+        else:
+            raise InvalidQuery(f"{job.label} is already {job.state}")
+        return job
+
     async def stop(self) -> None:
         """Cancel running work and drop what is queued; used when the server stops."""
         for queue in self._queues.values():
@@ -110,11 +125,14 @@ class JobRunner:
             job = queue.popleft()
             job.state, job.started_at = "running", self._ctx.clock.utcnow()
             self._running[kind] = job
+            # Its own task, so cancelling the job leaves this worker free for the next.
+            job.task = asyncio.create_task(job.work())
             try:
-                job.result = await job.work()
+                job.result = await job.task
             except asyncio.CancelledError:
                 self._finish(job, "cancelled", "cancelled")
-                raise
+                if asyncio.current_task().cancelling():
+                    raise  # the server is stopping
             except Exception as exc:
                 if not isinstance(exc, ServiceError):
                     log.exception("job %s failed", job.label)

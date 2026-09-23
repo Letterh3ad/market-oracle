@@ -111,3 +111,36 @@ async def test_stop_cancels_running_work(runner):
     await settle()
     await runner.stop()
     assert job.state == "cancelled"
+
+
+async def test_cancelling_a_queued_job_means_it_never_runs(runner):
+    log = []
+    a, b = Gate("a", log), Gate("b", log)
+    runner.submit("research", "Research A", a)
+    jb = runner.submit("research", "Research B", b)
+    runner.cancel(jb.id)
+    a.open.set()
+    await settle()
+    assert jb.state == "cancelled" and "start b" not in log
+
+
+async def test_cancelling_a_running_job_ends_it_and_the_next_one_starts(runner):
+    log = []
+    a, b = Gate("a", log), Gate("b", log)
+    ja = runner.submit("research", "Research A", a)
+    jb = runner.submit("research", "Research B", b)
+    await settle()
+    runner.cancel(ja.id)
+    await settle()
+    assert ja.state == "cancelled" and jb.state == "running" and "end a" not in log
+
+
+async def test_a_finished_job_cannot_be_cancelled(runner):
+    from oracle.services.errors import InvalidQuery
+
+    gate = Gate("a", [])
+    job = runner.submit("research", "Research A", gate)
+    gate.open.set()
+    await runner.wait(job.id)
+    with pytest.raises(InvalidQuery, match="already done"):
+        runner.cancel(job.id)

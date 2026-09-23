@@ -143,3 +143,44 @@ async def test_research_is_listed_in_activity_with_its_progress_then_its_outcome
     assert (listed["id"], listed["kind"]) == (job["id"], "research")
     done = await finish(ready, job=job)
     assert done["state"] == "done" and done["progress"] is None and done["finished_at"]
+
+
+class Stalled:
+    """A model that never answers, so the run stays in flight until cancelled."""
+
+    name, model = "stalled", "stalled"
+
+    def __init__(self):
+        self.fell_back_to = set()
+        self.asked = asyncio.Event()
+
+    async def reply(self, messages, schema):
+        self.asked.set()
+        await asyncio.Event().wait()
+
+
+async def test_cancelling_running_research_records_it_cancelled_frees_the_lock_and_starts_the_next(
+        ready, ctx, monkeypatch):
+    from oracle.services import activity_service
+    from oracle.services.jobs_service import job_statuses
+    from oracle.services.research_service import research
+
+    stalled = Stalled()
+    monkeypatch.setattr(activity_service, "research", lambda c, s: research(c, s, model=stalled))
+    first = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
+    second = (await ready.post("/api/jobs/research", params={"symbol": "KO"})).json()
+    await stalled.asked.wait()
+    cancelled = (await ready.post(f"/api/activity/{first['id']}/cancel")).json()
+    assert cancelled["state"] == "cancelled"
+    body = (await ready.get("/api/companies/AAPL/research")).json()
+    assert body["run"]["status"] == "failed" and body["run"]["error"] == "cancelled"
+    await asyncio.sleep(0.05)
+    assert (await ready.get(f"/api/activity/{second['id']}")).json()["state"] == "running"
+    assert [s.job for s in job_statuses(ctx)] == ["research"]  # held by KO's run, not a leftover
+    await ready.post(f"/api/activity/{second['id']}/cancel")
+
+
+async def test_a_finished_job_refuses_cancel(ready):
+    job = await finish(ready)
+    response = await ready.post(f"/api/activity/{job['id']}/cancel")
+    assert response.status_code == 400 and "already done" in response.json()["error"]
