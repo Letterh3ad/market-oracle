@@ -525,3 +525,20 @@ split into a read-only view and a trading ticket.
 **Alternatives:** A thin failed-job table in phase 6 (rejected: would be rebuilt in
 phase 10). Keeping the old market-cap direction and renaming the flag (rejected: every
 other sort reads "desc" as largest first).
+
+## 2026-09-23 - GUI skeleton: localhost, error codes, in-process route tests
+
+**Context:** Ticket 02: `oracle gui`.
+**Decision:** FastAPI plus native ES modules, the stalker's pattern, served by uvicorn in
+the CLI's own thread (the SQLite connection stays on the thread that opened it; every
+route is `async def`). `[gui]` defaults to `127.0.0.1:8740`, so nothing else on the
+network can reach it until the LAN step after v1. Service errors reach the page as
+`{"error": message}`: unknown symbol or watchlist 404, bad input 400, blocked by state
+(job running, universe not loaded, no prices) 409, upstream failure 502, any other
+service error 400; anything unexpected is a plain 500 pointing at the terminal, never a
+traceback. Route tests run in-process through `httpx.ASGITransport`, which keeps requests
+on the test's own thread, so no cross-thread SQLite workaround is needed. One glossary
+module holds every metric's plain-English tooltip.
+**Alternatives:** The stalker's `TestClient` (rejected: needs `check_same_thread=False`
+in tests, which production never uses). A JS test runner (declined by the user: browser
+checks by hand per tab).

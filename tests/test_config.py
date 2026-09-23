@@ -111,3 +111,15 @@ def test_strategy_rules_default_to_the_design_and_are_validated(tmp_path):
         path.write_text(f"[strategy]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="strategy."):
             load_config(path, cwd=tmp_path)
+
+
+def test_the_gui_listens_on_localhost_by_default_and_the_port_can_change(tmp_path):
+    gui = load_config(None, cwd=tmp_path)[0].gui
+    assert (gui.host, gui.port) == ("127.0.0.1", 8740)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[gui]\nport = 9000\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].gui.port == 9000
+    for line in ("port = 80", "port = 70000", 'port = "9000"', "host = 5", "colour = 1"):
+        path.write_text(f"[gui]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="gui"):
+            load_config(path, cwd=tmp_path)

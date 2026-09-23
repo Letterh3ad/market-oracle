@@ -13,6 +13,9 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | `oracle/store/migrations/run_ddl` | `wfm/store/migrations/m0001_initial.up` | extracted as a shared helper |
 | `tests/store/test_db.py`, `test_migrate.py` | same paths | rewritten against `MetaRepo` and synthetic migrations |
 | `tests/test_architecture.py` | same path | allowlist instead of denylist |
+| `oracle/gui/app.py`, `deps.py` | `wfm/gui/app.py`, `deps.py` | one router, error handlers from `oracle/gui/errors.py` |
+| `oracle/gui/static/lib/api.js` | `wfm/gui/static/lib/api.js` | none |
+| `oracle/gui/static/lib/dom.js` | `wfm/gui/static/lib/dom.js` | `humanAge` dropped |
 
 ## Runtime dependencies
 
@@ -20,6 +23,9 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 |---|---|---|
 | httpx | BSD-3-Clause | async HTTP (`oracle/net/client.py`) |
 | tzdata | Apache-2.0 | IANA time zones on Windows, for exchange-local bar dates |
+| FastAPI | MIT | GUI web API (`oracle/gui`) |
+| uvicorn | BSD-3-Clause | serves the GUI (`oracle gui`) |
+| Starlette, pydantic, pydantic-core, anyio (via FastAPI) | BSD-3-Clause, MIT, MIT, MIT | FastAPI's own dependencies |
 
 ## Data
 

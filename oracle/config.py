@@ -90,6 +90,13 @@ class StrategyConfig:
 
 
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
+@dataclass(frozen=True)
+class GuiConfig:
+    host: str = "127.0.0.1"
+    """Localhost only by default: nothing on the network can reach the GUI."""
+    port: int = 8740
+
+
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
 
@@ -122,6 +129,7 @@ class Config:
     analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    gui: GuiConfig = field(default_factory=GuiConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -180,6 +188,9 @@ def _apply(raw: dict) -> Config:
         if name == "strategy":
             values[name] = _strategy(value)
             continue
+        if name == "gui":
+            values[name] = _gui(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -234,6 +245,18 @@ def _strategy(raw: object) -> StrategyConfig:
         if not ok:
             raise ConfigError(f"strategy.{key} must be {wanted}, got {value!r}")
     return StrategyConfig(**raw)
+
+
+def _gui(raw: object) -> GuiConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("gui must be a [gui] table")
+    _reject_unknown(raw, GuiConfig, "[gui]")
+    host, port = raw.get("host", GuiConfig.host), raw.get("port", GuiConfig.port)
+    if not isinstance(host, str) or not host:
+        raise ConfigError(f"gui.host must be an address like 127.0.0.1, got {host!r}")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+        raise ConfigError(f"gui.port must be a whole number from 1024 to 65535, got {port!r}")
+    return GuiConfig(host=host, port=port)
 
 
 def _keys(raw: object) -> Keys:

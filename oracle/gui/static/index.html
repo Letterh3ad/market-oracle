@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Market Oracle</title>
+<style>
+:root {
+  --bg: #0e1116; --bg-raised: #161b22; --bg-inset: #0a0d12; --border: #262d36;
+  --text: #d7dde5; --text-dim: #8b949e; --accent: #4c8dff;
+  --up: #3fb950; --down: #f85149; --warn: #d29922;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); }
+header { display: flex; gap: 24px; align-items: center; padding: 8px 16px;
+  background: var(--bg-raised); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; margin: 0 16px 0 0; }
+.dim { color: var(--text-dim); }
+.layout { display: flex; min-height: calc(100vh - 44px); }
+nav { width: 160px; background: var(--bg-inset); border-right: 1px solid var(--border); padding: 8px 0; }
+.tab-btn { display: block; width: 100%; text-align: left; padding: 8px 16px; background: none; border: 0;
+  border-left: 3px solid transparent; color: var(--text-dim); font: inherit; cursor: pointer; }
+.tab-btn:hover, .tab-btn:focus-visible { color: var(--text); }
+.tab-btn.active { color: var(--text); background: var(--bg-raised); border-left-color: var(--accent); }
+main { flex: 1; padding: 16px; overflow: auto; }
+#error-banner { display: flex; gap: 12px; align-items: center; padding: 8px 16px;
+  background: #3a1417; border-bottom: 1px solid var(--down); }
+#error-banner[hidden] { display: none; }
+#error-close { margin-left: auto; background: none; border: 0; color: var(--text); cursor: pointer; font-size: 16px; }
+details { margin-top: 24px; }
+table { border-collapse: collapse; }
+th, td { padding: 4px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text-dim); font-weight: 500; }
+td.num { text-align: right; font-family: var(--mono); }
+tr.state-paused td:nth-child(2) { color: var(--down); }
+tr.state-waiting td:nth-child(2) { color: var(--warn); }
+.tip-wrap { white-space: nowrap; }
+.tip { position: relative; display: inline-block; margin-left: 4px; width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid var(--text-dim); color: var(--text-dim); font-size: 10px; line-height: 13px; text-align: center;
+  cursor: help; }
+.tip:hover::after, .tip:focus::after { content: attr(data-tip); position: absolute; left: 20px; top: -4px; z-index: 10;
+  width: 280px; padding: 8px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text); font-size: 12px; line-height: 1.4; font-weight: 400; text-align: left; white-space: normal; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Market Oracle</h1>
+  <span id="universe-state" class="dim">Universe ...</span>
+  <span id="sources-state" class="dim"></span>
+</header>
+<div id="error-banner" hidden role="alert"><span id="error-msg"></span>
+  <button id="error-close" type="button" aria-label="Dismiss">&times;</button></div>
+<div class="layout">
+  <nav><div id="tab-list"></div></nav>
+  <main>
+    <div id="main-pane"></div>
+    <details>
+      <summary class="dim">Data sources</summary>
+      <table><thead id="sources-head"></thead><tbody id="sources-body"></tbody></table>
+    </details>
+  </main>
+</div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
