@@ -4,7 +4,10 @@ import pytest
 
 from oracle.cli import main as cli_main
 from oracle.services.context import open_context
+from datetime import datetime
+
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
+from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import step
 from tests.fakes.ollama import FakeOllama
 from tests.fakes.web import FakeWeb
@@ -17,7 +20,12 @@ def ollama():
 
 
 @pytest.fixture
-def run(tmp_path, capsys, monkeypatch, ollama):
+def news():
+    return FakeGoogleNews()
+
+
+@pytest.fixture
+def run(tmp_path, capsys, monkeypatch, ollama, news):
     cfg = tmp_path / "oracle.toml"
     cfg.write_text(
         "[sources.financedatabase]\nrate_per_second = 1000\n[sources.yahoo]\nrate_per_second = 1000\n",
@@ -25,7 +33,7 @@ def run(tmp_path, capsys, monkeypatch, ollama):
     )
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, ollama)
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, ollama, news)
     monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
 
     def _run(*argv):
@@ -59,3 +67,21 @@ def test_ollama_not_running_is_a_plain_error(run, ollama):
     ollama.down = True
     code, _, err = run("research", "AAPL")
     assert code == 1 and "Ollama is not reachable" in err and "ollama serve" in err and "Traceback" not in err
+
+
+def test_the_evidence_cited_is_listed_with_links(run, ollama, news):
+    news.results["Apple"] = [
+        ("https://reut.rs/1", "Apple beats estimates", "Reuters", datetime.fromisoformat("2026-09-20T12:00:00+00:00")),
+        ("https://bbc.in/2", "Unrelated", "BBC", None),
+    ]
+    ollama.contents = [step("news_search", "Apple"), step("final", "Beat estimates [a1].")]
+    code, out, _ = run("research", "AAPL")
+    assert "Evidence cited:" in out and "[a1] 2026-09-20 Reuters: Apple beats estimates" in out
+    assert "https://reut.rs/1" in out and "https://bbc.in/2" not in out.split("Evidence cited:")[1]
+
+
+def test_each_article_shown_gets_its_own_line(run, ollama, news):
+    news.results["Apple"] = [("https://x.com/1", "First", "X", None), ("https://x.com/2", "Second", "X", None)]
+    ollama.contents = [step("news_search", "Apple"), step("final", "Done.")]
+    _, out, _ = run("research", "AAPL")
+    assert "   > [a1] undated X: First\n   > [a2] undated X: Second\n" in out

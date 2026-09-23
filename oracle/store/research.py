@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime
 
-from oracle.research.trace import ResearchRun, RunStatus, Step
+from oracle.research.trace import Evidence, ResearchRun, RunStatus, Step
 from oracle.store.db import transaction
 
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error"
@@ -27,6 +28,20 @@ class ResearchRepo:
                 (run_id, step.n, step.thought, step.action, step.input, step.observation),
             )
 
+    def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
+        with transaction(self._conn):
+            self._conn.executemany(
+                "INSERT OR IGNORE INTO research_evidence (run_id, article_id) VALUES (?, ?)",
+                [(run_id, a) for a in article_ids],
+            )
+
+    def set_cited(self, run_id: int, article_ids: set[int]) -> None:
+        with transaction(self._conn):
+            self._conn.executemany(
+                "UPDATE research_evidence SET cited = 1 WHERE run_id = ? AND article_id = ?",
+                [(run_id, a) for a in article_ids],
+            )
+
     def finish(self, run_id: int, status: RunStatus, findings: str | None, error: str | None,
                finished_at: str) -> None:
         with transaction(self._conn):
@@ -49,4 +64,11 @@ class ResearchRepo:
         steps = self._conn.execute(
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
-        return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps))
+        evidence = self._conn.execute(
+            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited FROM research_evidence e "
+            "JOIN articles a ON a.id = e.article_id WHERE e.run_id = ? "
+            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (row[0],),
+        )
+        return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
+                           tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c))
+                                 for i, u, t, o, p, c in evidence))

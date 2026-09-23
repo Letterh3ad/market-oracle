@@ -696,3 +696,17 @@ paper trades before the validation gate exists).
   ROE was read by the model as 1.49%), and forgives stray JSON punctuation in its input.
 **Alternatives:** Native tool calling (rejected for now: uneven across small models, and
 the constrained JSON step works on every backend).
+
+## 2026-09-23 - News evidence: one article per URL, citations checked
+
+**Context:** Ticket 2 of phase 7: research needs dated, sourced news it can cite.
+**Decision:**
+- Google News RSS (en-GB edition) through the shared gate as `google_news`. Articles are
+  stored once per URL whichever search found them; each run records what it was shown.
+- Observations list at most the 8 newest articles as `[a<id>] date outlet: title`, titles
+  cut at 140 characters, so several searches fit a small model's context.
+- Findings cite as `[a<id>]`. Citations of anything the run was not shown are removed, so
+  an invented id never makes a claim look sourced; the ones kept are marked cited.
+- Links are Google News redirect URLs. Resolving them to the publisher is left to the page
+  reader (ticket 4).
+**Alternatives:** Keeping invented citations flagged (rejected: a reader skims past a flag).

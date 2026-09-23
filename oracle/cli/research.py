@@ -26,8 +26,16 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
         print(f"{s.n}. {s.thought or '(no thought)'}")
         if s.action:
             print(f"   {s.action}({s.input})")
-        print(textwrap.indent(textwrap.fill(s.observation or "", 96), "   > "))
+        for line in (s.observation or "").splitlines():
+            print(textwrap.indent(textwrap.fill(line, 96), "   > "))
     if r.status == RunStatus.STEP_CAP:
         print(f"stopped at the {max_steps}-step limit; findings asked for then")
     print(f"Findings ({r.backend} {r.model}):")
     print(textwrap.indent(textwrap.fill(r.findings or "(none given)", 96), "  "))
+    cited = [e for e in r.evidence if e.cited]
+    if cited:
+        print("Evidence cited:")
+    for e in cited:
+        day = e.published.date().isoformat() if e.published else "undated"
+        print(f"  [a{e.id}] {day} {e.outlet or 'unknown outlet'}: {e.title}")
+        print(f"        {e.url}")

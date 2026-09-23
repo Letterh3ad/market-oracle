@@ -16,6 +16,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | `oracle/gui/app.py`, `deps.py` | `wfm/gui/app.py`, `deps.py` | one router, error handlers from `oracle/gui/errors.py` |
 | `oracle/gui/static/lib/api.js` | `wfm/gui/static/lib/api.js` | none |
 | `oracle/gui/static/lib/dom.js` | `wfm/gui/static/lib/dom.js` | `humanAge` dropped |
+| `oracle/research/news.py` (RSS parsing) | `wfm/news/sources/feed.py` | Google News items only, outlet from `<source>` |
 | `oracle/research/ollama.py` | `wfm/news/classify/ollama.py` | chat reply for any schema, client per call, non-JSON handed back, `num_ctx` |
 
 ## Runtime dependencies

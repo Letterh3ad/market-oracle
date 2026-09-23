@@ -104,3 +104,16 @@ async def test_real_ollama_answers_inside_the_research_schema():
     reply = await chat.reply([{"role": "user", "content": "Reply with action final and input 'ok'."}],
                              step_schema(["market_data", "final"]))
     assert isinstance(reply, dict) and reply["action"] in ("market_data", "final")
+
+
+async def test_real_google_news_feed_parses_into_dated_articles():
+    import httpx
+
+    from oracle.research.news import GOOGLE_NEWS, google_news_params, parse_google_news
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        resp = await http.get(GOOGLE_NEWS, params=google_news_params("Apple Inc"))
+    articles = parse_google_news(resp.text)
+    assert len(articles) > 5
+    assert all(a.outlet and not a.title.endswith(f" - {a.outlet}") for a in articles)
+    assert all(a.published is not None and a.published.tzinfo is not None for a in articles)

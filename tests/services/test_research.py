@@ -9,6 +9,7 @@ from oracle.services.research_service import latest_research, research
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
+from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import ScriptedModel, step
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar
@@ -17,10 +18,15 @@ NOW = datetime(2026, 9, 21, 20, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture
-async def ctx(tmp_path):
+def news():
+    return FakeGoogleNews()
+
+
+@pytest.fixture
+async def ctx(tmp_path, news):
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo)
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -107,3 +113,59 @@ async def test_market_data_reads_as_plain_figures_and_forgives_stray_quotes(ctx)
     assert "Apple Inc." in observation and "Change over 1 day: +5.0%" in observation
     assert "Market cap 4.96T USD" in observation and "P/E 38.90" in observation
     assert "Return on equity 149.0%" in observation and "Dividend yield 0.4%" in observation
+
+
+def utc(day, hour=12):
+    return datetime.fromisoformat(f"{day}T{hour:02}:00:00+00:00")
+
+
+async def test_news_search_shows_dated_articles_the_findings_cite_by_id(ctx, news):
+    news.results["Apple earnings"] = [
+        ("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20")),
+        ("https://bbc.in/2", "iPhone demand slows in China", "BBC", utc("2026-09-19")),
+    ]
+    model = ScriptedModel(step("news_search", "Apple earnings"), step("final", "Beat estimates [a1]."))
+    run = await research(ctx, "AAPL", model)
+    observation = run.steps[0].observation
+    assert "[a1] 2026-09-20 Reuters: Apple beats estimates" in observation
+    assert "[a2] 2026-09-19 BBC: iPhone demand slows in China" in observation
+    beat, slows = run.evidence
+    assert (beat.id, beat.url, beat.outlet, beat.cited) == (1, "https://reut.rs/1", "Reuters", True)
+    assert (slows.title, slows.published, slows.cited) == ("iPhone demand slows in China", utc("2026-09-19"), False)
+    assert latest_research(ctx, "AAPL").evidence == run.evidence
+
+
+async def test_an_article_found_twice_is_stored_once_and_keeps_its_id(ctx, news):
+    story = ("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20"))
+    news.results["Apple"] = [story]
+    news.results["AAPL results"] = [story]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("news_search", "AAPL results"),
+                                                    step("final", "Done [a1].")))
+    assert run.steps[0].observation == run.steps[1].observation == "[a1] 2026-09-20 Reuters: Apple beats estimates"
+    assert [e.id for e in run.evidence] == [1]
+
+
+async def test_a_citation_of_something_never_shown_is_dropped(ctx, news):
+    news.results["Apple"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20"))]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"),
+                                                    step("final", "Beat estimates [a1]; sales doubled [a99].")))
+    assert run.findings == "Beat estimates [a1]; sales doubled."
+    assert [(e.id, e.cited) for e in run.evidence] == [(1, True)]
+
+
+@pytest.mark.parametrize("status, says", [(403, "HTTP 403"), (503, "news search unavailable")])
+async def test_a_failing_news_source_is_an_observation_and_the_run_goes_on(ctx, news, status, says):
+    news.status = status
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("final", "No news.")))
+    assert says in run.steps[0].observation and run.status == "done"
+
+
+async def test_only_the_newest_eight_are_shown_with_long_titles_cut(ctx, news):
+    news.results["Apple"] = [(f"https://x.com/{d}", f"Story {d}", "X", utc(f"2026-09-{d:02}")) for d in range(1, 11)]
+    news.results["Apple"].append(("https://x.com/old", "L" * 300, "Y", None))
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("final", "Done.")))
+    lines = run.steps[0].observation.splitlines()
+    assert len(lines) == 8 and "2026-09-10 X: Story 10" in lines[0] and "2026-09-03" in lines[-1]
+    news.results["Apple"] = [("https://x.com/old", "L" * 300, "Y", None)]
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple"), step("final", "Done.")))
+    assert run.steps[0].observation.endswith("undated Y: " + "L" * 139 + "…")

@@ -19,7 +19,7 @@ SYSTEM = """You research a listed company for an investor holding for days to a 
 Work in steps. Each step, reply with JSON: a short "thought", then an "action" and its "input".
 Tools (action: what it does):
 {tools}
-- final: your answer. Put your findings in "input": what matters for the price and why, citing what the tools showed. Say what is unknown.
+- final: your answer. Put your findings in "input": what matters for the price and why. Cite each fact by the id a tool gave it, like [a3]. Say what is unknown.
 Call one tool per step. Never invent facts a tool did not show."""
 
 FORCE_FINAL = "Step limit reached. Reply now with action \"final\" and your findings so far."

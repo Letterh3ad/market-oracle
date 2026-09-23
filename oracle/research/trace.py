@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -29,6 +30,18 @@ class Step:
 
 
 @dataclass(frozen=True)
+class Evidence:
+    """An article a run was shown; `cited` if its findings refer to it as [a<id>]."""
+
+    id: int
+    url: str
+    title: str
+    outlet: str | None
+    published: datetime | None
+    cited: bool
+
+
+@dataclass(frozen=True)
 class ResearchRun:
     id: int
     symbol: str
@@ -40,3 +53,5 @@ class ResearchRun:
     findings: str | None
     error: str | None
     steps: tuple[Step, ...]
+    evidence: tuple[Evidence, ...] = ()
+    """Newest first."""
