@@ -46,6 +46,7 @@ async def test_a_tick_runs_every_stage_in_order(ctx):
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in strategy_log(ctx)] == ["AAPL"]
+    assert run.stages[-1].summary == "0 buy, 0 sell, 1 skip, 0 no change"
 
 
 async def test_prices_come_before_the_fill_that_needs_them(ctx, yahoo):

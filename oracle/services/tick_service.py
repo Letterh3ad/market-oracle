@@ -17,6 +17,7 @@ from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import fill_pending, strategy_step
 from oracle.services.prices_service import update_watched
 from oracle.store.ticks import INTERRUPTED, Stage, TickRepo, TickRun
+from oracle.store.watchlists import WatchlistRepo
 
 __all__ = ["STAGES", "Stage", "TickRun", "last_tick", "record_skipped", "run_tick", "ticked_since"]
 
@@ -61,8 +62,11 @@ async def _analyse(ctx: AppContext) -> tuple[str, str | None]:
 
 
 async def _step(ctx: AppContext) -> tuple[str, str | None]:
-    counts = Counter(d.action.value for d in strategy_step(ctx))
-    return ", ".join(f"{counts[a]} {a}" for a in ("buy", "sell", "skip")), None
+    decisions = strategy_step(ctx)
+    counts = Counter(d.action.value for d in decisions)
+    # The rules say nothing about a listing they leave as it is.
+    unchanged = len(set(WatchlistRepo(ctx.conn).all_symbols()) - {d.symbol for d in decisions})
+    return ", ".join(f"{counts[a]} {a}" for a in ("buy", "sell", "skip")) + f", {unchanged} no change", None
 
 
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse, "step": _step}
