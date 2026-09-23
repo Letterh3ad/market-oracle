@@ -1066,3 +1066,16 @@ job locks. Queued jobs are dropped on restart ("not run: app closed"); finished 
 kept. Built before `ai-account`, whose tick research and Stop build on it.
 **Alternatives:** Refusing a busy research click (today); running research in parallel (an
 8GB GPU does one run well); resuming queued jobs on restart (surprising).
+
+## 2026-09-23 - App control: restart, new-version banner, start at login
+**Context:** The live GUI runs detached from a `main` worktree; updating it means killing a
+process by hand, nothing says when newer code is on disk (F5 reloads page files, not the
+server), and it stops at every reboot.
+**Decision:** A small `app-control` stream right after `activity`: a Restart button (the
+server starts a copy of itself, then exits; the copy waits for the port), a banner when
+the code on disk differs from the running version, and a "Start Oracle when Windows
+starts" toggle writing a launcher to the user's Startup folder (no admin, no dependency).
+Each has a CLI equivalent; OS-specific parts sit behind small interfaces.
+**Alternatives:** A Windows service (admin rights, harder to see); Task Scheduler at logon
+(works, but a Startup-folder file is visible and easy to remove by hand); auto-restarting
+on new code (would cancel running research without asking).
