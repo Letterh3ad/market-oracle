@@ -89,3 +89,19 @@ def test_the_ai_account_switch_is_saved_keeping_its_verdict_age_and_reloaded_liv
         reload_live_settings(ctx)
         assert ctx.config.ai_account.enabled is False
     assert load_config(path)[0].ai_account.enabled is False
+
+
+def test_ai_research_settings_are_saved_keeping_the_switch_and_refused_when_out_of_range(tmp_path):
+    from oracle.services.settings_service import set_ai_research
+
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nenabled = true\n", encoding="utf-8")
+    config, source = load_settings(path)
+    with open_context(with_db(config, tmp_path), source) as ctx:
+        set_ai_research(ctx, 10, 0.08, 20)
+        ai = ctx.config.ai_account
+        assert (ai.enabled, ai.max_verdict_age_days, ai.move_threshold, ai.research_budget_min) == (True, 10, 0.08, 20)
+        with pytest.raises(InvalidQuery, match="research_budget_min"):
+            set_ai_research(ctx, 10, 0.08, 0)
+        assert ctx.config.ai_account == ai
+    assert load_config(path)[0].ai_account == ai

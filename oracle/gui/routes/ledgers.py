@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, StrictBool
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 
 from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
@@ -13,7 +13,7 @@ from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, TRADERS, AccountView, account_score, account_view, ai_step, decision_log, equity_history,
     fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
-from oracle.services.settings_service import set_ai_account
+from oracle.services.settings_service import set_ai_account, set_ai_research
 
 router = APIRouter(prefix="/api/ledgers")
 WAITING = "waiting for the next opening price after it was placed"
@@ -77,6 +77,20 @@ async def put_ai(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
     return {"enabled": ctx.config.ai_account.enabled}
 
 
+class AiResearch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_verdict_age_days: StrictInt
+    move_threshold: float
+    research_budget_min: StrictInt
+
+
+@router.put("/ai/research")
+async def put_ai_research(body: AiResearch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """How ticks keep the AI account's research fresh."""
+    set_ai_research(ctx, body.max_verdict_age_days, body.move_threshold, body.research_budget_min)
+    return asdict(ctx.config.ai_account)
+
+
 @router.get("")
 async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
     """Every paper account, strategy first, with the same figures side by side."""
@@ -93,8 +107,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
             "cash_floor": ctx.config.risk.cash_floor,
             "stop_loss": ctx.config.strategy.stop_loss,
         },
-        "ai_account": {"enabled": ctx.config.ai_account.enabled,
-                       "max_verdict_age_days": ctx.config.ai_account.max_verdict_age_days},
+        "ai_account": asdict(ctx.config.ai_account),
     }
 
 

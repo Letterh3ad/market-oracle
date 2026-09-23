@@ -37,7 +37,7 @@ def test_a_tick_prints_each_stage_and_is_read_back_by_last(run):
     assert run("tick", "--last")[1].startswith("no tick has run yet")
     code, out, _ = run("tick")
     assert code == 0 and "(manual): ok" in out
-    assert [line.split()[0] for line in out.splitlines()[1:]] == ["prices", "fx", "fill", "analyse", "step"]
+    assert [line.split()[0] for line in out.splitlines()[1:]] == ["prices", "fx", "fill", "analyse", "research", "step", "ai_step"]
     assert run("tick", "--last")[1] == out
 
 
@@ -48,7 +48,7 @@ def test_a_partial_tick_still_exits_zero_and_shows_the_error(run):
 
 
 def test_exit_code_is_non_zero_only_when_every_stage_failed(run, monkeypatch):
-    async def boom(ctx):
+    async def boom(ctx, say):
         raise RuntimeError("broken")
 
     monkeypatch.setattr(tick_service, "STAGES", {name: boom for name in tick_service.STAGES})

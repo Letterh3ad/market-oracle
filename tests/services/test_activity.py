@@ -145,10 +145,10 @@ def gated_stages(monkeypatch):
 
     gate = asyncio.Event()
 
-    async def quick(ctx):
+    async def quick(ctx, say):
         return "done", None
 
-    async def slow(ctx):
+    async def slow(ctx, say):
         await gate.wait()
         return "done", None
 

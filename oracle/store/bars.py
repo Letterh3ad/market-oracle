@@ -37,6 +37,14 @@ class BarRepo:
         row = self._conn.execute("SELECT MAX(date) FROM bars WHERE symbol = ?", (symbol,)).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None
 
+    def close_on(self, symbol: str, day: date | None = None) -> float | None:
+        """The last close on or before `day` (the latest close without one)."""
+        row = self._conn.execute(
+            "SELECT close FROM bars WHERE symbol = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+            (symbol, (day or date.max).isoformat()),
+        ).fetchone()
+        return row[0] if row else None
+
     def history(self, symbol: str, limit: int | None = None) -> list[Bar]:
         """Oldest first; with `limit`, only the most recent that many."""
         rows = self._conn.execute(

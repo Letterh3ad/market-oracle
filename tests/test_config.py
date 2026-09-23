@@ -220,3 +220,17 @@ def test_the_ai_account_is_off_by_default_with_a_week_long_verdict_age(tmp_path)
         path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="ai_account"):
             load_config(path, cwd=tmp_path)
+
+
+def test_ai_research_refresh_defaults_to_a_5_percent_move_and_30_minutes(tmp_path):
+    ai = load_config(None, cwd=tmp_path)[0].ai_account
+    assert (ai.move_threshold, ai.research_budget_min) == (0.05, 30)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nmove_threshold = 0.1\nresearch_budget_min = 45\n", encoding="utf-8")
+    ai = load_config(path, cwd=tmp_path)[0].ai_account
+    assert (ai.move_threshold, ai.research_budget_min) == (0.1, 45)
+    for line in ("move_threshold = 0", "move_threshold = 1", "move_threshold = true", "research_budget_min = 0",
+                 "research_budget_min = 481", "research_budget_min = 2.5"):
+        path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="ai_account"):
+            load_config(path, cwd=tmp_path)

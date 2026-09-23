@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, time, timezone
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta, timezone
 
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
 from oracle.research.claude import ClaudeChat
 from oracle.research.engine import react
+from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
@@ -21,7 +25,7 @@ from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, ModelUnavailable
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
@@ -29,15 +33,19 @@ from oracle.services.research_tools import (
     market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
+from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
-    "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "Verdict", "latest_research",
-    "latest_verdict", "report_history", "research", "research_progress", "sweep_interrupted",
+    "UNVALIDATED", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict", "latest_research",
+    "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "sweep_interrupted",
 ]
+
+log = logging.getLogger(__name__)
 
 JOB = "research"
 UNUSABLE = "the model's answers were unusable"
@@ -110,6 +118,59 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         repo.save_report(run_id, listing, report)
         repo.set_cited(run_id, cited | report.cites)
         repo.finish(run_id, outcome.status, findings, None, _now(ctx), model.fell_back_to)
+
+
+@dataclass(frozen=True)
+class Refresh:
+    """One pass over the watched listings' stale research."""
+
+    due: int
+    researched: list[str] = field(default_factory=list)
+    failed: list[tuple[str, str]] = field(default_factory=list)
+    """Listing and error."""
+    deferred: list[str] = field(default_factory=list)
+    """Left for the next pass, for `deferred_why`."""
+    deferred_why: str | None = None
+
+
+async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = lambda _: None,
+                           run: Callable[[AppContext, str], Awaitable[object]] | None = None) -> Refresh:
+    """Research the watched listings whose report is missing, too old or behind a price move
+    (`[ai_account]`), most stale first, starting runs only while the time budget lasts.
+    `progress` hears each listing as it starts; `run` defaults to `research`."""
+    run = run or research
+    ai = ctx.config.ai_account
+    started = ctx.clock.utcnow()
+    known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
+    due = due_for_research(known, started.date(), ai.max_verdict_age_days, ai.move_threshold)
+    done = Refresh(len(due))
+    for i, d in enumerate(due):
+        if ctx.clock.utcnow() - started >= timedelta(minutes=ai.research_budget_min):
+            return _defer(done, due[i:], "time budget spent")
+        progress(f"research {i + 1} of {len(due)}: {d.symbol}")
+        try:
+            await run(ctx, d.symbol)
+        except JobAlreadyRunning:
+            # A manual run holds the lock for minutes: leave the rest to the next tick.
+            return _defer(done, due[i:], "research is busy")
+        except Exception as exc:
+            if not isinstance(exc, ServiceError):
+                log.exception("research on %s failed", d.symbol)
+            done.failed.append((d.symbol, str(exc) or type(exc).__name__))
+        else:
+            done.researched.append(d.symbol)
+    return done
+
+
+def _defer(done: Refresh, left: list, why: str) -> Refresh:
+    return Refresh(done.due, done.researched, done.failed, [d.symbol for d in left], why)
+
+
+def _known(ctx: AppContext, symbol: str) -> Known:
+    latest = ResearchRepo(ctx.conn).latest_report(symbol)
+    day = latest.report.day if latest else None
+    bars = BarRepo(ctx.conn)
+    return Known(symbol, day, bars.close_on(symbol, day) if day else None, bars.close_on(symbol))
 
 
 def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: ChatModel, exc: BaseException) -> None:

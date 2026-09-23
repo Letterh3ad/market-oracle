@@ -1214,3 +1214,23 @@ rejection. Age is report day to today, at most `[ai_account] max_verdict_age_day
 **Alternatives:** A second rule set for verdicts (drifts from the strategy's); skipping when the
 newest report's verdict was rejected (throws away a valid, still-fresh call); a separate
 `ai_decisions` table (two logs to query for ticket 04's comparison).
+
+## 2026-09-23 - Ticks refresh stale research inline, within a time budget
+
+**Context:** Ticket 03: while the AI account is on, each tick keeps research fresh before the
+AI step.
+**Decision:** Two new tick stages, `research` (after `analyse`) and `ai_step` (after `step`),
+both no-ops that say so while the AI account is off. Research runs inline in the tick's worker
+thread, calling `research()` per listing, not as separate Activity jobs: the tick is already a
+job, so queuing runs from it means cross-thread waits for no gain, and cancelling the tick
+stops its research too. A listing is due with no report, a report older than
+`max_verdict_age_days` (reused, so the refresh age matches the trading age), or a close moved
+more than `move_threshold` (default 5%) since the report day's close. Order: no report first,
+then oldest report, then biggest move. New runs start only while
+`research_budget_min` (default 30, 1 to 480) lasts on `ctx.clock`; the rest is deferred to
+the next tick. A busy research lock (a manual run) defers the rest instead of failing them;
+other errors count as failed and the next listing runs. Stage progress ("research 2 of 5:
+MSFT") doubles as the tick lock's heartbeat. Settings are edited from the Ledgers AI column.
+**Alternatives:** Research as runner jobs the tick waits on (the older HANDOFF note); a
+separate "max report age" setting (two ages that can disagree); retrying the next listing
+after a busy lock (a manual run holds it for minutes).

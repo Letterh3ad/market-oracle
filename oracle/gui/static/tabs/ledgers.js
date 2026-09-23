@@ -43,8 +43,34 @@ function aiRules(r, ai) {
   const p = (v) => `${Math.round(v * 100)}%`;
   return "Trades by itself on each watched listing's latest research verdict, under the strategy's rules and limits: " +
     `buy on a buy verdict at ${p(r.min_probability)} confidence or more, sell on a sell verdict or ${p(r.stop_loss)} below cost. ` +
-    `A verdict older than ${ai.max_verdict_age_days} days is never traded. Unvalidated: its record is how we find out ` +
-    "whether the research adds anything.";
+    `A verdict older than ${ai.max_verdict_age_days} days is never traded. While it is on, each tick first researches ` +
+    "the listings whose report is missing, too old or behind a price move, then runs the AI step. " +
+    "Unvalidated: its record is how we find out whether the research adds anything.";
+}
+
+// How ticks keep the research fresh: saved to oracle.toml, used from the next tick.
+function aiResearch(ai) {
+  const note = el("div", { class: "form-note" });
+  const field = (label, value, attrs) => el("input", { type: "number", step: "1", value: String(value),
+    style: "width: 60px", "aria-label": label, ...attrs });
+  const age = field("Research again after days", ai.max_verdict_age_days, { min: "1", max: "90" });
+  const move = field("Research again after a price move of percent", +(ai.move_threshold * 100).toFixed(2),
+    { min: "0.1", max: "99", step: "any" });
+  const budget = field("Research minutes per tick", ai.research_budget_min, { min: "1", max: "480" });
+  const save = busyButton("Save", async () => {
+    try {
+      await sendJson("/api/ledgers/ai/research", { max_verdict_age_days: Number(age.value),
+        move_threshold: Number(move.value) / 100, research_budget_min: Number(budget.value) }, "PUT");
+      lastResult = ["Saved: the next tick researches by the new limits."];
+      refresh();
+    } catch (err) {
+      note.className = "form-note down";
+      note.textContent = err.message;
+    }
+  });
+  return el("div", { class: "small" },
+    el("div", { class: "row" }, "Research again after ", age, " days or a ", move, "% price move; up to ", budget,
+      " min per tick ", save), note);
 }
 
 // The AI account's on/off switch; off, its step does nothing.
@@ -130,6 +156,7 @@ function column(a, base, rules, ai) {
   const badge = a.name === "ai" ? el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")) : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
+    a.name === "ai" ? aiResearch(ai) : null,
     metrics(a, base), manual ? trading(base) : null,
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,

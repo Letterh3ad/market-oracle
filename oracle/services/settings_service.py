@@ -11,8 +11,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from oracle.config import (
-    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, check_peers, check_schedule_time,
-    load_config, with_settings,
+    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, check_ai_account, check_peers,
+    check_schedule_time, load_config, with_settings,
 )
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -20,7 +20,8 @@ from oracle.services.errors import InvalidQuery
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_automation", "set_peer_count", "set_schedule",
+    "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_peer_count",
+    "set_schedule",
 ]
 
 
@@ -58,6 +59,18 @@ def set_ai_account(ctx: AppContext, enabled: bool) -> Path:
     return path
 
 
+def set_ai_research(ctx: AppContext, max_age_days: int, move_threshold: float, budget_min: int) -> Path:
+    """How ticks keep the AI account's research fresh: a report older than `max_age_days`
+    (also the oldest verdict it trades) or a price move past `move_threshold` since it is
+    researched again, for up to `budget_min` minutes a tick."""
+    values = {"max_verdict_age_days": max_age_days, "move_threshold": move_threshold,
+              "research_budget_min": budget_min}
+    ai = _check(check_ai_account, {"enabled": ctx.config.ai_account.enabled, **values})
+    path = _save(ctx, "ai_account", values)
+    ctx.config = replace(ctx.config, ai_account=ai)
+    return path
+
+
 def reload_live_settings(ctx: AppContext) -> None:
     """Take `[schedule]`, `[automation]` and `[ai_account]` from oracle.toml as they are now, so the CLI in
     another process reaches a running GUI. A file that no longer loads keeps the current
@@ -73,9 +86,9 @@ def reload_live_settings(ctx: AppContext) -> None:
                          ai_account=loaded.ai_account)
 
 
-def _check(check, value) -> None:
+def _check(check, value):
     try:
-        check(value)
+        return check(value)
     except ConfigError as exc:
         raise InvalidQuery(str(exc)) from exc
 

@@ -65,7 +65,8 @@ async def test_the_strategy_rules_shown_are_the_configured_ones(ctx, loaded):
 
 async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdicts(ctx, priced):
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
-    assert (await priced.get("/api/ledgers")).json()["ai_account"] == {"enabled": False, "max_verdict_age_days": 7}
+    assert (await priced.get("/api/ledgers")).json()["ai_account"] == {
+        "enabled": False, "max_verdict_age_days": 7, "move_threshold": 0.05, "research_budget_min": 30}
     off = (await priced.post("/api/ledgers/ai/step")).json()
     assert off["decisions"] == [] and off["off"].startswith("the AI account is off")
     assert (await priced.put("/api/ledgers/ai", json={"enabled": True})).json() == {"enabled": True}
@@ -82,3 +83,13 @@ async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdict
 async def test_the_ai_switch_and_decision_log_refuse_what_they_do_not_know(loaded):
     assert (await loaded.put("/api/ledgers/ai", json={"enabled": "yes"})).status_code in (400, 422)
     assert (await loaded.get("/api/ledgers/decisions", params={"account": "manual"})).status_code in (400, 422)
+
+
+async def test_the_ai_research_settings_are_saved_and_refused_out_of_range(ctx, loaded):
+    body = {"max_verdict_age_days": 10, "move_threshold": 0.08, "research_budget_min": 20}
+    saved = (await loaded.put("/api/ledgers/ai/research", json=body)).json()
+    assert saved == {"enabled": False, **body}
+    assert (await loaded.get("/api/ledgers")).json()["ai_account"] == saved
+    refused = await loaded.put("/api/ledgers/ai/research", json={**body, "research_budget_min": 0})
+    assert refused.status_code == 400 and "research_budget_min" in refused.json()["error"]
+    assert ctx.config.ai_account.research_budget_min == 20

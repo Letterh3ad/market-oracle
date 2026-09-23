@@ -119,10 +119,15 @@ class AiAccountConfig:
 
     enabled: bool = False
     max_verdict_age_days: int = 7
-    """An older verdict is never traded."""
+    """An older verdict is never traded, and a tick researches the listing again."""
+    move_threshold: float = 0.05
+    """A tick researches a listing again once its price moved this share since the report."""
+    research_budget_min: int = 30
+    """How long a tick may spend starting research runs; the rest waits for the next tick."""
 
 
 VERDICT_AGE_RANGE = (1, 90)
+RESEARCH_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
@@ -368,15 +373,30 @@ def _automation(raw: object) -> AutomationConfig:
 def _ai_account(raw: object) -> AiAccountConfig:
     if not isinstance(raw, dict):
         raise ConfigError("ai_account must be an [ai_account] table")
+    return check_ai_account(raw)
+
+
+def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
+    """`[ai_account]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
     _reject_unknown(raw, AiAccountConfig, "[ai_account]")
-    enabled = raw.get("enabled", AiAccountConfig.enabled)
-    if not isinstance(enabled, bool):
-        raise ConfigError(f"ai_account.enabled must be true or false, got {enabled!r}")
-    age = raw.get("max_verdict_age_days", AiAccountConfig.max_verdict_age_days)
-    low, high = VERDICT_AGE_RANGE
-    if isinstance(age, bool) or not isinstance(age, int) or not low <= age <= high:
-        raise ConfigError(f"ai_account.max_verdict_age_days must be a whole number from {low} to {high}, got {age!r}")
-    return AiAccountConfig(enabled=enabled, max_verdict_age_days=age)
+    ai = replace(AiAccountConfig(), **raw)
+
+    def whole(value: object, low: int, high: int) -> bool:
+        return not isinstance(value, bool) and isinstance(value, int) and low <= value <= high
+
+    checks = {
+        "enabled": (isinstance(ai.enabled, bool), "true or false"),
+        "max_verdict_age_days": (whole(ai.max_verdict_age_days, *VERDICT_AGE_RANGE),
+                                 "a whole number from {} to {}".format(*VERDICT_AGE_RANGE)),
+        "move_threshold": (isinstance(ai.move_threshold, (int, float)) and not isinstance(ai.move_threshold, bool)
+                           and 0 < ai.move_threshold < 1, "a share above 0 and below 1"),
+        "research_budget_min": (whole(ai.research_budget_min, *RESEARCH_BUDGET_RANGE),
+                                "a whole number of minutes from {} to {}".format(*RESEARCH_BUDGET_RANGE)),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"ai_account.{key} must be {wanted}, got {getattr(ai, key)!r}")
+    return replace(ai, move_threshold=float(ai.move_threshold))
 
 
 def _schedule(raw: object) -> ScheduleConfig:
