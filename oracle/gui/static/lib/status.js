@@ -6,6 +6,7 @@ import * as tick from "./tick.js";
 
 // The header line, the ticks panel and the sources panel, refreshed every 30 seconds.
 async function refresh() {
+  if (document.body.dataset.off) return; // shut down from this page
   let status;
   try {
     status = await api("/api/status");
@@ -19,7 +20,7 @@ async function refresh() {
     u.loaded ? ` ${u.listings.toLocaleString()} listings` : ` not loaded (${u.next})`,
   );
   tick.show(status.tick, status.schedule);
-  control.show(status.server);
+  control.show(status);
   const paused = status.sources.filter((s) => s.state === "paused");
   document.getElementById("sources-state").textContent =
     paused.length ? `${paused.length} source(s) paused` : "all sources ok";

@@ -87,3 +87,35 @@ async def test_the_start_at_login_toggle_reads_and_sets_the_launcher(ctx, tmp_pa
         assert (await c.put("/api/app/autostart", json={"enabled": True})).json()["enabled"] is True
         assert (tmp_path / "Market Oracle.lnk").exists()
         assert (await c.put("/api/app/autostart", json={"enabled": False})).json()["enabled"] is False
+
+
+async def test_automation_switch_saves_and_can_stop_automatic_work(app_client, ctx):
+    started = threading.Event()
+
+    async def forever(c):
+        started.set()
+        await asyncio.Event().wait()
+
+    runner = app_client.app.state.runner
+    runner.submit("tick", "Tick (scheduled)", forever, automatic=True)
+    await asyncio.to_thread(started.wait)
+    assert (await app_client.get("/api/status")).json()["automation"] == {"enabled": True}
+    answer = (await app_client.put("/api/app/automation", json={"enabled": False, "stop_running": True})).json()
+    assert answer == {"enabled": False, "stopped": ["Tick (scheduled)"]}
+    assert ctx.config.automation.enabled is False
+    assert (await app_client.get("/api/status")).json()["automation"] == {"enabled": False}
+
+
+async def test_shut_down_stops_this_server_and_names_the_work_it_cuts_off(app_client, control):
+    response = await app_client.post("/api/app/shutdown")
+    assert response.status_code == 202 and response.json() == {"stopping": True, "cut_off": []}
+    assert control.events == ["exit"]
+
+
+async def test_shortcuts_are_installed_from_the_page(app_client, tmp_path, monkeypatch):
+    from oracle.services import app_service
+
+    monkeypatch.setattr(app_service, "shortcut_folders", lambda: [tmp_path / "Desktop"])
+    monkeypatch.setattr(app_service, "write_shortcut", lambda link, cmd, d: None)
+    answer = (await app_client.post("/api/app/shortcuts")).json()
+    assert answer == {"written": [str(tmp_path / "Desktop" / "Market Oracle.lnk")]}

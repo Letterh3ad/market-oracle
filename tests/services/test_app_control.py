@@ -88,3 +88,28 @@ def test_the_launch_command_runs_the_code_this_server_was_loaded_from(tmp_path):
     with open_context(Config(db_path=tmp_path / "o.db"), cfg) as ctx:
         cmd = server_launch(ctx)
     assert cmd.cwd == CODE_ROOT and str(cfg.resolve()) in cmd.argv
+
+
+def test_shut_down_asks_the_server_to_stop_without_starting_a_copy():
+    events = []
+    control = AppControl(CMD, spawn=lambda c: events.append("spawn"))
+    control.on_exit = lambda: events.append("exit")
+    control.shut_down()
+    assert events == ["exit"]
+
+
+def test_shortcuts_go_to_every_folder_with_the_server_command(tmp_path):
+    from oracle.services.app_service import install_shortcuts
+
+    written = []
+    folders = [tmp_path / "Desktop", tmp_path / "Programs"]
+    paths = install_shortcuts(CMD, folders, write=lambda link, cmd, d: written.append((link, cmd)))
+    assert paths == [f / "Market Oracle.lnk" for f in folders] and written == [(p, CMD) for p in paths]
+
+
+def test_shortcuts_without_windows_folders_say_so():
+    from oracle.services.app_service import install_shortcuts
+    from oracle.services.errors import ServiceError
+
+    with pytest.raises(ServiceError, match="Windows"):
+        install_shortcuts(CMD, [])

@@ -13,10 +13,10 @@ from pathlib import Path
 from oracle.services.context import AppContext
 from oracle.services.errors import CannotRestart, ServiceError
 from oracle.system.launch import LaunchCommand, server_command, spawn_detached
-from oracle.system.shortcuts import startup_folder, write_shortcut
+from oracle.system.shortcuts import shortcut_folders, startup_folder, write_shortcut
 from oracle.system.version import CODE_ROOT, code_version
 
-__all__ = ["AppControl", "Autostart", "autostart_for", "server_launch"]
+__all__ = ["AppControl", "Autostart", "autostart_for", "install_shortcuts", "server_launch"]
 
 APP_NAME = "Market Oracle"
 
@@ -59,6 +59,22 @@ class Autostart:
             raise ServiceError(f"could not write the startup launcher: {exc}") from exc
 
 
+def install_shortcuts(command: LaunchCommand, folders: list[Path] | None = None,
+                      write: Callable[[Path, LaunchCommand, str], None] | None = None) -> list[Path]:
+    """Market Oracle on the desktop and in the Start menu, starting the GUI as the
+    start-at-login launcher does. Returns the shortcuts written."""
+    folders = shortcut_folders() if folders is None else folders
+    if not folders:
+        raise ServiceError("shortcuts are only set up for Windows so far")
+    links = [f / f"{APP_NAME}.lnk" for f in folders]
+    try:
+        for link in links:
+            (write or write_shortcut)(link, command, APP_NAME)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ServiceError(f"could not write a shortcut: {exc}") from exc
+    return links
+
+
 def autostart_for(ctx: AppContext) -> Autostart:
     return Autostart(startup_folder(), server_launch(ctx))
 
@@ -87,10 +103,18 @@ class AppControl:
 
     def restart(self) -> None:
         """Start a detached copy, then stop this server; the copy waits for the port."""
-        if self.on_exit is None:
-            raise CannotRestart("this server cannot stop itself (it was not started by `oracle gui`)")
+        exit_ = self._exit_hook()
         try:
             self._spawn(self.command)
         except OSError as exc:
             raise CannotRestart(f"could not start a new copy: {exc}") from exc
-        self.on_exit()
+        exit_()
+
+    def shut_down(self) -> None:
+        """Stop this server for good; the desktop shortcut starts it again."""
+        self._exit_hook()()
+
+    def _exit_hook(self) -> Callable[[], None]:
+        if self.on_exit is None:
+            raise CannotRestart("this server cannot stop itself (it was not started by `oracle gui`)")
+        return self.on_exit

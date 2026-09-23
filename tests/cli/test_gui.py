@@ -73,3 +73,26 @@ def test_autostart_on_and_off_from_the_command_line(tmp_path, monkeypatch, capsy
     assert (startup / "Market Oracle.lnk").exists() and "starts when Windows starts" in capsys.readouterr().out
     assert cli_main.main(["--config", str(cfg), "gui", "--autostart", "off"]) == 0
     assert not (startup / "Market Oracle.lnk").exists()
+
+
+def test_shortcuts_from_the_command_line(tmp_path, monkeypatch, capsys):
+    from oracle.services import app_service
+
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"\n', encoding="utf-8")
+    monkeypatch.setattr(app_service, "shortcut_folders", lambda: [tmp_path / "Desktop"])
+    monkeypatch.setattr(app_service, "write_shortcut", lambda link, cmd, d: link.parent.mkdir() or link.write_text("x"))
+    assert cli_main.main(["--config", str(cfg), "gui", "--install-shortcuts"]) == 0
+    assert (tmp_path / "Desktop" / "Market Oracle.lnk").exists()
+    assert "Market Oracle.lnk" in capsys.readouterr().out
+
+
+def test_automation_on_and_off_from_the_command_line(tmp_path, capsys):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"\n', encoding="utf-8")
+    assert cli_main.main(["--config", str(cfg), "automation", "off"]) == 0
+    assert "[automation]" in cfg.read_text(encoding="utf-8") and "off" in capsys.readouterr().out
+    assert cli_main.main(["--config", str(cfg), "automation"]) == 0
+    assert "off" in capsys.readouterr().out
+    assert cli_main.main(["--config", str(cfg), "automation", "on"]) == 0
+    assert "on" in capsys.readouterr().out

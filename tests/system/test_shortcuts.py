@@ -25,3 +25,11 @@ def test_a_shortcut_starts_the_command_minimised_in_its_folder(tmp_path):
     link = tmp_path / "Market Oracle.lnk"
     write_shortcut(link, cmd, "Market Oracle")
     assert read_shortcut(link) == [sys.executable, '-m oracle --config "C:\my files\oracle.toml" gui', str(folder), "7"]
+
+
+def test_the_windows_shell_folders_are_found():
+    from oracle.system.shortcuts import shortcut_folders, startup_folder
+
+    assert startup_folder().name == "Startup"
+    desktop, programs = shortcut_folders()
+    assert desktop.is_dir() and programs.name == "Programs"

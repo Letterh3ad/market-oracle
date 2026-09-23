@@ -11,7 +11,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from oracle.gui.app import build_app
-from oracle.services.app_service import autostart_for
+from oracle.services.app_service import autostart_for, install_shortcuts, server_launch
 from oracle.services.context import AppContext
 
 BIND_WAIT_S = 30.0
@@ -25,6 +25,8 @@ class PortBusy(Exception):
 def register(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--restart", action="store_true", help="ask the running GUI server to restart")
     parser.add_argument("--autostart", choices=("on", "off"), help="start the GUI when Windows starts, or stop that")
+    parser.add_argument("--install-shortcuts", action="store_true",
+                        help="add Market Oracle to the desktop and Start menu")
     parser.set_defaults(handler=run)
 
 
@@ -37,6 +39,10 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
         autostart.set(args.autostart == "on")
         print(f"Market Oracle starts when Windows starts ({autostart.path})" if autostart.enabled()
               else "Market Oracle no longer starts with Windows")
+        return 0
+    if args.install_shortcuts:
+        for link in install_shortcuts(server_launch(ctx)):
+            print(f"wrote {link}")
         return 0
     print(f"Market Oracle GUI on http://{host}:{port} (Ctrl+C to stop)")
     try:

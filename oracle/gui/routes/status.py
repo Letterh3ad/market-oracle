@@ -33,6 +33,7 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
             "refreshed_at": _iso(universe.refreshed_at),
             "next": None if universe.loaded else "run `oracle universe refresh`",
         },
+        "automation": {"enabled": ctx.config.automation.enabled},
         "tick": shapes.tick(last_tick(ctx)),
         "schedule": shapes.schedule(schedule_status(ctx)),
         "sources": [

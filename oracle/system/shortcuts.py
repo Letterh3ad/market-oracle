@@ -6,7 +6,7 @@ from pathlib import Path
 
 from oracle.system.launch import LaunchCommand
 
-__all__ = ["startup_folder", "write_shortcut"]
+__all__ = ["shortcut_folders", "startup_folder", "write_shortcut"]
 
 # Windows' own shortcut object, so no new dependency; the values travel as environment
 # variables, never spliced into the script, so quotes and spaces in paths are safe.
@@ -16,12 +16,30 @@ _WRITE = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:ORACLE
           "$s.WindowStyle = 7; $s.Save()")  # 7: minimised
 
 
+# Shell folder ids (CSIDL), asked of Windows: a Desktop moved into OneDrive is not under
+# the user's profile.
+_DESKTOP, _PROGRAMS, _STARTUP = 0x10, 0x02, 0x07
+
+
+def _shell_folder(csidl: int) -> Path | None:
+    if os.name != "nt":
+        return None
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(260)
+    if ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) != 0:
+        return None
+    return Path(buf.value)
+
+
 def startup_folder() -> Path | None:
     """The user's Startup folder (no admin rights needed); None off Windows."""
-    appdata = os.environ.get("APPDATA")
-    if os.name != "nt" or not appdata:
-        return None
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    return _shell_folder(_STARTUP)
+
+
+def shortcut_folders() -> list[Path]:
+    """The user's desktop and Start-menu programs; empty off Windows."""
+    return [f for f in (_shell_folder(_DESKTOP), _shell_folder(_PROGRAMS)) if f]
 
 
 def write_shortcut(link: Path, cmd: LaunchCommand, description: str) -> None:

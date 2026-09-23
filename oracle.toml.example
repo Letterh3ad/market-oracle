@@ -55,6 +55,12 @@ port = 8740
 enabled = false
 time = "22:30"   # 24-hour, local time
 
+# The master switch for everything that starts by itself (scheduled ticks now, later AI
+# research refreshes and discovery). Off: nothing starts on its own; buttons still work.
+# The GUI header's Automation switch changes it too.
+[automation]
+enabled = true
+
 # The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
 [llm]
 backend = "ollama"

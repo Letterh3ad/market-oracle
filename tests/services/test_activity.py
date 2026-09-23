@@ -305,3 +305,23 @@ async def test_new_job_ids_follow_the_stored_ones(ctx, runner):
     later = JobRunner(ctx)
     assert later.submit("research", "Research B", Gate("b", [])).id > first.id
     await later.stop()
+
+
+async def test_turning_automation_off_can_stop_only_the_automatic_work(runner, ctx):
+    manual = runner.submit("prices", "Update prices", Gate("m", []))
+    auto = runner.submit("tick", "Tick (scheduled)", Gate("t", []), automatic=True)
+    queued = runner.submit("tick", "Tick (catch-up)", Gate("t2", []), automatic=True)
+    await settle()
+    stopped = runner.cancel_automatic()
+    await runner.wait(auto.id)
+    assert {j.label for j in stopped} == {"Tick (scheduled)", "Tick (catch-up)"}
+    assert (auto.state, queued.state, manual.state) == ("cancelled", "cancelled", "running")
+
+
+async def test_scheduled_ticks_are_automatic_and_manual_ones_are_not(runner, ctx, gated_stages):
+    from oracle.services.activity_service import submit_tick
+
+    scheduled = submit_tick(ctx, runner, "scheduled")
+    gated_stages.set()
+    await runner.wait(scheduled.id)
+    assert scheduled.automatic and not submit_tick(ctx, runner).automatic

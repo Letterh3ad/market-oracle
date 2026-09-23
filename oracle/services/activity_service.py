@@ -45,6 +45,8 @@ class Job:
     link: str | None = None
     """Where its result shows in the GUI."""
     progress_fn: Callable[[], str | None] | None = field(default=None, repr=False)
+    automatic: bool = False
+    """Started by itself (a scheduled tick), not by a button: the automation switch can stop it."""
     submitted_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
@@ -73,7 +75,8 @@ class JobRunner:
         self._finished: deque[Job] = deque(maxlen=RECENT)
 
     def submit(self, kind: str, label: str, work: Work, *, subject: str | None = None,
-               link: str | None = None, progress: Callable[[], str | None] | None = None) -> Job:
+               link: str | None = None, progress: Callable[[], str | None] | None = None,
+               automatic: bool = False) -> Job:
         """Queue `work`; a job of the same kind and subject still waiting or running is
         returned instead of a second one."""
         if subject is not None:
@@ -82,7 +85,8 @@ class JobRunner:
                 return same
         now = self._ctx.clock.utcnow()
         job_id = self._history.add(kind, label, subject, link, "queued", now, os.getpid())
-        job = Job(job_id, kind, label, work, subject=subject, link=link, progress_fn=progress, submitted_at=now)
+        job = Job(job_id, kind, label, work, subject=subject, link=link, progress_fn=progress, automatic=automatic,
+                  submitted_at=now)
         self._queues.setdefault(kind, deque()).append(job)
         worker = self._workers.get(kind)
         if worker is None or worker.done():
@@ -126,6 +130,17 @@ class JobRunner:
         else:
             raise InvalidQuery(f"{job.label} is already {job.state}")
         return job
+
+    def cancel_automatic(self) -> list[Job]:
+        """Stop every automatic job queued or running here; work started by a button carries on."""
+        going = [j for j in [*self._running.values(), *self._queued()] if j.automatic]
+        for job in going:
+            self.cancel(job.id)
+        return going
+
+    def active_labels(self) -> list[str]:
+        """What is running or queued here, for a warning before the server stops."""
+        return [j.label for j in [*self._running.values(), *self._queued()]]
 
     async def stop(self) -> None:
         """Cancel running work and drop what is queued; used when the server stops."""
@@ -236,4 +251,4 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
             return record_skipped(c, trigger, f"skipped: {exc}")
 
     return runner.submit("tick", f"Tick ({trigger})", work, subject="tick", link="#watchlist",
-                         progress=lambda: stage[-1] if stage else None)
+                         progress=lambda: stage[-1] if stage else None, automatic=trigger != "manual")
