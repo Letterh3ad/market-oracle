@@ -4,7 +4,7 @@ import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
 import { researchSection } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
-import { busyButton, sendJson } from "../lib/ui.js";
+import { busyButton, runJob, sendJson } from "../lib/ui.js";
 
 const LABELS = {
   technicals: "Technicals (combined)", trend: "Trend", rsi: "RSI", macd: "MACD", volatility: "Volatility",
@@ -24,7 +24,7 @@ function figure(value, kind, currency) {
 function job(label, path, pane, symbol) {
   return busyButton(label, async () => {
     try {
-      const r = await api(`${path}?symbol=${encodeURIComponent(symbol)}`, { method: "POST" });
+      const r = await runJob(`${path}?symbol=${encodeURIComponent(symbol)}`);
       const failed = r.listings.find((o) => o.error);
       if (failed) showError(`${failed.symbol}: ${failed.error}`);
       else clearError();

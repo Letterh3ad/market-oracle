@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from oracle.services.paper_service import place_buy, strategy_step
 from tests.fakes.yahoo import bar
+from tests.gui.jobs import run_job
 
 
 async def test_both_accounts_start_level_side_by_side(loaded):
@@ -22,14 +23,14 @@ async def test_a_queued_buy_shows_as_pending_on_its_account(ctx, loaded):
 
 
 async def test_a_filled_buy_shows_as_a_position_with_an_equity_record(ctx, priced, yahoo, clock):
-    await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
     place_buy(ctx, "AAPL", 1000.0)
     # It fills at the next open: the day after it was placed.
     tomorrow = (clock.utcnow() + timedelta(days=1)).date().isoformat()
     yahoo.series["AAPL"].bars.append(bar(tomorrow, 150.0))
     yahoo.series["GBPUSD=X"].bars.append(bar(tomorrow, 1.25))
     clock.advance(2 * 86400)  # past that session's close, so its bar counts as complete
-    run = (await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})).json()
+    run = (await run_job(priced, "/api/jobs/prices", symbol="AAPL"))["result"]
     assert [f["status"] for f in run["fills"]] == ["filled"]
     manual = (await priced.get("/api/ledgers")).json()["accounts"][1]
     [position] = manual["positions"]

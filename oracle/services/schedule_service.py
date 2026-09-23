@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
 from oracle.services.context import AppContext
+from oracle.services.activity_service import JobRunner, submit_tick
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.settings_service import reload_schedule
 from oracle.services.tick_service import TickRun, last_tick, record_skipped, run_tick, ticked_since
@@ -62,9 +63,11 @@ def schedule_status(ctx: AppContext, tz: tzinfo | None = None) -> ScheduleView:
 
 
 class Scheduler:
-    def __init__(self, ctx: AppContext, tz: tzinfo | None = None) -> None:
+    def __init__(self, ctx: AppContext, tz: tzinfo | None = None, runner: JobRunner | None = None) -> None:
+        """With `runner`, a due tick runs as a job, so Activity lists it and can cancel it."""
         self._ctx = ctx
         self._tz = tz
+        self._runner = runner
         self._setting = ctx.config.schedule
         self._started = self._polled = ctx.clock.utcnow()
         self._file_stamp = self._stamp()
@@ -93,10 +96,15 @@ class Scheduler:
         trigger = "catch-up" if due < self._started else "scheduled"
         if trigger == "catch-up" and last_tick(ctx) is None:
             return None  # never ticked, so nothing was missed
-        try:
-            return await run_tick(ctx, trigger)
-        except JobAlreadyRunning as exc:
-            return record_skipped(ctx, trigger, f"skipped: {exc}")
+        if self._runner is None:
+            try:
+                return await run_tick(ctx, trigger)
+            except JobAlreadyRunning as exc:
+                return record_skipped(ctx, trigger, f"skipped: {exc}")
+        if self._runner.active("tick"):
+            return record_skipped(ctx, trigger, "skipped: a tick is already queued or running here")
+        job = await self._runner.wait(submit_tick(ctx, self._runner, trigger, skip_if_busy=True).id)
+        return job.result
 
     def _stamp(self) -> int | None:
         path = self._ctx.config_source

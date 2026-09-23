@@ -6,6 +6,7 @@ from dataclasses import asdict
 from urllib.parse import urlsplit
 
 from oracle.services.activity_service import Job
+from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView
@@ -40,8 +41,27 @@ def job(j: Job) -> dict:
     return {
         "id": j.id, "kind": j.kind, "label": j.label, "subject": j.subject, "link": j.link, "state": j.state,
         "progress": j.progress(), "error": j.error, "submitted_at": j.submitted_at, "started_at": j.started_at,
-        "finished_at": j.finished_at,
+        "finished_at": j.finished_at, "result": _result(j) if j.state == "done" else None,
     }
+
+
+def _result(j: Job) -> dict | list | None:
+    """What a finished job's button shows; research shows its report on the company page."""
+    if j.kind == "prices":
+        run = j.result
+        return {"listings": [asdict(o) for o in run.update.listings], "fx": [asdict(f) for f in run.update.fx],
+                "fills": [order_outcome(f.order, f.status, f.note) for f in run.fills]}
+    if j.kind == "analyse":
+        runs = j.result if isinstance(j.result, list) else [WatchedAnalysis(j.result.symbol, j.result, None)]
+        return {"listings": [
+            {"symbol": r.symbol, "error": r.error,
+             "lean": None if r.analysis is None or r.analysis.lean is None
+             else {"label": r.analysis.lean.label, "probability": r.analysis.lean.probability}}
+            for r in runs
+        ]}
+    if j.kind == "tick":
+        return tick(j.result)
+    return None
 
 
 def schedule(view: ScheduleView) -> dict:

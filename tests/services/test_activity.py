@@ -144,3 +144,76 @@ async def test_a_finished_job_cannot_be_cancelled(runner):
     await runner.wait(job.id)
     with pytest.raises(InvalidQuery, match="already done"):
         runner.cancel(job.id)
+
+
+@pytest.fixture
+def gated_stages(monkeypatch):
+    """Tick stages that finish at once except `analyse`, which waits for the test."""
+    from oracle.services import tick_service
+
+    gate = asyncio.Event()
+
+    async def quick(ctx):
+        return "done", None
+
+    async def slow(ctx):
+        await gate.wait()
+        return "done", None
+
+    monkeypatch.setattr(tick_service, "STAGES", {"prices": quick, "fx": quick, "analyse": slow, "step": quick})
+    return gate
+
+
+async def test_a_tick_job_shows_the_stage_it_is_on(runner, ctx, gated_stages):
+    from oracle.services.activity_service import submit_tick
+
+    job = submit_tick(ctx, runner)
+    await settle()
+    assert job.progress() == "analyse"
+    gated_stages.set()
+    await runner.wait(job.id)
+    assert job.result.outcome == "ok" and [s.name for s in job.result.stages][-1] == "step"
+
+
+async def test_cancelling_a_running_tick_records_it_interrupted(runner, ctx, gated_stages):
+    from oracle.services.activity_service import submit_tick
+    from oracle.services.tick_service import last_tick
+
+    job = submit_tick(ctx, runner)
+    await settle()
+    runner.cancel(job.id)
+    await runner.wait(job.id)
+    assert job.state == "cancelled" and last_tick(ctx).outcome == "interrupted"
+
+
+def london_scheduler(ctx, runner):
+    from dataclasses import replace
+    from zoneinfo import ZoneInfo
+
+    from oracle.config import ScheduleConfig
+    from oracle.services.schedule_service import Scheduler
+
+    # NOW is Wednesday 21:00 in London; the run is due at 21:30 there (20:30 UTC).
+    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time="21:30"))
+    return Scheduler(ctx, tz=ZoneInfo("Europe/London"), runner=runner)
+
+
+async def test_a_due_tick_runs_as_a_job_listed_in_activity(runner, ctx):
+    scheduler = london_scheduler(ctx, runner)
+    ctx.clock.advance(31 * 60)
+    run = await scheduler.check()
+    assert run.trigger == "scheduled"
+    assert [(j.label, j.state) for j in runner.jobs()] == [("Tick (scheduled)", "done")]
+
+
+async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gated_stages):
+    from oracle.services.activity_service import submit_tick
+
+    scheduler = london_scheduler(ctx, runner)
+    manual = submit_tick(ctx, runner)
+    await settle()
+    ctx.clock.advance(31 * 60)
+    skipped = await scheduler.check()
+    assert skipped.outcome == "skipped" and "already queued or running" in skipped.note
+    gated_stages.set()
+    await runner.wait(manual.id)

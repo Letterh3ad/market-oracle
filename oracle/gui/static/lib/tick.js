@@ -1,6 +1,5 @@
-import { api } from "./api.js";
 import { el, showError } from "./dom.js";
-import { busyButton, sendJson } from "./ui.js";
+import { busyButton, runJob, sendJson } from "./ui.js";
 
 const OUTCOME_CLASS = { ok: "up", partial: "warn-text", failed: "down", interrupted: "down", skipped: "dim" };
 
@@ -30,7 +29,7 @@ function mount(refresh) {
   document.getElementById("tick-controls").replaceChildren(
     busyButton("Run tick now", async () => {
       try {
-        await api("/api/jobs/tick", { method: "POST" });
+        await runJob("/api/jobs/tick");
       } catch (err) {
         showError(`tick: ${err.message}`);
       }

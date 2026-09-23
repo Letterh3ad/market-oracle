@@ -1,7 +1,7 @@
 import { api } from "../lib/api.js";
 import { el, showError } from "../lib/dom.js";
 
-const STATE_CLASS = { running: "up", queued: "dim", done: "", failed: "down", cancelled: "dim" };
+const STATE_CLASS = { running: "up", "running elsewhere": "up", queued: "dim", done: "", failed: "down", cancelled: "dim" };
 let timer = null;
 
 function time(iso) {
@@ -16,7 +16,8 @@ function took(j) {
 }
 
 function cancelButton(j, box) {
-  if (j.state !== "running" && j.state !== "queued") return null;
+  // Work held elsewhere has no id: only the process running it can stop it.
+  if (j.id == null || (j.state !== "running" && j.state !== "queued")) return null;
   const button = el("button", { type: "button", class: "small-btn", onclick: async () => {
     button.disabled = true;
     try {
@@ -53,15 +54,18 @@ function section(title, jobs, empty, box) {
 }
 
 async function load(box) {
-  let jobs;
+  let jobs, elsewhere;
   try {
-    ({ jobs } = await api("/api/activity"));
+    ({ jobs, elsewhere } = await api("/api/activity"));
   } catch (err) {
     if (box.isConnected) box.replaceChildren(el("p", { class: "dim" }, `Could not load activity: ${err.message}`));
     return;
   }
   if (!box.isConnected) return;
-  const active = jobs.filter((j) => j.state === "running" || j.state === "queued");
+  const active = [...jobs.filter((j) => j.state === "running" || j.state === "queued"), ...elsewhere.map((e) => ({
+    label: `${e.job} (pid ${e.pid} on ${e.host})`, state: "running elsewhere",
+    error: "started outside this app window, e.g. from the command line; stop it there",
+  }))];
   const done = jobs.filter((j) => !active.includes(j));
   box.replaceChildren(
     ...section("Now and next", active, "Nothing running or waiting.", box),

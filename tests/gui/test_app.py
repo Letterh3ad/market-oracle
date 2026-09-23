@@ -17,9 +17,7 @@ async def test_pages_and_modules_are_rechecked_so_an_update_shows_without_a_hard
 
 async def test_the_scheduler_runs_while_the_server_does_and_stops_with_it(ctx):
     from oracle.gui.app import build_app
-    from oracle.services.schedule_service import Scheduler
-
-    app = build_app(ctx, Scheduler(ctx))
+    app = build_app(ctx, schedule=True)
     async with app.router.lifespan_context(app):
         task = app.state.scheduler_task
         assert not task.done()

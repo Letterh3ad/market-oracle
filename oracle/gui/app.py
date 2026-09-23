@@ -28,10 +28,11 @@ class _Static(StaticFiles):
         return response
 
 
-def build_app(ctx: AppContext, scheduler: Scheduler | None = None) -> FastAPI:
-    """`scheduler` runs for as long as the server does; tests leave it out. Jobs still
-    running when the server stops are cancelled."""
+def build_app(ctx: AppContext, schedule: bool = False) -> FastAPI:
+    """With `schedule`, the scheduler runs for as long as the server does (tests leave it
+    off). Jobs still running when the server stops are cancelled."""
     runner = JobRunner(ctx)
+    scheduler = Scheduler(ctx, runner=runner) if schedule else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

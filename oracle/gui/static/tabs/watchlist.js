@@ -2,7 +2,7 @@ import { api } from "../lib/api.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, tone } from "../lib/fmt.js";
 import { tip } from "../lib/tip.js";
-import { busyButton } from "../lib/ui.js";
+import { busyButton, runJob } from "../lib/ui.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
 const SHORT = { technicals: "tech", volatility: "vol", quality: "qual", growth: "grow" };
@@ -76,7 +76,7 @@ function lean(l) {
 function jobButton(label, path, summarise, pane) {
   return busyButton(label, async () => {
     try {
-      const result = await api(path, { method: "POST" });
+      const result = await runJob(path);
       clearError();
       pane.querySelector("#w-result")?.replaceChildren(...summarise(result).map((line) => el("div", null, line)));
     } catch (err) {

@@ -1,12 +1,13 @@
 import pytest
 
 from tests.gui.conftest import DAYS
+from tests.gui.jobs import run_job
 
 
 @pytest.fixture
 async def analysed(priced):
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
-    await priced.post("/api/jobs/prices")
+    await run_job(priced, "/api/jobs/prices")
     return priced
 
 
@@ -19,7 +20,7 @@ async def test_the_view_shows_the_listing_and_its_price_and_asks_for_analysis(an
 
 
 async def test_after_analysis_each_signal_explains_itself_and_the_lean_is_current(analysed):
-    await analysed.post("/api/jobs/analyse")
+    await run_job(analysed, "/api/jobs/analyse")
     body = (await analysed.get("/api/companies/AAPL")).json()
     trend = next(s for s in body["signals"] if s["analyst"] == "trend")
     assert trend["direction"] == "bullish" and trend["reason"] and not trend["stale"]
@@ -54,9 +55,9 @@ async def test_an_unknown_company_is_a_404_with_suggestions(loaded):
 
 
 async def test_one_listing_can_be_priced_and_analysed_without_being_watched(priced):
-    prices = (await priced.post("/api/jobs/prices", params={"symbol": "aapl"})).json()
+    prices = (await run_job(priced, "/api/jobs/prices", symbol="aapl"))["result"]
     assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}]
-    ran = (await priced.post("/api/jobs/analyse", params={"symbol": "aapl"})).json()
+    ran = (await run_job(priced, "/api/jobs/analyse", symbol="aapl"))["result"]
     assert ran["listings"][0]["symbol"] == "AAPL" and ran["listings"][0]["lean"]["label"]
     assert (await priced.get("/api/watchlists/main")).json()["items"] == []
 
@@ -66,8 +67,8 @@ async def test_a_single_listing_job_waits_its_turn_like_the_watchlist_one(ctx, p
     from oracle.services.jobs_service import single_flight
 
     with single_flight(ctx, job, 60.0):
-        response = await priced.post(path, params={"symbol": "AAPL"})
-    assert response.status_code == 409 and "already running" in response.json()["error"]
+        job = await run_job(priced, path, symbol="AAPL")
+    assert job["state"] == "failed" and "already running" in job["error"]
 
 
 async def test_a_dead_listing_says_so_and_check_again_clears_it(ctx, priced):
@@ -79,5 +80,5 @@ async def test_a_dead_listing_says_so_and_check_again_clears_it(ctx, priced):
     assert (await priced.get("/api/companies/AAPL")).json()["dead_since"] == "2026-09-01"
     hits = (await priced.get("/api/universe/search", params={"q": "AAPL"})).json()["hits"]
     assert next(h for h in hits if h["symbol"] == "AAPL")["dead"]
-    await priced.post("/api/jobs/prices", params={"symbol": "AAPL"})  # Check again: data is back
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")  # Check again: data is back
     assert (await priced.get("/api/companies/AAPL")).json()["dead_since"] is None

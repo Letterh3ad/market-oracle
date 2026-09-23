@@ -13,11 +13,14 @@ from datetime import datetime
 from typing import Any
 
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, ServiceError, UnknownJob
+from oracle.services.analysis_service import analyse_listing, analyse_watched
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.research_service import research, research_progress
+from oracle.services.routine_service import update_listing_prices, update_prices
+from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import resolve_symbol
 
-__all__ = ["Job", "JobRunner", "submit_research"]
+__all__ = ["Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick"]
 
 log = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ class JobRunner:
         """Queue `work`; a job of the same kind and subject still waiting or running is
         returned instead of a second one."""
         if subject is not None:
-            same = next((j for j in self._active(kind) if j.subject == subject), None)
+            same = next((j for j in self.active(kind) if j.subject == subject), None)
             if same:
                 return same
         self._ids += 1
@@ -115,7 +118,8 @@ class JobRunner:
             worker.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
 
-    def _active(self, kind: str) -> list[Job]:
+    def active(self, kind: str) -> list[Job]:
+        """The kind's running job, then its queue."""
         running = self._running.get(kind)
         return ([running] if running else []) + list(self._queues.get(kind, ()))
 
@@ -153,3 +157,39 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
     listing = resolve_symbol(ctx, symbol).symbol
     return runner.submit("research", f"Research {listing}", lambda: research(ctx, listing), subject=listing,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
+
+
+def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
+    """Every watched listing, or one listing (watched or not)."""
+    if symbol is None:
+        return runner.submit("prices", "Update prices (watchlists)", lambda: update_prices(ctx), subject="*",
+                             link="#watchlist")
+    listing = resolve_symbol(ctx, symbol).symbol
+    return runner.submit("prices", f"Update prices {listing}", lambda: update_listing_prices(ctx, listing),
+                         subject=listing, link=f"#company/{listing}")
+
+
+def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
+    if symbol is None:
+        return runner.submit("analyse", "Analyse (watchlists)", lambda: analyse_watched(ctx), subject="*",
+                             link="#watchlist")
+    listing = resolve_symbol(ctx, symbol).symbol
+    return runner.submit("analyse", f"Analyse {listing}", lambda: analyse_listing(ctx, listing), subject=listing,
+                         link=f"#company/{listing}")
+
+
+def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
+    """One tick as a job; its progress is the stage it is on. With `skip_if_busy` (scheduled
+    ticks), a tick held by another process is recorded as skipped instead of failing."""
+    stage: list[str] = []
+
+    async def work():
+        try:
+            return await run_tick(ctx, trigger, on_stage=lambda name: stage.append(name))
+        except JobAlreadyRunning as exc:
+            if not skip_if_busy:
+                raise
+            return record_skipped(ctx, trigger, f"skipped: {exc}")
+
+    return runner.submit("tick", f"Tick ({trigger})", work, subject="tick", link="#watchlist",
+                         progress=lambda: stage[-1] if stage else None)

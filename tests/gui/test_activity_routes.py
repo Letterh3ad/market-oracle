@@ -2,7 +2,7 @@ import asyncio
 
 
 async def test_nothing_is_listed_before_any_work(client):
-    assert (await client.get("/api/activity")).json() == {"jobs": []}
+    assert (await client.get("/api/activity")).json() == {"jobs": [], "elsewhere": []}
 
 
 async def test_an_unknown_job_is_a_404(client):
@@ -28,3 +28,14 @@ async def test_the_runner_stops_with_the_server_and_cancels_running_work(ctx):
         job = app.state.runner.submit("research", "Research X", forever)
         await started.wait()
     assert job.state == "cancelled"
+
+
+async def test_work_another_process_holds_is_listed_read_only(ctx, client):
+    import os
+
+    from oracle.jobs import JobLock
+
+    other = os.getppid()  # alive, and not this process
+    JobLock(ctx.conn, ctx.clock, pid=other).acquire("prices_update", 600)
+    [held] = (await client.get("/api/activity")).json()["elsewhere"]
+    assert (held["job"], held["pid"]) == ("prices update", other)
