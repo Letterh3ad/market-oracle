@@ -385,18 +385,26 @@ async def test_the_ticker_map_is_fetched_once_and_reused(ctx, sec):
     assert [r.url.path for r in sec.requests].count("/files/company_tickers.json") == 1
 
 
-@pytest.mark.parametrize("contact, input_, says", [
-    ("Faye faye@example.com", "7203.T", "not a US listing"),
-    ("Faye faye@example.com", "ZZZZ", "No SEC filer with ticker ZZZZ"),
-    (None, "AAPL", "[research] contact"),
+@pytest.mark.parametrize("input_, says", [
+    ("7203.T", "not a US listing"),
+    ("ZZZZ", "No SEC filer with ticker ZZZZ"),
 ])
-async def test_filings_answers_plainly_when_there_are_none_to_get(ctx, sec, contact, input_, says):
-    with_contact(ctx, contact)
+async def test_filings_answers_plainly_when_there_are_none_to_get(ctx, sec, input_, says):
+    with_contact(ctx)
     apple_filings(sec)
     run = await research(ctx, "AAPL", ScriptedModel(step("filings", input_), step("final", "Done.")))
     assert says in run.steps[0].observation
     if input_ != "ZZZZ":
         assert sec.requests == []
+
+
+async def test_without_a_contact_the_model_is_not_offered_filings(ctx, sec):
+    with_contact(ctx, None)
+    apple_filings(sec)
+    model = ScriptedModel(step("filings"), step("final", "Done."))
+    run = await research(ctx, "AAPL", model)
+    assert "No tool named 'filings'" in run.steps[0].observation and sec.requests == []
+    assert "- filings:" not in model.calls[1][0][0]["content"]
 
 
 async def test_a_filing_is_read_from_sec_with_the_contact_and_its_own_budget(ctx, sec):

@@ -138,9 +138,10 @@ async function drawChart(pane, symbol, base) {
   // Plotted in the base currency only when every day has a rate; otherwise in the listing's own.
   const useBase = rows.length > 0 && rows.every((r) => r.close_base != null);
   const points = rows.map((r) => ({ time: r.date, value: useBase ? r.close_base : r.close }));
-  const shown = useBase ? base : body.currency;
-  box.replaceChildren(el("div", { class: "dim small" }, `Last year's closes in ${shown}`,
-    useBase || !body.currency ? "" : ` (some days have no ${base} rate yet)`),
+  const caption = !rows.length ? "Last year's closes"
+    : useBase ? `Last year's closes in ${base}`
+    : `Last year's closes in ${body.currency} (some days have no ${base} rate yet)`;
+  box.replaceChildren(el("div", { class: "dim small" }, caption),
     ...(useBase ? body.credits : []).map((c) => el("div", { class: "dim small" }, c)));
   if (points.length < 2) {
     box.append(el("p", { class: "dim" }, "Not enough prices to chart yet."));
