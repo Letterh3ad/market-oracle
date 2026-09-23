@@ -48,6 +48,15 @@ stop_loss = 0.08        # sell a position 8% below its average cost
 host = "127.0.0.1"
 port = 8740
 
+# The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
+[llm]
+backend = "ollama"
+model = "qwen3:4b-instruct-2507-q8_0"   # fits an 8GB GPU
+base_url = "http://localhost:11434"
+max_steps = 8        # tool calls a run may make before it must answer
+timeout_s = 180      # per reply; a cold model load is slow
+context = 8192       # tokens of context asked of the model
+
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.
 [keys]

@@ -665,3 +665,34 @@ No hard standards breaches; round 1 fixes confirmed correct.
 counter, ledgers a root check; both work); the ledgers route's hand-picked strategy rules
 could become a service-side view; single-listing fills run outside the prices lock
 (harmless on the single-threaded server, revisit with the phase 10 job model).
+
+## 2026-09-23 - Phase 7 scope: research reports only, ten tickets
+
+**Context:** Phase 7 brings news tools, the ReAct engine and the query generator. The
+lean the strategy trades on is the technicals and factors baseline.
+**Decision:** Research produces a saved, cited report (badged unvalidated) and a trace, but
+does not change the lean; Laya combines both in phase 8. `related_companies` returns
+universe peers until the phase 8 graph replaces it behind the same tool. A Claude backend
+ships alongside Ollama (default). Tools reuse the shared gate and breaker, one source each.
+**Alternatives:** Nudging the lean with research now (rejected: untested AI influence on
+paper trades before the validation gate exists).
+
+## 2026-09-23 - ReAct engine shape
+
+**Context:** Ticket 1 of phase 7: the loop has to work on a 4B local model.
+**Decision:**
+- Each step is one JSON reply (`thought`, `action`, `input`) with the action constrained
+  to the tool names by Ollama's `format`. Tools take one string: a 4B model fills one field
+  far more reliably than an argument object.
+- A garbled reply, an unknown tool or a failing tool becomes an observation the model sees;
+  only a backend that cannot answer at all fails the run.
+- At the step cap (default 8) the model is asked once more, constrained to `final`, so a
+  capped run still has findings; the run is marked `step_cap`.
+- Steps are saved as they happen, so a failed run keeps its trace. One run at a time
+  (`research` job lock).
+- Ollama calls skip the rate gate (localhost has no budget to share); `num_ctx` 8192, since
+  Ollama's default is too small for several observations; temperature 0.
+- `market_data` reads stored data only, with figures as labelled percentages (a raw 1.49
+  ROE was read by the model as 1.49%), and forgives stray JSON punctuation in its input.
+**Alternatives:** Native tool calling (rejected for now: uneven across small models, and
+the constrained JSON step works on every backend).

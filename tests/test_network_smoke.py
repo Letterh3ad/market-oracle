@@ -92,3 +92,15 @@ async def test_real_yahoo_fundamentals_via_the_crumb():
             f = await YahooFundamentals(client).fundamentals(Instrument("BP.L", "GBP"), date.today())
     assert f.currency == "GBP" and f.market_cap and 1e10 < f.market_cap < 1e12  # pounds, not pence
     assert f.pe is None or 0 < f.pe < 500
+
+
+async def test_real_ollama_answers_inside_the_research_schema():
+    from oracle.config import LlmConfig
+    from oracle.research.engine import step_schema
+    from oracle.research.ollama import OllamaChat
+
+    llm = LlmConfig()
+    chat = OllamaChat(llm.model, llm.base_url, llm.timeout_s, llm.context)
+    reply = await chat.reply([{"role": "user", "content": "Reply with action final and input 'ok'."}],
+                             step_schema(["market_data", "final"]))
+    assert isinstance(reply, dict) and reply["action"] in ("market_data", "final")

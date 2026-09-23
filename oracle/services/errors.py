@@ -53,3 +53,7 @@ class PriceUnavailable(ServiceError):
 
 class NoPrices(ServiceError):
     pass
+
+
+class ModelUnavailable(ServiceError):
+    pass
