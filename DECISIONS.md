@@ -751,3 +751,23 @@ for backtests after the model's training cutoff.
 - `RateLimitedClient.get` gains `max_bytes` (streams and stops; drops the encoding and
   length headers of the cut, already-decoded body).
 **Alternatives:** ddgs's own `extract` for pages (rejected: bypasses the gate and breaker).
+
+## 2026-09-23 - SEC filings, and a contact sent to SEC only
+
+**Context:** Ticket 5 of phase 7. SEC refuses requests whose User-Agent lacks a declared
+contact (name and email). The user chose a config setting sent to sec.gov only.
+**Decision:**
+- `[research] contact = "Name email"` (validated to hold an email). Sent in the
+  User-Agent to sec.gov hosts only, never to other sites. Unset, `filings` and reading a
+  sec.gov page answer with how to set it, without a request.
+- `filings` lists key forms only (10-K, 10-Q, 8-K, 20-F, 40-F, 6-K, DEF 14A, S-1, S-4 and
+  amendments); insider and ownership forms are noise for a lean. Filings are dated
+  evidence, so they work in as-of replays too.
+- SEC's ticker map is cached in SQLite (`sec_tickers`) and refreshed weekly.
+- A symbol with an exchange suffix (VOD.L, 7203.T) is answered as non-US without a request;
+  US share classes use a dash (BRK-B) and are tried with SEC's dot form too.
+- Reading a sec.gov page goes through the `sec_edgar` budget, not the general `web` one.
+- The live EDGAR check reads `ORACLE_SEC_CONTACT` and skips without it, so no personal
+  contact is ever sent by a test unasked.
+**Alternatives:** Sending the contact to every site (rejected by the user: it would unblock
+Wikipedia but hands the email to arbitrary hosts).

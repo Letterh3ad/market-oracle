@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from urllib.parse import urlsplit
 
 from oracle.clock import Clock
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.net.gate import SourceGate
+from oracle.research import edgar
 from oracle.research.news import (
     GDELT_DOC, GOOGLE_NEWS, Article, FeedUnreadable, end_of, gdelt_params, google_news_params, parse_gdelt,
     parse_google_news,
@@ -24,6 +25,7 @@ from oracle.services.errors import ServiceError
 from oracle.services.prices_service import price_history
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.sec import SecTickerRepo
 
 # Enough to see a story's shape without flooding a small model's context.
 MAX_ARTICLES = 8
@@ -235,9 +237,10 @@ class ReadPage:
     name = "read_page"
     description = "the text of a web page; input: its http(s) address from a search result"
 
-    def __init__(self, client: RateLimitedClient, shelf: Shelf) -> None:
+    def __init__(self, client: RateLimitedClient, shelf: Shelf, contact: str | None = None) -> None:
         self._client = client
         self._shelf = shelf
+        self._contact = contact
 
     async def run(self, input: str) -> str:
         url = input.strip(" '\"<>")
@@ -245,8 +248,12 @@ class ReadPage:
             raise ToolError(why)
         if _domain(url) == "news.google.com":
             raise ToolError("Google News links only redirect; search its headline with web_search instead")
+        source, headers = "web", None
+        if edgar.is_sec(url):
+            # SEC refuses requests without a declared contact, and has its own budget.
+            source, headers = "sec_edgar", {"User-Agent": edgar.user_agent(_need_contact(self._contact))}
         try:
-            resp = await self._client.get("web", url, max_bytes=MAX_PAGE_BYTES)
+            resp = await self._client.get(source, url, headers=headers, max_bytes=MAX_PAGE_BYTES)
         except (CircuitOpen, RequestFailed) as exc:
             raise ToolError(f"could not read the page ({exc})") from exc
         if resp.status_code != 200:
@@ -260,3 +267,67 @@ class ReadPage:
         cut = len(text) > MAX_PAGE_TEXT or resp.extensions.get("oracle_truncated", False)
         body = (text[:MAX_PAGE_TEXT] + (" [cut]" if cut else "")) or "(no readable text)"
         return f"[a{article_id}] {_domain(url)}: {title}\n{body}"
+
+
+# SEC's ticker map changes slowly; a week-old copy only misses brand-new listings.
+TICKERS_MAX_AGE = timedelta(days=7)
+
+
+def _need_contact(contact: str | None) -> str:
+    if not contact:
+        raise ToolError('SEC needs a contact: set [research] contact = "Name email" in oracle.toml')
+    return contact
+
+
+class Filings:
+    """SEC EDGAR: a US-listed company's recent key filings, dated, readable with read_page."""
+
+    name = "filings"
+    description = ("a US-listed company's recent SEC filings (annual, quarterly and event reports), dated; "
+                   "input: its symbol, or empty for the company researched")
+
+    def __init__(self, client: RateLimitedClient, conn: sqlite3.Connection, clock: Clock, shelf: Shelf,
+                 listing: str, contact: str | None) -> None:
+        self._client = client
+        self._tickers = SecTickerRepo(conn)
+        self._clock = clock
+        self._shelf = shelf
+        self._listing = listing
+        self._contact = contact
+
+    async def run(self, input: str) -> str:
+        symbol = input.strip(" '\"{}[]").upper() or self._listing
+        # Yahoo marks non-US listings with an exchange suffix (VOD.L, 7203.T); US share
+        # classes use a dash (BRK-B).
+        if "." in symbol:
+            return f"No SEC filings: {symbol} is not a US listing."
+        headers = {"User-Agent": edgar.user_agent(_need_contact(self._contact))}
+        await self._refresh_tickers(headers)
+        found = self._tickers.lookup(symbol) or self._tickers.lookup(symbol.replace("-", "."))
+        if found is None:
+            return f"No SEC filer with ticker {symbol}."
+        cik, _ = found
+        filings = edgar.parse_filings(await self._json(edgar.submissions_url(cik), headers), cik)
+        articles = [Article(f.url, f"{f.form} {f.description}".strip(), "SEC",
+                            datetime.combine(f.filed, time(), timezone.utc)) for f in filings]
+        return self._shelf.show(articles, "sec_edgar", symbol)
+
+    async def _refresh_tickers(self, headers: dict) -> None:
+        fetched = self._tickers.fetched_at()
+        if fetched and self._clock.utcnow() - datetime.fromisoformat(fetched) < TICKERS_MAX_AGE:
+            return
+        tickers = edgar.parse_tickers(await self._json(edgar.TICKERS_URL, headers))
+        if tickers:
+            self._tickers.replace(tickers, to_utc_iso(self._clock.utcnow()))
+
+    async def _json(self, url: str, headers: dict) -> object:
+        try:
+            resp = await self._client.get("sec_edgar", url, headers=headers)
+        except (CircuitOpen, RequestFailed) as exc:
+            raise ToolError(f"SEC unavailable ({exc}); try another tool") from exc
+        if resp.status_code != 200:
+            raise ToolError(f"SEC answered HTTP {resp.status_code}")
+        try:
+            return resp.json()
+        except ValueError as exc:
+            raise ToolError(f"SEC sent something unreadable ({exc})") from exc

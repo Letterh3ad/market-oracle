@@ -12,6 +12,7 @@ from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.gdelt import FakeGdelt
 from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import ScriptedModel, step
+from tests.fakes.sec import FakeSec
 from tests.fakes.web import FakeWeb
 from tests.fakes.web_search import FakePages, FakeSearcher
 from tests.fakes.yahoo import FakeYahoo, bar
@@ -40,10 +41,15 @@ def pages():
 
 
 @pytest.fixture
-async def ctx(tmp_path, news, gdelt, pages):
+def sec():
+    return FakeSec()
+
+
+@pytest.fixture
+async def ctx(tmp_path, news, gdelt, pages, sec):
     yahoo = FakeYahoo()
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-18", 100.0), bar("2026-09-21", 105.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt, pages)
+    web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo, news, gdelt, pages, sec)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -317,3 +323,72 @@ async def test_a_full_page_of_web_results_fits_one_observation_uncut(ctx, search
                          searcher=searcher)
     lines = run.steps[0].observation.splitlines()
     assert len(lines) == 5 and not lines[-1].endswith("[cut]") and lines[-1].endswith("S" * 99 + "…")
+
+
+def with_contact(ctx, contact="Faye faye@example.com"):
+    from dataclasses import replace
+
+    ctx.config = replace(ctx.config, research=replace(ctx.config.research, contact=contact))
+
+
+APPLE_CIK = 320193
+ARCHIVE = "https://www.sec.gov/Archives/edgar/data/320193"
+
+
+def apple_filings(sec):
+    sec.companies["AAPL"] = (APPLE_CIK, "Apple Inc.")
+    sec.filings[APPLE_CIK] = [
+        ("8-K", "2026-09-10", "0000320193-26-000090", "aapl-8k.htm", "Current report"),
+        ("4", "2026-09-05", "0000320193-26-000089", "form4.xml", ""),
+        ("10-Q", "2026-08-01", "0000320193-26-000077", "aapl-20260627.htm", "Quarterly report"),
+    ]
+
+
+async def test_filings_lists_a_us_companys_key_sec_filings_as_dated_evidence(ctx, sec):
+    with_contact(ctx)
+    apple_filings(sec)
+    run = await research(ctx, "AAPL", ScriptedModel(step("filings"), step("final", "Filed a 10-Q [a2].")))
+    assert run.steps[0].observation == (
+        "[a1] 2026-09-10 SEC: 8-K Current report\n[a2] 2026-08-01 SEC: 10-Q Quarterly report")
+    assert run.evidence[1].url == f"{ARCHIVE}/000032019326000077/aapl-20260627.htm" and run.evidence[1].cited
+    assert all("faye@example.com" in r.headers["user-agent"] for r in sec.requests)
+
+
+async def test_the_ticker_map_is_fetched_once_and_reused(ctx, sec):
+    with_contact(ctx)
+    apple_filings(sec)
+    for _ in range(2):
+        await research(ctx, "AAPL", ScriptedModel(step("filings"), step("final", "Done.")))
+    assert [r.url.path for r in sec.requests].count("/files/company_tickers.json") == 1
+
+
+@pytest.mark.parametrize("contact, input_, says", [
+    ("Faye faye@example.com", "7203.T", "not a US listing"),
+    ("Faye faye@example.com", "ZZZZ", "No SEC filer with ticker ZZZZ"),
+    (None, "AAPL", "[research] contact"),
+])
+async def test_filings_answers_plainly_when_there_are_none_to_get(ctx, sec, contact, input_, says):
+    with_contact(ctx, contact)
+    apple_filings(sec)
+    run = await research(ctx, "AAPL", ScriptedModel(step("filings", input_), step("final", "Done.")))
+    assert says in run.steps[0].observation
+    if input_ != "ZZZZ":
+        assert sec.requests == []
+
+
+async def test_a_filing_is_read_from_sec_with_the_contact_and_its_own_budget(ctx, sec):
+    with_contact(ctx)
+    url = f"{ARCHIVE}/000032019326000077/aapl-20260627.htm"
+    sec.documents[url] = "<title>10-Q</title><p>Net sales rose 8%.</p>"
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
+    assert run.steps[0].observation.endswith("Net sales rose 8%.")
+    assert "faye@example.com" in sec.requests[0].headers["user-agent"]
+
+
+async def test_an_as_of_replay_sees_only_filings_made_by_then(ctx, sec):
+    from datetime import date
+
+    with_contact(ctx)
+    apple_filings(sec)
+    run = await research(ctx, "AAPL", ScriptedModel(step("filings"), step("final", "Done.")), as_of=date(2026, 9, 1))
+    assert run.steps[0].observation == "[a1] 2026-08-01 SEC: 10-Q Quarterly report"

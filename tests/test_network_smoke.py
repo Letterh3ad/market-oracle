@@ -150,3 +150,20 @@ async def test_real_page_reads_as_text_without_scripts():
         resp = await http.get("https://example.com/")
     title, text = page_text(resp.text)
     assert title == "Example Domain" and "documentation" in text and "{" not in text
+
+
+async def test_real_sec_edgar_lists_apples_filings():
+    import httpx
+
+    from oracle.research import edgar
+
+    contact = os.environ.get("ORACLE_SEC_CONTACT")
+    if not contact:
+        pytest.skip('set ORACLE_SEC_CONTACT="Name email" to check EDGAR live')
+    headers = {"User-Agent": edgar.user_agent(contact)}
+    async with httpx.AsyncClient(timeout=30, headers=headers) as http:
+        tickers = edgar.parse_tickers((await http.get(edgar.TICKERS_URL)).json())
+        cik, _ = tickers["AAPL"]
+        filings = edgar.parse_filings((await http.get(edgar.submissions_url(cik))).json(), cik)
+    assert cik == 320193 and any(f.form == "10-Q" for f in filings)
+    assert all(f.url.startswith(edgar.ARCHIVES) for f in filings)

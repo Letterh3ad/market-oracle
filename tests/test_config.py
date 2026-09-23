@@ -157,3 +157,14 @@ def test_research_runs_on_local_ollama_by_default_and_each_llm_setting_can_chang
         path.write_text(f"[llm]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="llm"):
             load_config(path, cwd=tmp_path)
+
+
+def test_a_contact_for_sec_is_unset_by_default_and_must_hold_an_email(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].research.contact is None
+    path = tmp_path / "oracle.toml"
+    path.write_text('[research]\ncontact = "Faye faye@example.com"\n', encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].research.contact == "Faye faye@example.com"
+    for line in ('contact = "Faye"', "contact = 5", 'contact = ""', 'email = "a@b.c"'):
+        path.write_text(f"[research]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="research"):
+            load_config(path, cwd=tmp_path)

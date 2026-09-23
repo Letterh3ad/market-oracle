@@ -115,6 +115,12 @@ class LlmConfig:
     """Tokens of context asked of the model; Ollama's own default is too small for a run."""
 
 
+@dataclass(frozen=True)
+class ResearchConfig:
+    contact: str | None = None
+    """Name and email for SEC's User-Agent rule; sent to sec.gov only. Unset, EDGAR is skipped."""
+
+
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
@@ -150,6 +156,7 @@ class Config:
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
+    research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
 
@@ -233,6 +240,9 @@ def _apply(raw: dict) -> Config:
             continue
         if name == "llm":
             values[name] = _llm(value)
+            continue
+        if name == "research":
+            values[name] = _research(value)
             continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
@@ -332,6 +342,16 @@ def _llm(raw: object) -> LlmConfig:
             raise ConfigError(f"llm.{key} must be {wanted}, got {value!r}")
         out[key] = value
     return LlmConfig(**out)
+
+
+def _research(raw: object) -> ResearchConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("research must be a [research] table")
+    _reject_unknown(raw, ResearchConfig, "[research]")
+    contact = raw.get("contact")
+    if contact is not None and not (isinstance(contact, str) and re.search(r"\S+@\S+\.\S+", contact)):
+        raise ConfigError(f'research.contact must be a name and email like "Jo Bloggs jo@example.com", got {contact!r}')
+    return ResearchConfig(contact=contact.strip() if contact else None)
 
 
 def _keys(raw: object) -> Keys:

@@ -57,6 +57,11 @@ max_steps = 8        # tool calls a run may make before it must answer
 timeout_s = 180      # per reply; a cold model load is slow
 context = 8192       # tokens of context asked of the model
 
+# Research sources. SEC EDGAR requires a name and email in every request's User-Agent;
+# it is sent to sec.gov only. Unset, the filings tool is skipped.
+[research]
+# contact = "Your Name you@example.com"
+
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.
 [keys]

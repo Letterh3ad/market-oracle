@@ -14,7 +14,7 @@ from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable
 from oracle.services.jobs_service import single_flight
-from oracle.services.research_tools import GdeltSearch, MarketData, NewsSearch, ReadPage, Shelf, WebSearch
+from oracle.services.research_tools import Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, Shelf, WebSearch
 from oracle.services.http import open_client
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
@@ -49,11 +49,13 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
 
         async with open_client(ctx) as client:
             shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
-            tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf)]
+            contact = ctx.config.research.contact
+            tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
+                     Filings(client, ctx.conn, ctx.clock, shelf, listing, contact)]
             if as_of is None:
                 # Web pages carry no reliable date, so a replay cannot use them.
                 gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-                tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf)]
+                tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
             try:
                 outcome = await react(model, tools, _task(ctx, listing, as_of or today), ctx.config.llm.max_steps,
                                       lambda s: repo.add_step(run_id, s))
