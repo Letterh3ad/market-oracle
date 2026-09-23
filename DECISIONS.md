@@ -1246,3 +1246,23 @@ is shown from its own first record and buy-and-hold is empty. Pure helpers live 
 paper history` without `--account` prints the comparison.
 **Alternatives:** buying at the last close before the start (a weekend start would then use a stale price); counting
 buy-and-hold costs (hides the benchmark behind fee assumptions); the watchlist as it was at the start (not stored).
+
+## 2026-09-24 - Postpone and Skip are scheduler state; Skip is a tick record at the due time
+**Context:** ai-account ticket 05 warns before a scheduled tick and lets the user postpone or skip it.
+**Decision:** Skip stores a skipped tick ("skipped: skipped by the user") dated at the due time, so `ticked_since`
+covers it, the next poll never fires it, and a restart still honours it. Postpone (one hour, once per due time) is held
+in the running `Scheduler` only; a restart forgets it and the tick then fires as a catch-up. The GUI always builds the
+`Scheduler` (polling only with `schedule=True`) so its postpone and skip routes answer. Changing `warn_minutes` or the
+idle settings never moves the scheduler's floor; only `enabled`, `time` and automation do. Stop is Activity's cancel.
+**Alternatives:** persisting postponements in the DB (a new table for a one-hour state); a skip dated now (would not
+cover a due time still ahead).
+
+## 2026-09-24 - Research waits for an idle PC only when asked, on every tick
+**Context:** research can hold the GPU for up to the research budget; the user may be using the PC.
+**Decision:** `[schedule] research_when_idle` (off) with `idle_minutes` (15): the research stage defers every due
+listing ("PC in use") when the last keyboard or mouse input is more recent; the light stages still run. The idle time
+comes from `oracle/system/idle.py` (Windows `GetLastInputInfo`); a PC that cannot tell counts as idle, so research is
+never held off forever. It applies to manual ticks too (the option is about the PC being in use, whoever started it).
+Browser notifications ask permission only from a "Notify me" click and fire once per warning; the in-page banner
+always shows. `warn_minutes` defaults to 10 (0 to 120, 0 off).
+**Alternatives:** gating only scheduled ticks; a Windows toast (deferred to packaging); a new notification dependency.

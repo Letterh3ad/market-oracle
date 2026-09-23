@@ -141,10 +141,11 @@ async def _run_stage(ctx: AppContext, name: str, stage: StageRun, say: Say) -> S
     return Stage(name, "partial" if error else "ok", summary, error)
 
 
-def record_skipped(ctx: AppContext, trigger: str, note: str) -> TickRun:
-    """A tick that never started, stored so the user can see why."""
-    now = ctx.clock.utcnow()
-    return _save(ctx, TickRun(trigger, now, now, (), note))
+def record_skipped(ctx: AppContext, trigger: str, note: str, at: datetime | None = None) -> TickRun:
+    """A tick that never started, stored so the user can see why; dated `at` (a due time
+    skipped ahead of time), or now."""
+    at = at or ctx.clock.utcnow()
+    return _save(ctx, TickRun(trigger, at, at, (), note))
 
 
 def ticked_since(ctx: AppContext, at: datetime) -> bool:

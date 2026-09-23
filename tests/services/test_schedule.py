@@ -217,3 +217,86 @@ async def test_automation_turned_off_in_another_process_reaches_a_running_schedu
     os.utime(path, ns=(1, 1))
     ctx.clock.advance(90 * 60)
     assert await s.check() is None and ctx.config.automation.enabled is False
+
+
+def test_the_warning_shows_only_inside_its_window_before_the_due_time(ctx):
+    s = scheduler(ctx)
+    ctx.clock.advance(79 * 60)  # 22:19 BST, 11 minutes before
+    assert s.warning() is None
+    ctx.clock.advance(60)
+    warned = s.warning()
+    assert (warned.due, warned.at, warned.postponed) == (utc(2026, 9, 21, 21, 30), utc(2026, 9, 21, 21, 30), False)
+
+
+def test_no_warning_when_it_is_off_or_scheduling_is_off(ctx):
+    from dataclasses import replace
+
+    s = scheduler(ctx)
+    ctx.clock.advance(85 * 60)
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, warn_minutes=0))
+    assert s.warning() is None
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, warn_minutes=10, enabled=False))
+    assert s.warning() is None and s.upcoming() is None
+
+
+async def test_postpone_moves_the_due_time_an_hour_once(ctx):
+    s = scheduler(ctx)
+    ctx.clock.advance(85 * 60)
+    moved = s.postpone()
+    assert (moved.at, moved.postponed) == (utc(2026, 9, 21, 22, 30), True)
+    with pytest.raises(InvalidQuery, match="once"):
+        s.postpone()
+    assert s.warning() is None  # the banner returns 10 minutes before the new time
+    ctx.clock.advance(6 * 60)  # 22:31 BST: the old time passes quietly
+    assert await s.check() is None and last_tick(ctx) is None
+    ctx.clock.advance(49 * 60)
+    assert s.warning().at == utc(2026, 9, 21, 22, 30)
+    with pytest.raises(InvalidQuery, match="once"):
+        s.postpone()
+    ctx.clock.advance(10 * 60)  # 23:30 BST
+    assert (await s.check()).trigger == "scheduled"
+    assert s.upcoming().due == utc(2026, 9, 22, 21, 30)  # tomorrow's is unaffected
+
+
+async def test_skip_records_the_due_time_skipped_and_it_never_fires(ctx):
+    s = scheduler(ctx)
+    ctx.clock.advance(85 * 60)
+    skipped = s.skip()
+    assert skipped.outcome == "skipped" and skipped.note == "skipped: skipped by the user"
+    assert skipped.finished_at == utc(2026, 9, 21, 21, 30)
+    assert s.upcoming().due == utc(2026, 9, 22, 21, 30) and s.warning() is None
+    ctx.clock.advance(10 * 60)
+    assert await s.check() is None
+    assert await scheduler(ctx).check() is None  # a restart still honours it
+    assert last_tick(ctx).id == skipped.id
+
+
+async def test_a_postponed_tick_can_still_be_skipped(ctx):
+    s = scheduler(ctx)
+    ctx.clock.advance(85 * 60)
+    s.postpone()
+    ctx.clock.advance(50 * 60)  # after the old time, before the new one
+    assert s.skip().finished_at == utc(2026, 9, 21, 21, 30)
+    ctx.clock.advance(30 * 60)
+    assert await s.check() is None
+
+
+def test_nothing_to_postpone_or_skip_while_scheduling_is_off(ctx):
+    set_schedule(ctx, False, "22:30")
+    s = scheduler(ctx)
+    for act in (s.postpone, s.skip):
+        with pytest.raises(InvalidQuery, match="no scheduled tick"):
+            act()
+
+
+def test_changing_the_warning_keeps_the_schedule_and_is_saved(ctx):
+    from oracle.services.settings_service import set_tick_warning
+
+    set_tick_warning(ctx, 5, True, 20)
+    s = ctx.config.schedule
+    assert (s.enabled, s.time, s.warn_minutes, s.research_when_idle, s.idle_minutes) == (True, "22:30", 5, True, 20)
+    set_schedule(ctx, True, "21:00")
+    assert ctx.config.schedule.warn_minutes == 5
+    assert "warn_minutes = 5" in ctx.config_source.read_text(encoding="utf-8")
+    with pytest.raises(InvalidQuery, match="warn_minutes"):
+        set_tick_warning(ctx, 500, True, 20)

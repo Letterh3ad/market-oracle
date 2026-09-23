@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
-from oracle.gui.routes import activity, companies, jobs, ledgers, settings, status, universe, watchlists
+from oracle.gui.routes import activity, companies, jobs, ledgers, schedule as tick_schedule, settings, status, universe, watchlists
 from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
@@ -32,16 +32,16 @@ class _Static(StaticFiles):
 
 
 def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | None = None) -> FastAPI:
-    """With `schedule`, the scheduler runs for as long as the server does (tests leave it
-    off). Jobs still running when the server stops are interrupted. `control` restarts the
+    """With `schedule`, the scheduler polls for as long as the server does (tests leave it
+    off, though its postpone and skip still answer). Jobs still running when the server stops are interrupted. `control` restarts the
     server; by default it starts this server's own command."""
     runner = JobRunner(ctx, ThreadExecutor(ctx))
-    scheduler = Scheduler(ctx, runner=runner) if schedule else None
+    scheduler = Scheduler(ctx, runner=runner)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         sweep_leftovers(ctx)
-        task = asyncio.create_task(scheduler.run()) if scheduler else None
+        task = asyncio.create_task(scheduler.run()) if schedule else None
         app.state.scheduler_task = task
         try:
             yield
@@ -55,6 +55,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app = FastAPI(title="Market Oracle", lifespan=lifespan)
     app.state.ctx = ctx
     app.state.runner = runner
+    app.state.scheduler = scheduler
     app.state.control = control or AppControl(server_launch(ctx))
     install_error_handlers(app)
     app.include_router(status.router)
@@ -65,6 +66,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(watchlists.router)
     app.include_router(jobs.router)
     app.include_router(settings.router)
+    app.include_router(tick_schedule.router)
     app.include_router(ledgers.router)
     # Under a prefix, not a catch-all at "/", which would shadow the API.
     app.mount("/static", _Static(directory=STATIC_DIR), name="static")

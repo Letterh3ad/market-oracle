@@ -144,3 +144,38 @@ async def test_the_research_stage_shows_deferred_and_failed_counts(ctx, monkeypa
     with single_flight(ctx, "research", 60.0):
         stage = _stage(await run_tick(ctx), "research")
     assert (stage.state, stage.summary) == ("ok", "0 of 3 due researched, 3 deferred (research is busy)")
+
+
+@pytest.fixture
+def idle_for(monkeypatch, ctx):
+    """Research waits for an idle PC (10 minutes); the test sets how long the PC has been idle."""
+    from oracle.system import idle
+
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, research_when_idle=True, idle_minutes=10))
+    seconds = [0.0]
+    monkeypatch.setattr(idle, "idle_seconds", lambda: seconds[0])
+    return seconds
+
+
+async def test_a_pc_in_use_defers_research_while_the_light_stages_run(ctx, idle_for):
+    idle_for[0] = 9 * 60
+    run = await run_tick(ctx)
+    assert _stage(run, "research").summary == "0 of 3 due researched, 3 deferred (PC in use)"
+    assert all(s.state == "ok" for s in run.stages)
+
+
+async def test_an_idle_pc_or_one_that_cannot_tell_researches(ctx, idle_for, monkeypatch):
+    from oracle.system import idle
+
+    idle_for[0] = 10 * 60
+    assert (await refresh_research(ctx, run=fake_research(ctx))).researched == ["AAPL", "IBM", "MSFT"]
+    monkeypatch.setattr(idle, "idle_seconds", lambda: None)
+    ctx.clock.advance(8 * 86400)
+    assert (await refresh_research(ctx, run=fake_research(ctx))).deferred == []
+
+
+async def test_the_idle_gate_is_off_by_default(ctx, monkeypatch):
+    from oracle.system import idle
+
+    monkeypatch.setattr(idle, "idle_seconds", lambda: 0.0)
+    assert (await refresh_research(ctx, run=fake_research(ctx))).deferred == []

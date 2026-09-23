@@ -104,6 +104,15 @@ class ScheduleConfig:
     enabled: bool = False
     time: str = "22:30"
     """Local time, weekdays only: after the US close for a UK user."""
+    warn_minutes: int = 10
+    """The GUI warns this long before a scheduled tick, offering postpone and skip; 0 off."""
+    research_when_idle: bool = False
+    """Research in a tick only once the PC has been idle `idle_minutes`; otherwise it waits."""
+    idle_minutes: int = 15
+
+
+WARN_RANGE = (0, 120)
+IDLE_RANGE = (1, 240)
 
 
 @dataclass(frozen=True)
@@ -380,17 +389,13 @@ def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
     """`[ai_account]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
     _reject_unknown(raw, AiAccountConfig, "[ai_account]")
     ai = replace(AiAccountConfig(), **raw)
-
-    def whole(value: object, low: int, high: int) -> bool:
-        return not isinstance(value, bool) and isinstance(value, int) and low <= value <= high
-
     checks = {
         "enabled": (isinstance(ai.enabled, bool), "true or false"),
-        "max_verdict_age_days": (whole(ai.max_verdict_age_days, *VERDICT_AGE_RANGE),
+        "max_verdict_age_days": (_whole(ai.max_verdict_age_days, *VERDICT_AGE_RANGE),
                                  "a whole number from {} to {}".format(*VERDICT_AGE_RANGE)),
         "move_threshold": (isinstance(ai.move_threshold, (int, float)) and not isinstance(ai.move_threshold, bool)
                            and 0 < ai.move_threshold < 1, "a share above 0 and below 1"),
-        "research_budget_min": (whole(ai.research_budget_min, *RESEARCH_BUDGET_RANGE),
+        "research_budget_min": (_whole(ai.research_budget_min, *RESEARCH_BUDGET_RANGE),
                                 "a whole number of minutes from {} to {}".format(*RESEARCH_BUDGET_RANGE)),
     }
     for key, (ok, wanted) in checks.items():
@@ -402,11 +407,30 @@ def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
 def _schedule(raw: object) -> ScheduleConfig:
     if not isinstance(raw, dict):
         raise ConfigError("schedule must be a [schedule] table")
+    return check_schedule(raw)
+
+
+def _whole(value: object, low: int, high: int) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and low <= value <= high
+
+
+def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
+    """`[schedule]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
     _reject_unknown(raw, ScheduleConfig, "[schedule]")
-    enabled, at = raw.get("enabled", ScheduleConfig.enabled), raw.get("time", ScheduleConfig.time)
-    if not isinstance(enabled, bool):
-        raise ConfigError(f"schedule.enabled must be true or false, got {enabled!r}")
-    return ScheduleConfig(enabled=enabled, time=check_schedule_time(at))
+    s = replace(ScheduleConfig(), **raw)
+    checks = {
+        "enabled": (isinstance(s.enabled, bool), "true or false"),
+        "research_when_idle": (isinstance(s.research_when_idle, bool), "true or false"),
+        "warn_minutes": (_whole(s.warn_minutes, *WARN_RANGE), "a whole number of minutes from {} to {}".format(
+            *WARN_RANGE)),
+        "idle_minutes": (_whole(s.idle_minutes, *IDLE_RANGE), "a whole number of minutes from {} to {}".format(
+            *IDLE_RANGE)),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"schedule.{key} must be {wanted}, got {getattr(s, key)!r}")
+    check_schedule_time(s.time)
+    return s
 
 
 def check_schedule_time(value: object) -> str:

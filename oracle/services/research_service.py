@@ -39,6 +39,7 @@ from oracle.store.job_history import INTERRUPTED
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
+from oracle.system import idle
 
 __all__ = [
     "UNVALIDATED", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict", "latest_research",
@@ -144,6 +145,8 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
     known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
     due = due_for_research(known, started.date(), ai.max_verdict_age_days, ai.move_threshold)
     done = Refresh(len(due))
+    if due and _pc_in_use(ctx):
+        return _defer(done, due, "PC in use")
     for i, d in enumerate(due):
         if ctx.clock.utcnow() - started >= timedelta(minutes=ai.research_budget_min):
             return _defer(done, due[i:], "time budget spent")
@@ -160,6 +163,16 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
         else:
             done.researched.append(d.symbol)
     return done
+
+
+def _pc_in_use(ctx: AppContext) -> bool:
+    """With `research_when_idle`, whether someone used the PC too recently for research to
+    take its GPU. A PC that cannot tell counts as idle, so research is never held off forever."""
+    s = ctx.config.schedule
+    if not s.research_when_idle:
+        return False
+    seconds = idle.idle_seconds()
+    return seconds is not None and seconds < s.idle_minutes * 60
 
 
 def _defer(done: Refresh, left: list, why: str) -> Refresh:

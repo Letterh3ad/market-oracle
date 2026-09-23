@@ -29,6 +29,9 @@ main { flex: 1; padding: 16px; overflow: auto; }
 #error-banner { display: flex; gap: 12px; align-items: center; padding: 8px 16px;
   background: #3a1417; border-bottom: 1px solid var(--down); }
 #error-banner[hidden] { display: none; }
+#tick-banner { padding: 6px 16px 0; background: #2e2610; border-bottom: 1px solid var(--warn); }
+#tick-banner[hidden] { display: none; }
+#tick-banner .row { margin-bottom: 6px; }
 #error-close { margin-left: auto; background: none; border: 0; color: var(--text); cursor: pointer; font-size: 16px; }
 details { margin-top: 24px; }
 table { border-collapse: collapse; }
@@ -115,6 +118,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
 </header>
 <div id="error-banner" hidden role="alert"><span id="error-msg"></span>
   <button id="error-close" type="button" aria-label="Dismiss">&times;</button></div>
+<div id="tick-banner" hidden role="status"></div>
 <div class="layout">
   <nav><div id="tab-list"></div></nav>
   <main>
@@ -122,6 +126,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
     <details open>
       <summary id="tick-summary" class="dim">Ticks</summary>
       <div id="tick-controls" class="row"></div>
+      <div id="tick-options" class="row small"></div>
       <div id="tick-last"></div>
     </details>
     <details>

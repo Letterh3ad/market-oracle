@@ -211,6 +211,19 @@ async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gate
     await runner.wait(manual.id)
 
 
+async def test_stopping_a_scheduled_tick_records_it_interrupted_and_it_is_not_run_again(runner, ctx, gated_stages):
+    scheduler = london_scheduler(ctx, runner)
+    ctx.clock.advance(31 * 60)
+    poll = asyncio.create_task(scheduler.check())
+    await settle()
+    job = runner.active("tick")[0]
+    assert job.progress() == "analyse"
+    runner.cancel(job.id)
+    stopped = await poll
+    assert job.state == "cancelled" and stopped.outcome == "interrupted"
+    assert await scheduler.check() is None
+
+
 async def test_finished_jobs_survive_a_restart(ctx, runner):
     gate = Gate("a", [])
     job = runner.submit("research", "Research A", gate, link="#company/A")

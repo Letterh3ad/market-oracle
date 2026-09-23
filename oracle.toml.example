@@ -54,6 +54,9 @@ port = 8740
 [schedule]
 enabled = false
 time = "22:30"   # 24-hour, local time
+warn_minutes = 10            # the GUI warns this long before, with Postpone and Skip (0 off, up to 120)
+research_when_idle = false   # true: a tick researches only once the PC has sat idle idle_minutes
+idle_minutes = 15            # 1 to 240; otherwise research waits for the next tick
 
 # The master switch for everything that starts by itself (scheduled ticks now, later AI
 # research refreshes and discovery). Off: nothing starts on its own; buttons still work.

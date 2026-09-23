@@ -5,12 +5,13 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from oracle.gui.deps import get_control, get_ctx
+from oracle.gui.deps import get_control, get_ctx, get_runner, get_scheduler
 from oracle.gui.routes import shapes
+from oracle.services.activity_service import JobRunner
 from oracle.services.app_service import AppControl
 from oracle.services.context import AppContext
 from oracle.services.net_service import source_statuses
-from oracle.services.schedule_service import schedule_status
+from oracle.services.schedule_service import Scheduler, schedule_status
 from oracle.services.tick_service import last_tick
 from oracle.services.universe_service import universe_brief
 
@@ -20,7 +21,8 @@ router = APIRouter(prefix="/api")
 # Every route is `async def`: sync routes run in a thread pool, and the SQLite connection
 # belongs to the event loop's thread.
 @router.get("/status")
-async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = Depends(get_control)) -> dict:
+async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = Depends(get_control),
+                     runner: JobRunner = Depends(get_runner), scheduler: Scheduler = Depends(get_scheduler)) -> dict:
     universe = universe_brief(ctx)
     on_disk = await asyncio.to_thread(control.version_on_disk)  # at most once a minute it runs git
     return {
@@ -37,6 +39,8 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
         "automation": {"enabled": ctx.config.automation.enabled},
         "tick": shapes.tick(last_tick(ctx)),
         "schedule": shapes.schedule(schedule_status(ctx)),
+        "warning": shapes.upcoming(scheduler.warning()),
+        "running_tick": shapes.running_tick(next(iter(runner.active("tick")), None)),
         "sources": [
             {
                 "source": s.source,

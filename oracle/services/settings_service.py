@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from oracle.config import (
-    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, check_ai_account, check_peers,
+    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, check_ai_account, check_peers, check_schedule,
     check_schedule_time, load_config, with_settings,
 )
 from oracle.services.context import AppContext
@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_peer_count",
-    "set_schedule",
+    "set_schedule", "set_tick_warning",
 ]
 
 
@@ -40,7 +40,18 @@ def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:
     the change up on its next poll."""
     _check(check_schedule_time, time)
     path = _save(ctx, "schedule", {"enabled": enabled, "time": time})
-    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled, time))
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, enabled=enabled, time=time))
+    return path
+
+
+def set_tick_warning(ctx: AppContext, warn_minutes: int, research_when_idle: bool, idle_minutes: int) -> Path:
+    """How long before a scheduled tick the GUI warns (0 off), and whether a tick researches
+    only once the PC has been idle `idle_minutes`."""
+    values = {"warn_minutes": warn_minutes, "research_when_idle": research_when_idle, "idle_minutes": idle_minutes}
+    s = ctx.config.schedule
+    schedule = _check(check_schedule, {"enabled": s.enabled, "time": s.time, **values})
+    path = _save(ctx, "schedule", values)
+    ctx.config = replace(ctx.config, schedule=schedule)
     return path
 
 
