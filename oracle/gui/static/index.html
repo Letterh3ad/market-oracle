@@ -36,6 +36,19 @@ th { color: var(--text-dim); font-weight: 500; }
 td.num { text-align: right; font-family: var(--mono); }
 tr.state-paused td:nth-child(2) { color: var(--down); }
 tr.state-waiting td:nth-child(2) { color: var(--warn); }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+input, select, button { font: inherit; color: var(--text); background: var(--bg-inset);
+  border: 1px solid var(--border); border-radius: 4px; padding: 3px 8px; }
+button { cursor: pointer; background: var(--bg-raised); }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: default; }
+.chip { display: inline-flex; align-items: center; gap: 4px; margin: 1px 4px 1px 0; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: 10px; font-size: 12px; background: var(--bg-raised); }
+.chip button { border: 0; padding: 0 2px; background: none; color: var(--text-dim); }
+.tag-input { width: 64px; padding: 0 4px; font-size: 12px; }
+.mono { font-family: var(--mono); }
+table.results td { vertical-align: middle; }
+tr.delisted td { color: var(--text-dim); }
 .tip-wrap { white-space: nowrap; }
 .tip { position: relative; display: inline-block; margin-left: 4px; width: 15px; height: 15px; border-radius: 50%;
   border: 1px solid var(--text-dim); color: var(--text-dim); font-size: 10px; line-height: 13px; text-align: center;

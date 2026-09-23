@@ -9,6 +9,12 @@ const GLOSSARY = {
     "paused: the source refused or failed several times in a row, so requests stop for a while.",
   requests_last_hour: "How many requests went to this source in the last hour, from every Market Oracle process.",
   universe: "Every listed company Market Oracle knows about, from FinanceDatabase. Search and screening run over it.",
+  market_cap:
+    "Company size by total share value: Mega (over $200bn), Large ($10-200bn), Mid ($2-10bn), " +
+    "Small ($300m-2bn), Micro and Nano below that. Bands come from FinanceDatabase, not live prices.",
+  listings: "The same company can trade on several exchanges. One row per company shows its main listing.",
+  tags: "Your own labels on a company, shared by all its listings. Filter by several to require every one.",
+  sort_direction: "Ascending: A to Z, smallest first. Descending: Z to A, biggest first. Relevance has one direction.",
 };
 
 // A label followed by a small "?" that explains it on hover or keyboard focus.

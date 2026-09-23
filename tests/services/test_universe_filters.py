@@ -94,10 +94,11 @@ def test_descending_keeps_blanks_last(ctx):
     assert find(ctx, sort="sector")[-3:] == ["APLE", "QQQ.L", "NONAME.F"]
 
 
-def test_market_cap_sorts_by_band_and_unknowns_stay_last(ctx):
-    assert find(ctx, sort="market_cap", descending=True) == [
+def test_market_cap_sorts_smallest_first_and_desc_is_biggest_first_with_unknowns_last(ctx):
+    assert find(ctx, sort="market_cap") == [
         "APLE", "X.TO", "T", "7203.T", "AAPL", "005930.KS", "KO", "QQQ.L", "NONAME.F", "SSNLF"
     ]
+    assert find(ctx, sort="market_cap", descending=True) == BY_SIZE
 
 
 def test_offset_pages_through_results(ctx):

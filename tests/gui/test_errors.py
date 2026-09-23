@@ -41,3 +41,9 @@ async def test_an_unexpected_error_is_a_plain_500_without_the_traceback(ctx):
         response = await client.get("/api/boom")
     assert response.status_code == 500
     assert response.json() == {"error": "something went wrong inside Market Oracle: see the terminal running `oracle gui`"}
+
+
+async def test_a_malformed_request_says_which_field_is_wrong(client):
+    response = await client.get("/api/universe/search", params={"limit": 0})
+    assert response.status_code == 400
+    assert response.json() == {"error": "limit: Input should be greater than or equal to 1"}

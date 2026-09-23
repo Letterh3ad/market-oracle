@@ -1,10 +1,11 @@
 import { el, clearError } from "./lib/dom.js";
 import * as status from "./lib/status.js";
 import { placeholder } from "./tabs/placeholder.js";
+import universeTab from "./tabs/universe.js";
 
 // Order here is the order in the rail.
 const TABS = [
-  placeholder("universe", "Universe"),
+  universeTab,
   placeholder("watchlist", "Watchlist"),
   placeholder("company", "Company"),
   placeholder("ledgers", "Ledgers"),

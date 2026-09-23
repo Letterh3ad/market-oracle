@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
-from oracle.gui.routes import status
+from oracle.gui.routes import companies, status, universe, watchlists
 from oracle.services.context import AppContext
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -18,6 +18,9 @@ def build_app(ctx: AppContext) -> FastAPI:
     app.state.ctx = ctx
     install_error_handlers(app)
     app.include_router(status.router)
+    app.include_router(universe.router)
+    app.include_router(companies.router)
+    app.include_router(watchlists.router)
     # Under a prefix, not a catch-all at "/", which would shadow the API.
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
