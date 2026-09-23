@@ -50,8 +50,7 @@ async def get_research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     """The latest run with a report, with its trace, or `run: null` before any. A newer run
     that failed is named in `failed` so its error shows without hiding the last report."""
     latest = latest_research(ctx, symbol)
-    # Latest by when it ran, not by report day: a replay's day is its as-of date.
-    reported = max(report_history(ctx, symbol), key=lambda r: (r.started_at, r.id), default=None)
+    reported = next(iter(report_history(ctx, symbol)), None)
     if reported is None or latest is None or latest.id == reported.id:
         return shapes.research_run(latest)
     return shapes.research_run(reported, latest if latest.status == RunStatus.FAILED else None)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Set
 from datetime import date, datetime
 
 from oracle.research.trace import Claim, Evidence, Report, ResearchRun, RunStatus, Step
@@ -40,10 +41,10 @@ class ResearchRepo:
                                (run_id, symbol, report.day.isoformat(), json.dumps(_report_json(report))))
 
     def with_reports(self, symbol: str) -> list[ResearchRun]:
-        """Runs that produced a report, newest first."""
+        """Runs that produced a report, newest run first (a replay's report day is its as-of)."""
         rows = self._conn.execute(
             f"SELECT {', '.join('r.' + c.strip() for c in _RUN.split(','))} FROM research_runs r "
-            "JOIN research_reports p ON p.run_id = r.id WHERE r.symbol = ? ORDER BY p.day DESC, r.id DESC", (symbol,),
+            "JOIN research_reports p ON p.run_id = r.id WHERE r.symbol = ? ORDER BY r.started_at DESC, r.id DESC", (symbol,),
         ).fetchall()
         return [self._run(row) for row in rows]
 
@@ -62,7 +63,7 @@ class ResearchRepo:
             )
 
     def finish(self, run_id: int, status: RunStatus, findings: str | None, error: str | None,
-               finished_at: str, fell_back_to: set[str] = frozenset()) -> None:
+               finished_at: str, fell_back_to: Set[str] = frozenset()) -> None:
         with transaction(self._conn):
             self._conn.execute(
                 "UPDATE research_runs SET status = ?, findings = ?, error = ?, finished_at = ?, fell_back_to = ? "

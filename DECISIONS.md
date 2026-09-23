@@ -897,3 +897,20 @@ note missing from the GUI trace.
 **Alternatives:** Comparing served and configured ids for equality (the review's
 suggestion) would flag every dated alias as a fallback. Showing both a live report and a
 replay was left for later.
+
+## 2026-09-23 - Phase 7 review round 3 fixes (last full round)
+
+**Context:** Round 3 found no critical or high issues; lows and mediums fixed in this round.
+**Decision:**
+- Claude records the fallback entry's own `model` from `usage.iterations`, not
+  `response.model`.
+- `ResearchRun.model_label` builds "backend model (X answered when it refused)" once, for
+  the CLI and the GUI.
+- Report history is ordered by when each run started, so the CLI and the Company tab agree
+  on "newest".
+- A failure note on a `ModelError` is carried onto the `ModelUnavailable` raised in its place.
+- A test proves the report, citations and finish roll back together.
+**Alternatives:** Deferred as low: the service clears `model.fell_back_to` per run, which
+relies on `single_flight` serializing runs (returning fallbacks per reply would keep that
+state inside the run); the GUI trace tells a forced final step by its observation, which
+relies on the engine leaving normal final steps without one.

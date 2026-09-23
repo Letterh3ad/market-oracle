@@ -60,7 +60,10 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
         except BaseException as exc:
             _record_failure(ctx, repo, run_id, model, exc)
             if isinstance(exc, ModelError):
-                raise ModelUnavailable(str(exc)) from exc
+                unavailable = ModelUnavailable(str(exc))
+                for note in getattr(exc, "__notes__", ()):
+                    unavailable.add_note(note)
+                raise unavailable from exc
             raise
         return repo.get(run_id)
 
@@ -123,7 +126,7 @@ async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: i
 
 
 def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
-    """Every run with a report for the listing, newest first."""
+    """Every run with a report for the listing, newest run first."""
     return ResearchRepo(ctx.conn).with_reports(resolve_symbol(ctx, symbol).symbol)
 
 

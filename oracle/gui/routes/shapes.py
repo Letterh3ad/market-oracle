@@ -37,7 +37,7 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
     return {"failed": failed and {"id": failed.id, "status": failed.status, "error": failed.error,
                                   "started_at": failed.started_at}, "run": {
         "id": run.id, "symbol": run.symbol, "status": run.status, "backend": run.backend, "model": run.model,
-        "fell_back_to": list(run.fell_back_to),
+        "fell_back_to": list(run.fell_back_to), "model_label": run.model_label,
         "started_at": run.started_at, "finished_at": run.finished_at, "as_of": run.as_of, "error": run.error,
         "findings": run.findings, "queries": list(run.queries), "badge": UNVALIDATED,
         "report": None if report is None else {

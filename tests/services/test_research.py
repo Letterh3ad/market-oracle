@@ -616,6 +616,7 @@ async def test_a_model_that_fell_back_is_named_in_the_run(ctx):
     model.falls_back_to = "claude-opus-4-8"
     run = await research(ctx, "AAPL", model)
     assert run.model == "script" and run.fell_back_to == ("claude-opus-4-8",)
+    assert run.model_label == "scripted script (claude-opus-4-8 answered when it refused)"
 
 
 async def test_a_fallback_is_recorded_on_a_failed_run_too(ctx):
@@ -635,7 +636,7 @@ async def test_a_reused_model_starts_each_run_without_the_last_ones_fallback(ctx
     assert (await research(ctx, "AAPL", model)).fell_back_to == ()
 
 
-@pytest.mark.parametrize("stage", ["profile", "save_report"])
+@pytest.mark.parametrize("stage", ["profile", "save_report", "set_cited"])
 async def test_a_failure_outside_the_loop_still_marks_the_run_failed(ctx, monkeypatch, stage):
     from oracle.store.research import ResearchRepo
     from oracle.store.universe import UniverseRepo
@@ -687,3 +688,17 @@ async def test_each_article_keeps_the_query_that_first_found_it(ctx, news):
     news.results["Apple earnings"] = [("https://reut.rs/1", "Apple beats estimates", "Reuters", utc("2026-09-20"))]
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple earnings"), step("final", "Done.")))
     assert articles(run)[0].query == "Apple earnings"
+
+
+async def test_a_model_failure_that_cannot_be_recorded_keeps_that_note(ctx, monkeypatch):
+    from oracle.research.llm import ModelError
+    from oracle.services.errors import ModelUnavailable
+    from oracle.store.research import ResearchRepo
+
+    def locked(*_args):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(ResearchRepo, "finish", locked)
+    with pytest.raises(ModelUnavailable) as caught:
+        await research(ctx, "AAPL", ScriptedModel(step("market_data"), ModelError("ollama is not reachable")))
+    assert "database is locked" in "".join(caught.value.__notes__)

@@ -57,8 +57,7 @@ class ClaudeChat:
             raise ModelError(f"Claude could not start ({exc}): {NO_CREDENTIALS}") from exc
         # The served id alone cannot tell: an alias comes back as a longer dated id.
         iterations = getattr(getattr(response, "usage", None), "iterations", None) or []
-        if any(i.type == "fallback_message" for i in iterations):
-            self.fell_back_to.add(response.model)
+        self.fell_back_to.update(i.model for i in iterations if i.type == "fallback_message")
         if response.stop_reason == "refusal":
             # Declined even after the fallback: no answer, which the loop treats as not understood.
             return None

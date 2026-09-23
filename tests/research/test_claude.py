@@ -87,9 +87,9 @@ async def test_api_failures_are_plain_model_errors(error, says):
 
 async def test_an_answer_from_a_fallback_model_is_remembered():
     served = message(text('{"action": "final"}'))
-    served.model = "claude-opus-4-8"
-    served.usage = SimpleNamespace(iterations=[SimpleNamespace(type="message"),
-                                               SimpleNamespace(type="fallback_message")])
+    served.model = "claude-opus-5"
+    served.usage = SimpleNamespace(iterations=[SimpleNamespace(type="message", model="claude-opus-5"),
+                                               SimpleNamespace(type="fallback_message", model="claude-opus-4-8")])
     chat = ClaudeChat("claude-opus-5", 60.0, FakeClient(served))
     await chat.reply([], SCHEMA)
     assert chat.fell_back_to == {"claude-opus-4-8"}

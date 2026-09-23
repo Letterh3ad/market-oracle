@@ -71,8 +71,7 @@ function view(r, failed) {
   const when = r.as_of ? `replay as of ${r.as_of}` : `researched ${r.started_at.slice(0, 16).replace("T", " ")} UTC`;
   return [
     note,
-    el("div", { class: "dim small" }, `${when} by ${r.backend} ${r.model}` +
-      (r.fell_back_to.length ? ` (${r.fell_back_to.join(", ")} answered when it refused)` : ""),
+    el("div", { class: "dim small" }, `${when} by ${r.model_label}`,
       el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")),
       r.status === "step_cap" ? el("span", { class: "badge" }, "stopped at the step limit") : null,
       r.status === "failed" ? el("span", { class: "badge warn" }, "failed") : null),

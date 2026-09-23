@@ -95,3 +95,8 @@ class ResearchRun:
     report: Report | None = None
     fell_back_to: tuple[str, ...] = ()
     """Models that answered after `model` refused."""
+
+    @property
+    def model_label(self) -> str:
+        fell_back = f" ({', '.join(self.fell_back_to)} answered when it refused)" if self.fell_back_to else ""
+        return f"{self.backend} {self.model}{fell_back}"
