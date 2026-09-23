@@ -61,7 +61,7 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: flo
     analyst's suggested share of equity per listing; sell proceeds are not counted until
     they fill. `cash` excludes what pending buys will spend, and a pending buy takes a
     position slot."""
-    out = [Decision(s, "skip", None, PENDING) for s in sorted(pending) if s in holdings or s in leans]
+    out = [Decision(s, "skip", None, PENDING) for s in sorted(pending)]
     for symbol, h in sorted(holdings.items()):
         if symbol in pending:
             continue

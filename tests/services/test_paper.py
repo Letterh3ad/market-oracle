@@ -287,3 +287,64 @@ async def test_a_listing_gone_from_the_universe_sells_but_is_not_bought(ctx, yah
     outcomes = {o.order.side: o for o in fill_pending(ctx)}
     assert outcomes["sell"].status == "filled"
     assert (outcomes["buy"].status, outcomes["buy"].note) == ("rejected", "AAPL is no longer in the universe")
+
+
+async def test_a_pending_order_with_an_out_of_date_lean_logs_one_skip(ctx, yahoo, clock):
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    strategy_step(ctx)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    place_sell(ctx, "AAPL", None, account="strategy")
+    [d] = strategy_step(ctx)
+    assert (d.action, d.reason) == ("skip", "an order is already pending")
+
+
+async def test_a_delisted_buy_is_rejected_without_waiting_for_a_bar(ctx, monkeypatch):
+    place_buy(ctx, "AAPL", 1000.0)
+    monkeypatch.setattr(UniverseRepo, "profile", lambda self, symbol: None)
+    [outcome] = fill_pending(ctx)
+    assert outcome.status == "rejected"
+
+
+async def test_decisions_before_a_failing_order_stay_logged(ctx, monkeypatch):
+    import oracle.services.paper_service as paper
+
+    for s in ("AAPL", "VOD.L"):
+        watch(ctx, s)
+        seed(ctx, s, "buy", probability=0.9 if s == "AAPL" else 0.8)
+    real = paper.place_buy
+    monkeypatch.setattr(paper, "place_buy", lambda c, s, *a, **k: real(c, s, *a, **k) if s == "AAPL" else 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        strategy_step(ctx)
+    assert [(d.symbol, d.action) for d in strategy_log(ctx)] == [("AAPL", "buy")]
+
+
+def delist(ctx, symbol):
+    with ctx.conn:
+        ctx.conn.execute("DELETE FROM listings WHERE symbol = ?", (symbol,))
+
+
+async def test_a_held_listing_gone_from_the_universe_can_still_be_sold(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    delist(ctx, "AAPL")
+    assert place_sell(ctx, "aapl", None).symbol == "AAPL"
+    with pytest.raises(UnknownSymbol):
+        place_sell(ctx, "MSFT", None)
+
+
+async def test_a_step_skips_a_watched_listing_gone_from_the_universe(ctx):
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    delist(ctx, "AAPL")
+    [d] = strategy_step(ctx)
+    assert (d.action, d.reason) == ("skip", "no longer in the universe")
+
+
+async def test_a_pending_buy_without_a_lean_is_explained_as_pending(ctx):
+    watch(ctx, "AAPL")
+    place_buy(ctx, "AAPL", 1000.0, account="strategy", source="strategy")
+    [d] = strategy_step(ctx)
+    assert d.reason == "an order is already pending"

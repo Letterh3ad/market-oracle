@@ -11,7 +11,7 @@ from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.broker.rules import Decision, Holding, Lean, Rules, decide
 from oracle.market.fx import pick_rate
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery
+from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
@@ -100,8 +100,8 @@ def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = 
                source: str = "manual") -> Order:
     """Queue a sell of `shares` (None: the whole position); long only, so never more than
     held and not already queued for sale."""
-    listing = resolve_symbol(ctx, symbol).symbol
     repo = PaperRepo(ctx.conn)
+    listing = _sellable(ctx, repo, account, symbol)
     held = _held_shares(repo, account, listing)
     if not held:
         raise InvalidQuery(f"{listing} is not held on the {account} account")
@@ -114,6 +114,17 @@ def place_sell(ctx: AppContext, symbol: str, shares: int | None, account: str = 
     now = ctx.clock.utcnow()
     return repo.add_order(account, listing, "sell", None, shares,
                           to_utc_iso(now), now.date(), source)
+
+
+def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> str:
+    """As stored in the universe; a held listing gone from it can still be sold."""
+    try:
+        return resolve_symbol(ctx, symbol).symbol
+    except UnknownSymbol:
+        held = next((s for s in _replay(repo, account)[0] if s.casefold() == symbol.strip().casefold()), None)
+        if held is None:
+            raise
+        return held
 
 
 def strategy_step(ctx: AppContext) -> list[Decision]:
@@ -131,8 +142,9 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
     rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
                   ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, rules, {o.symbol for o in orders})
-    sold = {d.symbol for d in decided if d.action == "sell"}
-    decisions = [d for d in unusable if d.symbol not in sold] + decided
+    # One decision per listing: a sell or a pending order says more than a lean problem.
+    covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == "sell"}
+    decisions = [d for d in unusable if d.symbol not in covered] + decided
     today, log = ctx.clock.utcnow().date(), DecisionRepo(ctx.conn)
     for d in decisions:
         order = None
@@ -147,11 +159,13 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
 
 def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple[dict[str, Lean], list[Decision]]:
     """A lean older than the listing's last bar is out of date: never trade on it."""
-    bars, found, skips = BarRepo(ctx.conn), {}, []
+    bars, universe, found, skips = BarRepo(ctx.conn), UniverseRepo(ctx.conn), {}, []
     for symbol in watched:
         lean = leans.latest(symbol)
         last = bars.last_date(symbol)
-        if lean is None:
+        if universe.resolve(symbol) is None:
+            skips.append(Decision(symbol, "skip", None, "no longer in the universe"))
+        elif lean is None:
             skips.append(Decision(symbol, "skip", None, "no lean yet: run `oracle analyse`"))
         elif last is not None and lean.as_of < last:
             skips.append(Decision(symbol, "skip", None, f"{lean.source} lean is out of date: run `oracle analyse`"))
@@ -215,6 +229,10 @@ def account_view(ctx: AppContext, account: str) -> AccountView:
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
+    profile = UniverseRepo(ctx.conn).profile(order.symbol)
+    if profile is None and order.side == "buy":
+        # Its exchange, and so any stamp duty, is unknown.
+        return _reject(repo, order, f"{order.symbol} is no longer in the universe")
     # A bar without an open (a data gap) cannot fill; the next one with an open does.
     history = BarRepo(ctx.conn).history(order.symbol)
     bar = next((b for b in history if b.date > order.placed_on and b.open is not None), None)
@@ -225,10 +243,7 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
         note = f"no {bar.currency} rate for {bar.date.isoformat()}: run `oracle fx update`"
         repo.set_status(order.id, "pending", note)
         return FillOutcome(order, "pending", note)
-    profile = UniverseRepo(ctx.conn).profile(order.symbol)
     if profile is None:
-        if order.side == "buy":
-            return _reject(repo, order, f"{order.symbol} is no longer in the universe")
         # A held listing gone from the universe still sells, at the dearest fee band.
         exchange, country = "", ""
     else:

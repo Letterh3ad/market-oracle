@@ -495,7 +495,21 @@ repos. A position that has never had a rate counts as nothing in equity until on
 - A buy amount must be finite as well as positive (`nan` would have crashed every fill run).
 - A zero risk size means no buy, like a missing one.
 - A listing with a pending order gets a logged skip ("an order is already pending") on
-  each step, so every step explains every watched or held listing.
+  each step. A held listing with nothing to do (no sell lean, no stop) logs nothing.
 - Strategy decisions are logged as each order is placed, not after the loop.
 **Alternatives:** Moving `print_fills` out of `cli/common.py` again (kept: it is shared by
 `paper` and `prices`, which is what common is for).
+
+## 2026-09-23 - Phase 5 review round 3
+
+**Context:** Third and last full review round of phase 5.
+**Decision:**
+- A held listing gone from the universe can still be sold, by hand or by a stop: selling
+  falls back to the account's own holdings when the universe no longer knows the symbol.
+- A watched listing gone from the universe is skipped ("no longer in the universe"), so
+  one delisting never aborts `paper step`.
+- A buy of a listing gone from the universe is rejected at once, not after its next bar.
+- One logged decision per listing per step: a pending order or a sell outranks a lean
+  that is missing or out of date.
+**Alternatives:** Further review rounds are capped: from here only critical and high
+findings are fixed.
