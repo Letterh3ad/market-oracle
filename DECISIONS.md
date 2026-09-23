@@ -1234,3 +1234,15 @@ MSFT") doubles as the tick lock's heartbeat. Settings are edited from the Ledger
 **Alternatives:** Research as runner jobs the tick waits on (the older HANDOFF note); a
 separate "max report age" setting (two ages that can disagree); retrying the next listing
 after a busy lock (a manual run holds it for minutes).
+
+## 2026-09-23 - Rules, AI, manual and buy-and-hold are compared from the day the AI account started
+**Context:** ai-account ticket 04 needs one start day and a buy-and-hold benchmark to measure the accounts against.
+**Decision:** The start is the AI account's first equity record. Each account's line is its return against its first
+record on or after that day; trades and costs count its fills since then. Buy-and-hold splits the starting cash equally
+over the listings watched today, each bought at its first close (base currency) on or after the start and held with no
+costs; a missing day or a close with no FX rate keeps the last value, a listing not yet priced waits as cash, and one
+with no close from the start on (or gone from the universe) is left out and named. With no AI history yet, each account
+is shown from its own first record and buy-and-hold is empty. Pure helpers live in `oracle/broker/compare.py`; `oracle
+paper history` without `--account` prints the comparison.
+**Alternatives:** buying at the last close before the start (a weekend start would then use a stale price); counting
+buy-and-hold costs (hides the benchmark behind fee assumptions); the watchlist as it was at the start (not stored).

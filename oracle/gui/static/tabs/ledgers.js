@@ -1,5 +1,5 @@
 import { api } from "../lib/api.js";
-import { lineChart } from "../lib/chart.js";
+import { lineChart, linesChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { tip, tipText } from "../lib/tip.js";
@@ -164,6 +164,47 @@ function column(a, base, rules, ai) {
     el("h3", null, tip("Sells", "realised")), sold);
 }
 
+const LINES = {
+  strategy: { label: "Strategy", colour: "--accent" },
+  ai: { label: "AI", colour: "--warn" },
+  manual: { label: "Manual", colour: "--text" },
+  buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
+};
+
+// Every account and buy-and-hold, each as its return since the AI account started.
+function comparison(c, base) {
+  const swatch = (name) => el("span", { class: LINES[name].dashed ? "swatch dashed" : "swatch",
+    style: `background: var(${LINES[name].colour}); color: var(${LINES[name].colour})` });
+  const rows = c.lines.map((l) => el("tr", null,
+    el("td", null, swatch(l.name), " ", LINES[l.name].label),
+    el("td", { class: `num ${tone(l.return)}` }, l.return == null ? "no history yet" : pct(l.return)),
+    el("td", { class: `num ${l.max_fall < 0 ? "down" : ""}` }, pct(l.max_fall)),
+    el("td", { class: "num" }, String(l.trades)),
+    el("td", { class: "num" }, money(l.costs))));
+  return el("div", { class: "card" },
+    el("h2", null, "Since the AI account started"),
+    ...c.notes.map((n) => el("p", { class: "dim small" }, n)),
+    el("div", { class: "row compare" },
+      el("div", { class: "compare-chart" }),
+      el("div", null,
+        table([["Line"], ["Return", "return", 1], ["Largest fall", "max_fall", 1], ["Trades", null, 1],
+          [`Costs (${base})`, "costs", 1]], rows, ""),
+        el("ul", { class: "dim small" }, ...c.lines.map((l) => el("li", null, l.caption))))));
+}
+
+function drawComparison(c) {
+  const box = root.querySelector(".compare-chart");
+  const drawn = c.lines.filter((l) => l.points.length);
+  if (!drawn.some((l) => l.points.length > 1)) {
+    box.replaceChildren(el("p", { class: "dim small" },
+      "The comparison chart starts once the AI account has equity on two different days (Update prices records it)."));
+    return;
+  }
+  const chart = linesChart(box, drawn.map((l) => ({ ...LINES[l.name], title: LINES[l.name].label, percent: true,
+    points: l.points.map(([day, r]) => ({ time: day, value: r * 100 })) })), 220);
+  if (chart) charts.push(chart);
+}
+
 function drawCharts(accounts) {
   for (const c of charts) c.remove();
   charts = [];
@@ -239,12 +280,14 @@ async function render(target) {
   const base = body.base_currency;
   mine.replaceChildren(
     jobs(base),
+    comparison(body.compare, base),
     el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions"), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures."));
   drawCharts(body.accounts);
+  drawComparison(body.compare);
 }
 
 export default { id: "ledgers", label: "Ledgers", render };

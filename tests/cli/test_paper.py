@@ -102,3 +102,17 @@ def test_the_ai_step_logs_its_skips_per_account(run):
     assert "VOD.L" in out and "no verdict yet" in out
     _, out, _ = run("paper", "log")
     assert out == ""
+
+
+def test_history_compares_every_line_since_the_ai_started(run):
+    # The AI account's first record is the fixture's 2026-09-18 price run; buy and hold buys at that day's close.
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 18), 70.0, 70.0, 70.0, 70.0, 70.0, 1000))
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 21), 77.0, 77.0, 77.0, 77.0, 77.0, 1000))
+    run.clock.advance(3 * 86400)
+    run("prices", "update")
+    code, out, _ = run("paper", "history")
+    assert code == 0 and "since 2026-09-18, the day the AI account started" in out
+    assert "validated yet" in out and "Buy and hold: equal amounts of the 1 listing watched" in out
+    [hold] = [line for line in out.splitlines() if line.startswith("buy_and_hold")]
+    assert hold.split()[1:5] == ["+10.00%", "0.0%", "0", "0.00"]
+    assert "2026-09-21" in out and "+10.00%" in out

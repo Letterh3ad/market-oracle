@@ -11,7 +11,7 @@ from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.fx_service import update_fx
 from oracle.services.paper_service import (
     account_score, account_view, decision_log, equity_history, fill_pending, place_buy, place_sell,
-    ai_step, strategy_step,
+    ai_step, comparison, strategy_step,
 )
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
@@ -507,3 +507,50 @@ async def test_a_strategy_step_never_touches_the_ai_account(ctx):
     strategy_step(ctx)
     assert account_view(ctx, "ai").pending == () and decision_log(ctx, "ai") == []
     assert account_view(ctx, "strategy").pending[0].symbol == "AAPL"
+
+
+async def test_with_no_ai_history_the_accounts_are_compared_from_their_own_starts(ctx):
+    from oracle.store.paper import EquityRepo
+
+    EquityRepo(ctx.conn).record("strategy", date(2026, 9, 18), 10_000.0, 0.0)
+    EquityRepo(ctx.conn).record("strategy", date(2026, 9, 21), 10_500.0, 0.0)
+    c = comparison(ctx)
+    assert c.start is None and any("the ai account has no history yet" in n.lower() for n in c.notes)
+    lines = {line.name: line for line in c.lines}
+    assert list(lines) == ["strategy", "ai", "manual", "buy_and_hold"]
+    assert lines["strategy"].points == ((date(2026, 9, 18), 0.0), (date(2026, 9, 21), pytest.approx(0.05)))
+    assert lines["ai"].points == () and lines["ai"].return_ is None and lines["buy_and_hold"].points == ()
+
+
+async def test_lines_since_the_ai_started_with_buy_and_hold_of_the_watchlist_by_hand(ctx, yahoo, clock):
+    from oracle.store.paper import EquityRepo
+
+    watch(ctx, "AAPL")
+    watch(ctx, "VOD.L")
+    EquityRepo(ctx.conn).record("strategy", date(2026, 9, 18), 5_000.0, 0.0)  # before the AI started: dropped
+    place_buy(ctx, "AAPL", 1000.0)
+    fill_pending(ctx)  # 09-21: the AI account's first record
+    await next_day(ctx, yahoo, clock, aapl_open=110.0)
+    fill_pending(ctx)
+    c = comparison(ctx)
+    assert c.start == date(2026, 9, 21) and c.left_out == ()
+    lines = {line.name: line for line in c.lines}
+    assert lines["strategy"].points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), 0.0))
+    manual = lines["manual"]
+    assert (manual.trades, manual.costs) == (1, pytest.approx(account_score(ctx, "manual").costs))
+    assert manual.return_ == pytest.approx(account_score(ctx, "manual").equity / 10_000 - 1)
+    # Half in AAPL, up 10%; half in VOD.L, which has no bar on 09-22 and keeps its 09-21 value.
+    hold = lines["buy_and_hold"]
+    assert hold.points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), pytest.approx(0.05)))
+    assert (hold.trades, hold.costs, hold.max_fall) == (0, 0.0, 0.0)
+    assert "2026-09-21" in hold.caption and any("validated" in n for n in c.notes)
+
+
+async def test_a_watched_listing_without_prices_is_left_out_of_buy_and_hold_and_named(ctx, yahoo, clock):
+    watch(ctx, "AAPL")
+    watch(ctx, "VOD.L")
+    delist(ctx, "VOD.L")
+    fill_pending(ctx)
+    c = comparison(ctx)
+    assert c.left_out == ("VOD.L",) and any("VOD.L" in n for n in c.notes)
+    assert {line.name: line for line in c.lines}["buy_and_hold"].points == ((date(2026, 9, 21), 0.0),)

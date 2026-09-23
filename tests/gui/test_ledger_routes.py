@@ -93,3 +93,28 @@ async def test_the_ai_research_settings_are_saved_and_refused_out_of_range(ctx, 
     refused = await loaded.put("/api/ledgers/ai/research", json={**body, "research_budget_min": 0})
     assert refused.status_code == 400 and "research_budget_min" in refused.json()["error"]
     assert ctx.config.ai_account.research_budget_min == 20
+
+
+async def test_the_comparison_waits_for_the_ai_account_history(loaded):
+    compare = (await loaded.get("/api/ledgers")).json()["compare"]
+    assert compare["start"] is None and "no history yet" in compare["notes"][0]
+    assert [(line["name"], line["points"], line["return"]) for line in compare["lines"]] == [
+        ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("buy_and_hold", [], None)]
+
+
+async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, yahoo, clock):
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
+    # The start day's close only exists once that session has closed.
+    assert (await priced.get("/api/ledgers")).json()["compare"]["left_out"] == ["AAPL"]
+    yahoo.series["AAPL"].bars.append(bar("2026-09-23", 150.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
+    compare = (await priced.get("/api/ledgers")).json()["compare"]
+    assert compare["start"] == "2026-09-23" and compare["left_out"] == []
+    lines = {line["name"]: line for line in compare["lines"]}
+    assert lines["ai"]["points"] == [["2026-09-23", 0.0], ["2026-09-24", 0.0]] and lines["ai"]["return"] == 0.0
+    assert lines["buy_and_hold"]["points"] == [["2026-09-23", 0.0]]
+    assert lines["buy_and_hold"]["caption"].startswith("Buy and hold: equal amounts of the 1 listing")
+    assert all({"max_fall", "trades", "costs"} <= set(line) for line in compare["lines"])

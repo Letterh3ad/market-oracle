@@ -5,8 +5,8 @@ import argparse
 from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, TRADERS, Order, Side, account_score, account_view, ai_step, decision_log, equity_history,
-    fill_pending, place_buy, place_sell, strategy_step,
+    ACCOUNTS, AI_OFF, TRADERS, Order, Side, account_score, account_view, ai_step, comparison, decision_log,
+    equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
 
 
@@ -33,8 +33,9 @@ def register(parser: argparse.ArgumentParser) -> None:
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")
     log.set_defaults(handler=log_cmd)
-    history = sub.add_parser("history", help="daily equity of an account")
-    history.add_argument("--account", choices=ACCOUNTS, default="strategy")
+    history = sub.add_parser("history", help="every account against buy-and-hold since the AI account started, "
+                                                "or one account's daily equity")
+    history.add_argument("--account", choices=ACCOUNTS)
     history.set_defaults(handler=history_cmd)
 
 
@@ -78,12 +79,37 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    if args.account is None:
+        return _compare(ctx)
     rows = equity_history(ctx, args.account)
     if not rows:
         print(f"no equity recorded for {args.account} yet: it is recorded each time orders are filled")
         return 0
     for day, equity in rows:
         print(f"{day.isoformat()}  {equity:>12,.2f} {ctx.config.base_currency}")
+    return 0
+
+
+def _compare(ctx: AppContext) -> int:
+    c = comparison(ctx)
+    for note in c.notes:
+        print(note)
+    for line in c.lines:
+        print(f"  {line.caption}")
+    costs = f"costs ({ctx.config.base_currency})"
+    print()
+    print(f"{'line':<14}{'return':>9}{'largest fall':>14}{'trades':>8}{costs:>13}")
+    for line in c.lines:
+        gain = f"{line.return_:+.2%}" if line.return_ is not None else "none yet"
+        print(f"{line.name:<14}{gain:>9}{line.max_fall:>14.1%}{line.trades:>8}{line.costs:>13,.2f}")
+    days = sorted({d for line in c.lines for d, _ in line.points})
+    if not days:
+        return 0
+    print()
+    print(f"{'day':<12}" + "".join(f"{line.name:>14}" for line in c.lines))
+    by_line = [dict(line.points) for line in c.lines]
+    for day in days:
+        print(f"{day.isoformat():<12}" + "".join(f"{f'{p[day]:+.2%}' if day in p else '':>14}" for p in by_line))
     return 0
 
 

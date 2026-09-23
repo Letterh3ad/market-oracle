@@ -7,11 +7,12 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from oracle.analysts.risk import max_drawdown
+from oracle.broker.compare import buy_and_hold, max_fall, returns_since
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
 from oracle.market.fx import RateSeries, pick_rate
+from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.prices_service import price_history_in_base
@@ -28,8 +29,9 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
-    "Status", "TRADERS", "account_score", "account_view", "ai_step", "decision_log", "equity_history", "fill_pending",
+    "ACCOUNTS", "AI_OFF", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line", "Order",
+    "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
+    "decision_log", "equity_history", "fill_pending",
     "pending_orders", "place_buy", "place_sell", "sells", "strategy_step",
 ]
 
@@ -94,6 +96,34 @@ class Sell:
     @property
     def realised(self) -> float:
         return self.proceeds - self.cost
+
+
+@dataclass(frozen=True)
+class Line:
+    """One line of the comparison, from the comparison's start (or its own first record)."""
+    name: str
+    caption: str
+    points: tuple[tuple[date, float], ...]
+    """(day, return since the start as a ratio), 0.0 on the first day; empty with no history."""
+    max_fall: float
+    trades: int
+    costs: float
+    """Paid since the start, base currency."""
+
+    @property
+    def return_(self) -> float | None:
+        return self.points[-1][1] if self.points else None
+
+
+@dataclass(frozen=True)
+class Comparison:
+    start: date | None
+    """The AI account's first equity record; None before it has one."""
+    lines: tuple[Line, ...]
+    """The accounts in ACCOUNTS order, then buy_and_hold."""
+    left_out: tuple[str, ...]
+    """Watched listings buy-and-hold could not hold: no prices from the start on."""
+    notes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -263,16 +293,67 @@ def account_score(ctx: AppContext, account: str) -> AccountScore:
     view = account_view(ctx, account)
     fills = PaperRepo(ctx.conn).fills(account)
     unrealised = sum(p.value - p.cost for p in view.positions if p.value is not None)
-    costs = sum((f.fee + f.stamp) / f.rate + f.fx + f.slippage for f in fills)
-    history = EquityRepo(ctx.conn).history(account)
-    max_fall = max_drawdown(history)[0] if history else 0.0
+    costs = sum(_cost(f) for f in fills)
     return AccountScore(account, view.equity, ctx.config.risk.account, view.realised, unrealised, costs,
-                        max_fall)
+                        max_fall(EquityRepo(ctx.conn).history(account)))
+
+
+def _cost(f: FillRow) -> float:
+    """Fees, stamp duty, FX spread and slippage of one fill, base currency."""
+    return (f.fee + f.stamp) / f.rate + f.fx + f.slippage
 
 
 def equity_history(ctx: AppContext, account: str) -> list[tuple]:
     """(date, equity) per day a fill run happened, oldest first."""
     return EquityRepo(ctx.conn).history(account)
+
+
+CAPTIONS = {
+    "strategy": "Strategy: trades the leans under the fixed rules.",
+    "ai": "AI: trades the research verdicts under the same rules.",
+    "manual": "Manual: your own buys and sells.",
+}
+NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
+
+
+def comparison(ctx: AppContext) -> Comparison:
+    """Every account and an equal-weight buy-and-hold of today's watchlist, each as its
+    return since the day the AI account started, with its largest fall, trades and costs."""
+    equity = EquityRepo(ctx.conn)
+    histories = {name: equity.history(name) for name in ACCOUNTS}
+    start = histories["ai"][0][0] if histories["ai"] else None
+    lines = [_account_line(ctx, name, history, start) for name, history in histories.items()]
+    if start is None:
+        notes = ("The AI account has no history yet: each account is shown from its own first record, and buy and "
+                 "hold starts once the AI account has one.", NOT_VALIDATED)
+        lines.append(Line("buy_and_hold", "Buy and hold: starts with the AI account.", (), 0.0, 0, 0.0))
+        return Comparison(None, tuple(lines), (), notes)
+    closes = {}
+    for symbol in WatchlistRepo(ctx.conn).all_symbols():
+        try:
+            closes[symbol] = [(c.bar.date, c.close_base) for c in price_history_in_base(ctx, symbol)]
+        except UnknownSymbol:
+            closes[symbol] = []
+    held, left_out = buy_and_hold(closes, start, ctx.config.risk.account)
+    n = len(closes) - len(left_out)
+    lines.append(Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'} "
+                                      f"watched today, bought at the first close from {start.isoformat()} and never "
+                                      "sold, with no costs.",
+                      tuple(returns_since(held, start)), max_fall(held), 0, 0.0))
+    notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
+    if left_out:
+        notes.append(f"Left out of buy and hold, no prices from {start.isoformat()} on: {', '.join(left_out)}.")
+    return Comparison(start, tuple(lines), tuple(left_out), tuple(notes))
+
+
+def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date | None) -> Line:
+    since = start or (history[0][0] if history else None)
+    if since is None:
+        return Line(name, CAPTIONS[name], (), 0.0, 0, 0.0)
+    kept = [(d, v) for d, v in history if d >= since]
+    fills = [f for f in PaperRepo(ctx.conn).fills(name) if f.date >= since]
+    return Line(name, CAPTIONS[name], tuple(returns_since(kept, since)), max_fall(kept), len(fills),
+                sum(_cost(f) for f in fills))
 
 
 def _record_equity(ctx: AppContext) -> None:

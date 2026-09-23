@@ -10,8 +10,8 @@ from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, TRADERS, AccountView, account_score, account_view, ai_step, decision_log, equity_history,
-    fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
+    ACCOUNTS, AI_OFF, TRADERS, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.settings_service import set_ai_account, set_ai_research
 
@@ -108,7 +108,13 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
             "stop_loss": ctx.config.strategy.stop_loss,
         },
         "ai_account": asdict(ctx.config.ai_account),
+        "compare": _compare(ctx),
     }
+
+
+def _compare(ctx: AppContext) -> dict:
+    c = comparison(ctx)
+    return {**asdict(c), "lines": [{**asdict(line), "return": line.return_} for line in c.lines]}
 
 
 @router.get("/decisions")
