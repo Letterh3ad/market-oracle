@@ -34,6 +34,13 @@ class SourceStatus:
     reason: str
     next_slot_in_s: float
 
+    @property
+    def state(self) -> str:
+        """paused (breaker open), waiting (next slot further off than one interval) or ok."""
+        if self.open_until is not None:
+            return "paused"
+        return "waiting" if self.next_slot_in_s > 1.0 / self.rate_per_second else "ok"
+
 
 class SourceGate:
     """Paces and guards requests per source, with state in SQLite so every process

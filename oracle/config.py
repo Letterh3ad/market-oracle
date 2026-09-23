@@ -89,6 +89,13 @@ class StrategyConfig:
     """Sell a position this far below its average cost."""
 
 
+@dataclass(frozen=True)
+class GuiConfig:
+    host: str = "127.0.0.1"
+    """Localhost only by default: nothing on the network can reach the GUI."""
+    port: int = 8740
+
+
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
 _RISK_SHARES = ("max_position", "cash_floor", "target_volatility")
 
@@ -122,7 +129,28 @@ class Config:
     analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    gui: GuiConfig = field(default_factory=GuiConfig)
     keys: Keys = field(default_factory=Keys)
+
+
+def with_setting(text: str, section: str, key: str, literal: str) -> str:
+    """`text` (an oracle.toml) with `key` in `[section]` set to `literal`, written as TOML.
+    Everything else, comments included, is kept as it was."""
+    lines = text.splitlines()
+    header = re.compile(r"\s*\[([^\]]+)\]")
+    start = next((i for i, line in enumerate(lines) if (m := header.match(line)) and m.group(1).strip() == section), None)
+    if start is None:
+        body = "\n".join(lines)
+        return (body + "\n\n" if body.strip() else "") + f"[{section}]\n{key} = {literal}\n"
+    end = next((i for i in range(start + 1, len(lines)) if header.match(lines[i])), len(lines))
+    assign = re.compile(rf"(\s*{re.escape(key)}\s*=\s*)([^#]*?)(\s*(#.*)?)$")
+    for i in range(start + 1, end):
+        if m := assign.match(lines[i]):
+            lines[i] = f"{m.group(1)}{literal}{m.group(3)}"
+            break
+    else:
+        lines.insert(start + 1, f"{key} = {literal}")
+    return "\n".join(lines) + "\n"
 
 
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
@@ -180,6 +208,9 @@ def _apply(raw: dict) -> Config:
         if name == "strategy":
             values[name] = _strategy(value)
             continue
+        if name == "gui":
+            values[name] = _gui(value)
+            continue
         expected = Path if name == "db_path" else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
@@ -198,11 +229,14 @@ def _analysts(raw: object) -> AnalystsConfig:
     if not isinstance(raw, dict):
         raise ConfigError("analysts must be an [analysts] table")
     _reject_unknown(raw, AnalystsConfig, "[analysts]")
-    peers = raw.get("peers", AnalystsConfig.peers)
+    return AnalystsConfig(peers=check_peers(raw.get("peers", AnalystsConfig.peers)))
+
+
+def check_peers(peers: object) -> int:
     low, high = PEERS_RANGE
     if isinstance(peers, bool) or not isinstance(peers, int) or not low <= peers <= high:
         raise ConfigError(f"analysts.peers must be a whole number from {low} to {high}, got {peers!r}")
-    return AnalystsConfig(peers=peers)
+    return peers
 
 
 def _risk(raw: object) -> RiskConfig:
@@ -234,6 +268,18 @@ def _strategy(raw: object) -> StrategyConfig:
         if not ok:
             raise ConfigError(f"strategy.{key} must be {wanted}, got {value!r}")
     return StrategyConfig(**raw)
+
+
+def _gui(raw: object) -> GuiConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("gui must be a [gui] table")
+    _reject_unknown(raw, GuiConfig, "[gui]")
+    host, port = raw.get("host", GuiConfig.host), raw.get("port", GuiConfig.port)
+    if not isinstance(host, str) or not host:
+        raise ConfigError(f"gui.host must be an address like 127.0.0.1, got {host!r}")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1024 <= port <= 65535:
+        raise ConfigError(f"gui.port must be a whole number from 1024 to 65535, got {port!r}")
+    return GuiConfig(host=host, port=port)
 
 
 def _keys(raw: object) -> Keys:

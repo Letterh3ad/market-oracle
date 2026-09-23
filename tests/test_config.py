@@ -111,3 +111,34 @@ def test_strategy_rules_default_to_the_design_and_are_validated(tmp_path):
         path.write_text(f"[strategy]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="strategy."):
             load_config(path, cwd=tmp_path)
+
+
+def test_the_gui_listens_on_localhost_by_default_and_the_port_can_change(tmp_path):
+    gui = load_config(None, cwd=tmp_path)[0].gui
+    assert (gui.host, gui.port) == ("127.0.0.1", 8740)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[gui]\nport = 9000\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].gui.port == 9000
+    for line in ("port = 80", "port = 70000", 'port = "9000"', "host = 5", "colour = 1"):
+        path.write_text(f"[gui]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="gui"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_with_setting_replaces_a_value_and_keeps_comments_and_other_sections():
+    from oracle.config import with_setting
+
+    text = "# mine\n[other]\npeers = 3\n\n[analysts]\npeers = 20   # how many to compare\n[risk]\naccount = 5000.0\n"
+    assert with_setting(text, "analysts", "peers", "40") == (
+        "# mine\n[other]\npeers = 3\n\n[analysts]\npeers = 40   # how many to compare\n[risk]\naccount = 5000.0\n"
+    )
+
+
+def test_with_setting_adds_the_key_or_the_section_when_missing():
+    from oracle.config import with_setting
+
+    assert with_setting("[analysts]\n[risk]\naccount = 1.0\n", "analysts", "peers", "30") == (
+        "[analysts]\npeers = 30\n[risk]\naccount = 1.0\n"
+    )
+    assert with_setting('db_path = "o.db"', "analysts", "peers", "30") == 'db_path = "o.db"\n\n[analysts]\npeers = 30\n'
+    assert with_setting("", "analysts", "peers", "30") == "[analysts]\npeers = 30\n"

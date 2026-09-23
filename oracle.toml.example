@@ -43,6 +43,11 @@ min_probability = 0.6   # buy only on a buy/strong buy lean at least this likely
 max_positions = 10
 stop_loss = 0.08        # sell a position 8% below its average cost
 
+# `oracle gui`. Localhost only by default: nothing else on the network can reach it.
+[gui]
+host = "127.0.0.1"
+port = 8740
+
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.
 [keys]

@@ -348,3 +348,52 @@ async def test_a_pending_buy_without_a_lean_is_explained_as_pending(ctx):
     place_buy(ctx, "AAPL", 1000.0, account="strategy", source="strategy")
     [d] = strategy_step(ctx)
     assert d.reason == "an order is already pending"
+
+
+async def test_each_sell_records_its_own_realised_result_by_hand(ctx, yahoo, clock):
+    from oracle.services.paper_service import sells
+
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    for day, price in (("2026-09-23", 110.0), ("2026-09-24", 90.0)):
+        place_sell(ctx, "AAPL", 6)
+        yahoo.series["AAPL"].bars.append(ohlc(day, price, price))
+        yahoo.series["GBPUSD=X"].bars.append(bar(day, 1.25))
+        clock.advance(86400)
+        await update_listing(ctx, "AAPL")
+        await update_fx(ctx)
+        fill_pending(ctx)
+    first, second = sells(ctx, "manual")
+    # Same worked example as the partial sell above: 6 of 12 shares at 110 * 0.999.
+    proceeds, half_cost = 658.34 * 0.998 / 1.25, 1202.2 / 1.2475 / 2
+    assert (first.date, first.symbol, first.shares) == (date(2026, 9, 23), "AAPL", 6)
+    assert (first.proceeds, first.cost) == (pytest.approx(proceeds), pytest.approx(half_cost))
+    assert first.realised == pytest.approx(proceeds - half_cost)
+    # The rest at 90 * 0.999 = 89.91: 6 * 89.91 = 539.46 - 1 fee = 538.46, less the spread.
+    assert second.proceeds == pytest.approx(538.46 * 0.998 / 1.25)
+    assert second.cost == pytest.approx(half_cost)
+    assert first.realised + second.realised == pytest.approx(account_view(ctx, "manual").realised)
+
+
+async def test_an_account_names_the_rate_sources_behind_its_position_values(ctx, yahoo, clock):
+    assert account_view(ctx, "manual").rate_sources == ()
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    assert account_view(ctx, "manual").rate_sources == ("yahoo",)
+
+
+async def test_rates_used_by_past_fills_are_still_credited_once_nothing_is_held(ctx, yahoo, clock):
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    place_sell(ctx, "AAPL", None)
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-23", 110.0, 110.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    await update_fx(ctx)
+    fill_pending(ctx)
+    view = account_view(ctx, "manual")
+    assert view.positions == () and view.rate_sources == ("yahoo",)

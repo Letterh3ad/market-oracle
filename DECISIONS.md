@@ -513,3 +513,155 @@ repos. A position that has never had a rate counts as nothing in equity until on
   that is missing or out of date.
 **Alternatives:** Further review rounds are capped: from here only critical and high
 findings are fixed.
+
+## 2026-09-23 - Phase 6 scope: force rerun deferred, market-cap sort direction
+
+**Context:** Planning phase 6 (GUI).
+**Decision:** The force-rerun list moves to phase 10: it needs a record of failed and
+deferred jobs, which only the phase 10 job model provides (today's jobs are single-flight
+locks only). Market-cap sorting follows every other field: ascending is smallest first,
+`--desc` biggest first; a search without text still defaults to biggest first. Ledgers
+split into a read-only view and a trading ticket.
+**Alternatives:** A thin failed-job table in phase 6 (rejected: would be rebuilt in
+phase 10). Keeping the old market-cap direction and renaming the flag (rejected: every
+other sort reads "desc" as largest first).
+
+## 2026-09-23 - GUI skeleton: localhost, error codes, in-process route tests
+
+**Context:** Ticket 02: `oracle gui`.
+**Decision:** FastAPI plus native ES modules, the stalker's pattern, served by uvicorn in
+the CLI's own thread (the SQLite connection stays on the thread that opened it; every
+route is `async def`). `[gui]` defaults to `127.0.0.1:8740`, so nothing else on the
+network can reach it until the LAN step after v1. Service errors reach the page as
+`{"error": message}`: unknown symbol or watchlist 404, bad input 400, blocked by state
+(job running, universe not loaded, no prices) 409, upstream failure 502, any other
+service error 400; anything unexpected is a plain 500 pointing at the terminal, never a
+traceback. Route tests run in-process through `httpx.ASGITransport`, which keeps requests
+on the test's own thread, so no cross-thread SQLite workaround is needed. One glossary
+module holds every metric's plain-English tooltip.
+**Alternatives:** The stalker's `TestClient` (rejected: needs `check_same_thread=False`
+in tests, which production never uses). A JS test runner (declined by the user: browser
+checks by hand per tab).
+
+## 2026-09-23 - Question-driven discovery as phase 8b
+
+**Context:** The user asked whether the ReAct loop can research a question to find new
+companies, not just companies already named. The design covered research on any company
+on demand and related-company surfacing through the graph, but not starting from a question.
+**Decision:** Add phase 8b, Discovery: a question becomes queries, candidates are matched
+to the universe and widened through the relationship graph, and the result is a saved,
+rerunnable shortlist with evidence and research/watch actions. After phase 8, because it
+reuses the ReAct loop and tools (7) and the graph plus Laya screening (8).
+**Alternatives:** Building it in phase 7 (rejected: would duplicate the graph and
+screening that phase 8 adds). Leaving it until after v1 (rejected: it is how the user
+means to find companies).
+
+## 2026-09-23 - Watchlist tab: jobs run in the request, analysis locked, symbol index
+
+**Context:** Ticket 04, plus two slow spots found checking it in the browser.
+**Decision:** "Update prices" and "Analyse" run inside their request under the
+single-flight job lock; the server keeps answering other requests while a job awaits the
+network (no transaction is held across an `await`, checked by a scan of the code), and a
+job running anywhere answers 409 at once. `analyse_watched` now takes an `analyse` job
+lock too, for the CLI as well. "Update watched prices, then fill paper orders" moved from
+the CLI into `routine_service.update_prices`, shared by both frontends and the base for
+`oracle tick`. The job-busy message is plain English. Watch lines carry the latest lean
+and flag it when older than the last bar. Migration 0017 adds a case-insensitive symbol
+index: every symbol lookup was scanning the whole universe (~100ms each; now ~1ms). The
+status line counts listings with a plain `COUNT(*)` (the full per-company counts took
+~570ms on every 30-second poll).
+**Alternatives:** Background jobs with a job-state table and polling (deferred: the
+phase 10 job model owns job history and force rerun; progress here is "running").
+
+## 2026-09-23 - Company tab: GUI settings written to oracle.toml, single-listing jobs
+
+**Context:** Ticket 05. The peer count must be adjustable from the page, and a company
+you do not watch still needs prices and analysis.
+**Decision:** GUI-changed settings are written into `oracle.toml` itself (one line edited
+by `config.with_setting`, comments and other settings kept; the section or file is made
+when missing, where `oracle` looks for it), checked to load before it is kept, and applied
+to the running app. The job routes take an optional `symbol` to price or analyse one
+listing, watched or not; one listing's price update also fetches its currency's FX and
+runs fills. The chart is TradingView Lightweight Charts 4.2.3 (Apache-2.0), vendored like
+the stalker's. Symbols link to `#company/SYMBOL`; tabs take an argument after the slash.
+**Alternatives:** Settings in the database overriding the file (rejected: two sources of
+truth, and the CLI would disagree with the GUI). A TOML writer dependency (rejected: it
+would drop the user's comments).
+
+## 2026-09-23 - Penny shares opt-in for v2; day trading stays a non-goal
+
+**Context:** The user asked about penny shares and day trading, later or in v2.
+**Decision:** Penny shares become a v2 opt-in with guardrails: a liquidity floor,
+spread-based costs (flat 0.1% slippage would make paper profits fiction), a promotion-risk
+flag, strategy account excluded by default. Day trading stays out: the system is a daily
+loop with minutes of local-model time per company, free intraday data is delayed and
+short, costs eat intraday moves, and the AI's edge (news, filings, supply chains) plays
+out over days to weeks. The practical form is a 1-3 day swing horizon on daily data (v2).
+**Alternatives:** A small intraday paper sandbox for learning, much later, never the main
+strategy (left open).
+
+## 2026-09-23 - Ledgers view: realised result per sell
+
+**Context:** Ticket 06, and the phase 5 follow-up asking for realised P&L per sell.
+**Decision:** The average-cost replay now also yields each sell (date, shares, proceeds,
+cost of the shares sold, realised), so the running total is the sum of the per-sell
+figures by construction; hand-checked against the phase 5 worked example. The ledgers tab
+shows both accounts in two columns with the same metrics, an equity chart once fills
+have run on two days, positions, waiting orders with their notes, sells, and the
+strategy's decision log. Read-only; trading is ticket 07.
+**Alternatives:** Storing realised P&L per sell (rejected: derived data, replayed like the
+rest of the ledger).
+
+## 2026-09-23 - Ledgers trading: the page trades the manual account only
+
+**Context:** Ticket 07.
+**Decision:** The buy and sell routes are fixed to the manual account and refuse any
+`account` field (a 400 naming it) rather than ignore it; the strategy account moves only
+through "Strategy step", which runs the same rules engine as `oracle paper step`.
+Refusals from the service (amount not positive, not held, too many shares) appear under
+the form that caused them. "Fill now" and "Strategy step" report each outcome.
+**Alternatives:** An account picker on the forms (rejected: manual trades on the strategy
+account would spoil the track record the validation gate relies on).
+
+## 2026-09-23 - Phase 6 review round 1
+
+**Context:** Two-axis review of phase 6 against `main`.
+**Decision:**
+- Single-listing price and analyse jobs take the same one-at-a-time locks as the
+  watchlist runs (CLI `oracle analyse SYMBOL` too); "update prices" for one listing also
+  runs fills for both accounts, as the watchlist run does (strategy orders still come only
+  from its rules).
+- Every figure carries a tooltip: analyst figures from `analysts/meanings.py` (keyed by
+  analyst and name), ledger figures from the page glossary; the strategy tooltip is built
+  from the configured rules, not hard-coded numbers.
+- FX credits appear wherever converted values do: ledgers (from the rates valuing
+  positions) and the price chart (from every rate in its history). The chart names its
+  currency and falls back to the listing's own when a day lacks a rate.
+- "Fill now" lists orders still waiting for their next opening price, with the reason.
+- The status panel shows each source's allowed rate. Its "why" is the breaker's reason
+  while paused; no last-error history is kept (the phase 10 job model can add one).
+- Settings writes are atomic (staged file, checked to load, then renamed) and keep the
+  file's line endings.
+- Website links are followed only for http and https addresses.
+- Late answers never repaint a tab the user has left; shared JS helpers for formatting,
+  JSON requests and busy buttons.
+**Alternatives:** Deferred as low: the ledgers route replays fills three times per
+account (fine at paper-account sizes); a watch line shows no lean when a listing has no
+prices (a lean cannot exist without them).
+
+## 2026-09-23 - Phase 6 review round 2
+
+**Context:** Two-axis review of `phase-6-gui` against `main`, focused on the round 1 fixes.
+No hard standards breaches; round 1 fixes confirmed correct.
+**Decision:**
+- Ledger credits also cover the rates past fills used (proceeds, costs, realised results),
+  not only those valuing open positions, so open.er-api stays credited after a sell.
+- Settings writes stage to a unique temp file in the same folder, removed on any failure.
+- "Fill now" reads pending orders straight from the store (`pending_orders`) instead of
+  valuing every account.
+- Lean, next-step and order-outcome JSON built once (`oracle/gui/routes/shapes.py`).
+- Percent and signed formatters show "n/a" for missing values, like money.
+**Alternatives:** Deferred as low: one shared JS guard for late answers (three tabs use a
+counter, ledgers a root check; both work); the ledgers route's hand-picked strategy rules
+could become a service-side view; single-listing fills run outside the prices lock
+(harmless on the single-threaded server, revisit with the phase 10 job model).

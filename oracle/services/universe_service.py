@@ -26,8 +26,8 @@ from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
-    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "UniverseStatus",
-    "facets", "refresh_universe", "resolve_symbol", "search_universe", "universe_status",
+    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "UniverseBrief", "UniverseStatus",
+    "facets", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief", "universe_status",
 ]
 
 JOB = "universe_refresh"
@@ -48,6 +48,21 @@ class UniverseStatus:
     """type -> (listings, companies)"""
     source_commit: str | None
     refreshed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class UniverseBrief:
+    loaded: bool
+    listings: int
+    refreshed_at: datetime | None
+
+
+def universe_brief(ctx: AppContext) -> UniverseBrief:
+    """What a status line needs, without `universe_status`'s per-company counts (over half
+    a second on the full universe)."""
+    refreshed = MetaRepo(ctx.conn).get(_REFRESHED)
+    return UniverseBrief(refreshed is not None, UniverseRepo(ctx.conn).listing_count(),
+                         datetime.fromisoformat(refreshed) if refreshed else None)
 
 
 def universe_status(ctx: AppContext) -> UniverseStatus:

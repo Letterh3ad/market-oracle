@@ -95,7 +95,7 @@ async def test_a_file_missing_columns_is_refused_by_name(ctx, fdb):
 async def test_refresh_refuses_while_another_process_holds_it(ctx):
     other = JobLock(ctx.conn, ctx.clock, pid_alive=lambda pid: True, pid=os.getpid() + 1)
     other.acquire("universe_refresh", lease_s=600)
-    with pytest.raises(JobAlreadyRunning, match="universe_refresh"):
+    with pytest.raises(JobAlreadyRunning, match="universe refresh is already running"):
         await refresh_universe(ctx)
     assert not universe_status(ctx).loaded
 

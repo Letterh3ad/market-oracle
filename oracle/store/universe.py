@@ -136,6 +136,9 @@ class UniverseRepo:
             )
             self._conn.execute("INSERT INTO listings_fts (listings_fts) VALUES ('rebuild')")
 
+    def listing_count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+
     def counts(self) -> UniverseCounts:
         row = self._conn.execute(
             "SELECT COUNT(*), COUNT(DISTINCT company_key), COALESCE(SUM(delisted), 0) FROM listings"
@@ -261,10 +264,10 @@ class UniverseRepo:
 
     @staticmethod
     def _order(q: UniverseQuery, has_text: bool) -> str:
-        sort = q.sort or "relevance"
+        sort, descending = q.sort or "relevance", q.descending
         if sort == "relevance" and not has_text:
-            sort = "market_cap"
-        way = " DESC" if q.descending else ""
+            sort, descending = "market_cap", True
+        way = " DESC" if descending else ""
         # Ties inside a company (all-listings mode) put the primary first.
         tail = f"{_NAME}, l.company_key, l.is_primary DESC, l.symbol"
         if sort == "relevance":
@@ -272,7 +275,8 @@ class UniverseRepo:
             # Every hit holds every query word, so size outranks text score.
             return f"{exact} DESC, p.market_cap IS NULL, {_CAP_ORDER}, {score}, {tail}"
         if sort == "market_cap":
-            return f"p.market_cap IS NULL, {_CAP_ORDER}{way}, {tail}"
+            # Bands are ranked biggest first, so ascending (smallest first) reverses the rank.
+            return f"p.market_cap IS NULL, {_CAP_ORDER}{'' if descending else ' DESC'}, {tail}"
         if sort == "name":
             return f"{_NAME}{way}, {tail}"
         if sort == "symbol":

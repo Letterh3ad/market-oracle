@@ -4,7 +4,7 @@ import argparse
 import asyncio
 
 from oracle.cli.common import print_signal
-from oracle.services.analysis_service import Analysis, analyse, analyse_watched
+from oracle.services.analysis_service import Analysis, analyse_listing, analyse_watched
 from oracle.services.context import AppContext
 
 
@@ -15,7 +15,7 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.symbol:
-        _print(asyncio.run(analyse(ctx, args.symbol)))
+        _print(asyncio.run(analyse_listing(ctx, args.symbol)))
         return 0
     runs = asyncio.run(analyse_watched(ctx))
     if not runs:

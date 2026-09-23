@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import date
 
+from oracle.broker.rules import Lean
 from oracle.market.bars import is_stale
-from oracle.services.analysis_service import StoredSignal, latest_signals
+from oracle.services.analysis_service import StoredSignal, latest_lean, latest_signals
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidWatchlistName, UnknownWatchlist
 from oracle.services.prices_service import day_change, price_history_in_base
@@ -45,6 +46,10 @@ class WatchLine(WatchItem):
     stale: bool = False
     signals: tuple[StoredSignal, ...] = ()
     """Each analyst's latest stored signal; empty until `oracle analyse`."""
+    lean: Lean | None = None
+    """The latest lean; None until `oracle analyse`."""
+    lean_stale: bool = False
+    """Older than the last stored bar: the strategy will not trade on it."""
 
 
 def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watched:
@@ -83,12 +88,14 @@ def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:
     if not recent:
         return WatchLine(**asdict(item))
     last = recent[-1]
+    lean, lean_stale = latest_lean(ctx, item.symbol)
     return WatchLine(
         **asdict(item),
         last_date=last.bar.date, last_close=last.bar.close, price_currency=last.bar.currency,
         close_base=last.close_base, rate_source=last.rate_source, day_change=day_change(recent),
         stale=is_stale(last.bar.date, ctx.clock.utcnow().date()),
         signals=tuple(latest_signals(ctx, item.symbol)),
+        lean=lean, lean_stale=lean_stale,
     )
 
 

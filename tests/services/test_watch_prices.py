@@ -94,7 +94,7 @@ async def test_nothing_watched_is_nothing_to_do(ctx):
 
 async def test_a_second_update_is_refused_while_one_runs(ctx):
     JobLock(ctx.conn, ctx.clock, pid_alive=lambda pid: True, pid=os.getpid() + 1).acquire("prices_update", 600)
-    with pytest.raises(JobAlreadyRunning, match="prices_update"):
+    with pytest.raises(JobAlreadyRunning, match="prices update is already running"):
         await update_watched(ctx)
 
 

@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 
+from oracle.broker.orders import Action
+
 LABELS = ("strong sell", "sell", "hold", "buy", "strong buy")
 BUY_LABELS = frozenset({"buy", "strong buy"})
 SELL_LABELS = frozenset({"sell", "strong sell"})
@@ -25,12 +27,14 @@ class Lean:
 
 
 @dataclass(frozen=True)
-class Holding:
+class Position:
     symbol: str
     shares: int
     cost: float
+    """What the shares cost in the base currency, costs included (average cost basis)."""
     value: float | None
-    """At the last close; None without a rate, so no stop can be judged."""
+    """At the last stored close, in the base currency; None without a rate, so no stop can
+    be judged."""
 
 
 @dataclass(frozen=True)
@@ -48,29 +52,28 @@ class Rules:
 @dataclass(frozen=True)
 class Decision:
     symbol: str
-    action: str
-    """buy, sell or skip."""
+    action: Action
     cash: float | None
     """For a buy, the base-currency amount."""
     reason: str
 
 
-def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: float, equity: float,
+def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Position], cash: float, equity: float,
            sizes: Mapping[str, float], rules: Rules, pending: set[str]) -> list[Decision]:
     """Sells first (stops, then sell leans), then buys by probability. `sizes` is the risk
     analyst's suggested share of equity per listing; sell proceeds are not counted until
     they fill. `cash` excludes what pending buys will spend, and a pending buy takes a
     position slot."""
-    out = [Decision(s, "skip", None, PENDING) for s in sorted(pending)]
+    out = [Decision(s, Action.SKIP, None, PENDING) for s in sorted(pending)]
     for symbol, h in sorted(holdings.items()):
         if symbol in pending:
             continue
         lean = leans.get(symbol)
         if h.value is not None and h.value <= h.cost * (1 - rules.stop_loss):
-            out.append(Decision(symbol, "sell", None, f"stop: {1 - h.value / h.cost:.1%} below cost, "
+            out.append(Decision(symbol, Action.SELL, None, f"stop: {1 - h.value / h.cost:.1%} below cost, "
                                                       f"past the {rules.stop_loss:.0%} limit"))
         elif lean is not None and lean.label in SELL_LABELS:
-            out.append(Decision(symbol, "sell", None, f"{lean.source} lean is {lean.label}"))
+            out.append(Decision(symbol, Action.SELL, None, f"{lean.source} lean is {lean.label}"))
     positions = len(holdings.keys() | pending)
     spendable = cash - rules.cash_floor * equity
     wanted = [x for x in leans.values() if x.label in BUY_LABELS and x.symbol not in holdings
@@ -78,13 +81,13 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Holding], cash: flo
     for lean in sorted(wanted, key=lambda x: (-x.probability, x.symbol)):
         skip = _why_not(lean, positions, spendable, sizes, rules)
         if skip:
-            out.append(Decision(lean.symbol, "skip", None, skip))
+            out.append(Decision(lean.symbol, Action.SKIP, None, skip))
             continue
         amount = min(sizes[lean.symbol], rules.max_position) * equity
         amount = min(amount, spendable)
         spendable -= amount
         positions += 1
-        out.append(Decision(lean.symbol, "buy", amount, f"{lean.source} lean {lean.label} at {lean.probability:.0%}"))
+        out.append(Decision(lean.symbol, Action.BUY, amount, f"{lean.source} lean {lean.label} at {lean.probability:.0%}"))
     return out
 
 

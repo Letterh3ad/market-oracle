@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from oracle.analysts import factors
 from oracle.analysts.indicators import closes
+from oracle.analysts.meanings import figure_meaning
 from oracle.analysts.risk import Series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
 from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
@@ -15,6 +16,7 @@ from oracle.market.sources import Instrument
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, ServiceError
 from oracle.services.fundamentals_service import PEER_MAX_AGE, fetch_fundamentals
+from oracle.services.jobs_service import single_flight
 from oracle.services.peers_service import choose_peers, with_fundamentals
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
@@ -27,9 +29,12 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Analysis", "AnalystSignal", "Direction", "Lean", "Skipped", "StoredSignal", "WatchedAnalysis", "analyse",
-    "analyse_watched", "latest_signals", "signal_history",
+    "analyse_listing", "analyse_watched", "figure_meaning", "latest_lean", "latest_signals", "signal_history",
 ]
 
+JOB = "analyse"
+# Far longer than a run takes; a crashed holder is freed by the pid check instead.
+LEASE_S = 1800.0
 FACTOR_NAMES = tuple(f.name for f in factors.FACTORS)
 # Display order: price-based first, then the peer comparisons.
 ORDER = ("technicals", "trend", "rsi", "macd", "volatility", "risk", "value", "quality", "growth")
@@ -125,14 +130,22 @@ def _base_series(ctx: AppContext, symbol: str) -> Series:
     return [(c.bar.date, close / c.rate) for c, close in zip(converted, closes([c.bar for c in converted]))]
 
 
+async def analyse_listing(ctx: AppContext, symbol: str) -> Analysis:
+    """`analyse` for one listing, under the same one-at-a-time lock as the watchlist run."""
+    with single_flight(ctx, JOB, LEASE_S):
+        return await analyse(ctx, symbol)
+
+
 async def analyse_watched(ctx: AppContext) -> list[WatchedAnalysis]:
-    """Every watched listing; one failing never stops the rest."""
-    out = []
-    for symbol in WatchlistRepo(ctx.conn).all_symbols():
-        try:
-            out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
-        except ServiceError as exc:
-            out.append(WatchedAnalysis(symbol, None, str(exc)))
+    """Every watched listing, in one process at a time; one failing never stops the rest."""
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        out = []
+        for symbol in WatchlistRepo(ctx.conn).all_symbols():
+            held.check()
+            try:
+                out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
+            except ServiceError as exc:
+                out.append(WatchedAnalysis(symbol, None, str(exc)))
     return out
 
 
@@ -149,6 +162,14 @@ def latest_signals(ctx: AppContext, symbol: str) -> list[StoredSignal]:
 
     found = sorted(SignalRepo(ctx.conn).latest(listing), key=lambda s: ORDER.index(s.analyst))
     return [StoredSignal(s, stale(s)) for s in found]
+
+
+def latest_lean(ctx: AppContext, symbol: str) -> tuple[Lean | None, bool]:
+    """The listing's latest lean, and whether it is older than the last stored bar (the
+    strategy will not trade on it then). Reads only."""
+    lean = LeanRepo(ctx.conn).latest(symbol)
+    last_bar = BarRepo(ctx.conn).last_date(symbol)
+    return lean, lean is not None and last_bar is not None and lean.as_of < last_bar
 
 
 def signal_history(ctx: AppContext, symbol: str, analyst: str) -> list[AnalystSignal]:

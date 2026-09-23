@@ -32,7 +32,10 @@ def single_flight(ctx: AppContext, job: str, lease_s: float) -> Iterator[Held]:
     try:
         handle = lock.acquire(job, lease_s)
     except JobBusy as exc:
-        raise JobAlreadyRunning(str(exc)) from exc
+        raise JobAlreadyRunning(
+            f"{exc.job.replace('_', ' ')} is already running (pid {exc.pid} on {exc.host}, "
+            f"started {exc.age_s:.0f}s ago): wait for it to finish"
+        ) from exc
     try:
         yield Held(lock, handle)
     finally:

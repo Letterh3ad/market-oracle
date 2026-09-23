@@ -8,8 +8,10 @@ version = "0.1.0"
 description = "Local global-stock research and paper-trading tool"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.110",
     "httpx>=0.27",
     "tzdata>=2024.1",
+    "uvicorn>=0.29",
 ]
 
 [project.scripts]
@@ -20,6 +22,9 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [tool.setuptools.packages.find]
 include = ["oracle*"]
+
+[tool.setuptools.package-data]
+"oracle.gui" = ["static/*", "static/*/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

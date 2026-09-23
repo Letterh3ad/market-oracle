@@ -1,0 +1,186 @@
+import { api } from "../lib/api.js";
+import { lineChart } from "../lib/chart.js";
+import { el, showError, clearError, companyLink } from "../lib/dom.js";
+import { money, pct, signed, tone } from "../lib/fmt.js";
+import { tip, tipText } from "../lib/tip.js";
+import { busyButton, sendJson } from "../lib/ui.js";
+
+let charts = [];
+let pane = null;
+let root = null; // this tab's container: a late answer repaints only while it is on screen
+let lastResult = []; // lines from the last button press, shown once on the reload it triggers
+
+function metrics(a, base) {
+  const row = (label, key, value, cls = "") => el("tr", null,
+    el("td", null, tip(label, key)), el("td", { class: `num ${cls}` }, value));
+  return el("table", { class: "results metrics" }, el("tbody", null,
+    row(`Equity (${base})`, "equity", money(a.equity)),
+    row("Return since start", "return", pct(a.return), tone(a.return)),
+    row("Cash", "cash", money(a.cash)),
+    row("Realised", "realised", signed(a.realised), tone(a.realised)),
+    row("Unrealised", "unrealised", signed(a.unrealised), tone(a.unrealised)),
+    row("Costs paid", "costs", money(a.costs)),
+    row("Largest fall", "max_fall", pct(a.max_fall), a.max_fall < 0 ? "down" : "")));
+}
+
+// headers: [label, glossary key or null, numeric?]
+function table(headers, rows, empty) {
+  if (!rows.length) return el("p", { class: "dim small" }, empty);
+  return el("table", { class: "results" },
+    el("thead", null, el("tr", null, ...headers.map(([h, key, num]) =>
+      el("th", { class: num ? "num" : null }, key ? tip(h, key) : h)))),
+    el("tbody", null, ...rows));
+}
+
+function strategyRules(r) {
+  const p = (v) => `${Math.round(v * 100)}%`;
+  return `Trades by itself on the leans, under fixed rules: buy on a buy lean at ${p(r.min_probability)} or more, ` +
+    `at most ${r.max_positions} positions of up to ${p(r.max_position)} each, ${p(r.cash_floor)} always kept in cash, ` +
+    `sell on a sell lean or ${p(r.stop_loss)} below cost. Its record is the honest test. Change the rules in oracle.toml.`;
+}
+
+// Buy and sell forms for the manual account. Refusals appear under the form that caused them.
+function trading(base) {
+  const note = el("div", { class: "form-note" });
+  const say = (text) => { note.className = "form-note down"; note.textContent = text; };
+  const buySymbol = el("input", { placeholder: "symbol", size: "10", "aria-label": "Buy symbol" });
+  const amount = el("input", { type: "number", min: "0", step: "any", placeholder: `amount in ${base}`, style: "width: 130px",
+    "aria-label": "Buy amount" });
+  const sellSymbol = el("input", { id: "sell-symbol", placeholder: "symbol", size: "10", "aria-label": "Sell symbol" });
+  const shares = el("input", { id: "sell-shares", type: "number", min: "1", step: "1", placeholder: "shares (blank: all)",
+    style: "width: 140px", "aria-label": "Shares to sell" });
+  const buy = busyButton("Buy", async () => {
+    try {
+      const o = await sendJson("/api/ledgers/manual/buy", { symbol: buySymbol.value.trim(), amount: Number(amount.value) });
+      lastResult = [`Queued: buy ${o.symbol} for ${money(o.cash)} ${base}. It fills at the next opening price.`];
+      refresh();
+    } catch (err) { say(err.message); }
+  });
+  const sell = busyButton("Sell", async () => {
+    try {
+      const n = shares.value.trim() ? Number(shares.value) : null;
+      const o = await sendJson("/api/ledgers/manual/sell", { symbol: sellSymbol.value.trim(), shares: n });
+      lastResult = [`Queued: sell ${o.shares ?? "all"} ${o.symbol} shares. It fills at the next opening price.`];
+      refresh();
+    } catch (err) { say(err.message); }
+  });
+  return el("div", { class: "trade" },
+    el("div", { class: "row" }, buySymbol, amount, buy),
+    el("div", { class: "row" }, sellSymbol, shares, sell), note);
+}
+
+function sellButton(p) {
+  return el("button", { type: "button", class: "small-btn", onclick: () => {
+    root.querySelector("#sell-symbol").value = p.symbol;
+    root.querySelector("#sell-shares").value = "";
+    root.querySelector("#sell-shares").focus();
+  } }, "Sell");
+}
+
+function column(a, base, rules) {
+  const manual = a.name === "manual";
+  const gain = (p) => (p.value == null ? null : p.value - p.cost);
+  const heads = [["Symbol"], ["Shares", null, 1], [`Cost (${base})`, "position_cost", 1],
+    [`Value (${base})`, "position_value", 1], ["Gain", "unrealised", 1]];
+  const positions = table(manual ? [...heads, [""]] : heads,
+    a.positions.map((p) => el("tr", null, el("td", null, companyLink(p.symbol)), el("td", { class: "num" }, String(p.shares)),
+      el("td", { class: "num" }, money(p.cost)), el("td", { class: "num" }, p.value == null ? "no rate yet" : money(p.value)),
+      el("td", { class: `num ${tone(gain(p))}` }, gain(p) == null ? "" : signed(gain(p))),
+      manual ? el("td", null, sellButton(p)) : null)),
+    "No positions.");
+  const pending = table([["Order"], ["Placed"], ["Note"]],
+    a.pending.map((o) => el("tr", null,
+      el("td", null, `${o.side} `, companyLink(o.symbol), o.cash != null ? ` for ${money(o.cash)} ${base}`
+        : o.shares != null ? ` ${o.shares} shares` : " all shares"),
+      el("td", null, o.placed_on), el("td", { class: "dim small" }, o.note ?? ""))),
+    "No orders waiting.");
+  const sold = table([["Sold"], ["Symbol"], ["Shares", null, 1], [`Proceeds (${base})`, "proceeds", 1], ["Realised", "realised", 1]],
+    a.sells.map((s) => el("tr", null, el("td", null, s.date), el("td", null, companyLink(s.symbol)),
+      el("td", { class: "num" }, String(s.shares)), el("td", { class: "num" }, money(s.proceeds)),
+      el("td", { class: `num ${tone(s.realised)}` }, signed(s.realised)))),
+    "Nothing sold yet.");
+  const title = manual ? tip("Manual", "manual_account") : tipText("Strategy", strategyRules(rules));
+  return el("div", { class: "card ledger" },
+    el("h2", null, title), metrics(a, base), manual ? trading(base) : null,
+    el("div", { class: "equity-chart", dataset: { account: a.name } }),
+    el("h3", null, tip("Positions", "unrealised")), positions,
+    el("h3", null, tip("Waiting", "pending")), pending,
+    el("h3", null, tip("Sells", "realised")), sold);
+}
+
+function drawCharts(accounts) {
+  for (const c of charts) c.remove();
+  charts = [];
+  for (const a of accounts) {
+    const box = root.querySelector(`.equity-chart[data-account="${a.name}"]`);
+    if (a.history.length < 2) {
+      box.replaceChildren(el("p", { class: "dim small" },
+        "The equity chart starts once fills have run on two different days (Update prices runs them)."));
+      continue;
+    }
+    const chart = lineChart(box, a.history.map(([day, equity]) => ({ time: day, value: equity })), 160);
+    if (chart) charts.push(chart);
+  }
+}
+
+function decisions(rows, base) {
+  return table([["Day"], ["Symbol"], ["Did"], ["Why"]],
+    rows.map((d) => el("tr", null, el("td", null, d.day), el("td", null, companyLink(d.symbol)),
+      el("td", { class: d.action === "buy" ? "up" : d.action === "sell" ? "down" : "dim" },
+        d.action + (d.cash != null ? ` ${money(d.cash)} ${base}` : "")),
+      el("td", { class: "small" }, d.reason))),
+    "The strategy has not run yet: press Strategy step.");
+}
+
+function jobs(base) {
+  const out = el("div", { class: "result" }, ...lastResult.map((line) => el("div", null, line)));
+  lastResult = [];
+  const run = (label, path, lines) => busyButton(label, async () => {
+    try {
+      lastResult = lines(await sendJson(path));
+      clearError();
+    } catch (err) {
+      showError(err.message);
+    }
+    refresh();
+  });
+  const fillLines = (r) => (r.length ? r.map((o) => `${o.account}: ${o.side} ${o.symbol} ${o.status}${o.note ? ` (${o.note})` : ""}`)
+    : ["No orders waiting."]);
+  const stepLines = (r) => (r.length
+    ? r.map((d) => `strategy: ${d.action} ${d.symbol}${d.cash != null ? ` for ${money(d.cash)} ${base}` : ""} (${d.reason})`)
+    : ["Nothing to decide: watch listings and analyse them first."]);
+  return el("div", null,
+    el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines), run("Strategy step", "/api/ledgers/step", stepLines),
+      el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
+        + "Strategy step lets the strategy account act on its leans.")),
+    out);
+}
+
+// Reload the tab after an action, unless the user has moved to another tab meanwhile.
+function refresh() {
+  if (root && pane.contains(root)) render(pane);
+}
+
+async function render(target) {
+  pane = target;
+  const mine = el("div", null, el("p", { class: "dim" }, "Loading..."));
+  root = mine;
+  pane.replaceChildren(mine);
+  let body, log;
+  try {
+    [body, log] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions")]);
+  } catch (err) {
+    if (pane.contains(mine)) mine.replaceChildren(el("p", { class: "dim" }, `Could not load the ledgers: ${err.message}`));
+    return;
+  }
+  if (!pane.contains(mine)) return; // another tab, or a newer load, owns the pane now
+  const base = body.base_currency;
+  mine.replaceChildren(
+    jobs(base),
+    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules))),
+    ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
+    el("h3", null, "Strategy decisions"), decisions(log, base));
+  drawCharts(body.accounts);
+}
+
+export default { id: "ledgers", label: "Ledgers", render };
