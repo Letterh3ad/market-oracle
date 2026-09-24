@@ -5,7 +5,6 @@ from fastapi import Request
 from oracle.services.activity_service import JobRunner
 from oracle.services.app_service import AppControl
 from oracle.services.context import AppContext
-from oracle.services.replay_service import ReplayPacer
 from oracle.services.schedule_service import Scheduler
 
 
@@ -23,7 +22,3 @@ def get_control(request: Request) -> AppControl:
 
 def get_scheduler(request: Request) -> Scheduler:
     return request.app.state.scheduler
-
-
-def get_pacer(request: Request) -> ReplayPacer:
-    return request.app.state.pacer

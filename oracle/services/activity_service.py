@@ -36,6 +36,7 @@ from oracle.services.tick_service import (
 )
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
+from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
@@ -446,8 +447,20 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if "@" in subject:
         symbol, day = subject.split("@", 1)
-        return submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
+        again = submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
+        _adopt_replay_cell(ctx, again, symbol, date.fromisoformat(day))
+        return again
     return submit_research(ctx, runner, subject, profile=job.profile)
+
+
+def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
+    """A retried replay of a study cell that failed or waits for its retry counts for that
+    cell, so the study never runs it a second time."""
+    repo = ReplayRepo(ctx.conn)
+    study = repo.current()
+    cell = repo.cell_at(study.id, symbol, day) if study else None
+    if cell and cell.state in (PENDING, FAILED):
+        repo.adopt(cell.id, job.id, ctx.clock.utcnow())
 
 
 def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
