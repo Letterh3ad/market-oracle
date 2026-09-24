@@ -3,6 +3,7 @@ import { lineChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
 import { researchSection } from "../lib/research.js";
+import { deadNote } from "../lib/siblings.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, runJob, sendJson } from "../lib/ui.js";
 
@@ -47,9 +48,8 @@ function header(v, pane, symbol) {
     el("div", { class: "dim small" }, `${p.listings} listing${p.listings === 1 ? "" : "s"}${main}`,
       p.tags.length ? `; tags: ${p.tags.join(", ")}` : "",
       site ? el("span", null, "; ", el("a", { href: site, target: "_blank", rel: "noopener noreferrer" }, p.website)) : null),
-    v.dead_since ? el("div", { class: "warn-text small" },
-      `No price source has had data for this listing since ${v.dead_since}, so updates skip it. `,
-      "Check again tries it now.") : null,
+    deadNote(symbol, v.dead_since, v.siblings, v.watchlists.length > 0, () => {},
+      " Updates skip it; Check again tries it now."),
     el("div", { class: "row", style: "margin-top: 8px" },
       job(v.dead_since ? "Check again" : "Update prices", "/api/jobs/prices", pane, symbol),
       job("Analyse", "/api/jobs/analyse", pane, symbol),

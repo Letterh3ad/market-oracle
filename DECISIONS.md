@@ -1338,3 +1338,16 @@ unexpected-error message says to try again and then Restart. A locked oracle.tom
 `ConfigInUse` (409): "oracle.toml is open in another program: close it and try again".
 **Alternatives:** Keep `in_gui` (GUI wording in services, every new message needs two); map
 each message per frontend (a table to keep in step with every service message).
+
+## 2026-09-24 - A dead listing's siblings and the swap
+**Context:** Ticket universe-quality 01: a watched listing no source has data for should
+point at the company's live listings.
+**Decision:** Siblings are the company's other listings that are neither delisted nor dead,
+in the primary-pick order (`rank_listings`, which `pick_primary` now takes the head of). A
+swap puts the new symbol in the old one's place on every list (dropped where the new one is
+already listed), in one transaction, and refuses the same listing, another company's, a
+delisted or dead one, and a symbol on no list. Paper positions and orders stay on the old
+symbol; the answer names the accounts holding it. The Company tab offers Swap only when the
+listing is watched; otherwise it lists the siblings as links.
+**Alternatives:** Appending the new symbol to the end of each list (loses the user's order);
+moving paper positions (a position is a fill history at another listing's prices).

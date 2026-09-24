@@ -110,8 +110,13 @@ def _company_key(rows: list[Listing], untrusted: set[tuple]) -> str:
 
 
 def pick_primary(rows: list[Listing], dead: Set[str] = frozenset()) -> Listing:
+    return rank_listings(rows, dead)[0]
+
+
+def rank_listings(rows: list[Listing], dead: Set[str] = frozenset()) -> list[Listing]:
+    """A company's listings best first: the first is its primary."""
     home = _home_country(rows)
-    return min(
+    return sorted(
         rows,
         key=lambda x: (
             x.delisted,

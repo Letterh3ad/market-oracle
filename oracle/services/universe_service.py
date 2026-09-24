@@ -22,13 +22,14 @@ from oracle.store.meta import MetaRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
-from oracle.universe.listings import MARKET_CAP_BANDS, Listing, group_companies
+from oracle.universe.listings import MARKET_CAP_BANDS, Listing, group_companies, rank_listings
 from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
-    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "UniverseBrief", "UniverseStatus",
-    "facets", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief", "universe_status",
+    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "Sibling", "UniverseBrief", "UniverseStatus",
+    "facets", "live_siblings", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief",
+    "universe_status",
 ]
 
 JOB = "universe_refresh"
@@ -130,6 +131,23 @@ def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
         return found
     near = [h.symbol for h in search_universe(ctx, symbol, limit=3, include_delisted=True)]
     raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "search the universe for it"))
+
+
+@dataclass(frozen=True)
+class Sibling:
+    symbol: str
+    exchange: str | None
+    currency: str | None
+
+
+def live_siblings(ctx: AppContext, symbol: str) -> list[Sibling]:
+    """The company's other listings that are neither delisted nor dead, best first (the
+    order the primary is picked in)."""
+    listing = resolve_symbol(ctx, symbol)
+    dead = HealthRepo(ctx.conn).dead_symbols()
+    rows = rank_listings(UniverseRepo(ctx.conn).company_listings(listing.company_key), dead)
+    return [Sibling(x.symbol, x.exchange, x.currency) for x in rows
+            if x.symbol != listing.symbol and not x.delisted and x.symbol not in dead]
 
 
 def _require_loaded(ctx: AppContext) -> None:

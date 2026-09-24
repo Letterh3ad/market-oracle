@@ -55,6 +55,10 @@ class InvalidWatchlistName(ServiceError):
     pass
 
 
+class InvalidSwap(ServiceError):
+    pass
+
+
 class InvalidQuery(ServiceError, ValueError):
     pass
 

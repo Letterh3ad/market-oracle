@@ -3,6 +3,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, tone } from "../lib/fmt.js";
 import { tip } from "../lib/tip.js";
 import { busyButton, runJob, sendJson } from "../lib/ui.js";
+import { deadNote, swapSummary } from "../lib/siblings.js";
 import { fillPicker } from "../lib/watchlists.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
@@ -50,7 +51,11 @@ function row(i, pane) {
   } }, "Remove");
   return el("tr", { class: i.missing || i.delisted ? "delisted" : null },
     el("td", null, companyLink(i.symbol), el("div", { class: "dim small" }, i.exchange ?? "")),
-    el("td", { class: "name" }, i.name ?? "", i.missing ? " (gone from the universe)" : i.delisted ? " (delisted)" : null),
+    el("td", { class: "name" }, i.name ?? "", i.missing ? " (gone from the universe)" : i.delisted ? " (delisted)" : null,
+      deadNote(i.symbol, i.dead_since, i.siblings, true, (r) => {
+        pane.querySelector("#w-result")?.replaceChildren(el("div", null, swapSummary(r)));
+        load(pane);
+      })),
     el("td", { class: "num" }, i.last_close == null ? "" : `${money(i.last_close)} ${i.price_currency}`),
     el("td", { class: "num" }, i.close_base == null ? "" : money(i.close_base)),
     el("td", { class: `num ${tone(i.day_change)}` }, day),

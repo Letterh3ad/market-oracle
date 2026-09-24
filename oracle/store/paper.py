@@ -80,6 +80,12 @@ class PaperRepo:
             self._conn.execute("UPDATE paper_orders SET status = ?, note = NULL WHERE id = ?",
                                (Status.FILLED, row.order_id))
 
+    def holders(self, symbol: str) -> tuple[str, ...]:
+        """The accounts holding shares of `symbol`."""
+        return tuple(r[0] for r in self._conn.execute(
+            "SELECT account FROM paper_fills WHERE symbol = ? GROUP BY account "
+            "HAVING SUM(CASE side WHEN 'buy' THEN shares ELSE -shares END) > 0 ORDER BY account", (symbol,)))
+
     def fills(self, account: str) -> list[FillRow]:
         """Oldest first."""
         rows = self._conn.execute(f"SELECT {_FILL} FROM paper_fills WHERE account = ? ORDER BY date, order_id",
