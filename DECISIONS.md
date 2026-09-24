@@ -1379,3 +1379,49 @@ plc" nor "Foo AG" with different ISINs). The report shows each side's countries,
 legal forms (abbreviations spelled out, so Corp and Corporation agree) and flags, first and
 counted in the header, merges whose sides name different legal forms (plc and Limited: maybe
 a successor company) and merges matched with no country. 728 proposed merges became 675.
+
+## 2026-09-24 - Reading stage: what is read, stored and reused
+**Context:** Deep research ticket 01: verdicts should rest on what articles say, not their
+headlines, on a 4B model.
+**Decision:** After the loop, up to 12 articles the run was shown (`READ_ARTICLES`, a setting
+in ticket 04) are read: newest first, one per outlet before any outlet's second, skipping the
+stored data and anything already settled. A fetch goes through the fetch path the `read_page`
+tool now shares with it (gate, `unsafe_url`, per-hop redirect checks, byte cap,
+readable types). Text is kept in `article_texts` up to 100,000 characters; a failure is kept
+with its reason, and a passing one (network, rate limit, open breaker, a Google News link in
+a replay) is tried again by the next run. Pages under 300 characters of text count as
+unreadable (paywall or script page); the loop's `read_page` stores its text or that verdict
+too, so the stage never fetches a page twice. Notes are kept per (article, "backend/model")
+in `article_notes`; a garbled reply or a backend error on one note is kept as the reason and
+retried next run, never failing the run. The progress line reads from a new
+`research_runs.stage` column.
+**Alternatives:** Keeping failures forever (a timeout would hide an article for good);
+reusing `articles.body` for page text (it means text Market Oracle wrote itself); notes keyed
+per article only (a model switch would reuse another model's reading).
+
+## 2026-09-24 - The note call and the context budget
+**Context:** One small model call per article must fit a 4B model at 8192 tokens today and
+16384 after ticket 04.
+**Decision:** A short system prompt naming the company, the article's evidence line as the
+heading, and its text cut to min(12,000 characters, what fits at 3 characters a token beside
+the prompt and 1024 reply tokens), marked " [cut]". Schema: `about_company` (boolean) and
+`facts` (array of strings, maxItems 3); facts are trimmed, cut to 200 characters and
+deduplicated. Not about the company means no facts and a marker on the headline line. The
+roles now read a budgeted digest: stored data and the researcher's notes always, then lines
+with facts, then headlines alone, strictly in that order within the context less the longest
+role prompt and 4000 characters kept for the analysts' findings and the cases. The verdict's
+fill order puts cited items with facts before cited headlines and a new "uncited items read"
+kind before step observations and uncited headlines.
+**Alternatives:** Several articles per call (fewer calls, but a 4B model mixes them up);
+letting the model cite ids in its facts (one article per call makes the id certain, so the
+code adds it); an unbudgeted roles digest (12 noted articles could crowd out the later
+roles' inputs).
+
+## 2026-09-24 - Resolving Google News links
+**Context:** Google News RSS links are redirect stubs `read_page` refuses.
+**Decision:** The feed's `<source url>` is now stored as `articles.site`. A stub is resolved
+by a web search (through the ddgs gate) for its headline, taking the first result on that
+site or a subdomain of it; with no site stored, a domain label must match the outlet's name.
+No match is a lasting skip with the reason; replays never search and leave the link unread.
+**Alternatives:** Following Google's redirect (it answers with a script page, not a Location
+header); decoding the article id in the stub (undocumented and has changed before).

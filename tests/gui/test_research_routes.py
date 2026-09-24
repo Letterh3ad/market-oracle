@@ -86,6 +86,12 @@ async def test_only_web_addresses_become_links(ready):
     assert links["AAPL stored prices, fundamentals and analyst signals"] is None
 
 
+async def test_each_article_comes_with_its_facts_or_why_it_was_not_read(ready):
+    run = await researched(ready)
+    [article] = [e for e in run["evidence"] if e["title"] == "Apple beats estimates"]
+    assert article["facts"] == [] and article["read"] == "the page answered HTTP 404"
+
+
 async def test_a_run_going_elsewhere_answers_already_running(ready, ctx):
     from oracle.services.jobs_service import single_flight
 

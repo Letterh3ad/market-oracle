@@ -78,6 +78,7 @@ def test_the_evidence_cited_is_listed_with_links(run, ollama, news):
     code, out, _ = run("research", "AAPL")
     assert "Evidence cited:" in out and "[a1] 2026-09-20 Reuters: Apple beats estimates" in out
     assert "https://reut.rs/1" in out and "https://bbc.in/2" not in out.split("Evidence cited:")[1]
+    assert "read: the page answered HTTP 404" in out.split("Evidence cited:")[1]
 
 
 def test_each_article_shown_gets_its_own_line(run, ollama, news):

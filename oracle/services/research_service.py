@@ -18,7 +18,7 @@ from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
 from oracle.research.queries import plan, seed_queries, suggest
-from oracle.research.roles import write_report
+from oracle.research.roles import digest, digest_room, write_report
 from oracle.research.tools import Tool
 from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
 from oracle.research.verdict import Material, add_verdict
@@ -31,8 +31,8 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
-    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch, evidence_line,
-    market_summary,
+    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
+    evidence_entry, market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
@@ -56,6 +56,8 @@ UNUSABLE = "the model's answers were unusable"
 LEASE_S = 3600.0
 # Conservative for every Claude model the backend can name.
 CLAUDE_CONTEXT = 200_000
+# Articles read and noted per run, beyond those already noted.
+READ_ARTICLES = 12
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
@@ -97,23 +99,33 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
                    await suggest(model, _about(profile, day), profile.country))
     repo.set_queries(run_id, queries)
     shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
+    # Web pages carry no reliable date, so a replay cannot search the web.
+    searcher = None if as_of else searcher or DdgsSearcher()
     async with open_client(ctx) as client:
         tools = _tools(ctx, client, shelf, listing, as_of, searcher)
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
+        reader = Reader(ctx.conn, ctx.clock, client, searcher, SourceGate(ctx.conn, ctx.clock, ctx.config.sources),
+                        ctx.config.research.contact, model, f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+        await reader.read(repo.get(run_id).evidence, READ_ARTICLES, as_of,
+                          lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"))
+        repo.set_stage(run_id, None)
     findings, cited = keep_citations(outcome.findings, shown)
     statistics, data_id = await _statistics(ctx, shelf, run_id, listing, as_of, day)
     run = repo.get(run_id)
     evidence = tuple(e for e in run.evidence if e.id != data_id)
-    lines = {e.id: evidence_line(e.id, e.published, e.outlet, e.title) for e in evidence}
-    digest = "\n".join(["Evidence:", statistics, *lines.values()]) + f"\n\nResearcher's notes: {findings or '(none)'}"
-    report = await write_report(model, digest, shown, day)
+    lines = {e.id: evidence_entry(e) for e in evidence}
+    read = frozenset(e.id for e in evidence if e.facts)
+    digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
+                         [lines[e.id] for e in evidence if e.id not in read], findings,
+                         digest_room(context_tokens(ctx)))
+    report = await write_report(model, digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
             repo.set_cited(run_id, cited)
             repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
         return
-    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines)
+    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines, read)
     report = await add_verdict(model, report, material, context_tokens(ctx))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
@@ -244,10 +256,9 @@ def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: st
     if contact:
         # SEC refuses requests without one; offering the tool would only waste a step.
         tools.append(Filings(client, ctx.conn, ctx.clock, shelf, listing, contact))
-    if as_of is None:
-        # Web pages carry no reliable date, so a replay cannot use them.
+    if searcher is not None:
         gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-        tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
+        tools += [WebSearch(searcher, gate, shelf), ReadPage(client, shelf, contact)]
     return tools
 
 
@@ -256,6 +267,8 @@ def research_progress(ctx: AppContext, listing: str) -> str | None:
     run = ResearchRepo(ctx.conn).latest(listing)
     if run is None or run.status != RunStatus.RUNNING:
         return None
+    if stage := ResearchRepo(ctx.conn).stage(run.id):
+        return stage
     if not run.steps:
         return "planning searches"
     last = run.steps[-1]

@@ -6,7 +6,9 @@ from dataclasses import asdict
 from collections.abc import Set
 from datetime import date, datetime
 
-from oracle.research.trace import Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step, Verdict
+from oracle.research.trace import (
+    NOT_ABOUT, NOTHING, Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step, Verdict,
+)
 from oracle.store.db import transaction
 
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
@@ -94,6 +96,15 @@ class ResearchRepo:
                 (RunStatus.FAILED, error, finished_at, RunStatus.RUNNING),
             )
 
+    def set_stage(self, run_id: int, stage: str | None) -> None:
+        """What a running run is doing between its steps, for the progress line."""
+        with transaction(self._conn):
+            self._conn.execute("UPDATE research_runs SET stage = ? WHERE id = ?", (stage, run_id))
+
+    def stage(self, run_id: int) -> str | None:
+        row = self._conn.execute("SELECT stage FROM research_runs WHERE id = ?", (run_id,)).fetchone()
+        return row[0] if row else None
+
     def get(self, run_id: int) -> ResearchRun | None:
         row = self._conn.execute(f"SELECT {_RUN} FROM research_runs WHERE id = ?", (run_id,)).fetchone()
         return self._run(row) if row else None
@@ -109,13 +120,15 @@ class ResearchRepo:
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
         evidence = self._conn.execute(
-            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query FROM research_evidence e "
-            "JOIN articles a ON a.id = e.article_id WHERE e.run_id = ? "
-            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (row[0],),
+            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, t.failed, n.about, "
+            "n.facts, n.failed FROM research_evidence e JOIN articles a ON a.id = e.article_id "
+            "LEFT JOIN article_texts t ON t.article_id = a.id "
+            "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ? WHERE e.run_id = ? "
+            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (note_model(row[2], row[3]), row[0]),
         )
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
-                           tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c), b, q)
-                                 for i, u, t, o, p, c, b, q in evidence),
+                           tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c), b, q,
+                                          *_reading(*r)) for i, u, t, o, p, c, b, q, *r in evidence),
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),
@@ -138,6 +151,19 @@ class ResearchRepo:
                       tuple(RoleCheck(c["role"], c["usable"], {Drop(k): n for k, n in c["dropped"].items()})
                             for c in body.get("checks", ())),
                       verdict(body.get("verdict")), body.get("verdict_rejected"), tuple(body.get("unread", ())))
+
+
+def note_model(backend: str, model: str) -> str:
+    """How notes are keyed: each model reads an article its own way."""
+    return f"{backend}/{model}"
+
+
+def _reading(read_failed: str | None, about: int | None, facts: str | None,
+             note_failed: str | None) -> tuple[tuple[str, ...], str | None]:
+    if facts is not None:
+        found = tuple(json.loads(facts)) if about else ()
+        return found, None if found else (NOTHING if about else NOT_ABOUT)
+    return (), note_failed or read_failed
 
 
 def _report_json(r: Report) -> dict:

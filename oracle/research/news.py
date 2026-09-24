@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
+from oracle.research.web import domain
+
 GOOGLE_NEWS = "https://news.google.com/rss/search"
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_RECORDS = 50
@@ -29,6 +31,8 @@ class Article:
     """A search snippet, shown with the article but not stored."""
     body: str | None = field(default=None, compare=False)
     """Stored text, for evidence written by Market Oracle itself."""
+    site: str | None = field(default=None, compare=False)
+    """The outlet's own domain, where the feed names it beside a redirect link."""
 
 
 def end_of(day: date) -> datetime:
@@ -88,7 +92,9 @@ def parse_google_news(xml: str) -> list[Article]:
         outlet = (item.findtext("source") or "").strip() or None
         if outlet and title.endswith(f" - {outlet}"):
             title = title[: -len(outlet) - 3].rstrip()
-        out.append(Article(url, title, outlet, _rfc2822(item.findtext("pubDate"))))
+        source = item.find("source")
+        site = domain(source.get("url", "")) if source is not None else ""
+        out.append(Article(url, title, outlet, _rfc2822(item.findtext("pubDate")), site=site or None))
     return out
 
 

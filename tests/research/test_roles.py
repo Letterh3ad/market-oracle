@@ -77,3 +77,25 @@ async def test_nothing_usable_is_visible_on_the_report():
     r = await report(**{role: "garbled" for role in ROLES})
     assert not any(c.usable for c in r.checks) and r.usable is False
     assert (await report()).usable is True
+
+
+def test_the_evidence_digest_keeps_facts_over_headlines_and_always_has_the_data_and_notes():
+    from oracle.research.roles import digest
+
+    stats, notes = "[a9] 2026-09-21 stored data: up 5%", "Beat [a1]."
+    read = ["[a1] 2026-09-20 Reuters: Beat\n  - Revenue rose 8% [a1]"]
+    headlines = ["[a2] 2026-09-19 BBC: Slows", "[a3] 2026-09-18 FT: Other"]
+    full = digest(stats, read, headlines, notes, 100_000)
+    assert full == ("Evidence:\n[a9] 2026-09-21 stored data: up 5%\n" + "\n".join(read + headlines)
+                    + "\n\nResearcher's notes: Beat [a1].")
+    tight = digest(stats, read, headlines, notes, len(full) - 1)
+    assert "[a2]" in tight and "[a3]" not in tight
+    assert digest(stats, read, headlines, "", 0) == f"Evidence:\n{stats}\n\nResearcher's notes: (none)"
+
+
+def test_the_digest_leaves_room_for_the_later_roles_reading():
+    from oracle.research.budget import budget
+    from oracle.research.roles import LATER_ROLES_CHARS, digest_room
+
+    assert 0 < digest_room(8192) < budget(8192, "") - LATER_ROLES_CHARS
+    assert digest_room(1024) == 0

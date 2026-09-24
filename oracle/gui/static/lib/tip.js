@@ -71,7 +71,9 @@ const GLOSSARY = {
     "a claim is dropped when it has no text, cites nothing, or cites something the research was never shown.",
   evidence:
     "The articles, filings and pages the research was shown, by id. [a3] in the report points here. " +
-    "'stored data' is Market Oracle's own prices, fundamentals and analyst signals.",
+    "'stored data' is Market Oracle's own prices, fundamentals and analyst signals. Up to 12 articles a run are " +
+    "read in full, and the model notes up to 3 facts from each for the report; an article that could not be " +
+    "read says why.",
   research_trace: "Every step the model took: what it thought, which tool it used, and what came back.",
   research_history: "Every report on this listing, newest first. A replay is marked; its date is the day it replayed.",
   research_replay:

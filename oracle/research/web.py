@@ -61,6 +61,11 @@ class DdgsSearcher:
         return [WebResult(r.get("href", ""), r.get("title", ""), r.get("body", "")) for r in rows if r.get("href")]
 
 
+def domain(url: str) -> str:
+    host = urlsplit(url).hostname or ""
+    return host[4:] if host.startswith("www.") else host
+
+
 def unsafe_url(url: str) -> str | None:
     """Why the page reader must not open `url`, or None. Links come from web pages the
     model read, so they may point back into this machine or the local network."""
