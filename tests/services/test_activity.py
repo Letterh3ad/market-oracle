@@ -384,6 +384,185 @@ async def test_scheduled_ticks_are_automatic_and_manual_ones_are_not(runner, ctx
     assert scheduled.automatic and not submit_tick(ctx, runner).automatic
 
 
+async def test_retrying_a_failed_research_run_resubmits_the_same_symbol(runner, ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from oracle.services import activity_service
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    monkeypatch.setattr(activity_service, "check_as_of", lambda c, d: None)
+    row_id = JobHistoryRepo(ctx.conn).add("research", "Research AAPL", "AAPL", "#company/AAPL", "queued", NOW,
+                                          999_999_999)
+    JobHistoryRepo(ctx.conn).update(row_id, "failed", "the model's answers were unusable", NOW, NOW)
+
+    again = retry(ctx, runner, row_id)
+    assert again.kind == "research" and again.subject == "AAPL" and again.label == "Research AAPL"
+
+
+async def test_retrying_a_research_replay_keeps_its_day(runner, ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from oracle.services import activity_service
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    monkeypatch.setattr(activity_service, "check_as_of", lambda c, d: None)
+    row_id = JobHistoryRepo(ctx.conn).add("research", "Replay AAPL as of 2026-09-01", "AAPL@2026-09-01", None,
+                                          "queued", NOW, 999_999_999)
+    JobHistoryRepo(ctx.conn).update(row_id, "failed", "model down", NOW, NOW)
+
+    again = retry(ctx, runner, row_id)
+    assert again.kind == "research" and again.subject == "AAPL@2026-09-01"
+
+
+async def test_retrying_prices_for_everyone_vs_one_listing(runner, ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from oracle.services import activity_service
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    repo = JobHistoryRepo(ctx.conn)
+    all_id = repo.add("prices", "Update prices (watchlists)", "*", "#watchlist", "queued", NOW, 999_999_999)
+    repo.update(all_id, "failed", "yahoo down", NOW, NOW)
+    one_id = repo.add("prices", "Update prices AAPL", "AAPL", "#company/AAPL", "queued", NOW, 999_999_999)
+    repo.update(one_id, "cancelled", "cancelled", NOW, NOW)
+
+    again_all = retry(ctx, runner, all_id)
+    again_one = retry(ctx, runner, one_id)
+    assert (again_all.kind, again_all.subject) == ("prices", "*")
+    assert (again_one.kind, again_one.subject) == ("prices", "AAPL")
+
+
+async def test_retrying_a_tick_is_always_manual(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    row_id = repo.add("tick", "Tick (scheduled)", "tick", "#watchlist", "queued", NOW, 999_999_999)
+    repo.update(row_id, "interrupted", "interrupted: app closed", NOW, NOW)
+
+    again = retry(ctx, runner, row_id)
+    assert again.kind == "tick" and again.label == "Tick (manual)" and not again.automatic
+
+
+async def test_retrying_universe_and_merges(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    uni_id = repo.add("universe", "Refresh universe", "universe", "#universe", "queued", NOW, 999_999_999)
+    repo.update(uni_id, "failed", "download failed", NOW, NOW)
+    merge_id = repo.add("merges", "Proposed merges", "merges", "#universe", "queued", NOW, 999_999_999)
+    repo.update(merge_id, "cancelled", "cancelled", NOW, NOW)
+
+    assert retry(ctx, runner, uni_id).kind == "universe"
+    assert retry(ctx, runner, merge_id).kind == "merges"
+
+
+async def test_retrying_fx_keeps_its_sources_or_the_default(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    default_id = repo.add("fx", "Update FX", "*", None, "queued", NOW, 999_999_999)
+    repo.update(default_id, "failed", "no source answered", NOW, NOW)
+    picked_id = repo.add("fx", "Update FX (yahoo, ecb)", "yahoo,ecb", None, "queued", NOW, 999_999_999)
+    repo.update(picked_id, "failed", "no source answered", NOW, NOW)
+
+    assert retry(ctx, runner, default_id).subject == "*"
+    assert retry(ctx, runner, picked_id).subject == "yahoo,ecb"
+
+
+async def test_retrying_a_done_job_is_refused(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.services.errors import InvalidQuery
+
+    gate = Gate("a", [])
+    job = runner.submit("prices", "Update prices", gate, subject="*")
+    gate.open.set()
+    await runner.wait(job.id)
+    with pytest.raises(InvalidQuery, match="done"):
+        retry(ctx, runner, job.id)
+
+
+async def test_retrying_an_unknown_job_says_so(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.services.errors import UnknownJob
+
+    with pytest.raises(UnknownJob):
+        retry(ctx, runner, 12345)
+
+
+async def test_a_kind_that_cannot_be_rebuilt_is_refused(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.services.errors import InvalidQuery
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    row_id = repo.add("mystery", "Some old kind", "x", None, "queued", NOW, 999_999_999)
+    repo.update(row_id, "failed", "boom", NOW, NOW)
+    with pytest.raises(InvalidQuery, match="cannot be retried"):
+        retry(ctx, runner, row_id)
+
+
+async def test_retry_all_resubmits_every_bad_ending_once(runner, ctx):
+    from oracle.services.activity_service import retry_all
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    failed_id = repo.add("prices", "Update prices (watchlists)", "*", None, "queued", NOW, 999_999_999)
+    repo.update(failed_id, "failed", "yahoo down", NOW, NOW)
+    cancelled_id = repo.add("merges", "Proposed merges", "merges", None, "queued", NOW, 999_999_999)
+    repo.update(cancelled_id, "cancelled", "cancelled", NOW, NOW)
+
+    again = retry_all(ctx, runner)
+    assert sorted((j.kind, j.subject) for j in again) == [("merges", "merges"), ("prices", "*")]
+
+
+async def test_retry_all_skips_a_subject_since_redone_successfully(runner, ctx):
+    from datetime import timedelta
+
+    from oracle.services.activity_service import retry_all
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    old = repo.add("merges", "Proposed merges", "merges", None, "queued", NOW, 999_999_999)
+    repo.update(old, "failed", "boom", NOW, NOW)
+    later = NOW + timedelta(minutes=5)
+    redone = repo.add("merges", "Proposed merges", "merges", None, "queued", later, 999_999_999)
+    repo.update(redone, "done", None, later, later)
+
+    assert retry_all(ctx, runner) == []
+
+
+async def test_retry_all_skips_a_subject_already_queued_or_running(runner, ctx):
+    from oracle.services.activity_service import retry_all
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    failed_id = repo.add("merges", "Proposed merges", "merges", None, "queued", NOW, 999_999_999)
+    repo.update(failed_id, "failed", "boom", NOW, NOW)
+    runner.submit("merges", "Proposed merges", Gate("m", []), subject="merges")
+
+    assert retry_all(ctx, runner) == []
+
+
+async def test_retry_all_leaves_unrebuildable_kinds_out(runner, ctx):
+    from oracle.services.activity_service import retry_all
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    row_id = repo.add("mystery", "Some old kind", "x", None, "queued", NOW, 999_999_999)
+    repo.update(row_id, "failed", "boom", NOW, NOW)
+
+    assert retry_all(ctx, runner) == []
+
+
 async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, monkeypatch):
     from types import SimpleNamespace
 
