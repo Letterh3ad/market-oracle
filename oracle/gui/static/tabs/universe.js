@@ -3,6 +3,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
 import { sendJson, busyButton, runJob } from "../lib/ui.js";
 import { refresh as refreshHeader } from "../lib/status.js";
+import { repaint } from "../lib/repaint.js";
 import { fillPicker } from "../lib/watchlists.js";
 
 const PAGE = 50;
@@ -38,7 +39,7 @@ async function run(pane) {
   // A newer search answered already, or another tab now owns the pane.
   if (mine !== seq || !pane.querySelector("#u-results")) return;
   clearError();
-  pane.querySelector("#u-results").replaceChildren(results(body.hits, pane));
+  repaint(pane.querySelector("#u-results"), [results(body.hits, pane)]);
   pane.querySelector("#u-pages").replaceChildren(pages(body.more, pane));
 }
 

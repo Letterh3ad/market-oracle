@@ -2,7 +2,8 @@ import { api } from "../lib/api.js";
 import { lineChart, linesChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
-import { researchButton, staleButton } from "../lib/ledger_research.js";
+import { researchLive } from "../lib/ledger_research.js";
+import { repaint } from "../lib/repaint.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
@@ -10,8 +11,13 @@ import { busyButton, sendJson } from "../lib/ui.js";
 let charts = [];
 let pane = null;
 let root = null; // this tab's container: a late answer repaints only while it is on screen
+let loads = 0; // only the newest load paints
+let live = null; // this render's research buttons and their poll
+let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
-const showLines = (lines) => { lastResult = lines; refresh(); };
+let resultBox = null;
+// Research presses change only their buttons, so their lines go straight into the result box.
+const say = (lines) => resultBox?.replaceChildren(...lines.map((line) => el("div", null, line)));
 
 function metrics(a, base) {
   const row = (label, key, value, cls = "") => el("tr", null,
@@ -159,7 +165,7 @@ function column(a, base, rules, ai, stale) {
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
-    a.name === "ai" ? aiResearch(ai) : null, a.name === "ai" ? staleButton(stale, showLines) : null,
+    a.name === "ai" ? aiResearch(ai) : null, a.name === "ai" ? live.staleButton(stale, say) : null,
     metrics(a, base), manual ? trading(base) : null,
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,
@@ -232,12 +238,13 @@ function decisions(rows, base, empty, due = new Set()) {
         d.action + (d.cash != null ? ` ${money(d.cash)} ${base}` : "")),
       el("td", { class: "small" }, d.reason,
         d.report_id != null ? el("span", { class: "dim" }, ` (research run ${d.report_id})`) : null,
-        offer(d) ? " " : null, offer(d) ? researchButton(d.symbol, showLines) : null))),
+        offer(d) ? " " : null, offer(d) ? live.researchButton(d.symbol, say) : null))),
     empty);
 }
 
 function jobs(base) {
   const out = el("div", { class: "result" }, ...lastResult.map((line) => el("div", null, line)));
+  resultBox = out;
   lastResult = [];
   const run = (label, path, lines) => busyButton(label, async () => {
     try {
@@ -264,27 +271,27 @@ function jobs(base) {
     out);
 }
 
-// Reload the tab after an action, unless the user has moved to another tab meanwhile.
+// Repaints the tab in place after an action, unless the user has moved to another tab meanwhile.
 function refresh() {
-  if (root && pane.contains(root)) render(pane);
+  if (root && pane.contains(root)) load(root);
 }
 
-async function render(target) {
-  pane = target;
-  const mine = el("div", null, el("p", { class: "dim" }, "Loading..."));
-  root = mine;
-  pane.replaceChildren(mine);
+async function load(mine) {
+  const asked = ++loads;
   let body, log, aiLog, stale;
   try {
     [body, log, aiLog, stale] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
       api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale")]);
   } catch (err) {
-    if (pane.contains(mine)) mine.replaceChildren(el("p", { class: "dim" }, `Could not load the ledgers: ${err.message}`));
+    if (asked !== loads || !pane.contains(mine)) return;
+    if (mine.dataset.painted) showError(`Could not reload the ledgers: ${err.message}`);
+    else mine.replaceChildren(el("p", { class: "dim" }, `Could not load the ledgers: ${err.message}`));
     return;
   }
-  if (!pane.contains(mine)) return; // another tab, or a newer load, owns the pane now
+  if (asked !== loads || !pane.contains(mine)) return; // another tab, or a newer load, owns the pane now
+  mine.dataset.painted = "yes";
   const base = body.base_currency;
-  mine.replaceChildren(
+  repaint(mine, [
     jobs(base),
     comparison(body.compare, base),
     el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale))),
@@ -292,9 +299,22 @@ async function render(target) {
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
-      new Set(stale.due)));
-  drawCharts(body.accounts);
-  drawComparison(body.compare);
+      new Set(stale.due)),
+  ], () => {
+    drawCharts(body.accounts);
+    drawComparison(body.compare);
+  });
+}
+
+// The first load shows "Loading..."; the research buttons follow their jobs while the tab is on screen.
+function render(target) {
+  pane = target;
+  root = el("div", null, el("p", { class: "dim" }, "Loading..."));
+  pane.replaceChildren(root);
+  live = researchLive();
+  clearInterval(timer);
+  timer = live.start(root);
+  return load(root);
 }
 
 export default { id: "ledgers", label: "Ledgers", render };
