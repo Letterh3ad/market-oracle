@@ -969,6 +969,19 @@ async def test_the_strongest_linked_companies_are_searched_within_the_plan_and_t
     assert latest_research(ctx, "AAPL").evidence == run.evidence
 
 
+async def test_an_article_first_found_elsewhere_still_says_which_link_found_it_in_this_run(ctx, news):
+    link_apple(ctx)
+    story = ("https://x.com/1", "Microsoft and Apple sign AI deal", "X", utc("2026-09-20"))
+    news.results["Apple shares"] = news.results["Microsoft Apple"] = [story]
+    first = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple shares"), step("final", "Done.")))
+    assert articles(first)[0].via is None
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Microsoft Apple"), step("final", "Done.")))
+    [deal] = articles(run)
+    assert (deal.query, deal.via) == ("Apple shares", "Microsoft (MSFT), a partner")
+    third = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple shares"), step("final", "Done.")))
+    assert articles(third)[0].via is None, "no link label from another run's search"
+
+
 async def test_related_companies_lists_stored_links_first_then_peers_not_already_named(ctx):
     link_apple(ctx)
     run = await research(ctx, "AAPL", ScriptedModel(step("related_companies"), step("final", "Done.")))

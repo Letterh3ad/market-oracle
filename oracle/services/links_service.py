@@ -14,7 +14,7 @@ from oracle.services.never_list import never_company
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
 from oracle.store.discoveries import DiscoveryEvidence
-from oracle.store.links import LinkRepo
+from oracle.store.links import LinkRepo, StoredLink
 from oracle.store.universe import Resolved, UniverseRepo
 
 __all__ = [
@@ -42,20 +42,24 @@ class LinkFound:
 
 @dataclass(frozen=True)
 class CompanyLink:
-    """A linked company as the company asked about sees it: `symbol` is `relation` of it."""
+    """A linked company as the company asked about sees it: `symbol` is each of `relations`
+    of it. Every stored link between the two companies, either way round, is gathered here."""
 
     id: int
     symbol: str
     name: str | None
-    relation: str
+    relations: tuple[str, ...]
     source: str
+    """What found it first."""
     first_seen: str
     last_seen: str
     evidence: tuple[DiscoveryEvidence, ...]
+    ids: tuple[int, ...] = ()
+    """The stored links it gathers; `id` is the strongest."""
 
     @property
     def why(self) -> str:
-        return _WORDS[self.relation]
+        return " and ".join(_WORDS[r] for r in self.relations)
 
     @property
     def label(self) -> str:
@@ -65,12 +69,14 @@ class CompanyLink:
 def record_links(ctx: AppContext, found: Iterable[LinkFound], source: str) -> int:
     """Keep each link with its evidence, adding new evidence to one already kept. A link the
     user deleted (between any listings of the two companies), a company's link to itself, and
-    links to unknown listings or the never list are left out. Returns how many were kept."""
+    links to unknown listings or the never list are left out. Returns how many were kept. An
+    unknown relation refuses the whole batch before anything is written."""
+    found = list(found)
+    if bad := sorted({f.relation for f in found} - set(RELATIONS)):
+        raise InvalidQuery(f"unknown link {', '.join(map(repr, bad))}; one of {', '.join(RELATIONS)}")
     universe, repo, now = UniverseRepo(ctx.conn), LinkRepo(ctx.conn), to_utc_iso(ctx.clock.utcnow())
     kept = 0
     for f in found:
-        if f.relation not in RELATIONS:
-            raise InvalidQuery(f"unknown link {f.relation!r}; one of {', '.join(RELATIONS)}")
         a, b = universe.resolve(f.symbol), universe.resolve(f.other)
         if a is None or b is None or a.company_key == b.company_key:
             continue
@@ -84,39 +90,47 @@ def record_links(ctx: AppContext, found: Iterable[LinkFound], source: str) -> in
 
 
 def company_links(ctx: AppContext, symbol: str, as_of: date | None = None) -> list[CompanyLink]:
-    """Links of the company behind any of its listings, most evidence first, then newest.
-    With `as_of`, only links known by the end of that day."""
+    """Companies linked to the one behind any of its listings, most evidence first, then
+    newest; none on the never list as it stands now. With `as_of`, only what was known by the
+    end of that day: links first seen by then, evidence published by then, last seen capped."""
     universe = UniverseRepo(ctx.conn)
     mine = _listings(universe, resolve_symbol(ctx, symbol))
     before = (as_of + timedelta(days=1)).isoformat() if as_of else None
-    out = []
+    groups: dict[str, list[tuple[StoredLink, str]]] = {}
     for link in LinkRepo(ctx.conn).of(mine, before):
         forward = link.symbol.upper() in mine
         other = link.other if forward else link.symbol
         found = universe.resolve(other)
-        out.append(CompanyLink(link.id, other, found.name if found else None,
-                               link.relation if forward else _INVERSE.get(link.relation, link.relation),
-                               link.source, link.first_seen, link.last_seen, link.evidence))
-    return out
+        relation = link.relation if forward else _INVERSE.get(link.relation, link.relation)
+        groups.setdefault(found.company_key if found else other.upper(), []).append((link, relation))
+    out = []
+    for rows in groups.values():
+        first = rows[0][0]
+        other = first.other if first.symbol.upper() in mine else first.symbol
+        found = universe.resolve(other)
+        if found and never_company(ctx, found.symbol, user=True):
+            continue
+        links = [link for link, _ in rows]
+        evidence = {e.id: e for link in links for e in link.evidence
+                    if before is None or (e.published_at is not None and e.published_at < before)}
+        last = max(link.last_seen for link in links)
+        out.append(CompanyLink(first.id, other, found.name if found else None,
+                               tuple(dict.fromkeys(r for _, r in rows)), first.source,
+                               min(link.first_seen for link in links),
+                               min(last, as_of.isoformat()) if as_of else last,
+                               tuple(sorted(evidence.values(), key=lambda e: e.id)), tuple(link.id for link in links)))
+    out.sort(key=lambda x: x.last_seen, reverse=True)
+    return sorted(out, key=lambda x: len(x.evidence), reverse=True)
 
 
 def research_links(ctx: AppContext, symbol: str, limit: int, as_of: date | None = None) -> list[CompanyLink]:
-    """The strongest `limit` linked companies with evidence, one link each."""
-    universe = UniverseRepo(ctx.conn)
-    seen: set[str] = set()
-    out = []
-    for link in company_links(ctx, symbol, as_of):
-        found = universe.resolve(link.symbol)
-        key = found.company_key if found else link.symbol
-        if link.evidence and key not in seen:
-            seen.add(key)
-            out.append(link)
-    return out[:limit]
+    """The strongest `limit` linked companies with evidence."""
+    return [x for x in company_links(ctx, symbol, as_of) if x.evidence][:limit]
 
 
 def delete_link(ctx: AppContext, symbol: str, link_id: int) -> CompanyLink:
     """Delete every link between the two companies; none is recorded again."""
-    link = next((x for x in company_links(ctx, symbol) if x.id == link_id), None)
+    link = next((x for x in company_links(ctx, symbol) if link_id in x.ids), None)
     if link is None:
         raise UnknownLink(f"no link {link_id} for {symbol}")
     repo, universe = LinkRepo(ctx.conn), UniverseRepo(ctx.conn)

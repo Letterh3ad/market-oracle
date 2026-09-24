@@ -6,7 +6,8 @@ from oracle.store.migrations import run_ddl
 
 # A link reads "other is <relation> of symbol". A deleted link keeps its row (deleted_at set)
 # so the same pair is never recorded again. `via` names the link a planned research search
-# came from, so evidence it found can say so.
+# came from; research_evidence.query is the search that showed an article to that run (the
+# article's own query is the first ever, often another run's), so its evidence can say so.
 DDL = """
 CREATE TABLE company_links (
     id         INTEGER PRIMARY KEY,
@@ -26,6 +27,7 @@ CREATE TABLE company_link_evidence (
     PRIMARY KEY (link_id, article_id)
 ) WITHOUT ROWID;
 ALTER TABLE research_queries ADD COLUMN via TEXT;
+ALTER TABLE research_evidence ADD COLUMN query TEXT;
 """
 
 

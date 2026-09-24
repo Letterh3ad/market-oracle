@@ -11,8 +11,8 @@ async def test_a_company_lists_its_links_with_evidence_and_a_delete_keeps_them_g
                                      "2026-09-23T00:00:00Z")
     record_links(ctx, [LinkFound("7203.T", "AAPL", "partner", (a,)), LinkFound("7203.T", "KO", "peer")], "discovery")
     [first, second] = (await loaded.get("/api/companies/TM/links")).json()["links"]
-    assert (first["symbol"], first["name"], first["relation"], first["why"], first["source"]) == (
-        "AAPL", "Apple Inc.", "partner", "a partner", "discovery")
+    assert (first["symbol"], first["name"], first["relations"], first["why"], first["source"]) == (
+        "AAPL", "Apple Inc.", ["partner"], "a partner", "discovery")
     [e] = first["evidence"]
     assert (e["title"], e["link"], e["outlet"]) == ("Toyota and Apple talk", "https://news.test/1", "Wire")
     assert (second["symbol"], second["why"], second["evidence"]) == ("KO", "in the same industry", [])

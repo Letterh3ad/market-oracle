@@ -91,9 +91,9 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
                as_of: date | None, searcher: WebSearcher | None) -> None:
     shown: set[int] = set()
 
-    def on_shown(ids: list[int]) -> None:
+    def on_shown(ids: list[int], query: str | None) -> None:
         shown.update(ids)
-        repo.add_evidence(run_id, ids)
+        repo.add_evidence(run_id, ids, query)
 
     profile = UniverseRepo(ctx.conn).profile(listing)
     # Web pages carry no reliable date, so a replay cannot search the web.

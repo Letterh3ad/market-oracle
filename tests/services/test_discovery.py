@@ -7,10 +7,10 @@ from oracle.config import Config, DiscoveryConfig
 from oracle.research.llm import ModelError
 from oracle.services import discovery_service
 from oracle.services.context import open_context
-from oracle.services.links_service import company_links, delete_link
 from oracle.services.discovery_service import (
     discover, discovered, gdelt_query, move_discovered, news_query, remove_discovered,
 )
+from oracle.services.links_service import company_links, delete_link
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, unwatch, watch
 from oracle.store.discoveries import DISCOVERED_LIST
@@ -286,15 +286,15 @@ async def test_every_company_the_news_links_to_a_seed_is_kept_as_a_link_with_its
     assert [a.symbol for a in run.added] == ["6902.T"], "one added, both linked"
     links = {x.symbol: x for x in company_links(ctx, "7203.T")}
     assert set(links) == {"6902.T", "6752.T"}, "never Tesla"
-    assert links["6902.T"].relation == "supplier" and links["6902.T"].source == "discovery"
+    assert links["6902.T"].relations == ("supplier",) and links["6902.T"].source == "discovery"
     assert [e.title for e in links["6752.T"].evidence] == ["Toyota and Panasonic expand battery venture"]
-    assert company_links(ctx, "6902.T")[0].relation == "customer"
+    assert company_links(ctx, "6902.T")[0].relations == ("customer",)
 
 
 async def test_an_added_peer_is_linked_as_the_same_industry(ctx):
     await discover(ctx, silent())
     [link] = company_links(ctx, "7203.T")
-    assert (link.symbol, link.relation, link.evidence) == ("6902.T", "peer", ())
+    assert (link.symbol, link.relations, link.evidence) == ("6902.T", ("peer",), ())
 
 
 async def test_a_deleted_link_is_not_kept_again_from_the_same_news(ctx, news):

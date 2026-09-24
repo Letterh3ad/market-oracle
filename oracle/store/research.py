@@ -67,11 +67,12 @@ class ResearchRepo:
                                    (symbol,)).fetchone()
         return datetime.fromisoformat(at) if at else None
 
-    def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
+    def add_evidence(self, run_id: int, article_ids: list[int], query: str | None = None) -> None:
+        """`query`: what first showed them to this run (an article's own `query` is the first ever)."""
         with transaction(self._conn):
             self._conn.executemany(
-                "INSERT OR IGNORE INTO research_evidence (run_id, article_id) VALUES (?, ?)",
-                [(run_id, a) for a in article_ids],
+                "INSERT OR IGNORE INTO research_evidence (run_id, article_id, query) VALUES (?, ?, ?)",
+                [(run_id, a, query) for a in article_ids],
             )
 
     def set_cited(self, run_id: int, article_ids: set[int]) -> None:
@@ -123,7 +124,7 @@ class ResearchRepo:
         )
         evidence = self._conn.execute(
             "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, "
-            "(SELECT q.via FROM research_queries q WHERE q.run_id = e.run_id AND q.query = a.query COLLATE NOCASE "
+            "(SELECT q.via FROM research_queries q WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE "
             "AND q.via IS NOT NULL LIMIT 1), t.failed, n.about, "
             "n.facts, n.failed FROM research_evidence e JOIN articles a ON a.id = e.article_id "
             "LEFT JOIN article_texts t ON t.article_id = a.id "

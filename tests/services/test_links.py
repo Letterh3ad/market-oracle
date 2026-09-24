@@ -36,11 +36,48 @@ def test_a_link_reads_from_either_company_with_its_evidence(ctx):
     a, b = articles(ctx, "Apple buys Toyota chips", "Toyota supplies Apple")
     assert record_links(ctx, [LinkFound("AAPL", "7203.T", "supplier", (a, b))], "discovery") == 1
     [from_apple] = company_links(ctx, "AAPL")
-    assert (from_apple.symbol, from_apple.name, from_apple.relation) == ("7203.T", "Toyota Motor Corporation",
-                                                                         "supplier")
+    assert (from_apple.symbol, from_apple.name, from_apple.relations) == ("7203.T", "Toyota Motor Corporation",
+                                                                          ("supplier",))
     assert from_apple.why == "a supplier" and [e.id for e in from_apple.evidence] == [a, b]
     [from_toyota] = company_links(ctx, "TM")
-    assert (from_toyota.symbol, from_toyota.relation) == ("AAPL", "customer"), "any listing, turned round"
+    assert (from_toyota.symbol, from_toyota.relations) == ("AAPL", ("customer",)), "any listing, turned round"
+
+
+def test_every_link_between_two_companies_shows_as_one_with_all_its_relations_and_evidence(ctx):
+    a, b = articles(ctx, "one", "two")
+    record_links(ctx, [LinkFound("AAPL", "KO", "supplier", (a,)), LinkFound("KO", "AAPL", "customer", (b,)),
+                       LinkFound("AAPL.MI", "KO", "partner", (a,))], "discovery")
+    [link] = company_links(ctx, "AAPL")
+    assert link.relations == ("supplier", "partner") and link.why == "a supplier and a partner"
+    assert [e.id for e in link.evidence] == [a, b] and len(link.ids) == 3
+
+
+def test_a_company_put_on_the_never_list_later_drops_out_of_its_links(ctx):
+    [a] = articles(ctx, "Apple and Coca-Cola team up")
+    record_links(ctx, [LinkFound("AAPL", "KO", "partner", (a,))], "discovery")
+    ctx.config = replace(ctx.config, discovery=replace(DiscoveryConfig(), never=("Coca-Cola",)))
+    assert company_links(ctx, "AAPL") == [] and research_links(ctx, "AAPL", 2) == []
+
+
+def test_one_unknown_relation_refuses_the_whole_batch_before_writing(ctx):
+    with pytest.raises(InvalidQuery):
+        record_links(ctx, [LinkFound("AAPL", "KO", "partner"), LinkFound("AAPL", "T", "friend")], "chat")
+    assert company_links(ctx, "AAPL") == []
+
+
+def test_a_replay_counts_only_evidence_published_by_its_day_and_never_sees_later_dates(ctx):
+    [old] = articles(ctx, "old")
+    record_links(ctx, [LinkFound("AAPL", "KO", "partner", (old,)), LinkFound("AAPL", "T", "partner")], "discovery")
+    ctx.clock.advance(3 * 86400)
+    [new1, new2] = ArticleRepo(ctx.conn).save(
+        [Article(f"https://news.test/new{n}", "new", "Wire", datetime(2026, 9, 26, tzinfo=timezone.utc)) for n in (1, 2)],
+        "google_news", "2026-09-27T00:00:00Z")
+    record_links(ctx, [LinkFound("AAPL", "T", "partner", (new1, new2))], "discovery")
+    assert [x.symbol for x in company_links(ctx, "AAPL")] == ["T", "KO"]
+    replay = company_links(ctx, "AAPL", as_of=date(2026, 9, 25))
+    assert [(x.symbol, len(x.evidence), x.last_seen[:10]) for x in replay] == [("KO", 1, "2026-09-24"),
+                                                                                ("T", 0, "2026-09-25")]
+    assert [x.symbol for x in research_links(ctx, "AAPL", 2, as_of=date(2026, 9, 25))] == ["KO"]
 
 
 def test_links_to_itself_unknown_listings_or_the_never_list_are_left_out(ctx):
@@ -78,6 +115,7 @@ def test_research_takes_the_strongest_linked_companies_with_evidence_known_by_it
     record_links(ctx, [LinkFound("AAPL", "T", "customer", (a,)), LinkFound("AAPL", "KO", "partner", (a, b)),
                        LinkFound("KO", "AAPL", "partner", (b,)), LinkFound("AAPL", "7203.T", "peer")], "discovery")
     assert [x.symbol for x in research_links(ctx, "AAPL", 3)] == ["KO", "T"], "one per company, evidence only"
+    assert research_links(ctx, "AAPL", 3)[0].why == "a partner"
     assert research_links(ctx, "AAPL", 1)[0].symbol == "KO"
     assert research_links(ctx, "AAPL", 3, as_of=NOW.date() - timedelta(days=1)) == []
     assert len(research_links(ctx, "AAPL", 3, as_of=date(2026, 9, 24))) == 2
