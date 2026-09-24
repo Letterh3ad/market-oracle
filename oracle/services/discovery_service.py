@@ -33,7 +33,7 @@ from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import DEFAULT_LIST, Watched, unwatch, watch
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso, transaction
-from oracle.store.discoveries import DISCOVERED_LIST, Discovery, DiscoveryEvidence, DiscoveryRepo
+from oracle.store.discoveries import DISCOVERED_LIST, Discovery, DiscoveryEvidence, DiscoveryRepo, Validation
 from oracle.store.meta import MetaRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
@@ -41,8 +41,9 @@ from oracle.universe.listings import blind_name
 
 __all__ = [
     "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
-    "SOURCE_QUESTION", "Skipped", "add_by_hand", "discover", "discovered", "gdelt_query", "move_discovered", "mover_query", "mover_searches",
-    "news_query", "remove_discovered", "searched_sources", "theme_query",
+    "RELATION_AUTO", "SOURCE_QUESTION", "Skipped", "add_by_hand", "add_checked", "discover", "discovered",
+    "gdelt_query", "list_full", "question_full", "move_discovered", "mover_query", "mover_searches", "news_query", "remove_discovered",
+    "searched_sources", "theme_query", "Validation",
 ]
 
 JOB = "discovery"
@@ -51,6 +52,8 @@ SOURCE_RELATED = "related"
 SOURCE_THEME = "theme"
 SOURCE_MOVER = "mover"
 SOURCE_QUESTION = "question"
+RELATION_AUTO = "auto"
+"""A question's company added by the question's auto mode; "answer" when added by hand."""
 SOURCES = ("related", "themes", "movers")
 """In the order they take turns; each is switched by `[discovery] search_<name>`."""
 # Bounds on one run's network and model use: seeds, themes and mover searches tried (one model
@@ -184,7 +187,7 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         on_list = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST))
         room = min(cfg.per_tick, cfg.max_total - on_list)
         if room <= 0:
-            return DiscoveryRun(note=_full(on_list, cfg.max_total))
+            return DiscoveryRun(note=list_full(on_list, cfg.max_total))
         seeds = _seeds(ctx)
         # Related and mover searches both start from what is watched; themes need nothing watched.
         usable = [s for s in searched_sources(ctx) if s == "themes" or seeds]
@@ -241,7 +244,7 @@ async def add_by_hand(ctx: AppContext, symbol: str, source: str, seed: str, rela
     line, why = await screen.priced_line(profile)
     if line is None:
         raise InvalidQuery(f"{profile.name}: {why}")
-    if why := _add_checked(ctx, profile, line, source, seed, relation, evidence):
+    if why := add_checked(ctx, profile, line, source, seed, relation, evidence):
         raise InvalidQuery(f"{profile.name}: {why}")
     return Added(line, profile.name, seed, relation, _why(source, relation, seed), evidence, source)
 
@@ -254,28 +257,40 @@ def _cannot_add(screen: Screen, profile: ListingProfile, cap: int) -> str | None
     if screen.removed(profile):
         return REMOVED
     if screen.on_list >= cap:
-        return _full(screen.on_list, cap)
+        return list_full(screen.on_list, cap)
     return None
 
 
-def _add_checked(ctx: AppContext, profile: ListingProfile, listing: str, source: str, seed: str, relation: str,
-                 evidence: tuple[int, ...]) -> str | None:
+def add_checked(ctx: AppContext, profile: ListingProfile, listing: str, source: str, seed: str, relation: str,
+                evidence: tuple[int, ...], question_id: int | None = None,
+                validation: Validation | None = None) -> str | None:
     """Add, the rules read afresh in the same write transaction, so a tick and a button pressed
     at once cannot both add the company or both take the list's last place; else why not."""
     with transaction(ctx.conn):
         if why := _cannot_add(Screen(ctx, 0), profile, ctx.config.discovery.max_total):
             return why
+        cap = ctx.config.discovery.per_question
+        if question_id is not None and (mine := DiscoveryRepo(ctx.conn).on_list_from(question_id)) >= cap:
+            return question_full(mine, cap)
         DiscoveryRepo(ctx.conn).add(listing, profile.company_key, profile.name, source, seed, relation, evidence,
-                                    _now(ctx))
+                                    _now(ctx), question_id, validation)
     return None
 
 
-def _full(on_list: int, cap: int) -> str:
-    return f"the discovered list is full ({on_list} of {cap}): remove some, or raise the limit in Settings"
+def list_full(on_list: int, cap: int) -> str:
+    return (f"the discovered list is full ({on_list} of {cap}): remove some, or raise [discovery] max_total in the "
+            "Settings section")
+
+
+def question_full(mine: int, cap: int) -> str:
+    return (f"this question already has {mine} of its {cap} on the discovered list "
+            "(raise [discovery] per_question in the Settings section)")
 
 
 def _why(source: str, relation: str, seed: str) -> str:
     """Why a company was discovered, in words."""
+    if source == SOURCE_QUESTION and relation == RELATION_AUTO:
+        return f'added by your auto question "{seed}" after passing its checks'
     if source == SOURCE_QUESTION:
         return f'an answer to your question "{seed}"'
     if source == SOURCE_THEME:
@@ -460,7 +475,7 @@ class _Screen(Screen):
         listing, why_not = await self.priced_line(profile)
         if listing is None:
             return self._skip(c, why_not)
-        if why_not := _add_checked(self._ctx, profile, listing, c.source, c.seed, c.relation, c.evidence):
+        if why_not := add_checked(self._ctx, profile, listing, c.source, c.seed, c.relation, c.evidence):
             return self._skip(c, why_not)
         self.now_listed(profile, listing)
         if c.relation == "peer":

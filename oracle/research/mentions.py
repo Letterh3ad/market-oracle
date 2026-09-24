@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 
 from oracle.research.citations import strip_citations
+from oracle.research.trace import Evidence
 from oracle.universe.listings import blind_name, normalise_name
 
 RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
@@ -152,3 +153,13 @@ def _why(text: object, items: int) -> str:
         return "" if all(1 <= int(n) <= items for n in m.group(1).split(",")) else m.group(0)
 
     return " ".join(_ITEM_REFS.sub(refs, strip_citations(text)).split())[:MAX_WHY]
+
+
+def item_text(e: Evidence) -> str:
+    """A news item as a model is shown it: date, outlet, title and what reading it found."""
+    day = e.published.date().isoformat() if e.published else "undated"
+    return f"{day} {e.outlet or 'unknown outlet'}: {item_words(e)}"
+
+
+def item_words(e: Evidence) -> str:
+    return e.title + "".join(f"\n  - {f}" for f in e.facts)

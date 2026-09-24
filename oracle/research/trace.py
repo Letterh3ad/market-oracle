@@ -51,6 +51,8 @@ class Evidence:
     None when it was never read."""
     via: str | None = None
     """The linked company whose planned search found it, in words."""
+    site: str | None = None
+    """The outlet's own domain, where the feed named it beside a redirect link."""
 
 
 NOT_ABOUT = "not about the company"

@@ -38,7 +38,7 @@ async def test_a_due_midday_pass_fires_once_and_never_counts_as_the_tick(ctx):
     tick = last_tick(ctx)
     at(ctx, TUESDAY_MIDDAY)
     run = await s.check()
-    assert (run.kind, run.trigger, [st.name for st in run.stages]) == ("midday", "scheduled", ["discover", "research"])
+    assert (run.kind, run.trigger, [st.name for st in run.stages]) == ("midday", "scheduled", ["discover", "questions", "research"])
     assert await s.check() is None
     assert last_tick(ctx).id == tick.id and last_midday(ctx).id == run.id
 

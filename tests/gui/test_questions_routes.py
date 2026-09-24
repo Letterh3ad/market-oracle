@@ -114,3 +114,22 @@ async def test_a_failed_answer_can_be_retried_from_activity(asking, model):
     assert done["state"] == "done" and done["subject"] == "1" and len(done["result"]["shortlist"]) == 2
     answers = (await asking.get("/api/questions/1")).json()["answers"]
     assert [a["status"] for a in answers] == ["done", "failed"]
+
+
+async def test_the_auto_switch_is_saved_and_an_auto_answer_says_what_validation_made_of_each(asking, model):
+    model.replies = [BOTH, BOTH]
+    model.roles = {"relevance_check": {"reason": "Sells phones", "items": [1], "answer": "yes"}}
+    await run_job(asking, "/api/jobs/ask", question=QUESTION)
+    switched = await asking.put("/api/questions/1/auto", json={"auto": True})
+    assert switched.status_code == 200 and switched.json()["auto"] is True
+    assert (await asking.get("/api/questions")).json()["questions"][0]["auto"] is True
+    assert (await asking.get("/api/questions/1")).json()["limits"] == {"per_question": 2, "max_total": 10}
+    job = await run_job(asking, "/api/jobs/ask/1/rerun")
+    first = job["result"]["shortlist"][0]
+    assert first["validation"]["added"] is False
+    assert first["validation"]["checks"][-1] == {"name": "evidence", "passed": False,
+                                                 "detail": "only 1 outlet (wire) named it in the last 90 days; "
+                                                           "2 are needed, one of them not the company's own "
+                                                           "releases or filings"}
+    assert (await asking.put("/api/questions/9/auto", json={"auto": True})).status_code == 404
+    assert (await asking.put("/api/questions/1/auto", json={"auto": "yes"})).status_code == 400

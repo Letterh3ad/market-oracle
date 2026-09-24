@@ -1,6 +1,7 @@
 """The daily routine as one run: prices, FX, fills, analysis, discovery, AI research, strategy
 step, AI step. Each stage runs even when an earlier one failed, since each works from
-whatever is stored. The midday pass reuses the discovery and research stages alone."""
+whatever is stored. The midday pass reuses the discovery and research stages, with the auto
+questions answered again between them."""
 
 from __future__ import annotations
 
@@ -14,7 +15,8 @@ from datetime import datetime, timedelta
 from oracle.broker.rules import Decision
 from oracle.services.analysis_service import analyse_watched
 from oracle.services.context import AppContext
-from oracle.services.discovery_service import DISCOVERED_LIST, DiscoveryRun, discover, discovered
+from oracle.services.discovery_chat_service import TYPICAL_ANSWER_MIN, answer_auto_questions
+from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, DiscoveryRun, discover, discovered
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
@@ -34,6 +36,9 @@ log = logging.getLogger(__name__)
 JOB = "tick"
 LEASE_S = 3600.0
 DISCOVER_CAP_MIN = 10
+# Auto questions one midday pass answers; each is a whole answer (plan, search, read, name, validate).
+MAX_AUTO_QUESTIONS = 3
+QUESTIONS_CAP_MIN = 15
 
 Say = Callable[[str], None]
 StageRun = Callable[[AppContext, Say], Awaitable[tuple[str, str | None]]]
@@ -82,14 +87,21 @@ def discover_cap_min(ctx: AppContext, budget_min: float | None = None) -> float:
     return min(DISCOVER_CAP_MIN, (budget_min or ctx.config.ai_account.research_budget_min) / 3)
 
 
+def _held_back(ctx: AppContext, what: str, run: str) -> str | None:
+    """Why discovery of any kind does not run now, if it does not."""
+    if not ctx.config.discovery.enabled:
+        return f"discovery is off in Settings: nothing {what}"
+    if not ctx.config.automation.enabled:
+        return f"automation is off: nothing {what}"
+    if pc_in_use(ctx):
+        return f"PC in use: discovery waits for the next {run}"
+    return None
+
+
 async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None, run: str = "tick") -> tuple[str, str | None]:
     """`run` names what it is part of, for its messages."""
-    if not ctx.config.discovery.enabled:
-        return "discovery is off in Settings: nothing discovered", None
-    if not ctx.config.automation.enabled:
-        return "automation is off: nothing discovered", None
-    if pc_in_use(ctx):
-        return f"PC in use: discovery waits for the next {run}", None
+    if why := _held_back(ctx, "discovered", run):
+        return why, None
     before = {d.symbol for d in discovered(ctx)}
     try:
         async with asyncio.timeout((cap_min or discover_cap_min(ctx)) * 60):
@@ -100,6 +112,40 @@ async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None, run: 
     except JobAlreadyRunning:
         return f"a discovery run is already going (Discover now): nothing more this {run}", None
     return _discovered_summary(run), run.source_errors[0] if run.source_errors else None
+
+
+def questions_cap_min(ctx: AppContext, budget_min: float) -> float:
+    """How long the questions stage may run: at most 15 minutes and a third of the budget."""
+    return min(QUESTIONS_CAP_MIN, budget_min / 3)
+
+
+async def _auto_questions(ctx: AppContext, cap_min: float, run: str) -> tuple[str, str | None]:
+    """Auto questions answered again, adding what passes validation. Each stops validating at
+    `cap_min` and no question starts without time for a typical answer; a hard stop one typical
+    answer later catches a model that hangs."""
+    if why := _held_back(ctx, "asked", run):
+        return why, None
+    started = ctx.clock.utcnow()
+    deadline = started + timedelta(minutes=cap_min)
+    try:
+        async with asyncio.timeout((cap_min + TYPICAL_ANSWER_MIN) * 60):
+            done = await answer_auto_questions(ctx, MAX_AUTO_QUESTIONS, deadline=deadline)
+    except TimeoutError:
+        return f"stopped at its time limit, added {', '.join(_auto_added(ctx, started)) or 'nothing'}", None
+    if not done.answered and not done.failed:
+        return f"nothing asked: {done.note}", None
+    summary = (f"answered {len(done.answered)} auto question{'' if len(done.answered) == 1 else 's'}, "
+               f"added {', '.join(_auto_added(ctx, started)) or 'nothing'}")
+    if done.failed:
+        summary += f", {len(done.failed)} failed"
+    return summary + (f" ({done.note})" if done.note else ""), done.failed[0] if done.failed else None
+
+
+def _auto_added(ctx: AppContext, since: datetime) -> list[str]:
+    """What auto questions put on the discovered list from `since`, read back from the list so a
+    stopped stage still says."""
+    return [d.symbol for d in discovered(ctx) if d.relation == RELATION_AUTO and d.added_at
+            and datetime.fromisoformat(d.added_at) >= since]
 
 
 def _discovered_summary(run: DiscoveryRun) -> str:
@@ -157,13 +203,16 @@ def _midday_stages(started: datetime) -> dict[str, StageRun]:
     async def discover_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
         return await _discover(ctx, say, discover_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
 
+    async def questions_stage(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+        return await _auto_questions(ctx, questions_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
+
     async def research_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
         return await _research(ctx, say, budget(ctx) - (ctx.clock.utcnow() - started) / timedelta(minutes=1))
 
-    return {"discover": discover_stage, "research": research_stage}
+    return {"discover": discover_stage, "questions": questions_stage, "research": research_stage}
 
 
-MIDDAY_STAGES = ("discover", "research")
+MIDDAY_STAGES = ("discover", "questions", "research")
 KIND_LABELS = {TICK: "Tick", MIDDAY: "Midday pass"}
 MIDDAY_RUN = KIND_LABELS[MIDDAY].lower()
 

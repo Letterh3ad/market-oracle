@@ -6,13 +6,18 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, StrictBool
 
 from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
-from oracle.services.discovery_chat_service import add_to_discovered, question, questions
+from oracle.services.discovery_chat_service import add_to_discovered, question, questions, set_auto
 
 router = APIRouter(prefix="/api/questions")
+
+
+class Auto(BaseModel):
+    auto: StrictBool
 
 
 @router.get("")
@@ -29,7 +34,9 @@ async def listing(ctx: AppContext = Depends(get_ctx)) -> dict:
 async def show(question_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
     """The question with what it refines and its follow-ups, and every answer, newest first."""
     v = question(ctx, question_id)
+    d = ctx.config.discovery
     return {**asdict(v.question), "asked": v.asked, "chain": [asdict(q) for q in v.chain],
+            "limits": {"per_question": d.per_question, "max_total": d.max_total},
             "follow_ups": [asdict(q) for q in v.follow_ups], "answers": [shapes.answer(a) for a in v.answers]}
 
 
@@ -37,3 +44,10 @@ async def show(question_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
 async def discovered(answer_id: int, n: int, ctx: AppContext = Depends(get_ctx)) -> dict:
     """A shortlisted company onto the discovered list, the question kept as why."""
     return asdict(await add_to_discovered(ctx, answer_id, n))
+
+
+@router.put("/{question_id}/auto")
+async def auto(question_id: int, body: Auto, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Switch the question's auto mode: its answers from then on add the shortlisted companies
+    that pass validation to the discovered list."""
+    return asdict(set_auto(ctx, question_id, body.auto))

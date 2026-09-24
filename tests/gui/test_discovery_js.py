@@ -84,3 +84,14 @@ def test_the_section_says_which_sources_it_searches():
     assert 'companies related to yours, your themes ("AI chips", "defence"), market movers' in out
     none = run(f"console.log(JSON.stringify(m.discoverySettings({json.dumps({**SETTINGS, 'sources': []})}).textContent));")
     assert "Every source is off in Settings" in none
+
+
+def test_a_company_an_auto_question_added_shows_the_checks_it_passed():
+    body = {"settings": SETTINGS, "items": [{
+        "symbol": "ENR.DE", "name": "Siemens Energy", "why": 'added by your auto question "grid?" after passing its checks',
+        "added_at": "2026-09-24T12:00:00+00:00", "evidence": [],
+        "validation": {"added": True, "note": None, "checks": [
+            {"name": "evidence", "passed": True, "detail": "3 items from 3 outlets"},
+            {"name": "relevance", "passed": True, "detail": "yes: builds grid batteries"}]}}]}
+    out = run(f"""console.log(JSON.stringify(m.discoveryTable({json.dumps(body)}, () => {{}}).textContent));""")
+    assert "Passed 2 checks" in out and "relevance: yes: builds grid batteries" in out

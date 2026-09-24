@@ -18,7 +18,8 @@ def test_discovery_settings_can_change(tmp_path):
 
 @pytest.mark.parametrize("line", [
     "enabled = 1", "per_tick = 0", "per_tick = 21", "per_tick = true", "max_total = 0", "max_total = 501",
-    "never = \"Tesla\"", "never = [\"\"]", "never = [3]", "sources = 1", "ai_trades = 0",
+    "never = \"Tesla\"", "never = [\"\"]", "never = [3]", "sources = 1", "ai_trades = 0", "per_question = 0",
+    "per_question = 21",
 ])
 def test_bad_discovery_values_are_refused_by_name(tmp_path, line):
     path = tmp_path / "oracle.toml"

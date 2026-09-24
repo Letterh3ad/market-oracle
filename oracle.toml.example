@@ -99,6 +99,7 @@ research_budget_min = 120   # minutes a tick may spend starting research; the re
 enabled = true     # false: discovery never runs by itself
 per_tick = 1       # companies one run may add (1 to 20)
 max_total = 10     # the discovered list never holds more (1 to 500)
+per_question = 2   # companies one auto question (Discover tab) may have on the discovered list at once (1 to 20)
 never = ["Tesla"]  # company names never added, on any of their listings (Tesla always counts)
 ai_trades = true   # the AI account trades discovered companies' verdicts (the strategy account never does)
 themes = []        # short topics to look for companies in the news, like ["AI chips", "defence"]; none skips themes

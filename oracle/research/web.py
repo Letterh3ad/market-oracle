@@ -70,6 +70,31 @@ def domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+# Second-level labels under a country code (bbc.co.uk, abc.net.au), where the name sits one further left.
+_SECOND_LEVEL = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"})
+
+
+# Words that name no outlet, so "Yahoo Finance" is yahoo and "BBC News" is bbc.
+OUTLET_FILLER = frozenset({"www", "com", "org", "net", "news", "the", "finance", "money", "markets", "business"})
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def outlet_key(outlet: str) -> str:
+    """A feed's outlet name as its site's registered name would read: "Reuters" is reuters,
+    "BBC News" bbc, "PR Newswire" prnewswire."""
+    words = _WORD.findall(outlet.lower())
+    return "".join(w for w in words if w not in OUTLET_FILLER) or "".join(words)
+
+
+def site_name(host: str) -> str:
+    """The name a host is registered under, subdomains and suffix dropped: "reuters" for
+    www.reuters.com or uk.reuters.com, "bbc" for bbc.co.uk. Empty for no host."""
+    labels = host.lower().split(".")[:-1]
+    if len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
+        labels.pop()
+    return labels[-1] if labels else ""
+
+
 def unsafe_url(url: str) -> str | None:
     """Why the page reader must not open `url`, or None. Links come from web pages the
     model read, so they may point back into this machine or the local network."""

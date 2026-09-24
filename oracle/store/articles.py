@@ -37,6 +37,15 @@ class ArticleRepo:
             )
         return [self._conn.execute("SELECT id FROM articles WHERE url = ?", (a.url,)).fetchone()[0] for a in articles]
 
+    def filings(self, symbols: list[str], since: str) -> list[int]:
+        """Stored SEC filings of any of `symbols` filed at or after `since`, newest first."""
+        if not symbols:
+            return []
+        rows = self._conn.execute(
+            f"SELECT id FROM articles WHERE source = 'sec_edgar' AND query COLLATE NOCASE IN ({','.join('?' * len(symbols))}) "
+            "AND published_at >= ? ORDER BY published_at DESC", (*symbols, since))
+        return [r[0] for r in rows]
+
     def reading(self, article_ids: list[int], model: str) -> dict[int, Reading]:
         rows = self._conn.execute(
             "SELECT a.id, a.site, t.text, t.failed IS NOT NULL AND t.passing = 0, "

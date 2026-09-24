@@ -23,7 +23,7 @@ from oracle.research.news import end_of
 from oracle.research.notes import take_note
 from oracle.research.tools import ToolError
 from oracle.research.trace import Evidence
-from oracle.research.web import THIN_PAGE, WebSearcher
+from oracle.research.web import THIN_PAGE, WebSearcher, outlet_key, site_name
 from oracle.services.research_tools.shelf import Unavailable, domain, evidence_line
 from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, read_page, search_web
 from oracle.store.articles import ArticleRepo
@@ -35,10 +35,6 @@ log = logging.getLogger(__name__)
 UNUSABLE_NOTE = "the model's note was unusable"
 # Advice for the loop's model, not for someone reading why an article went unread.
 TRY_ANOTHER = "; try another tool"
-# Words that name no outlet, so "Yahoo Finance" is matched as yahoo.
-_GENERIC = frozenset({"www", "com", "org", "net", "news", "the", "finance", "money", "markets", "business"})
-# Second-level labels under a country code (bbc.co.uk, abc.net.au), where the name sits one further left.
-_SECOND_LEVEL = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"})
 _WORD = re.compile(r"[a-z0-9]+")
 # Reading slots the company's own reports take ahead of articles.
 REPORT_SLOTS = 2
@@ -180,12 +176,10 @@ def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:
     host = domain(url)
     if site:
         return host == site or host.endswith("." + site)
-    labels = host.split(".")[:-1]
-    if len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
-        labels.pop()
+    name = site_name(host)
     words = _WORD.findall((outlet or "").lower())
-    names = {"".join(words), "".join(w for w in words if w not in _GENERIC)}
-    return bool(labels) and len(labels[-1]) >= 3 and labels[-1] in names
+    names = {"".join(words), outlet_key(outlet or "")}
+    return len(name) >= 3 and name in names
 
 
 def unexpected(exc: Exception) -> str:

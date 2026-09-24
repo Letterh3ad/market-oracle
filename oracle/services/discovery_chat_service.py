@@ -9,18 +9,23 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
-from oracle.research.mentions import QUESTION_SCHEMA, Mention, parse_mentions, question_prompt
+from oracle.research.mentions import (
+    QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
+)
 from oracle.research.queries import EDITION, MAX_QUERY
 from oracle.research.tools import ToolError
-from oracle.research.trace import Evidence
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
-from oracle.services.discovery_service import SOURCE_QUESTION, Added, add_by_hand
-from oracle.services.errors import InvalidQuery, ModelUnavailable, SearchFailed, UnknownQuestion
+from oracle.services.auto_validation import auto_add
+from oracle.services.discovery_service import DISCOVERED_LIST, SOURCE_QUESTION, Added, add_by_hand, list_full
+from oracle.services.errors import (
+    InvalidQuery, JobAlreadyRunning, ModelUnavailable, SearchFailed, ServiceError, UnknownQuestion,
+)
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
@@ -32,12 +37,14 @@ from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.questions import DONE, FAILED, RUNNING, Answer, Question, QuestionRepo, ShortlistItem
 from oracle.store.research import evidence_of, note_model
-from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.universe import CLASSIFICATION_LEVELS, ListingProfile, UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import MARKET_CAP_BANDS
 
 __all__ = [
-    "AnswerView", "Line", "Question", "QuestionLine", "QuestionView", "add_to_discovered", "answer", "answer_progress",
-    "ask", "new_question", "question", "questions", "saved_question", "sweep_interrupted_answers",
+    "AnswerView", "AutoRun", "Line", "Question", "QuestionLine", "QuestionView", "add_to_discovered", "answer",
+    "answer_auto_questions", "answer_progress", "ask", "new_question", "question", "questions", "saved_question",
+    "TYPICAL_ANSWER_MIN", "set_auto", "sweep_interrupted_answers",
 ]
 
 JOB = "discovery_chat"
@@ -52,6 +59,8 @@ MAX_ITEMS = 24
 READ = 4
 MAX_PRICE_CHECKS = 8
 MAX_EXCLUDE = 5
+# About how long one answer takes with a local model; a question is not started with less left.
+TYPICAL_ANSWER_MIN = 5
 # Notes taken for a question are kept apart from the same model's notes for research, and from
 # other questions': "not about" means not about what that question asks. A follow-up reads
 # for its root question, so the two share notes.
@@ -62,7 +71,11 @@ _NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "secto
 _WORDS = re.compile(r"[a-z0-9]+")
 # Everyday words for what the universe names otherwise, after plurals are folded.
 _ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
-            "chip": "semiconductor", "chipmaker": "semiconductor"}
+            "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
+            "automaker": "automobile", "car": "automobile", "cars": "automobile", "auto": "automobile",
+            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication"}
+# "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
+_WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
@@ -169,9 +182,10 @@ async def ask(ctx: AppContext, text: str, refines: int | None = None, model: Cha
 
 
 async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = None,
-                 searcher: WebSearcher | None = None) -> AnswerView:
-    """Answer a saved question (again): plan, search, read, name, screen, save. The model
-    failing to answer fails the answer, which stays saved with why."""
+                 searcher: WebSearcher | None = None, deadline: datetime | None = None) -> AnswerView:
+    """Answer a saved question (again): plan, search, read, name, screen, save, and for an auto
+    question validate and add, no company validated after `deadline`. The model failing to answer
+    fails the answer, which stays saved with why and whatever shortlist it had."""
     repo = QuestionRepo(ctx.conn)
     q = _question(repo, question_id)
     asked = _asked(repo, q)
@@ -179,17 +193,64 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
     with single_flight(ctx, JOB, LEASE_S):
         answer_id = repo.start(q.id, _model_label(model), _now(ctx))
         notes: list[str] = []
+        items: list[ShortlistItem] = []
         note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
             items = await _answer(ctx, repo, answer_id, asked, model, searcher or DdgsSearcher(), notes, note_key)
+            if q.auto:
+                await auto_add(ctx, q.id, asked, model, note_key, items, lambda text: repo.set_stage(answer_id, text),
+                               notes, deadline)
         except BaseException as exc:
             error = "cancelled" if not isinstance(exc, Exception) else str(exc) or type(exc).__name__
-            repo.finish(answer_id, FAILED, error, notes, (), _now(ctx))
+            # Companies already added stay added, so the answer keeps what validation made of them.
+            repo.finish(answer_id, FAILED, error, notes, items, _now(ctx))
             if isinstance(exc, ModelError):
                 raise ModelUnavailable(str(exc)) from exc
             raise
         repo.finish(answer_id, DONE, None, notes, items, _now(ctx))
     return _view(ctx, repo, q, repo.answer(answer_id))
+
+
+def set_auto(ctx: AppContext, question_id: int, on: bool) -> Question:
+    """Switch a question's auto mode: each answer from then on adds the shortlisted companies
+    that pass validation to the discovered list."""
+    repo = QuestionRepo(ctx.conn)
+    _question(repo, question_id)
+    repo.set_auto(question_id, on)
+    return repo.get(question_id)
+
+
+@dataclass(frozen=True)
+class AutoRun:
+    answered: tuple[AnswerView, ...] = ()
+    failed: tuple[str, ...] = ()
+    """Questions whose answer failed, with why."""
+    note: str | None = None
+    """Why none was answered."""
+
+
+async def answer_auto_questions(ctx: AppContext, limit: int, model: ChatModel | None = None,
+                                searcher: WebSearcher | None = None, deadline: datetime | None = None) -> AutoRun:
+    """Answer up to `limit` auto questions again, the one answered longest ago first; a failed
+    answer is noted and the next one goes on. Nothing is asked while the discovered list is full,
+    and no question is started unless a typical answer fits before `deadline`."""
+    auto = QuestionRepo(ctx.conn).auto()
+    if not auto:
+        return AutoRun(note="no question is on auto")
+    on_list, cap = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST)), ctx.config.discovery.max_total
+    if on_list >= cap:
+        return AutoRun(note=list_full(on_list, cap))
+    answered, failed = [], []
+    for q in auto[:limit]:
+        if deadline and deadline - ctx.clock.utcnow() < timedelta(minutes=TYPICAL_ANSWER_MIN):
+            return AutoRun(tuple(answered), tuple(failed), "no time left for another question")
+        try:
+            answered.append(await answer(ctx, q.id, model, searcher, deadline))
+        except JobAlreadyRunning:
+            return AutoRun(tuple(answered), tuple(failed), "another question is being answered: the rest wait")
+        except ServiceError as exc:
+            failed.append(f"question {q.id}: {exc}")
+    return AutoRun(tuple(answered), tuple(failed))
 
 
 def saved_question(ctx: AppContext, question_id: int) -> Question:
@@ -248,7 +309,9 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     stage("planning searches")
     plan = await _plan(model, asked)
     repo.set_searches(answer_id, [s.label for s in plan.searches])
-    notes.extend(_filter_notes(plan, UniverseRepo(ctx.conn).classifications()))
+    classifications = UniverseRepo(ctx.conn).classifications()
+    exclusions = [e for x in plan.exclude if (e := exclusion(x, classifications))]
+    notes.extend(_filter_notes(plan, exclusions))
     found: list[list[int]] = []
     failed: list[str] = []
     shelf = Shelf(ctx.conn, ctx.clock, lambda ids, _query: found[-1].extend(ids))
@@ -280,15 +343,15 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
     stage("naming companies")
     evidence = evidence_of(ctx.conn, ids, note_key)
-    reply = await model.reply(question_prompt(asked, [_item_text(e) for e in evidence]), QUESTION_SCHEMA)
+    reply = await model.reply(question_prompt(asked, [item_text(e) for e in evidence]), QUESTION_SCHEMA)
     # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
-    mentions = parse_mentions(reply, [_item_words(e) for e in evidence])
+    mentions = parse_mentions(reply, [item_words(e) for e in evidence])
     if not mentions:
         notes.append("the model named no company the news shows")
     # More items behind a name first; the model's own order among equals.
     ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    shortlist = _Shortlist(ctx, plan)
+    shortlist = _Shortlist(ctx, plan, exclusions)
     items = await shortlist.screen(ranked, [e.id for e in evidence])
     if kept := record_links(ctx, _links(shortlist, ranked, [e.id for e in evidence]), SOURCE_CHAT):
         notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
@@ -338,12 +401,12 @@ def _unique(items) -> list[str]:
     return out
 
 
-def _filter_notes(plan: Plan, classifications: set[str]) -> list[str]:
+def _filter_notes(plan: Plan, exclusions: list[Exclusion]) -> list[str]:
     """What the filters do, and which excludes name nothing the universe holds (they leave nothing out)."""
     notes = []
     if plan.market_caps:
         notes.append(f"only {', '.join(c.lower() + 's' for c in plan.market_caps)}")
-    known = [x for x in plan.exclude if _matching(x, classifications)]
+    known = [e.text for e in exclusions]
     if known:
         notes.append(f"leaving out {', '.join(known)}")
     notes.extend(f'"{x}" was not recognised as a sector or industry, so nothing was left out for it'
@@ -361,22 +424,14 @@ def _interleave(found: list[list[int]]) -> list[int]:
     return list(out)
 
 
-def _item_text(e: Evidence) -> str:
-    day = e.published.date().isoformat() if e.published else "undated"
-    return f"{day} {e.outlet or 'unknown outlet'}: {_item_words(e)}"
-
-
-def _item_words(e: Evidence) -> str:
-    return e.title + "".join(f"\n  - {f}" for f in e.facts)
-
-
 class _Shortlist(Screen):
     """Screens named companies in rank order. Never-listed and removed companies are left off;
     watched and discovered ones stay on, marked, with no price check."""
 
-    def __init__(self, ctx: AppContext, plan: Plan) -> None:
+    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Exclusion]) -> None:
         super().__init__(ctx, MAX_PRICE_CHECKS)
         self._plan = plan
+        self._exclusions = exclusions
 
     async def screen(self, mentions: list[Mention], item_ids: list[int]) -> list[ShortlistItem]:
         """Shortlisted first, numbered from 1 in rank order, then those left off."""
@@ -409,23 +464,57 @@ class _Shortlist(Screen):
         caps = self._plan.market_caps
         if caps and p.market_cap not in caps:
             return f"not the size asked for ({p.market_cap or 'size unknown'})"
-        for word in self._plan.exclude:
-            if (field := _matching(word, (p.sector, p.industry_group, p.industry))) is not None:
-                return f"in {field}, which the question leaves out"
+        for rule in self._exclusions:
+            if (value := rule.leaves_out(p)) is not None:
+                return f"in {value}, which the question leaves out"
         return None
 
 
-def _matching(exclude: str, fields) -> str | None:
-    """The first field holding every word of `exclude`, singular or plural and in everyday words
-    ("utility" finds "Utilities", "oil and gas" finds "Oil, Gas & Consumable Fuels", "chipmakers"
-    finds "Semiconductors"); one shared word is not enough ("consumer staples" is not "Consumer
-    Discretionary")."""
-    wanted = {_ALIASES.get(w, w) for w in _words(exclude)} - _NOT_A_SECTOR
-    return next((f for f in fields if f and wanted and wanted <= _words(f)), None)
+@dataclass(frozen=True)
+class Exclusion:
+    """An exclude as the universe's classifications at one level."""
+
+    text: str
+    level: str
+    """A ListingProfile field: industry, industry_group or sector."""
+    values: frozenset[str]
+
+    def leaves_out(self, p: ListingProfile) -> str | None:
+        value = getattr(p, self.level)
+        return value if value in self.values else None
+
+
+def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusion | None:
+    """What an exclude leaves out: the classifications holding every word of it, singular or
+    plural and in everyday words ("utility" finds "Utilities", "chipmakers" finds "Semiconductors");
+    one shared word is not enough ("consumer staples" is not "Consumer Discretionary"). Only the
+    most specific level is used, an exact name before one merely holding the words, so "biotech"
+    leaves out Biotechnology, not the Pharmaceuticals beside it in their combined group, and
+    "media" leaves out Media, not Interactive Media & Services. Short of an exact name, a sector
+    or group whose name starts with the words ("consumer" is both Consumer sectors, "telecom"
+    Telecommunication Services) comes before any name holding them somewhere. None when
+    nothing matches."""
+    words = frozenset(w for word in _words(text) for w in _ALIASES.get(word, word).split()) - _NOT_A_SECTOR
+    wanted = _WHOLE.get(words, words)
+    if not wanted:
+        return None
+    tries = ([(level, lambda v: _words(v) == wanted) for level in CLASSIFICATION_LEVELS]
+             + [(level, lambda v: set(_word_list(v)[:len(wanted)]) == wanted)
+                for level in reversed(CLASSIFICATION_LEVELS[1:])]
+             + [(level, lambda v: wanted <= _words(v)) for level in CLASSIFICATION_LEVELS])
+    for level, matches in tries:
+        if found := frozenset(v for v in classifications.get(level, ()) if matches(v)):
+            return Exclusion(text, level, found)
+    return None
 
 
 def _words(text: str) -> set[str]:
-    return {_singular(w) for w in _WORDS.findall(text.casefold())}
+    return set(_word_list(text))
+
+
+def _word_list(text: str) -> list[str]:
+    """Words in order, singular, without the ones that name no sector."""
+    return [s for w in _WORDS.findall(text.casefold()) if (s := _singular(w)) not in _NOT_A_SECTOR]
 
 
 def _singular(word: str) -> str:

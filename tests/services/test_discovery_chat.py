@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,7 +14,7 @@ from oracle.services.discovery_chat_service import (
     add_to_discovered, answer, answer_progress, ask, new_question, question, questions, sweep_interrupted_answers,
 )
 from oracle.services.discovery_service import discovered, remove_discovered
-from oracle.services.discovery_chat_service import _matching
+from oracle.services.discovery_chat_service import exclusion
 from oracle.services.errors import InvalidQuery, ModelUnavailable, NeverListed, SearchFailed, UnknownQuestion
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
@@ -220,14 +221,68 @@ async def test_an_exclude_the_universe_has_no_sector_for_is_said_not_recognised(
                            "Semiconductor Equipment"), None),
     ("tech", ("Information Technology", "Software & Services", "Software"), "Information Technology"),
     ("pharma", ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Pharmaceuticals"),
-     "Pharmaceuticals, Biotechnology & Life Sciences"),
+     "Pharmaceuticals"),
     ("biotech", ("Health Care", "Health Care Equipment & Services", "Biotechnology"), "Biotechnology"),
     ("insurers", ("Financials", "Insurance", "Insurance"), "Insurance"),
     ("chipmakers", ("Information Technology", "Semiconductors & Semiconductor Equipment", "Semiconductors"),
-     "Semiconductors & Semiconductor Equipment"),
+     "Semiconductors"),
+    ("healthcare", ("Health Care", "Health Care Equipment & Services", "Health Care Providers & Services"),
+     "Health Care"),
+    ("automakers", ("Consumer Discretionary", "Automobiles & Components", "Automobiles"), "Automobiles"),
+    ("cars", ("Consumer Discretionary", "Automobiles & Components", "Automobiles"), "Automobiles"),
 ])
 def test_an_exclude_matches_whole_words_of_a_sector_or_industry(exclude, fields, found):
-    assert _matching(exclude, fields) == found
+    assert left_out(exclude, [fields], fields) == found
+
+
+def left_out(exclude, universe, company):
+    """What `exclude` leaves `company` out for, given the universe's (sector, group, industry) rows."""
+    classes = {"sector": frozenset(r[0] for r in universe), "industry_group": frozenset(r[1] for r in universe),
+               "industry": frozenset(r[2] for r in universe)}
+    rule = exclusion(exclude, classes)
+    profile = SimpleNamespace(sector=company[0], industry_group=company[1], industry=company[2])
+    return rule and rule.leaves_out(profile)
+
+
+PHARMA = ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Pharmaceuticals")
+BIOTECH = ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Biotechnology")
+MEDIA = ("Communication Services", "Media & Entertainment", "Media")
+INTERACTIVE = ("Communication Services", "Media & Entertainment", "Interactive Media & Services")
+HEALTH_TECH = ("Health Care", "Health Care Equipment & Services", "Health Care Technology")
+SOFTWARE = ("Information Technology", "Software & Services", "Software")
+PARTS = ("Consumer Discretionary", "Automobiles & Components", "Automobile Components")
+CARS = ("Consumer Discretionary", "Automobiles & Components", "Automobiles")
+
+
+@pytest.mark.parametrize("exclude, universe, company, found", [
+    ("biotech", [PHARMA, BIOTECH], PHARMA, None),
+    ("biotech", [PHARMA, BIOTECH], BIOTECH, "Biotechnology"),
+    ("media", [MEDIA, INTERACTIVE], INTERACTIVE, None),
+    ("media", [MEDIA, INTERACTIVE], MEDIA, "Media"),
+    ("tech", [HEALTH_TECH, SOFTWARE], HEALTH_TECH, None),
+    ("tech", [HEALTH_TECH, SOFTWARE], SOFTWARE, "Information Technology"),
+    ("cars", [PARTS, CARS], PARTS, None),
+])
+def test_an_exclude_leaves_out_its_most_specific_match_not_the_whole_group(exclude, universe, company, found):
+    assert left_out(exclude, universe, company) == found
+
+
+STAPLES = ("Consumer Staples", "Food, Beverage & Tobacco", "Beverages")
+FINANCE = ("Financials", "Financial Services", "Consumer Finance")
+TELECOM = ("Communication Services", "Telecommunication Services", "Diversified Telecommunication Services")
+EQUIPMENT = ("Information Technology", "Technology Hardware & Equipment", "Communications Equipment")
+
+
+@pytest.mark.parametrize("exclude, universe, company, found", [
+    ("consumer", [STAPLES, FINANCE], STAPLES, "Consumer Staples"),
+    ("consumer", [STAPLES, FINANCE], FINANCE, None),
+    ("telecoms", [TELECOM, EQUIPMENT], TELECOM, "Telecommunication Services"),
+    ("communication", [TELECOM, EQUIPMENT], TELECOM, "Communication Services"),
+    ("communication", [TELECOM, EQUIPMENT], EQUIPMENT, None),
+    ("autos", [PARTS, CARS], CARS, "Automobiles"),
+])
+def test_a_sector_or_group_starting_with_the_words_comes_before_a_name_holding_them(exclude, universe, company, found):
+    assert left_out(exclude, universe, company) == found
 
 
 async def test_a_rerun_says_what_is_new_and_what_is_gone(ctx):

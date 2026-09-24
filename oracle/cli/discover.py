@@ -6,9 +6,9 @@ import textwrap
 
 from oracle.services.context import AppContext
 from oracle.services.discovery_chat_service import (
-    AnswerView, add_to_discovered, answer, ask, question, questions,
+    AnswerView, add_to_discovered, answer, ask, question, questions, set_auto,
 )
-from oracle.services.discovery_service import DiscoveryRun, discover
+from oracle.services.discovery_service import DiscoveryRun, Validation, discover
 
 WIDTH = 96
 
@@ -34,6 +34,11 @@ def register(parser: argparse.ArgumentParser) -> None:
     p.add_argument("answer_id", type=int)
     p.add_argument("rank", type=int, help="its number on the shortlist")
     p.set_defaults(handler=run_add)
+    p = sub.add_parser("auto", help="switch a question's auto mode: its answers add the shortlisted companies that "
+                                    "pass validation to the discovered list, up to [discovery] per_question")
+    p.add_argument("question_id", type=int)
+    p.add_argument("switch", choices=("on", "off"))
+    p.set_defaults(handler=run_auto)
 
 
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -57,7 +62,7 @@ def run_questions(ctx: AppContext, args: argparse.Namespace) -> int:
         q, last = line.question, line.last
         refines = f" (follow-up to {q.refines})" if q.refines else ""
         outcome = f", last {last.status} {last.started_at[:10]}: {len(last.shortlist)} shortlisted" if last else ""
-        print(f"{q.id:>4}  {q.text}{refines}")
+        print(f"{q.id:>4}  {q.text}{refines}{' [auto]' if q.auto else ''}")
         print(f"      {line.answers} answer(s){outcome}")
     return 0
 
@@ -81,6 +86,16 @@ def run_add(ctx: AppContext, args: argparse.Namespace) -> int:
     return 0
 
 
+def run_auto(ctx: AppContext, args: argparse.Namespace) -> int:
+    q = set_auto(ctx, args.question_id, args.switch == "on")
+    if q.auto:
+        print(f"question {q.id} is on auto: each answer adds what passes validation to the discovered list "
+              f"(rerun it now: oracle discover rerun {q.id}; the midday pass reruns it too)")
+    else:
+        print(f"question {q.id} is off auto: nothing is added without you")
+    return 0
+
+
 def print_answer(v: AnswerView) -> int:
     a = v.answer
     print(f"Answer {a.id} to question {a.question_id}, {a.started_at} ({a.model}): {a.status}")
@@ -97,6 +112,8 @@ def print_answer(v: AnswerView) -> int:
                                                   ("discovered", line.discovered_as is not None)) if on)
         print(f"  {i.n:>2}. {i.symbol}  {i.company}{marks}")
         _wrapped(i.why, "        ")
+        if i.validation:
+            _wrapped(f"auto: {validation_line(i.validation)}", "        ")
         for e in line.evidence:
             print(f"        - {(e.published_at or 'undated')[:10]} {e.outlet or 'unknown outlet'}: {e.title}")
             print(f"          {e.url}")
@@ -110,6 +127,15 @@ def print_answer(v: AnswerView) -> int:
         print(f"  Watch: oracle watch add SYMBOL; research: oracle research SYMBOL; "
               f"discovered list: oracle discover add {a.id} RANK")
     return 1 if a.status == "failed" else 0
+
+
+def validation_line(v: Validation) -> str:
+    """What an auto question's validation made of a company, in one line."""
+    if v.added:
+        return "added to the discovered list, every check passed"
+    if failed := v.failed:
+        return f"stays a suggestion: failed {failed.name} ({failed.detail})"
+    return f"stays a suggestion: {v.note}"
 
 
 def print_run(r: DiscoveryRun) -> None:
