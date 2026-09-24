@@ -732,6 +732,28 @@ async def test_create_is_refused_while_the_price_sources_do_not_answer(ctx, yaho
         await create_study(ctx, FIRST, symbols=["MSFT"])
 
 
+async def test_a_listing_one_source_has_no_data_for_while_another_is_down_is_passed_over(ctx, monkeypatch):
+    from oracle.services import replay_service
+    from oracle.services.errors import PriceUnavailable
+
+    async def half_answered(c, symbol, since=None):
+        raise PriceUnavailable(f"no price data for {symbol} (yahoo: no data; eodhd: HTTP 503)", answered=True,
+                               down=("eodhd",))
+
+    monkeypatch.setattr(replay_service, "update_listing", half_answered)
+    said = []
+    picked, left_out = await pick_listings(ctx, date(2026, 1, 5), said.append)
+    assert picked == [] and len(left_out) == 20
+    assert any("passed over: no source that answered has data for AAPL (eodhd did not answer)" in s for s in said)
+
+    async def silent(c, symbol, since=None):
+        raise PriceUnavailable(f"no price data for {symbol} (yahoo: HTTP 503)", down=("yahoo",))
+
+    monkeypatch.setattr(replay_service, "update_listing", silent)
+    with pytest.raises(InvalidQuery, match="did not answer"):
+        await pick_listings(ctx, date(2026, 1, 5))
+
+
 async def test_create_tells_every_slot_it_left_out(ctx):
     s = await create_study(ctx, FIRST)
     assert {"UK Energy", "UK Energy (mid/small)"} <= set(s.left_out) and "US Information Technology" not in s.left_out

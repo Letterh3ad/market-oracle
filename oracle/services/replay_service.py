@@ -224,11 +224,13 @@ async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | Non
         try:
             await update_listing(ctx, symbol)
         except PriceUnavailable as exc:
-            if not exc.no_data:
-                # A source that did not answer says nothing about the listing: picking on
+            if not exc.answered:
+                # No source answered, which says nothing about the listing: picking on
                 # without it would quietly change the spread.
                 raise InvalidQuery(f"the price sources did not answer ({exc}): try again once they do") from exc
-            return str(exc)
+            if exc.no_data:
+                return str(exc)
+            return f"no source that answered has data for {symbol} ({', '.join(exc.down)} did not answer)"
         except UnknownSymbol as exc:
             return str(exc)
         span = bars.span([symbol])
