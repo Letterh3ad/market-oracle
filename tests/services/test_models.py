@@ -1,8 +1,11 @@
+from dataclasses import replace
+
 import httpx
 import pytest
 
 from oracle.config import CLAUDE_CONTEXT, PROVIDERS, load_config
 from oracle.research.claude import ClaudeChat
+from oracle.research.claude_code import BIN_ENV, ClaudeCodeChat
 from oracle.research.ollama import OllamaChat
 from oracle.research.openai_compatible import OpenAICompatibleChat
 from oracle.services import models_service
@@ -12,6 +15,7 @@ from oracle.services.models_service import (
     delete_model_profile, model_for, model_profile_rows, provider_defaults, resolve_model, save_model_profile,
     try_model_profile,
 )
+from tests.fakes.claude_cli import shim
 from tests.fakes.ollama import FakeOllama
 from tests.fakes.openai import FakeOpenAI
 
@@ -110,6 +114,37 @@ def test_a_profile_is_added_edited_and_deleted_in_the_file_and_applies_at_once(t
         delete_model_profile(ctx, "big")
         assert "big" not in ctx.config.models and "big" not in load_config(ctx.config_source)[0].models
         assert "# mine" in ctx.config_source.read_text(encoding="utf-8")
+
+
+def test_a_profile_a_slot_names_is_not_deleted_and_the_slots_are_named(tmp_path):
+    slots = '[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n[models.slots]\nnotes = "big"\nverdict = "big"\n'
+    with _ctx(tmp_path, slots) as ctx:
+        rows = model_profile_rows(ctx)
+        assert [r["slots"] for r in rows] == [[], ["notes", "verdict"]]
+        assert rows[0]["unset_slots"] == ["research", "roles", "queries", "discovery"] and rows[1]["unset_slots"] == []
+        assert rows[1]["if_unset"] == [], "a warning only for a key that is unset"
+        with pytest.raises(InvalidQuery, match=r"big is in use by slots notes, verdict"):
+            delete_model_profile(ctx, "big")
+        assert "big" in load_config(ctx.config_source)[0].models
+
+
+def test_slots_is_no_profile_name_to_save(tmp_path):
+    with _ctx(tmp_path) as ctx, pytest.raises(InvalidQuery, match="reserved"):
+        save_model_profile(ctx, "slots", {"provider": "ollama", "model": "qwen3:8b"}, create=True)
+
+
+def test_each_stage_resolves_its_slots_profile_with_its_own_context(tmp_path):
+    from oracle.services.models_service import resolve_stages
+
+    slots = ('[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\ncontext = 8192\n'
+             '[models.slots]\nnotes = "big"\n')
+    with _ctx(tmp_path, slots) as ctx:
+        stages = resolve_stages(ctx, ("research", "notes", "verdict"))
+        assert {s: (r.profile, r.model.model, r.context) for s, r in stages.items()} == {
+            "research": ("default", ctx.config.llm.model, 16384), "notes": ("big", "qwen3:8b", 8192),
+            "verdict": ("default", ctx.config.llm.model, 16384)}
+        assert stages["research"].model is stages["verdict"].model, "one model per profile"
+        assert {r.profile for r in resolve_stages(ctx, ("research", "notes"), "big").values()} == {"big"}
 
 
 def test_a_literal_key_is_kept_when_an_edit_leaves_it_out_and_cleared_or_replaced_on_request(tmp_path):
@@ -254,9 +289,9 @@ def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeyp
         save_model_profile(ctx, "lm", {"provider": "openai_compatible", "model": "m", "base_url": "https://llm.test/v1",
                                        "key_env": "LM_KEY"}, create=False)
         assert ctx.config.models["lm"].key_env == "LM_KEY", "a keyed provider keeps the key it is given"
-    assert provider_defaults()["openai_compatible"] == {"base_url": None, "base_url_required": True, "context": 16384,
-                                                        "timeout_s": 180.0, "keyed": True}
-    assert provider_defaults()["ollama"]["base_url_required"] is False
+        assert provider_defaults(ctx)["openai_compatible"] == {
+            "base_url": None, "base_url_required": True, "context": 16384, "timeout_s": 180.0, "keyed": True, "url": True}
+        assert provider_defaults(ctx)["ollama"]["base_url_required"] is False
 
 
 async def test_an_unusable_profile_loads_but_is_refused_when_built_and_shown_in_the_rows(tmp_path):
@@ -283,3 +318,102 @@ def test_switching_to_openai_compatible_without_a_base_url_is_refused(tmp_path):
         with pytest.raises(InvalidQuery, match="needs a base_url"):
             save_model_profile(ctx, "default", {"provider": "openai_compatible", "model": "m",
                                                 "base_url": "http://localhost:11434"}, create=False)
+
+
+def test_a_slot_naming_an_unusable_profile_falls_back_to_the_research_profile_and_never_builds_it(tmp_path, monkeypatch):
+    from oracle.services.models_service import resolve_stages
+
+    built = []
+    monkeypatch.setitem(models_service.BUILDERS, "openai_compatible", lambda *a: built.append(a))
+    with _ctx(tmp_path, '[models.lm]\nprovider = "openai_compatible"\nmodel = "m"\nbase_url = "http://gpu.lan:8000/v1"\n'
+                        'key_env = "LM_KEY"\n[models.slots]\nnotes = "lm"\n') as ctx:
+        stages = resolve_stages(ctx, ("research", "notes", "verdict"), lead="research")
+        assert stages["notes"].model is stages["research"].model and stages["notes"].profile == "default"
+        assert "lm unavailable" in stages["notes"].unavailable
+        assert "unencrypted to gpu.lan" in stages["notes"].unavailable
+        assert built == []
+        lm = model_profile_rows(ctx)[1]
+        assert lm["unavailable"].startswith("unusable: ")
+        assert lm["if_unset"] == ["notes runs on the research slot's profile"]
+
+
+ALLOWED = "[models]\nallow_claude_code = true\n"
+SUB = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\ntimeout_s = 30\n'
+
+
+def test_claude_code_is_offered_only_when_the_flag_allows_it(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        assert "claude_code" not in provider_defaults(ctx)
+    with _ctx(tmp_path, ALLOWED) as ctx:
+        assert provider_defaults(ctx)["claude_code"] == {
+            "base_url": None, "base_url_required": False, "context": CLAUDE_CONTEXT, "timeout_s": 180.0, "keyed": False,
+            "url": False}
+        assert provider_defaults(ctx)["ollama"]["url"] is True
+
+
+def test_a_claude_code_profile_builds_the_cli_backend(tmp_path):
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        built = model_for(ctx, "sub")
+        assert type(built) is ClaudeCodeChat and (built.model, built._timeout) == ("sonnet", 30.0)
+        assert model_profile_rows(ctx)[1]["key_state"] == "none"
+        ctx.config = replace(ctx.config, allow_claude_code=False)
+        with pytest.raises(ModelUnavailable, match="allow_claude_code"):
+            model_for(ctx, "sub")
+
+
+@pytest.mark.parametrize("mode, ok, says", [
+    ("good", True, None),
+    ("logged_out", False, "not logged in"),
+    ("garbage", False, "not the JSON"),
+])
+async def test_the_test_button_runs_the_cli_the_app_finds(tmp_path, monkeypatch, mode, ok, says):
+    monkeypatch.setenv(BIN_ENV, str(shim(tmp_path, mode)))
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        result = await try_model_profile(ctx, "sub")
+    assert result.ok is ok and (says is None or says in result.error)
+
+
+def test_a_claude_code_profile_saves_only_when_allowed_and_drops_a_url(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        with pytest.raises(InvalidQuery, match="allow_claude_code"):
+            save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "sonnet"}, create=True)
+        assert "sub" not in load_config(ctx.config_source)[0].models
+    with _ctx(tmp_path, ALLOWED) as ctx:
+        save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "opus", "base_url": "http://x"}, create=True)
+        assert ctx.config.models["sub"].base_url is None and model_for(ctx, "sub").model == "opus"
+        text = ctx.config_source.read_text(encoding="utf-8")
+        assert text.index("allow_claude_code") < text.index("[models.sub]")
+
+
+def test_the_flag_applies_live_with_the_profiles(tmp_path):
+    from oracle.services.settings_service import reload_live_settings
+
+    with _ctx(tmp_path) as ctx:
+        ctx.config_source.write_text(ctx.config_source.read_text(encoding="utf-8") + ALLOWED + SUB, encoding="utf-8")
+        reload_live_settings(ctx)
+        assert ctx.config.allow_claude_code and "claude_code" in provider_defaults(ctx)
+        assert model_profile_rows(ctx)[1]["off"] is False
+
+
+def test_turning_the_flag_off_live_keeps_the_profile_but_refuses_it(tmp_path):
+    from oracle.services.settings_service import reload_live_settings
+
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        text = ctx.config_source.read_text(encoding="utf-8")
+        ctx.config_source.write_text(text.replace("allow_claude_code = true", "allow_claude_code = false"),
+                                     encoding="utf-8")
+        reload_live_settings(ctx)
+        assert not ctx.config.allow_claude_code and "claude_code" not in provider_defaults(ctx)
+        assert [(r["name"], r["off"]) for r in model_profile_rows(ctx)] == [("default", False), ("sub", True)]
+        with pytest.raises(ModelUnavailable, match="claude_code is off"):
+            model_for(ctx, "sub")
+        with pytest.raises(InvalidQuery, match="allow_claude_code"):
+            save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "opus"}, create=False)
+        delete_model_profile(ctx, "sub")
+
+
+async def test_a_restart_with_the_flag_off_loads_and_the_test_reports_it_off(tmp_path):
+    with _ctx(tmp_path, SUB) as ctx:
+        assert ctx.config.models["sub"].provider == "claude_code" and not ctx.config.allow_claude_code
+        result = await try_model_profile(ctx, "sub")
+    assert not result.ok and "claude_code is off" in result.error

@@ -25,7 +25,7 @@ from oracle.services.errors import InvalidQuery, NeverListed, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
 from oracle.services.links_service import SOURCE_DISCOVERY, LinkFound, record_links
-from oracle.services.models_service import DEFAULT_PROFILE, model_for
+from oracle.services.models_service import model_for, slot_profile
 from oracle.services.never_list import never_company
 from oracle.services.peers_service import choose_peers
 from oracle.services.research_tools.shelf import fetch
@@ -194,7 +194,7 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         if not usable:
             return DiscoveryRun(note=_nothing_to_search(ctx, seeds))
         # Built before the rotation moves on, so a model that cannot be built skips no source.
-        run = _Run(ctx, held, model or model_for(ctx, DEFAULT_PROFILE), _Screen(ctx, room))
+        run = _Run(ctx, held, model or model_for(ctx, slot_profile(ctx.config, "discovery")), _Screen(ctx, room))
         meta = MetaRepo(ctx.conn)
         order = [s for s in _after(list(SOURCES), meta.get(_LAST_SOURCE)) if s in usable]
         meta.set(_LAST_SOURCE, order[0])

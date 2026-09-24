@@ -22,9 +22,11 @@ def register(parser: argparse.ArgumentParser) -> None:
     p.add_argument("question", help='e.g. "which European companies gain from grid batteries?"')
     p.add_argument("--refines", type=int, metavar="QUESTION_ID",
                    help="a follow-up narrowing that question, e.g. \"only mid caps\"")
+    _model_flag(p)
     p.set_defaults(handler=run_ask)
     p = sub.add_parser("rerun", help="answer a saved question again and say what changed")
     p.add_argument("question_id", type=int)
+    _model_flag(p)
     p.set_defaults(handler=run_rerun)
     sub.add_parser("questions", help="list saved questions").set_defaults(handler=run_questions)
     p = sub.add_parser("show", help="a saved question and its answers")
@@ -41,17 +43,22 @@ def register(parser: argparse.ArgumentParser) -> None:
     p.set_defaults(handler=run_auto)
 
 
+def _model_flag(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--model", metavar="PROFILE", default=None,
+                   help="answer on this model profile instead of the [models.slots] discovery one")
+
+
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
     print_run(asyncio.run(discover(ctx)))
     return 0
 
 
 def run_ask(ctx: AppContext, args: argparse.Namespace) -> int:
-    return print_answer(asyncio.run(ask(ctx, args.question, args.refines)))
+    return print_answer(asyncio.run(ask(ctx, args.question, args.refines, profile=args.model)))
 
 
 def run_rerun(ctx: AppContext, args: argparse.Namespace) -> int:
-    return print_answer(asyncio.run(answer(ctx, args.question_id)))
+    return print_answer(asyncio.run(answer(ctx, args.question_id, profile=args.model)))
 
 
 def run_questions(ctx: AppContext, args: argparse.Namespace) -> int:

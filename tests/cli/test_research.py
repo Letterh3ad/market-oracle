@@ -55,6 +55,18 @@ def test_research_prints_each_step_and_the_findings(run, ollama):
     assert "Findings (ollama qwen3:4b-instruct-2507-q8_0):" in out and "Up 5% on the day" in out
 
 
+def test_model_runs_every_stage_on_the_picked_profile(run, ollama, tmp_path):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n',
+                   encoding="utf-8")
+    ollama.models.add("qwen3:8b")
+    ollama.contents = [step("final", "Flat.")]
+    code, out, _ = run("research", "AAPL", "--model", "big")
+    assert code == 0 and "Findings (ollama qwen3:8b):" in out
+    code, _, err = run("research", "AAPL", "--model", "huge")
+    assert code == 1 and "no model profile huge" in err
+
+
 def test_a_capped_run_says_so(run, ollama, tmp_path):
     cfg = tmp_path / "oracle.toml"
     cfg.write_text(cfg.read_text(encoding="utf-8") + "[llm]\nmax_steps = 1\n", encoding="utf-8")

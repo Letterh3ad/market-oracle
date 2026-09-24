@@ -257,13 +257,15 @@ PROFILE_KEYS_IN_FILE = tuple(f.name for f in fields(ModelProfile) if not f.metad
 @dataclass(frozen=True)
 class Provider:
     base_url: str | None
-    """None: the provider's own endpoint, or none at all where `base_url_required`."""
+    """None: the provider's own endpoint, or none it could default to (`base_url_required`, or no `url`)."""
     context: int
     keyed: bool
     """Whether it takes a key."""
     fallback_key: str | None = None
     """Where it looks with no key or key_env; None: it goes without one."""
     base_url_required: bool = False
+    url: bool = True
+    """False: it reaches no endpoint, so takes no base_url."""
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -271,15 +273,30 @@ PROVIDERS: dict[str, Provider] = {
     "claude_api": Provider(None, CLAUDE_CONTEXT, keyed=True, fallback_key="env / ant login"),
     # Local servers need no key, and OPENAI_API_KEY is never read: a key goes only where a profile sends it.
     "openai_compatible": Provider(None, LlmConfig.context, keyed=True, base_url_required=True),
+    "claude_code": Provider(None, CLAUDE_CONTEXT, keyed=False, url=False),
 }
 """Every provider a profile can name, with what its unset keys mean."""
 PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
+URLLESS_PROVIDERS = tuple(name for name, spec in PROVIDERS.items() if not spec.url)
+CLAUDE_CODE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\[\]-]*")
+"""On Windows the CLI is often claude.cmd, whose arguments cmd.exe reparses: only plain names pass."""
+ALLOW_CLAUDE_CODE = "allow_claude_code"
+"""The `[models]` key, beside the profile tables, that lets a profile name claude_code: it
+drives the user's own claude.ai login, which a distributed build must not offer."""
 PROVIDER_KEYS = ("base_url", "context")
 """Keys whose meaning belongs to one provider: a value carried over from another is dropped."""
 
 
 LLM_PROFILE_KEYS = ("backend", "model", "base_url", "timeout_s", "context", "claude_model")
 """The `[llm]` keys that describe the default profile; `[models.default]` makes them moot."""
+
+SLOTS_TABLE = "slots"
+"""`[models.slots]`: which profile each model task runs on. Never a profile's name."""
+SLOTS = ("research", "notes", "roles", "queries", "verdict", "discovery", "ai_account")
+"""research: the loop; notes: article notes; roles: the report's roles; queries: query planning;
+verdict; discovery: chat and tick discovery; ai_account: every stage of the research a tick
+starts for the AI account. Unset, a slot runs on `default`, except ai_account: unset, that
+research uses the other slots like any run."""
 
 
 def model_profiles(config: Config) -> dict[str, ModelProfile]:
@@ -363,6 +380,10 @@ class Config:
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
     """The `[models.<name>]` tables only; model_profiles adds the implicit default."""
+    model_slots: dict[str, str] = field(default_factory=dict)
+    """`[models.slots]`: slot -> profile, only the slots set. Parsed with `models`, never a top-level key."""
+    allow_claude_code: bool = False
+    """`[models] allow_claude_code`: set in the file by hand only, never in Settings."""
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
@@ -405,8 +426,10 @@ def setting_list(extra_sources: tuple[str, ...] = ()) -> list[Setting]:
                         for s in fields(SourceConfig)]
         elif f.name == "keys":
             out += [Setting("keys", name, "str", None) for name in KEY_NAMES]
-        elif f.name == "models":
-            continue  # edited as whole profiles, in the Models section
+        elif f.name == "models":  # profiles are edited whole, in the Models section
+            out += [Setting(f"models.{SLOTS_TABLE}", slot, "str", None) for slot in SLOTS]
+        elif f.name in ("model_slots", ALLOW_CLAUDE_CODE):
+            continue  # slots are listed under models; the flag is set only by hand
         elif hasattr(value, "__dataclass_fields__"):
             out += [_setting(f.name, s.name, getattr(value, s.name), s.type) for s in fields(value)]
         else:
@@ -490,8 +513,10 @@ def without_section(text: str, section: str) -> str:
     return out
 
 
-def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
-    """Return the config and the file it came from, or None when defaults were used."""
+def load_config(path: Path | None, cwd: Path | None = None, strict: bool = False) -> tuple[Config, Path | None]:
+    """Return the config and the file it came from, or None when defaults were used. A slot
+    naming a profile that is gone is dropped with a warning, so an unattended start still
+    runs; `strict` (a change someone is making now) refuses it instead."""
     cwd = cwd or Path.cwd()
     if path is None:
         path = cwd / DEFAULT_CONFIG_NAME
@@ -504,7 +529,7 @@ def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Pat
             raw = tomllib.load(fh)
         except tomllib.TOMLDecodeError as exc:
             raise ConfigError(f"{path.name} is not valid TOML: {exc}") from exc
-    return _with_env_keys(_resolve(_apply(raw), path.parent)), path
+    return _with_env_keys(_resolve(_apply(raw, strict), path.parent)), path
 
 
 def _with_env_keys(config: Config) -> Config:
@@ -527,8 +552,10 @@ def _reject_unknown(raw: dict, cls: type, where: str) -> None:
         raise ConfigError(f"unknown key(s) in {where}: {', '.join(unknown)}")
 
 
-def _apply(raw: dict) -> Config:
+def _apply(raw: dict, strict: bool = False) -> Config:
     _reject_unknown(raw, Config, "oracle.toml")
+    if "model_slots" in raw:
+        raise ConfigError(f"unknown key(s) in oracle.toml: model_slots (slots go in [models.{SLOTS_TABLE}])")
     values = {}
     for name, value in raw.items():
         if name == "sources":
@@ -577,8 +604,10 @@ def _apply(raw: dict) -> Config:
             values[name] = _llm(value)
             continue
         if name == "models":
-            values[name] = _models(value)
+            values[name], values[ALLOW_CLAUDE_CODE], values["model_slots"] = _models(value, strict)
             continue
+        if name == ALLOW_CLAUDE_CODE:
+            raise ConfigError(f"{name} belongs under [models]")
         if name == "research":
             values[name] = _research(value)
             continue
@@ -813,21 +842,54 @@ PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _models(raw: object) -> dict[str, ModelProfile]:
+def _models(raw: object, strict: bool = False) -> tuple[dict[str, ModelProfile], bool, dict[str, str]]:
+    """The profiles, whether claude_code may be named, and the slots."""
     if not isinstance(raw, dict):
         raise ConfigError("models must be a table of [models.<name>] sections")
+    raw = dict(raw)
+    slots = raw.pop(SLOTS_TABLE, {})
+    allow = raw.pop(ALLOW_CLAUDE_CODE, False)
+    if not isinstance(allow, bool):
+        raise ConfigError(f"models.{ALLOW_CLAUDE_CODE} must be true or false, got {allow!r}")
     seen: dict[str, str] = {}
     for name in raw:
         check_profile_name(name)
         if name.lower() in seen:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
-    return {name: check_profile(name, table, strict=False) for name, table in raw.items()}
+    profiles = {name: check_profile(name, table, strict=False) for name, table in raw.items()}
+    off = [n for n, p in profiles.items() if p.provider == "claude_code"] if not allow else []
+    if off:
+        # Kept, so the file still loads and the profile can be edited; refused when a model is built.
+        log.warning("models %s: provider claude_code is off until %s = true is set under [models]",
+                    ", ".join(off), ALLOW_CLAUDE_CODE)
+    return profiles, allow, check_slots(slots, {DEFAULT_PROFILE, *profiles}, strict)
+
+
+def check_slots(raw: object, profiles: set[str], strict: bool = True) -> dict[str, str]:
+    where = f"models.{SLOTS_TABLE}"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where} must be a table of slot = \"profile\"")
+    unknown = sorted(set(raw) - set(SLOTS))
+    if unknown:
+        raise ConfigError(f"unknown slot(s) in [{where}]: {', '.join(unknown)}; the slots are {', '.join(SLOTS)}")
+    dangling = [slot for slot, profile in raw.items() if not (isinstance(profile, str) and profile in profiles)]
+    for slot in dangling:
+        message = f"{where}.{slot} names no profile {raw[slot]!r}; the profiles are {', '.join(sorted(profiles))}"
+        if strict:
+            raise ConfigError(message)
+        log.warning("%s: until fixed, %s", message, "tick research uses the other slots" if slot == "ai_account"
+                    else f"{slot} runs on {DEFAULT_PROFILE}")
+    return {slot: raw[slot] for slot in SLOTS if slot in raw and slot not in dangling}
 
 
 def check_profile_name(name: object) -> str:
     if not (isinstance(name, str) and PROFILE_NAME.fullmatch(name)):
         raise ConfigError(f"models: {name!r} is not a profile name (letters, digits, _ and -, up to 40)")
+    if name.lower() == SLOTS_TABLE:
+        raise ConfigError(f"models: {name!r} is reserved for [models.{SLOTS_TABLE}]; pick another profile name")
+    if name.lower() == ALLOW_CLAUDE_CODE:
+        raise ConfigError(f"models: {name} is a [models] setting, not a profile name")
     return name
 
 
@@ -851,6 +913,8 @@ def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
         raise ConfigError(f"{where}: {provider} takes no key; remove key and key_env")
     if PROVIDERS[provider].base_url_required and "base_url" not in raw:
         raise ConfigError(f"{where} needs a base_url: the server's API root, like http://localhost:1234/v1")
+    if provider in URLLESS_PROVIDERS and "base_url" in raw:
+        raise ConfigError(f"{where}: {provider} reaches no endpoint; remove base_url")
     p = ModelProfile(**raw)
     low, high = PROFILE_CONTEXT_RANGE
     checks = {
@@ -861,6 +925,9 @@ def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
                       and p.timeout_s > 0, "a positive number"),
     }
+    if provider == "claude_code":
+        checks["model"] = (isinstance(p.model, str) and CLAUDE_CODE_MODEL.fullmatch(p.model) is not None,
+                           "a model name the claude CLI takes, like sonnet, opus or claude-opus-5")
     for key, (ok, wanted) in checks.items():
         if not ok:
             raise ConfigError(f"{where}.{key} must be {wanted}, got {getattr(p, key)!r}")

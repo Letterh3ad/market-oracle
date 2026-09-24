@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from oracle.research.edgar import is_sec
 from oracle.research.trace import (
-    NOT_ABOUT, NOTHING, Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step, Verdict,
+    NOT_ABOUT, NOTHING, Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, StageModel, Step, Verdict,
 )
 from oracle.store.db import transaction
 
@@ -16,18 +16,22 @@ from oracle.store.db import transaction
 _READ_COLUMNS = "t.failed, n.about, n.facts, n.failed"
 _READ_JOINS = ("LEFT JOIN article_texts t ON t.article_id = a.id "
                "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ?")
-_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
+_RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to, stages"
 
 
 class ResearchRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def start(self, symbol: str, backend: str, model: str, started_at: str, as_of: date | None = None) -> int:
+    def start(self, symbol: str, backend: str, model: str, started_at: str, as_of: date | None = None,
+              stages: tuple[StageModel, ...] = ()) -> int:
+        """`stages` is kept from the start: the notes stage's model is what the run's notes are read by."""
         with transaction(self._conn):
             cur = self._conn.execute(
-                "INSERT INTO research_runs (symbol, backend, model, started_at, status, as_of) VALUES (?, ?, ?, ?, ?, ?)",
-                (symbol, backend, model, started_at, RunStatus.RUNNING, as_of.isoformat() if as_of else None),
+                "INSERT INTO research_runs (symbol, backend, model, started_at, status, as_of, stages) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (symbol, backend, model, started_at, RunStatus.RUNNING, as_of.isoformat() if as_of else None,
+                 _stages_json(stages)),
             )
         return cur.lastrowid
 
@@ -87,13 +91,15 @@ class ResearchRepo:
             )
 
     def finish(self, run_id: int, status: RunStatus, findings: str | None, error: str | None,
-               finished_at: str, fell_back_to: Set[str] = frozenset()) -> None:
+               finished_at: str, fell_back_to: Set[str] = frozenset(),
+               stages: tuple[StageModel, ...] | None = None) -> None:
+        """`stages`, when given, replaces those kept at the start (with what each fell back to)."""
         with transaction(self._conn):
             self._conn.execute(
-                "UPDATE research_runs SET status = ?, findings = ?, error = ?, finished_at = ?, fell_back_to = ? "
-                "WHERE id = ?",
+                "UPDATE research_runs SET status = ?, findings = ?, error = ?, finished_at = ?, fell_back_to = ?, "
+                "stages = COALESCE(?, stages) WHERE id = ?",
                 (status, findings, error, finished_at, json.dumps(sorted(fell_back_to)) if fell_back_to else None,
-                 run_id),
+                 _stages_json(stages), run_id),
             )
 
     def fail_running(self, error: str, finished_at: str) -> None:
@@ -123,6 +129,8 @@ class ResearchRepo:
         return self._run(row) if row else None
 
     def _run(self, row) -> ResearchRun:
+        stages = tuple(StageModel(**{**s, "fell_back_to": tuple(s.get("fell_back_to", ()))})
+                       for s in json.loads(row[11])) if row[11] else ()
         steps = self._conn.execute(
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
@@ -131,7 +139,7 @@ class ResearchRepo:
             "(SELECT q.via FROM research_queries q WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE "
             f"AND q.via IS NOT NULL LIMIT 1), {_READ_COLUMNS} "
             f"FROM research_evidence e JOIN articles a ON a.id = e.article_id {_READ_JOINS} WHERE e.run_id = ? "
-            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (note_model(row[2], row[3]), row[0]),
+            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (_notes_key(row[2], row[3], stages), row[0]),
         )
         # A replay reads only what cannot have changed since its day: a filing, not today's copy
         # of an article nor a note a live run took from it.
@@ -143,7 +151,7 @@ class ResearchRepo:
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),
-                           self._report(row[0]), tuple(json.loads(row[10])) if row[10] else ())
+                           self._report(row[0]), tuple(json.loads(row[10])) if row[10] else (), stages)
 
     def _report(self, run_id: int) -> Report | None:
         row = self._conn.execute("SELECT day, body FROM research_reports WHERE run_id = ?", (run_id,)).fetchone()
@@ -178,6 +186,15 @@ def evidence_of(conn: sqlite3.Connection, article_ids: list[int], note_key: str)
 def note_model(backend: str, model: str) -> str:
     """How notes are keyed: each model reads an article its own way."""
     return f"{backend}/{model}"
+
+
+def _notes_key(backend: str, model: str, stages: tuple[StageModel, ...]) -> str:
+    notes = next((s for s in stages if s.stage == "notes"), None)
+    return note_model(notes.backend, notes.model) if notes else note_model(backend, model)
+
+
+def _stages_json(stages: tuple[StageModel, ...] | None) -> str | None:
+    return json.dumps([asdict(s) for s in stages]) if stages else None
 
 
 def _reading(read_failed: str | None, about: int | None, facts: str | None,

@@ -18,14 +18,18 @@ from oracle.clock import Clock
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research import edgar
+from oracle.research.google_links import decode_offline, stub_id
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.news import end_of
 from oracle.research.notes import take_note
 from oracle.research.tools import ToolError
 from oracle.research.trace import Evidence
-from oracle.research.web import THIN_PAGE, WebSearcher, outlet_key, site_name
+from oracle.research.web import (
+    THIN_PAGE, WebSearcher, outlet_key, outlet_sites, registered_domain, site_name, unsafe_url,
+)
 from oracle.services.research_tools.filings import press_exhibit
-from oracle.services.research_tools.shelf import Unavailable, domain, evidence_line
+from oracle.services.research_tools.google_links import decode_online
+from oracle.services.research_tools.shelf import Refused, Unavailable, domain, evidence_line
 from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, Page, read_page, search_web
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
@@ -34,6 +38,10 @@ from oracle.store.research import note_model
 log = logging.getLogger(__name__)
 
 UNUSABLE_NOTE = "the model's note was unusable"
+# Passing, so a live run resolves it later.
+REPLAY = "not resolved in a replay (a Google News link needs Google or a web search)"
+# A decoded address answering these is stale; the headline search may find where it went.
+GONE = (404, 410)
 # Advice for the loop's model, not for someone reading why an article went unread.
 TRY_ANOTHER = "; try another tool"
 _WORD = re.compile(r"[a-z0-9]+")
@@ -91,8 +99,8 @@ class Reader:
 
     async def _fetch(self, e: Evidence, site: str | None, form: str | None) -> str | None:
         try:
-            url = await self._resolve(e, site) if domain(e.url) == "news.google.com" else e.url
-            page = await read_page(self._client, url, self._contact, FILING_BYTES if form else MAX_PAGE_BYTES)
+            page = await (self._read_stub(e, site) if domain(e.url) == "news.google.com" else
+                          read_page(self._client, e.url, self._contact, FILING_BYTES if form else MAX_PAGE_BYTES))
             if len(page.text) < THIN_PAGE:
                 raise ToolError(THIN)
             read_at, text = await self._filing(form, page) if form else (page.url, page.text[:MAX_TEXT])
@@ -126,21 +134,50 @@ class Reader:
                 log.info("reading the press exhibit of %s failed", page.url, exc_info=True)
         return page.url, edgar.key_text(form, page.text)
 
-    async def _resolve(self, e: Evidence, site: str | None) -> str:
-        """The article behind a Google News redirect stub: a web search for its headline,
-        taking the first result at the outlet's own site."""
+    async def _read_stub(self, e: Evidence, site: str | None) -> Page:
+        """The article behind a Google News redirect stub: at its decoded address, else (or
+        when that is gone) the first result at the outlet's own site of a search for its headline."""
+        decoded, why, passing = await self._decode(e, site)
+        if decoded:
+            try:
+                return await read_page(self._client, decoded, self._contact)
+            except Refused as exc:
+                if exc.status not in GONE:
+                    raise
+                why = f"{decoded} is gone ({exc})"
+        return await read_page(self._client, await self._search(e, site, why, passing), self._contact)
+
+    async def _decode(self, e: Evidence, site: str | None) -> tuple[str | None, str, bool]:
+        """The stub's address if it passes the outlet check, else why not and whether that
+        failure passes. An older stub carries it; a newer one needs Google's decoder."""
+        stub = stub_id(e.url)
+        if stub is None:
+            return None, "the link has no id to decode", False
+        url = decode_offline(stub)
+        if url is None:
+            if self._searcher is None:
+                raise Unavailable(REPLAY)
+            try:
+                url = await decode_online(self._client, stub)
+            except ToolError as exc:
+                return None, str(exc).removesuffix(TRY_ANOTHER), isinstance(exc, Unavailable)
+        why = off_outlet(url, site, e.outlet)
+        return (None, why, False) if why else (url, "", False)
+
+    async def _search(self, e: Evidence, site: str | None, why: str, passing: bool) -> str:
+        """The first result at the outlet's own site of a web search for the headline."""
         if self._searcher is None:
-            # Passing, so a live run resolves it later.
-            raise Unavailable("not resolved in a replay (a Google News link needs a web search)")
-        why = "could not resolve the Google News link"
+            raise Unavailable(REPLAY)
+        failed = f"could not resolve the Google News link: {why}"
         try:
             results = await search_web(self._searcher, self._gate, e.title)
         except Unavailable as exc:
-            raise Unavailable(f"{why}: {exc}") from exc
+            raise Unavailable(f"{failed}, and {exc}") from exc
         for r in results:
             if from_outlet(r.url, site, e.outlet):
                 return r.url
-        raise ToolError(f"{why}: no search result from {site or e.outlet or 'its outlet'}")
+        failure = f"{failed}, and no search result from {site or e.outlet or 'its outlet'}"
+        raise Unavailable(failure) if passing else ToolError(failure)
 
     async def _note(self, e: Evidence, text: str) -> None:
         heading = evidence_line(e.id, e.published, e.outlet, e.title)
@@ -189,16 +226,31 @@ def report_page(e: Evidence) -> bool:
 
 
 def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:
-    """Whether a search result is on the outlet's own site: its domain when the feed named
-    one, else a domain whose own name is the outlet's ("BBC" and bbc.co.uk). The whole name,
-    so reutersnews-daily.com or bbc.fakenews.com is never taken for the outlet."""
+    """Whether an address is on the outlet's own site: its domain when the feed named one
+    (or any host of that registered domain, when it is registered under the outlet's name),
+    else a domain whose own name is the outlet's ("BBC" and bbc.co.uk, "The Motley Fool" and
+    fool.com). The whole name, so reutersnews-daily.com or bbc.fakenews.com is never taken
+    for the outlet."""
     host = domain(url)
+    key = outlet_key(outlet or "")
     if site:
-        return host == site or host.endswith("." + site)
+        # A shared host (jane.substack.com) is registered under no outlet's name, so stays exact.
+        same = key and site_name(site) == key and registered_domain(host) == registered_domain(site)
+        return host == site or host.endswith("." + site) or bool(same)
+    if listed := outlet_sites(outlet or ""):
+        return registered_domain(host) in listed
     name = site_name(host)
-    words = _WORD.findall((outlet or "").lower())
-    names = {"".join(words), outlet_key(outlet or "")}
+    names = {"".join(_WORD.findall((outlet or "").lower())), key}
     return len(name) >= 3 and name in names
+
+
+def off_outlet(url: str, site: str | None, outlet: str | None) -> str | None:
+    """Why a decoded address must not be read, or None."""
+    if why := unsafe_url(url):
+        return f"{url} is not readable ({why})"
+    if not from_outlet(url, site, outlet):
+        return f"{url} is not at {site or outlet or 'its outlet'}"
+    return None
 
 
 def unexpected(exc: Exception) -> str:

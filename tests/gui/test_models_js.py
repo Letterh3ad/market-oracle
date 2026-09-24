@@ -111,3 +111,25 @@ def test_switching_provider_clears_its_values_and_switching_back_restores_them()
 def test_bad_input_is_refused_before_sending():
     assert body({**FORM, "context": "lots"}) == {"refused": "context: not a number"}
     assert body({**FORM, "key": "k", "key_env": "K"}) == {"refused": "give a key or key_env, not both"}
+
+
+def slots_cell(profile: dict) -> dict:
+    script = f"""
+        globalThis.document = {{ createElement: (tag) => ({{ tag, attrs: {{}}, children: [],
+          setAttribute(k, v) {{ this.attrs[k] = v; }}, append(...n) {{ this.children.push(...n); }} }}),
+          createTextNode: (text) => text }};
+        const {{ slotsCell }} = await import({json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())});
+        const td = slotsCell({json.dumps(profile)});
+        console.log(JSON.stringify({{ text: td.children.join(""), cls: td.className, title: td.attrs.title }}));
+    """
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def test_the_slots_a_profile_serves_show_unset_ones_marked_and_warn_when_its_key_is_unset():
+    default = {"slots": ["notes"], "unset_slots": ["research", "roles"], "key_state": "none"}
+    assert slots_cell(default) == {"text": "notes, research (unset), roles (unset)", "cls": "dim small"}
+    keyless = {"slots": ["verdict"], "unset_slots": [], "key_state": "unset", "unavailable": "MY_KEY is not set",
+               "if_unset": ["verdict runs on the research slot's profile"]}
+    assert slots_cell(keyless) == {"text": "verdict: key unset", "cls": "warn-text small",
+                                   "title": "MY_KEY is not set: verdict runs on the research slot's profile"}

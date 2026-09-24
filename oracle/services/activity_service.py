@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from oracle.config import profile_tables
 from oracle.jobs import pid_alive
 from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
@@ -25,6 +26,7 @@ from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
+from oracle.services.models_service import check_model_profile
 from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
@@ -72,6 +74,8 @@ class Job:
     state: str = "queued"
     """queued, running, done, failed, cancelled, or interrupted (the app closed mid-run)."""
     error: str | None = None
+    profile: str | None = None
+    """The model profile picked for it, kept so a retry runs on the same one."""
     result: Any = field(default=None, repr=False)
     finished: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
     task: asyncio.Task | None = field(default=None, repr=False)
@@ -103,17 +107,17 @@ class JobRunner:
 
     def submit(self, kind: str, label: str, work: Work, *, subject: str | None = None,
                link: str | None = None, progress: Callable[[], str | None] | None = None,
-               automatic: bool = False) -> Job:
-        """Queue `work`; a job of the same kind and subject still waiting or running is
-        returned instead of a second one."""
+               automatic: bool = False, profile: str | None = None) -> Job:
+        """Queue `work`; a job of the same kind, subject and picked `profile` still waiting or
+        running is returned instead of a second one."""
         if subject is not None:
-            same = next((j for j in self.active(kind) if j.subject == subject), None)
+            same = next((j for j in self.active(kind) if (j.subject, j.profile) == (subject, profile)), None)
             if same:
                 return same
         now = self._ctx.clock.utcnow()
-        job_id = self._history.add(kind, label, subject, link, "queued", now, os.getpid())
+        job_id = self._history.add(kind, label, subject, link, "queued", now, os.getpid(), profile)
         job = Job(job_id, kind, label, work, subject=subject, link=link, progress_fn=progress, automatic=automatic,
-                  submitted_at=now)
+                  submitted_at=now, profile=profile)
         self._queues.setdefault(kind, deque()).append(job)
         worker = self._workers.get(kind)
         if worker is None or worker.done():
@@ -230,7 +234,7 @@ class JobRunner:
 
 def _from_row(r: JobRow) -> Job:
     job = Job(r.id, r.kind, r.label, subject=r.subject, link=r.link, submitted_at=r.submitted_at,
-              started_at=r.started_at, finished_at=r.finished_at, state=r.state, error=r.error)
+              started_at=r.started_at, finished_at=r.finished_at, state=r.state, error=r.error, profile=r.profile)
     job.finished.set()
     return job
 
@@ -246,14 +250,17 @@ def sweep_leftovers(ctx: AppContext) -> None:
     sweep_interrupted_answers(ctx)
 
 
-def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date | None = None) -> Job:
-    """Queue one research run, or with `as_of` a replay of that day; an unknown symbol or a
-    future day is refused now, not when its turn comes."""
+def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date | None = None,
+                    profile: str | None = None) -> Job:
+    """Queue one research run, or with `as_of` a replay of that day, on the slots or every stage
+    on `profile`; an unknown symbol, a future day or an unknown profile is refused now, not when
+    its turn comes."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
+    check_model_profile(ctx, profile)
 
     async def work(c: AppContext):
-        run = await research(c, listing, as_of=as_of)
+        run = await research(c, listing, as_of=as_of, profile=profile)
         if run.status == RunStatus.FAILED:  # recorded on the run; Activity must agree with the company page
             raise ServiceError(run.error or "research failed")
         return run
@@ -263,8 +270,12 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date
         subject, label = f"{listing}@{as_of.isoformat()}", f"Replay {listing} as of {as_of.isoformat()}"
     else:
         subject, label = listing, f"Research {listing}"
-    return runner.submit("research", label, work, subject=subject,
-                         link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
+    return runner.submit("research", label + _on(profile), work, subject=subject, link=f"#company/{listing}",
+                         progress=lambda: research_progress(ctx, listing), profile=profile)
+
+
+def _on(profile: str | None) -> str:
+    return f" on {profile}" if profile else ""
 
 
 @dataclass(frozen=True)
@@ -386,20 +397,24 @@ def submit_discover(runner: JobRunner) -> Job:
     return runner.submit("discover", "Discover companies", discover, subject="discover", link="#watchlist")
 
 
-def submit_ask(ctx: AppContext, runner: JobRunner, text: str, refines: int | None = None) -> Job:
-    """Save a question (or a follow-up refining `refines`) now, refusing a bad one, and answer it as a job."""
-    return _submit_answer(ctx, runner, new_question(ctx, text, refines))
+def submit_ask(ctx: AppContext, runner: JobRunner, text: str, refines: int | None = None,
+               profile: str | None = None) -> Job:
+    """Save a question (or a follow-up refining `refines`) now, refusing a bad one, and answer it
+    as a job, on the discovery slot or on `profile`."""
+    check_model_profile(ctx, profile)
+    return _submit_answer(ctx, runner, new_question(ctx, text, refines), profile)
 
 
-def submit_rerun(ctx: AppContext, runner: JobRunner, question_id: int) -> Job:
+def submit_rerun(ctx: AppContext, runner: JobRunner, question_id: int, profile: str | None = None) -> Job:
     """Answer a saved question again; the answer says what changed since the last."""
-    return _submit_answer(ctx, runner, saved_question(ctx, question_id))
+    check_model_profile(ctx, profile)
+    return _submit_answer(ctx, runner, saved_question(ctx, question_id), profile)
 
 
-def _submit_answer(ctx: AppContext, runner: JobRunner, q: Question) -> Job:
-    label = f"Ask: {q.text if len(q.text) <= 60 else q.text[:59] + '~'}"
-    return runner.submit("ask", label, lambda c: answer(c, q.id), subject=str(q.id), link=f"#discover/{q.id}",
-                         progress=lambda: answer_progress(ctx, q.id))
+def _submit_answer(ctx: AppContext, runner: JobRunner, q: Question, profile: str | None) -> Job:
+    label = f"Ask: {q.text if len(q.text) <= 60 else q.text[:59] + '~'}{_on(profile)}"
+    return runner.submit("ask", label, lambda c: answer(c, q.id, profile=profile), subject=str(q.id),
+                         link=f"#discover/{q.id}", progress=lambda: answer_progress(ctx, q.id), profile=profile)
 
 
 BACKTEST_SEP = "|"
@@ -431,8 +446,8 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if "@" in subject:
         symbol, day = subject.split("@", 1)
-        return submit_research(ctx, runner, symbol, date.fromisoformat(day))
-    return submit_research(ctx, runner, subject)
+        return submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
+    return submit_research(ctx, runner, subject, profile=job.profile)
 
 
 def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -461,7 +476,7 @@ def _retry_discover(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_ask(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_rerun(ctx, runner, int(job.subject))
+    return submit_rerun(ctx, runner, int(job.subject), job.profile)
 
 
 def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -499,10 +514,15 @@ def retry(ctx: AppContext, runner: JobRunner, job_id: int) -> Job:
 def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
     """Every finished job that ended cancelled, interrupted or failed, still needs it (no
     later run of the same kind and subject succeeded since), is not already queued or
-    running, and is a kind this app can rebuild."""
+    running, and is a kind this app can rebuild on a profile that still exists. The newest
+    run is found by subject alone, whatever profile it ran on: a listing researched since on
+    another profile needs no retry."""
     out = []
+    profiles = profile_tables(ctx.config)
     for row in JobHistoryRepo(ctx.conn).latest_per_subject():
         if row.state not in RETRYABLE_STATES or row.kind not in _RETRY:
+            continue
+        if row.profile is not None and row.profile not in profiles:
             continue
         if any(j.subject == row.subject for j in runner.active(row.kind)):
             continue

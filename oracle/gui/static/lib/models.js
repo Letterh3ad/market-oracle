@@ -8,6 +8,8 @@ import { el, showError } from "./dom.js";
 
 const FIELDS = ["model", "base_url", "context", "timeout_s", "key_env", "key"];
 const PROVIDER_FIELDS = ["base_url", "context"];
+// What an edit form shows for a provider the server no longer offers (claude_code turned off).
+const OFF = { base_url: null, context: "", timeout_s: "", keyed: false, url: false };
 
 // Form values (strings) to the JSON the server takes: empty means the provider's default.
 function profileBody(fields, create, defaults = {}) {
@@ -63,6 +65,15 @@ function keyState(p) {
   return p.key_env ? `${p.key_state} (${p.key_env})` : p.key_state;
 }
 
+// The slots a profile serves, those it serves by being unset marked so; a warning when its
+// key is missing, saying what then happens to each.
+function slotsCell(p) {
+  const text = [...p.slots, ...p.unset_slots.map((s) => `${s} (unset)`)].join(", ");
+  if (!p.if_unset?.length) return el("td", { class: "dim small" }, text);
+  return el("td", { class: "warn-text small", title: `${p.unavailable}: ${p.if_unset.join("; ")}` },
+    `${text}: ${p.key_state === "unset" ? "key unset" : "off"}`);
+}
+
 function pane() {
   return document.getElementById("models-form");
 }
@@ -74,7 +85,7 @@ function draw(listing) {
     el("p", { class: "dim small" }, "Named models a task can run on. The default comes from [llm] until it is " +
       "edited here, which writes [models.default]. Keys are never shown."),
     el("table", { class: "small" },
-      el("thead", null, el("tr", null, ...["name", "provider", "model", "context", "timeout", "key", "", ""]
+      el("thead", null, el("tr", null, ...["name", "provider", "model", "context", "timeout", "key", "slots", "", ""]
         .map((h) => el("th", null, h)))),
       body),
     el("button", { type: "button", class: "small-btn", onclick: () => body.append(formRow(null, listing.providers)) },
@@ -102,11 +113,13 @@ function profileRow(p, providers) {
   const tr = el("tr", null,
     el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null,
       p.unusable ? el("span", { class: "warn-text small", title: p.unusable }, " unusable: edit to fix") : null),
-    el("td", null, p.provider),
+    el("td", null, p.provider, p.off ? el("span", { class: "warn-text", title: "set allow_claude_code = true " +
+      "under [models] in oracle.toml to use it" }, " (off)") : null),
     el("td", { class: "mono" }, p.model),
     el("td", null, String(p.context)),
     el("td", null, `${p.timeout_s}s`),
     el("td", null, keyState(p)),
+    slotsCell(p),
     el("td", null,
       test,
       el("button", { type: "button", class: "small-btn", onclick: () => tr.replaceWith(formRow(p, providers)) }, "Edit"),
@@ -135,14 +148,17 @@ function formRow(p, providers) {
     return input;
   };
   const name = p ? null : box("name", { size: 10 });
-  const provider = el("select", null, ...Object.keys(providers).map((v) => el("option", { value: v }, v)));
-  provider.value = p?.provider ?? Object.keys(providers)[0];
+  // A profile whose provider is off is still editable; only a switch to another is saved.
+  const names = Object.keys(providers);
+  const provider = el("select", null, ...names.map((v) => el("option", { value: v }, v)),
+    p && !providers[p.provider] ? el("option", { value: p.provider, disabled: true }, `${p.provider} (off)`) : null);
+  provider.value = p?.provider ?? names[0];
   const inputs = Object.fromEntries(FIELDS.map((k) => [k, box(k, k === "key" ? { type: "password" } : {})]));
   const clear = el("input", { type: "checkbox", title: "Remove the saved key" });
   const keyCell = el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear"));
   const hint = el("td", { class: "dim small" });
   const fit = () => {
-    const defaults = providers[provider.value];
+    const defaults = providers[provider.value] ?? OFF;
     for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = text;
     inputs.key_env.placeholder = "key_env";
     inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
@@ -150,6 +166,7 @@ function formRow(p, providers) {
     keyCell.hidden = !defaults.keyed;
     hint.textContent = defaults.base_url_required ? "base_url required; other empty boxes: the provider's default"
       : "empty: the provider's default";
+    inputs.base_url.hidden = !defaults.url;
   };
   provider.addEventListener("change", () => {
     for (const [k, v] of Object.entries(switchedValues(p, provider.value))) inputs[k].value = v;
@@ -175,6 +192,7 @@ function formRow(p, providers) {
     el("td", null, inputs.context),
     el("td", null, inputs.timeout_s),
     keyCell,
+    el("td"),
     el("td", null,
       el("button", { type: "button", class: "small-btn", onclick: save }, "Save"),
       el("button", { type: "button", class: "small-btn", onclick: load }, "Cancel")),
@@ -189,4 +207,4 @@ async function load() {
   }
 }
 
-export { load, placeholders, prefill, profileBody, switchedValues };
+export { load, placeholders, prefill, profileBody, slotsCell, switchedValues };

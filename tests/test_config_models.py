@@ -43,7 +43,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
 
 
 @pytest.mark.parametrize("table, message", [
-    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, openai_compatible, got 'gpt'"),
+    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, openai_compatible, claude_code, got 'gpt'"),
     ('model = "x"', r"models.fast needs a provider"),
     ('provider = "ollama"', r"models.fast needs a model"),
     ('provider = "ollama"\nmodel = ""', r"models.fast.model must be a model name"),
@@ -178,3 +178,41 @@ def test_a_key_may_go_over_plain_http_to_this_machine(tmp_path, host):
     _load(tmp_path, f'[models.lm]\nprovider = "openai_compatible"\nmodel = "m"\nbase_url = "http://{host}:1234/v1"\n'
                     'key = "k"\n')
 
+CLAUDE_CODE = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n'
+ALLOWED = "[models]\nallow_claude_code = true\n"
+
+
+def test_a_claude_code_profile_loads_with_the_flag_off_but_warns(tmp_path, caplog):
+    for text in (CLAUDE_CODE, f"[models]\nallow_claude_code = false\n{CLAUDE_CODE}"):
+        caplog.clear()
+        config = _load(tmp_path, text)
+        assert config.allow_claude_code is False and config.models["sub"].provider == "claude_code"
+        assert "models sub: provider claude_code is off until allow_claude_code = true" in caplog.text
+    caplog.clear()
+    config = _load(tmp_path, ALLOWED + CLAUDE_CODE)
+    assert "claude_code is off" not in caplog.text
+    assert config.allow_claude_code is True and list(config.models) == ["sub"]
+    assert model_profiles(config)["sub"] == ModelProfile("claude_code", "sonnet", None, CLAUDE_CONTEXT, 180.0)
+    assert _load(tmp_path, "[llm]\n").allow_claude_code is False
+
+
+@pytest.mark.parametrize("text, message", [
+    ("[models]\nallow_claude_code = 1\n", "models.allow_claude_code must be true or false"),
+    ("allow_claude_code = true\n", r"allow_claude_code belongs under \[models\]"),
+    ('[models.allow_claude_code]\nprovider = "ollama"\nmodel = "x"\n', "must be true or false"),
+    (ALLOWED + CLAUDE_CODE + 'base_url = "http://x"\n', "claude_code reaches no endpoint"),
+    (ALLOWED + CLAUDE_CODE + 'key_env = "K"\n', "claude_code takes no key"),
+    (ALLOWED + '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet & calc"\n',
+     "models.sub.model must be a model name the claude CLI takes"),
+])
+def test_the_flag_and_claude_code_profiles_are_checked(tmp_path, text, message):
+    with pytest.raises(ConfigError, match=message):
+        _load(tmp_path, text)
+
+
+def test_the_flag_is_not_a_profile_name_or_a_settings_form_key():
+    from oracle.config import check_profile_name, setting_list
+
+    with pytest.raises(ConfigError, match="not a profile name"):
+        check_profile_name("allow_claude_code")
+    assert not [s for s in setting_list() if s.key == "allow_claude_code"]

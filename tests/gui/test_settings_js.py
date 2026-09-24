@@ -49,3 +49,8 @@ def test_a_number_is_sent_as_a_number():
 
 def test_an_empty_box_for_a_key_blank_turns_off_sends_blank():
     assert read({"kind": "str", "blank_off": True}, box()) == {"value": ""}
+
+
+def test_a_slot_picks_a_profile_or_unset_for_the_default():
+    slot = {"kind": "str", "choices": ["default", "big"]}
+    assert read(slot, box("big")) == {"value": "big"} and read(slot, box("")) == {"value": None}

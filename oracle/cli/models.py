@@ -21,9 +21,17 @@ def _list(ctx: AppContext, args: argparse.Namespace) -> int:
         key = {"none": "-", "fallback": r["key_fallback"]}.get(r["key_state"], r["key_state"])
         if r["key_env"]:
             key += f" ({r['key_env']})"
-        source = "  from [llm]" if r["from_llm"] else ""
-        print(f"{r['name']:<14}{r['provider']:<19}{r['model']:<32}{r['context']:>9}  {key}{source}")
+        source = "  from [llm]" if r["from_llm"] else "  off (allow_claude_code is not set)" if r["off"] else ""
+        serves = slots_served(r)
+        slots = f"  slots: {serves}" if serves else ""
+        print(f"{r['name']:<14}{r['provider']:<19}{r['model']:<32}{r['context']:>9}  {key}{source}{slots}")
+        if r["if_unset"]:
+            print(f"  warning: {r['unavailable']}, so {r['name']} cannot run: {'; '.join(r['if_unset'])}")
     return 0
+
+
+def slots_served(r: dict) -> str:
+    return ", ".join([*r["slots"], *(f"{s} (unset)" for s in r["unset_slots"])])
 
 
 def _test(ctx: AppContext, args: argparse.Namespace) -> int:

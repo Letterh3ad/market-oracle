@@ -546,3 +546,27 @@ async def test_a_rerun_never_brings_back_a_deleted_chat_link(ctx, news):
     delete_link(ctx, "FLNC", link.id)
     again = await answer(ctx, view.answer.question_id, model({"companies": [RWE_BUYS]}), FakeSearcher())
     assert company_links(ctx, "FLNC") == [] and not any("link" in n for n in again.answer.notes)
+
+
+async def test_an_answer_runs_on_the_discovery_slot_or_on_the_picked_profile(ctx, monkeypatch):
+    from dataclasses import replace
+
+    from oracle.config import ModelProfile
+    from tests.fakes.llm import use_models
+
+    plain, big = model(ALL), model(ALL)
+    big.model = "big"
+    use_models(monkeypatch, {"default": plain, "big": big}.get)
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big")}, model_slots={"discovery": "big"})
+    view = await ask(ctx, GRID, searcher=FakeSearcher())
+    assert big.calls and not plain.calls and view.answer.model == "scripted big"
+    await ask(ctx, GRID, searcher=FakeSearcher(), profile="default")
+    assert plain.calls
+
+
+async def test_an_unknown_picked_profile_saves_no_question(ctx):
+    from oracle.services.errors import UnknownModelProfile
+
+    with pytest.raises(UnknownModelProfile):
+        await ask(ctx, GRID, searcher=FakeSearcher(), profile="huge")
+    assert questions(ctx) == []
