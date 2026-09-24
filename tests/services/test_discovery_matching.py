@@ -62,7 +62,31 @@ UNIVERSE = [
     # The universe's own data is wrong here: a German group as a US OTC consumer company.
     equity("RNMBY", "Rheinmetall Group AG", exchange="PNK", currency="USD", market_cap="Large Cap",
            sector="Consumer Discretionary"),
+    equity("KMTS", "Kestra Medical Inc.", currency="USD", market_cap="Small Cap", sector="Health Care"),
 ]
+KIT = dict(sector="Industrials", industry_group="Capital Goods", industry="Electrical Equipment")
+PAYMENTS = dict(sector="Information Technology", industry_group="Software & Services")
+# Small caps in the trade the question names by its end market or customers, refused live on size.
+SMALL_CAPS = [
+    ("MVST", "Microvast Holdings, Inc.", KIT, "Microvast", "which car battery makers are growing?"),
+    ("ENVX", "Enovix Holdings Corporation", KIT, "Enovix", "which car battery makers are growing?"),
+    ("AMPX", "Amprius Technologies, Inc.", KIT, "Amprius", "which car battery makers are growing?"),
+    ("MBTN.SW", "Meyer Burger Technology AG", dict(sector="Information Technology"), "Meyer Burger",
+     "who gains from renewable energy?"),
+    ("SHLS", "Shoals Technologies Group, Inc.", KIT, "Shoals", "who gains from renewable energy?"),
+    ("PCELL.ST", "PowerCell Sweden AB", KIT, "PowerCell", "who makes hydrogen fuel cells?"),
+    ("EFUEL.OL", "Everfuel Holding A/S", dict(sector="Utilities"), "Everfuel", "who makes hydrogen fuel cells?"),
+    ("MQ", "Marqeta Holdings, Inc.", PAYMENTS, "Marqeta", "who runs bank payments?"),
+    ("UPG.BR", "Unifiedpost Group SA", PAYMENTS, "Unifiedpost", "who runs bank payments?"),
+    ("WBX", "Wallbox Holdings N.V.", dict(sector="Materials", industry_group="Materials", industry="Chemicals"),
+     "Wallbox", "who sells car charging?"),
+    ("SERV", "Serve Robotics Inc.", KIT, "Serve", "who builds delivery robots in retail?"),
+    ("RR", "Richtech Robotics Inc.", KIT, "Richtech", "who makes robotics for restaurants?"),
+    ("WKHS", "Workhorse Group Inc.", dict(sector="Consumer Discretionary", industry_group="Automobiles & Components"),
+     "Workhorse", "which truck makers work in logistics?"),
+]
+UNIVERSE += [equity(symbol, listed, currency="USD", market_cap="Small Cap", **trade)
+             for symbol, listed, trade, _, _ in SMALL_CAPS]
 CROSS_INDUSTRY = [
     ("Palantir", "Palantir wins $10bn US Army defense contract"),
     ("Micron", "Micron stock rises after bank upgrade"),
@@ -77,6 +101,8 @@ NATIONALITY_NOT_HOME = [
     ("Micron", "Micron cuts prices amid Chinese competition"),
     ("Logitech", "Logitech sees weaker demand from American consumers"),
     ("QinetiQ", "QinetiQ wins American contract"),
+    ("Micron", "Micron, Japanese partner Kioxia sign deal"),
+    ("Micron", "Micron, Korean rival SK Hynix battle over HBM"),
 ]
 # The live answer's three items, then one naming a true match.
 HEADLINES = [
@@ -134,8 +160,8 @@ async def test_olix_the_chip_startup_is_not_matched_to_a_drug_maker(ctx, news):
     view = await asked(ctx, ("Olix", [2, 3]), ("Infineon", [4]), ("Mistral AI", [1]))
     assert [line.item.symbol for line in view.shortlist] == ["IFX.DE"], "a true match still passes"
     why = left_off(view)["Olix"]
-    assert why == (f"a different business: {OLIX} is a Micro Cap in Pharmaceuticals, Biotechnology & Life "
-                   'Sciences, but the question is about "semiconducter"')
+    assert why == (f"a different business: {OLIX} is in Pharmaceuticals, Biotechnology & Life Sciences, "
+                   'but the question is about "semiconducter"')
     assert left_off(view)["Mistral AI"] == "not in the universe under that name"
 
 
@@ -238,6 +264,20 @@ async def test_a_nationality_that_is_not_the_company_s_home_passes(ctx, news, na
     found(news, title)
     view = await asked(ctx, (name, [1]), question="who won big deals this week?")
     assert len(view.shortlist) == 1, left_off(view)
+
+
+@pytest.mark.parametrize(("symbol", "mention", "question"), [(s, m, q) for s, _, _, m, q in SMALL_CAPS])
+async def test_a_small_company_in_the_question_s_end_market_is_never_refused_on_size(ctx, news, symbol, mention,
+                                                                                       question):
+    found(news, f"{mention} wins a big order")
+    view = await asked(ctx, (mention, [1]), question=question)
+    assert [line.item.symbol for line in view.shortlist] == [symbol], left_off(view)
+
+
+async def test_a_medical_name_in_a_chip_question_is_refused(ctx, news):
+    found(news, "Kestra raises a record round")
+    view = await asked(ctx, ("Kestra", [1]), question="which chip companies matter now?")
+    assert left_off(view)["Kestra"].startswith("a different business: Kestra Medical Inc. is in Health Care")
 
 
 async def test_the_sector_alone_never_refuses_a_big_company(ctx, news):

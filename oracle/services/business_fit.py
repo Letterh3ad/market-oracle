@@ -1,8 +1,8 @@
 """Whether a company found only by the start of its name can be the one the news means, from
 cheap signals. A sector the question does not ask about is never enough alone (headlines name
 customers, partners and rivals of every trade, and the universe's sectors are sometimes wrong):
-it takes a second sign as well, a small company or the rest of its name naming another trade
-("Olix" in a chip question is not "OliX Pharmaceuticals"). The home the news gives the name
+it takes the rest of its name naming another trade as well ("Olix" in a chip question is not
+"OliX Pharmaceuticals"). Size is no sign: small companies serve the markets questions name. The home the news gives the name
 ("German startup Olix") refuses on its own when the company is from elsewhere."""
 
 from __future__ import annotations
@@ -27,7 +27,8 @@ _TOO_COMMON = frozenset({
 })
 # In a company's name these say little of its trade: "Micron Technology" makes chips.
 _NAMES_ANY_TRADE = frozenset({"technology", "electronic", "media"})
-SMALL = frozenset({"Small Cap", "Micro Cap", "Nano Cap"})
+# Trades names carry that the universe's classifications do not spell.
+_NAMED_TRADES = frozenset({"medical", "therapeutic", "diagnostic", "bioscience", "furniture", "bancorp"})
 EUROPE = frozenset({
     "Austria", "Belgium", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany",
     "Greece", "Guernsey", "Hungary", "Iceland", "Ireland", "Isle of Man", "Italy", "Jersey", "Latvia",
@@ -83,18 +84,17 @@ class BusinessFit:
         said = {w for text in (named_in.asked, *named_in.items) for word in word_list(text)
                 for w in universe_words(word)}
         other_trade = [w for w in self._rest_of_name(p.name, name) if w not in said]
-        if p.market_cap not in SMALL and not other_trade:
+        if not other_trade:
             return None
-        size = f"a {p.market_cap} " if p.market_cap in SMALL else ""
         about = ", ".join(f'"{w}"' for w in list(asked)[:3])
-        return (f"a different business: {p.name} is {size}in {p.industry or p.industry_group or p.sector}, "
+        return (f"a different business: {p.name} is in {p.industry or p.industry_group or p.sector}, "
                 f"but the question is about {about}")
 
     def _rest_of_name(self, listed: str, name: str) -> list[str]:
         """Industry words in the listing's name after the words it was matched by."""
         rest = word_list(listed)[len(word_list(name)):]
         return [w for word in rest for w in universe_words(word)
-                if w in self._vocabulary() and w not in _NAMES_ANY_TRADE]
+                if w in _NAMED_TRADES or w in self._vocabulary() and w not in _NAMES_ANY_TRADE]
 
     def _trusted_home(self, p: ListingProfile) -> bool:
         """Not a US line standing in for a foreign company (the universe often calls those US)."""
@@ -136,7 +136,7 @@ def _holds(home: str, country: str) -> bool:
 def _homes(text: str, name: str) -> list[str]:
     """The homes the text gives the name itself: a home just before it, with only describing
     words between ("German startup Olix", "UK-based Olix", "Europe's Olix"), or one after it past
-    a comma ("Olix, the German startup")."""
+    a comma and a determiner ("Olix, the German startup")."""
     tokens = _tokens(text)
     want = _tokens(name)
     found: list[str] = []
@@ -148,8 +148,9 @@ def _homes(text: str, name: str) -> list[str]:
             before -= 1
         after = at + len(want)
         nearby = [tokens[before]] if before >= 0 else []
-        if after < len(tokens) and tokens[after] == ",":
-            after += 1
+        # "Micron, Korean rival SK Hynix" names another company's home; "Olix, the German startup" its own.
+        if tokens[after:after + 2] in ([",", "the"], [",", "a"], [",", "an"]):
+            after += 2
             while after < len(tokens) and tokens[after] in _DESCRIBING:
                 after += 1
             nearby += tokens[after:after + 1]

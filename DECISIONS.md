@@ -2219,11 +2219,14 @@ Sector: only the question's own words count, never the headlines' (they name par
 customers' trades); a watched company's related news asks nothing, so it gets no sector check.
 Words of the universe's classifications give sectors (plurals folded, aliases: chip, chipmaker,
 drug, defence, "semiconducter"); words news uses for anything ("financial", "capital", "energy",
-"it") are left out. A sector the question does not ask about never refuses alone: it also takes a
-Small, Micro or Nano Cap, or an industry word in the rest of the listing's name that the question
-and news never use ("Pharmaceuticals" against chips; "Technology", "Electronic" and "Media" say
-nothing). Reason: "a different business: OliX Pharmaceuticals,Inc is a Micro Cap in
-Pharmaceuticals, Biotechnology & Life Sciences, but the question is about "semiconducter"".
+"it") are left out. A sector the question does not ask about never refuses alone: it also takes
+an industry word in the rest of the listing's name that the question and news never use
+("Pharmaceuticals" against chips, or a trade the classifications do not spell: medical,
+therapeutics, furniture; "Technology", "Electronic" and "Media" say nothing). Size is no sign:
+small caps serve the end markets questions name (car battery makers, bank payments). Reason: "a
+different business: OliX Pharmaceuticals,Inc is in Pharmaceuticals, Biotechnology & Life Sciences,
+but the question is about "semiconducter"". After a comma, a home counts only past a determiner
+("Micron, Korean rival SK Hynix" is another company's home).
 Refused names show under "left off" (GUI, `oracle discover show`) and in a run's skipped list;
 links go through the same check. The chat plan searches GDELT for its first query only; every
 query goes to Google News and the web.
