@@ -4,23 +4,30 @@ signals and decision log never change. AI verdicts are never backtested."""
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime
 
 from oracle.analysts.indicators import YEAR
 from oracle.broker.backtest import Trade, replay
 from oracle.broker.baseline import ceiling
 from oracle.broker.compare import buy_and_hold, max_fall, returns_since
+from oracle.broker.orders import Side
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, NoPrices, UnknownSymbol
+from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
 from oracle.services.watch_service import watchlist_symbols
+from oracle.store.backtests import BacktestRepo
+from oracle.store.bars import BarRepo
 
-__all__ = ["Backtest", "Line", "Trade", "run_backtest"]
+__all__ = ["KEEP", "Backtest", "KeptBacktest", "Line", "Trade", "check_backtest", "keep_backtest", "kept_backtest",
+           "kept_backtests", "run_backtest", "stored_span"]
 
 BPS = 10_000
+KEEP = 10
+"""Results kept for comparing runs; older ones are dropped."""
 
 
 @dataclass(frozen=True)
@@ -41,17 +48,38 @@ class Backtest:
     notes: tuple[str, ...]
 
 
-def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
-                 commission: float = 0.0) -> Backtest:
-    """Replay the strategy's rules day by day from `start` to `end` over the list's stored
-    bars, each day seeing only bars up to its own close."""
+def stored_span(ctx: AppContext, watchlist: str) -> tuple[str, date | None, date | None]:
+    """The list's stored name and the first and last day any of its listings has a price."""
+    name, symbols = watchlist_symbols(ctx, watchlist)
+    span = BarRepo(ctx.conn).span(symbols)
+    return (name, *span) if span else (name, None, None)
+
+
+def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float,
+                   commission: float) -> str:
+    """The list's stored name, or why the request cannot run; cheap, so a job is refused
+    before it is queued."""
     if start >= end:
         raise InvalidQuery(f"the first day ({start.isoformat()}) must be before the last ({end.isoformat()})")
     if not (math.isfinite(slippage_bps) and slippage_bps >= 0):
         raise InvalidQuery(f"slippage must be zero or more basis points, not {slippage_bps}")
     if not (math.isfinite(commission) and commission >= 0):
         raise InvalidQuery(f"commission must be zero or more, not {commission}")
-    name, symbols = watchlist_symbols(ctx, watchlist)
+    name, first, last = stored_span(ctx, watchlist)
+    if first is None:
+        raise NoPrices(f"no stored prices for the {name} list: update its prices first")
+    if start < first or end > last:
+        raise InvalidQuery(f"prices for the {name} list are stored from {first.isoformat()} to {last.isoformat()}: "
+                           "pick days inside that")
+    return name
+
+
+def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
+                 commission: float = 0.0) -> Backtest:
+    """Replay the strategy's rules day by day from `start` to `end` over the list's stored
+    bars, each day seeing only bars up to its own close."""
+    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+    symbols = watchlist_symbols(ctx, name)[1]
     history, gone, no_prices = {}, [], []
     for symbol in symbols:
         try:
@@ -87,6 +115,51 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     notes += [f"Still waiting to fill on the last day: {', '.join(r.unfilled)}."] if r.unfilled else []
     return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line), r.equity,
                     r.trades, tuple(notes))
+
+
+@dataclass(frozen=True)
+class KeptBacktest:
+    id: int
+    ran_at: datetime
+    base_currency: str
+    """The base currency when it ran: its amounts stay in it if the setting changes."""
+    backtest: Backtest
+
+
+def keep_backtest(ctx: AppContext, b: Backtest) -> KeptBacktest:
+    """Store the result beside the last few, so runs can be compared later."""
+    ran_at, base = ctx.clock.utcnow(), ctx.config.base_currency
+    record = {"ran_at": ran_at.isoformat(), "base_currency": base, "backtest": asdict(b)}
+    run_id = BacktestRepo(ctx.conn).add(json.dumps(record, default=_iso), KEEP)
+    return KeptBacktest(run_id, ran_at, base, b)
+
+
+def kept_backtests(ctx: AppContext) -> list[KeptBacktest]:
+    """Newest first."""
+    return [_kept(run_id, value) for run_id, value in BacktestRepo(ctx.conn).recent()]
+
+
+def kept_backtest(ctx: AppContext, run_id: int) -> KeptBacktest:
+    value = BacktestRepo(ctx.conn).get(run_id)
+    if value is None:
+        raise UnknownBacktest(f"no kept backtest {run_id}: only the last {KEEP} are kept")
+    return _kept(run_id, value)
+
+
+def _iso(value: date) -> str:
+    return value.isoformat()
+
+
+def _kept(run_id: int, value: str) -> KeptBacktest:
+    record = json.loads(value)
+    b = record["backtest"]
+    day = date.fromisoformat
+    lines = tuple(Line(**{**line, "points": tuple((day(d), r) for d, r in line["points"])}) for line in b["lines"])
+    trades = tuple(Trade(**{**t, "day": day(t["day"]), "side": Side(t["side"])}) for t in b["trades"])
+    backtest = Backtest(
+        b["watchlist"], day(b["start"]), day(b["end"]), b["slippage_bps"], b["commission"], tuple(b["listings"]),
+        lines, tuple((day(d), v) for d, v in b["equity"]), trades, tuple(b["notes"]))
+    return KeptBacktest(run_id, datetime.fromisoformat(record["ran_at"]), record["base_currency"], backtest)
 
 
 def _notes(ctx: AppContext, name: str, start: date, end: date, slippage_bps: float, commission: float,

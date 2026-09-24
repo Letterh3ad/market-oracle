@@ -17,6 +17,7 @@ from oracle.jobs import pid_alive
 from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
+from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
@@ -29,7 +30,7 @@ from oracle.services.universe_service import proposed_merges, refresh_universe, 
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
-           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse",
+           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_backtest",
            "submit_prices", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
@@ -359,6 +360,29 @@ def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
                          lambda c: update_fx(c, names or None), subject=",".join(names) or "*")
 
 
+BACKTEST_SEP = "|"
+"""Between the parts of a backtest job's subject, which a retry rebuilds the request from."""
+
+
+def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: date, end: date,
+                    slippage_bps: float = 10.0, commission: float = 0.0) -> Job:
+    """Replay the strategy's rules over a list's stored prices and keep the result; bad days
+    or costs are refused now. The same request pressed twice joins the first."""
+    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+
+    async def work(c: AppContext):
+        b = run_backtest(c, name, start, end, slippage_bps, commission)
+        # The replay never yields, so a Cancel pressed during it lands here, before the result is kept.
+        await asyncio.sleep(0)
+        return keep_backtest(c, b)
+
+    subject = BACKTEST_SEP.join([name, start.isoformat(), end.isoformat(), repr(float(slippage_bps)),
+                                 repr(float(commission))])
+    return runner.submit("backtest", f"Backtest {name}, {start.isoformat()} to {end.isoformat()}", work,
+                         subject=subject, link="#ledgers")
+
+
+
 # One resubmit per kind, rebuilding the call from what a finished job (live or from history,
 # both `Job` and `JobRow` carry kind/subject/label) stored about itself. A kind missing here
 # cannot be retried: nothing kept enough to rebuild its call.
@@ -396,9 +420,16 @@ def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_fx(runner, sources)
 
 
+def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
+    # From the right: the other four parts never hold the separator, a list name might.
+    name, start, end, slippage, commission = (job.subject or "").rsplit(BACKTEST_SEP, 4)
+    return submit_backtest(ctx, runner, name, date.fromisoformat(start), date.fromisoformat(end), float(slippage),
+                           float(commission))
+
+
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
-    "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx,
+    "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "backtest": _retry_backtest,
 }
 
 

@@ -23,8 +23,12 @@ function busyButton(label, action) {
 
 // Starts a job and waits for it (polling), telling `onState` each state it passes through.
 // Resolves with the job's result; rejects with its error if it failed or was cancelled.
-async function runJob(path, onState = () => {}) {
-  let job = await api(path, { method: "POST" });
+function runJob(path, onState = () => {}) {
+  return api(path, { method: "POST" }).then((job) => followJob(job, onState));
+}
+
+// The same for a job already started (found running when a page opens).
+async function followJob(job, onState = () => {}) {
   while (job.state === "queued" || job.state === "running") {
     onState(job);
     await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -34,4 +38,4 @@ async function runJob(path, onState = () => {}) {
   return job.result;
 }
 
-export { sendJson, busyButton, runJob };
+export { sendJson, busyButton, runJob, followJob };
