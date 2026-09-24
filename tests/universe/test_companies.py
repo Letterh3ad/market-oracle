@@ -1,6 +1,8 @@
 import pytest
 
-from oracle.universe.listings import Listing, blind_name, group_companies
+from itertools import permutations
+
+from oracle.universe.listings import Listing, blind_name, group_companies, legal_form
 
 
 def L(symbol, name, country, exchange, isin=None, delisted=False, type="equity"):
@@ -229,3 +231,53 @@ def test_suffix_blind_grouping_keeps_countries_apart():
         L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
         L("FOO", "Foo Inc.", "United States", "NYQ"),
     ]) == [["FOO"], ["FOO.L"]]
+
+
+@pytest.mark.parametrize("name, form", [
+    ("Chiyoda Co., Ltd.", "co limited"),
+    ("TOKYU CORP.", "corporation"),
+    ("Tokyu Corporation", "corporation"),
+    ("Acme Inc", "incorporated"),
+    ("Valaris plc", "plc"),
+    ("BT Group", ""),
+    ("AB", ""),
+])
+def test_legal_form_is_what_blind_name_strips_with_abbreviations_spelled_out(name, form):
+    assert legal_form(name) == form
+
+
+def test_two_groups_with_lines_on_one_exchange_are_two_companies_and_a_third_joins_neither():
+    assert blind([
+        L("6366.T", "Chiyoda Corporation", "Japan", "JPX"),
+        L("8185.T", "Chiyoda Co., Ltd.", "Japan", "JPX"),
+        L("CHYF", "Chiyoda Corp", "Japan", "PNK"),
+    ]) == [["6366.T"], ["8185.T"], ["CHYF"]]
+
+
+def test_the_same_exchange_block_does_not_depend_on_row_order():
+    rows = [
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO2.L", "Foo Ltd", "United Kingdom", "LSE"),
+        L("FOO.DE", "Foo", "United Kingdom", "GER"),
+    ]
+    for order in permutations(rows):
+        assert blind(order) == [["FOO.DE"], ["FOO.L"], ["FOO2.L"]]
+
+
+def test_a_bare_name_never_bridges_two_conflicting_isins_whatever_the_order():
+    rows = [
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE", "GB0000000001"),
+        L("FOO.DE", "Foo AG", "United Kingdom", "GER", "DE0000000002"),
+        L("FOO.F", "Foo", "United Kingdom", "FRA"),
+    ]
+    for order in permutations(rows):
+        assert blind(order) == [["FOO.DE"], ["FOO.F"], ["FOO.L"]]
+
+
+def test_a_conflict_in_one_country_leaves_joins_in_another_alone():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO2.L", "Foo Ltd", "United Kingdom", "LSE"),
+        L("FOO", "Foo Inc.", "United States", "NYQ"),
+        L("FOOX", "Foo", "United States", "PNK"),
+    ]) == [["FOO", "FOOX"], ["FOO.L"], ["FOO2.L"]]

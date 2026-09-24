@@ -183,8 +183,13 @@ def test_merges_lists_what_suffix_blind_grouping_would_join(run):
     run.fdb.files["equities.bz2"] = bz2_csv([
         equity("BT-A.L", "BT GROUP PLC", "United Kingdom", "LSE", isin="GB0030913577"),
         equity("BTQ.DE", "BT Group", "United Kingdom", "GER"),
+        equity("VALPQ", "Valaris plc", "", "PNK", isin="GB00BMY5LS59"),
+        equity("E65F.F", "Valaris Limited", "", "FRA"),
     ])
     run("universe", "refresh")
     code, out, _ = run("universe", "merges")
-    assert code == 0 and "1 proposed merges" in out and "is off" in out
-    assert "matched on bt group, United Kingdom" in out and "BT-A.L" in out and "BTQ.DE" in out
+    assert code == 0 and "is off" in out
+    assert "2 proposed merges (1 legal forms differ, 1 no country)" in out
+    assert out.index("CHECK legal forms differ; no country") < out.index("Valaris") < out.index("BT GROUP PLC")
+    assert "matched on bt group, United Kingdom" in out and "BTQ.DE" in out
+    assert "United Kingdom  GB0030913577" in out

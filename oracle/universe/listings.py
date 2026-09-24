@@ -55,10 +55,23 @@ def normalise_name(name: str) -> str:
 
 def blind_name(name: str) -> str:
     """The normalised name without trailing legal forms, keeping at least one word."""
+    return " ".join(_split_legal(name)[0])
+
+
+def legal_form(name: str) -> str:
+    """The legal forms blind_name strips, abbreviations spelled out ("Co., Ltd." is "co limited")."""
+    return " ".join(_SPELLED_OUT.get(w, w) for w in _split_legal(name)[1])
+
+
+_SPELLED_OUT = {"corp": "corporation", "inc": "incorporated", "ltd": "limited"}
+
+
+def _split_legal(name: str) -> tuple[list[str], list[str]]:
     words = normalise_name(name).split()
-    while len(words) > 1 and words[-1] in LEGAL_FORMS:
-        words.pop()
-    return " ".join(words)
+    cut = len(words)
+    while cut > 1 and words[cut - 1] in LEGAL_FORMS:
+        cut -= 1
+    return words[:cut], words[cut:]
 
 
 def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
@@ -71,8 +84,7 @@ def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
     another line's (German Siemens Healthineers listings hold the US ADR's ISIN).
     A name or ISIN spread over more than MAX_LINES_PER_EXCHANGE lines of one exchange
     is a placeholder or a parent's code on its subsidiaries, and links nothing.
-    `suffix_blind` then also joins names equal without their legal forms (see blind_name),
-    unless both sides already carry ISINs and share none.
+    `suffix_blind` then also joins names equal without their legal forms (see _join_blind).
     """
     items = list(listings)
     parent = list(range(len(items)))
@@ -116,23 +128,57 @@ def blind_link(x: Listing) -> tuple | None:
 
 
 def _join_blind(items: list[Listing], find, parent: list[int], untrusted: set[tuple]) -> None:
+    """Join companies whose names match without legal forms, unless any two of those a join
+    would bridge conflict: both carry trusted ISINs and share none, or both already have a
+    line on one exchange (two home lines on one exchange are two companies). A conflict
+    skips every join it touches, so the result never depends on row order."""
     links = [blind_link(x) for x in items]
     per_exchange = Counter((link, x.exchange) for x, link in zip(items, links) if link)
     crowded = {link for (link, _), n in per_exchange.items() if n > MAX_LINES_PER_EXCHANGE}
     isins: dict[int, set[str]] = {}
-    for i, x in enumerate(items):
+    exchanges: dict[int, set[str]] = {}
+    roots: dict[tuple, set[int]] = {}
+    for i, (x, link) in enumerate(zip(items, links)):
+        r = find(i)
         if x.isin and ("isin", x.isin, x.type) not in untrusted:
-            isins.setdefault(find(i), set()).add(x.isin)
-    first_seen: dict[tuple, int] = {}
-    for i, link in enumerate(links):
-        if link is None or link in crowded:
-            continue
-        a, b = find(i), find(first_seen.setdefault(link, i))
-        mine, theirs = isins.get(a, set()), isins.get(b, set())
-        if a == b or (mine and theirs and not mine & theirs):
-            continue
-        parent[a] = b
-        isins[b] = mine | theirs
+            isins.setdefault(r, set()).add(x.isin)
+        if x.exchange:
+            exchanges.setdefault(r, set()).add(x.exchange)
+        if link is not None and link not in crowded:
+            roots.setdefault(link, set()).add(r)
+
+    def clash(group: set[int]) -> bool:
+        seen_isins: list[set[str]] = []
+        seen_exchanges: set[str] = set()
+        for r in group:
+            mine, ex = isins.get(r, set()), exchanges.get(r, set())
+            if ex & seen_exchanges or (mine and any(o and not mine & o for o in seen_isins)):
+                return True
+            seen_isins.append(mine)
+            seen_exchanges |= ex
+        return False
+
+    # Links that pass alone can still chain two clashing companies, so check the chains too.
+    joins = [group for group in roots.values() if len(group) > 1 and not clash(group)]
+    chain = {r: r for group in joins for r in group}
+
+    def top(r: int) -> int:
+        while chain[r] != r:
+            r = chain[r]
+        return r
+
+    for group in joins:
+        first, *rest = sorted(group)
+        for r in rest:
+            chain[top(r)] = top(first)
+    chains: dict[int, set[int]] = {}
+    for r in chain:
+        chains.setdefault(top(r), set()).add(r)
+    for group in chains.values():
+        if not clash(group):
+            first, *rest = sorted(group)
+            for r in rest:
+                parent[r] = first
 
 
 def _links(x: Listing) -> list[tuple]:

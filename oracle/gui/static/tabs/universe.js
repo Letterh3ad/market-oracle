@@ -189,25 +189,30 @@ function mergesSection() {
     try {
       clearError();
       const r = await runJob("/api/jobs/merges", onState);
-      out.replaceChildren(el("p", { class: "dim small" }, `${r.merges.length} proposed. The setting is `
+      const counts = Object.entries(r.flag_counts).map(([flag, n]) => `${n} ${flag}`).join(", ");
+      out.replaceChildren(el("p", { class: "dim small" }, `${r.merges.length} proposed (${counts}; flagged first). The setting is `
         + (r.enabled ? "on: the next universe refresh applies them." : "off (Settings, [universe] suffix_blind_grouping): nothing changes.")),
         ...(r.merges.length ? [mergeTable(r.merges)] : []));
     } catch (err) { showError(err.message); }
   });
   return el("details", null, el("summary", null, "Proposed merges"),
     el("p", { class: "dim small" }, "Companies whose names differ only in legal forms (plc, Inc., AG) in one country, "
-      + "which suffix-blind grouping would join. Never when both carry different ISINs."),
+      + "which suffix-blind grouping would join. Never when both carry different ISINs or both trade on one exchange. "
+      + "Check flagged ones: differing legal forms can mean a successor company; no country means a name alone matched."),
     el("div", { class: "row" }, button), out);
 }
 
 function mergeTable(merges) {
   return el("table", { class: "results" },
     el("thead", null, el("tr", null, el("th", null, "Matched on"), el("th", null, "Company"),
-      el("th", null, "Listings"), el("th", null, "Exchanges"))),
+      el("th", null, "Listings"), el("th", null, "Exchanges"), el("th", null, "Country"), el("th", null, "ISINs"))),
     el("tbody", null, ...merges.flatMap((m) => m.companies.map((c, i) => el("tr", null,
-      el("td", { class: "dim" }, i ? "" : m.matched_on.join("; ")), el("td", null, c.name),
+      el("td", { class: "dim" }, i ? "" : m.matched_on.join("; "),
+        ...(i ? [] : m.flags.map((f) => el("div", null, el("span", { class: "badge warn" }, f))))),
+      el("td", null, c.name),
       el("td", null, ...c.symbols.flatMap((s, k) => (k ? [" ", companyLink(s)] : [companyLink(s)]))),
-      el("td", null, c.exchanges.join(", ")))))));
+      el("td", null, c.exchanges.join(", ")), el("td", null, c.countries.join(", ")),
+      el("td", { class: "mono small" }, c.isins.join(" ")))))));
 }
 
 async function start(pane) {

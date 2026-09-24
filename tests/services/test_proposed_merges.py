@@ -16,6 +16,8 @@ ROWS = BASIC + [
     equity("BTQ.F", "BT Group", "United Kingdom", "FRA", currency="EUR"),
     equity("ABC.L", "Abc plc", "United Kingdom", "LSE", isin="GB0000000001"),
     equity("ABC.DE", "Abc Ltd", "United Kingdom", "GER", isin="GB0000000002"),
+    equity("VALPQ", "Valaris plc", "", "PNK", isin="GB00BMY5LS59"),
+    equity("E65F.F", "Valaris Limited", "", "FRA"),
 ]
 
 
@@ -35,15 +37,22 @@ def keys(ctx, *symbols):
     return {r[1] for r in stored(ctx) if r[0] in symbols}
 
 
-def test_the_report_lists_the_merges_suffix_blind_grouping_would_make(ctx):
+def test_the_report_lists_the_merges_suffix_blind_grouping_would_make_flagged_first(ctx):
     report = proposed_merges(ctx)
     assert not report.enabled
-    [merge] = report.merges
-    assert [(c.name, c.symbols, c.exchanges) for c in merge.companies] == [
-        ("BT GROUP PLC", ("BT-A.L",), ("LSE",)),
-        ("BT Group", ("BTQ.DE", "BTQ.F"), ("FRA", "GER")),
+    assert report.flag_counts == {"legal forms differ": 1, "no country": 1}
+    valaris, bt = report.merges
+    assert valaris.flags == ("legal forms differ", "no country")
+    assert [(c.name, c.forms, c.countries, c.isins) for c in valaris.companies] == [
+        ("Valaris Limited", ("limited",), (), ()),
+        ("Valaris plc", ("plc",), (), ("GB00BMY5LS59",)),
     ]
-    assert merge.matched_on == ("bt group, United Kingdom",)
+    assert bt.flags == ()
+    assert [(c.name, c.symbols, c.exchanges, c.countries, c.isins, c.forms) for c in bt.companies] == [
+        ("BT GROUP PLC", ("BT-A.L",), ("LSE",), ("United Kingdom",), ("GB0030913577",), ("plc",)),
+        ("BT Group", ("BTQ.DE", "BTQ.F"), ("FRA", "GER"), ("United Kingdom",), (), ()),
+    ]
+    assert bt.matched_on == ("bt group, United Kingdom",)
 
 
 def test_the_report_never_writes_even_with_the_setting_on(ctx):

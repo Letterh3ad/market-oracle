@@ -1369,3 +1369,13 @@ Regroup job yet.
 **Alternatives:** Stripping anywhere in the name (catches "Co-operative"); a pairwise ISIN
 check (order-free but needs every member pair); a Regroup job without the download (left for
 when the user has reviewed the report).
+**Follow-up (2026-09-24, review):** the real-universe report joined different companies whose
+forms stripped alike ("Chiyoda Co., Ltd." and "Chiyoda Corporation", both on JPX). A blind
+join is now refused when two of the companies it would bridge both have a line on one
+exchange (two home lines on one exchange are two companies), or both carry trusted ISINs and
+share none. A conflict skips every join it touches, per matched name and again per chain of
+joins, so the result no longer depends on row order (an ISIN-less "Foo" joins neither "Foo
+plc" nor "Foo AG" with different ISINs). The report shows each side's countries, ISINs and
+legal forms (abbreviations spelled out, so Corp and Corporation agree) and flags, first and
+counted in the header, merges whose sides name different legal forms (plc and Limited: maybe
+a successor company) and merges matched with no country. 728 proposed merges became 675.

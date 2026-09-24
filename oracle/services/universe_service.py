@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -22,12 +22,12 @@ from oracle.store.meta import MetaRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
-from oracle.universe.listings import MARKET_CAP_BANDS, Listing, blind_link, group_companies, rank_listings
+from oracle.universe.listings import MARKET_CAP_BANDS, Listing, blind_link, group_companies, legal_form, rank_listings
 from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
-    "FILTER_FIELDS", "SORTS", "Facet", "MergeReport", "MergingCompany", "ProposedMerge", "Resolved", "SearchHit",
+    "FILTER_FIELDS", "FORMS_DIFFER", "NO_COUNTRY", "SORTS", "Facet", "MergeReport", "MergingCompany", "ProposedMerge", "Resolved", "SearchHit",
     "Sibling", "UniverseBrief", "UniverseStatus", "facets", "live_siblings", "proposed_merges", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief",
     "universe_status",
 ]
@@ -150,6 +150,12 @@ def live_siblings(ctx: AppContext, symbol: str) -> list[Sibling]:
             if x.symbol != listing.symbol and not x.delisted and x.symbol not in dead]
 
 
+FORMS_DIFFER = "legal forms differ"
+"""Two sides name different legal forms (plc and Limited): possibly a successor company."""
+NO_COUNTRY = "no country"
+"""Matched on a name alone, with no country to keep namesakes apart."""
+
+
 @dataclass(frozen=True)
 class MergingCompany:
     company_key: str
@@ -157,6 +163,10 @@ class MergingCompany:
     """From its primary listing."""
     symbols: tuple[str, ...]
     exchanges: tuple[str, ...]
+    countries: tuple[str, ...]
+    isins: tuple[str, ...]
+    forms: tuple[str, ...]
+    """The legal forms its names carry, spelled out ("co limited")."""
 
 
 @dataclass(frozen=True)
@@ -164,13 +174,17 @@ class ProposedMerge:
     companies: tuple[MergingCompany, ...]
     matched_on: tuple[str, ...]
     """"name, country" pairs equal once legal forms are dropped."""
+    flags: tuple[str, ...]
+    """FORMS_DIFFER and NO_COUNTRY: what to check before trusting it."""
 
 
 @dataclass(frozen=True)
 class MergeReport:
     merges: tuple[ProposedMerge, ...]
+    """Flagged first."""
     enabled: bool
     """Whether the setting is on, so the next refresh applies them."""
+    flag_counts: dict[str, int]
 
 
 def proposed_merges(ctx: AppContext) -> MergeReport:
@@ -182,8 +196,9 @@ def proposed_merges(ctx: AppContext) -> MergeReport:
     for row, new in zip(rows, group_companies(rows, suffix_blind=True)):
         joined.setdefault(new.company_key, []).append(row)
     merges = [_merge(members) for members in joined.values() if len({x.company_key for x in members}) > 1]
-    return MergeReport(tuple(sorted(merges, key=lambda m: m.companies[0].symbols)),
-                       ctx.config.universe.suffix_blind_grouping)
+    return MergeReport(tuple(sorted(merges, key=lambda m: (not m.flags, m.companies[0].symbols))),
+                       ctx.config.universe.suffix_blind_grouping,
+                       {f: sum(f in m.flags for m in merges) for f in (FORMS_DIFFER, NO_COUNTRY)})
 
 
 def _merge(members: list[Listing]) -> ProposedMerge:
@@ -193,13 +208,25 @@ def _merge(members: list[Listing]) -> ProposedMerge:
     companies = sorted((MergingCompany(
         key, next((x.name for x in rows if x.is_primary), rows[0].name),
         tuple(sorted(x.symbol for x in rows)), tuple(sorted({x.exchange or "?" for x in rows})),
+        _distinct(x.country for x in rows), _distinct(x.isin for x in rows),
+        _distinct(legal_form(x.name) for x in rows),
     ) for key, rows in by_company.items()), key=lambda c: c.symbols)
     seen: dict[tuple, int] = {}
     for rows in by_company.values():
         for link in {blind_link(x) for x in rows} - {None}:
             seen[link] = seen.get(link, 0) + 1
-    matched = sorted(f"{name}, {country}" for (_, name, country, _), n in seen.items() if n > 1)
-    return ProposedMerge(tuple(companies), tuple(matched))
+    matched = [link for link, n in seen.items() if n > 1]
+    forms = [set(c.forms) for c in companies if c.forms]
+    flags = (
+        *([FORMS_DIFFER] if any(a.isdisjoint(b) for i, a in enumerate(forms) for b in forms[i + 1:]) else []),
+        *([NO_COUNTRY] if any(not country for _, _, country, _ in matched) else []),
+    )
+    return ProposedMerge(tuple(companies), tuple(sorted(f"{name}, {country}" for _, name, country, _ in matched)),
+                         flags)
+
+
+def _distinct(values: Iterable[str | None]) -> tuple[str, ...]:
+    return tuple(sorted({v for v in values if v}))
 
 
 def _require_loaded(ctx: AppContext) -> None:

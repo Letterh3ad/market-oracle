@@ -132,6 +132,6 @@ async def test_proposed_merges_run_as_a_job_that_changes_nothing(ctx, loaded):
     before = ctx.conn.execute("SELECT symbol, company_key, is_primary FROM listings ORDER BY symbol").fetchall()
     job = await run_job(loaded, "/api/jobs/merges")
     assert (job["kind"], job["state"], job["link"]) == ("merges", "done", "#universe")
-    assert job["result"] == {"merges": [], "enabled": False}
+    assert job["result"] == {"merges": [], "enabled": False, "flag_counts": {"legal forms differ": 0, "no country": 0}}
     after = ctx.conn.execute("SELECT symbol, company_key, is_primary FROM listings ORDER BY symbol").fetchall()
     assert [tuple(r) for r in after] == [tuple(r) for r in before]

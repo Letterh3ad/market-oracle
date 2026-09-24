@@ -98,11 +98,14 @@ def merges_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 def _print_merges(report: MergeReport) -> None:
     state = "on: the next refresh applies these" if report.enabled else "off: nothing changes until it is on"
-    print(f"{len(report.merges)} proposed merges; [universe] suffix_blind_grouping is {state}")
+    counts = ", ".join(f"{n} {flag}" for flag, n in report.flag_counts.items())
+    print(f"{len(report.merges)} proposed merges ({counts}); [universe] suffix_blind_grouping is {state}")
     for m in report.merges:
-        print(f"matched on {'; '.join(m.matched_on)}")
+        check = f"  CHECK {'; '.join(m.flags)}" if m.flags else ""
+        print(f"matched on {'; '.join(m.matched_on)}{check}")
         for c in m.companies:
-            print(f"  {cut(c.name, 40):<42}{' '.join(c.symbols)}  ({', '.join(c.exchanges)})")
+            facts = "  ".join(filter(None, (", ".join(c.countries), " ".join(c.isins))))
+            print(f"  {cut(c.name, 40):<42}{' '.join(c.symbols)}  ({', '.join(c.exchanges)})  {facts}".rstrip())
 
 
 def facets_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
