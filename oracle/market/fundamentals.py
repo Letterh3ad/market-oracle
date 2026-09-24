@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from oracle.market import eodhd, sources, yahoo
+from oracle.market import eodhd, yahoo
 from oracle.market.bars import major_unit
 from oracle.market.sources import Instrument, NoData, SourceFailed, first_present
 from oracle.net.client import RateLimitedClient
