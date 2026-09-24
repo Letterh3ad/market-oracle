@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from oracle.research.budget import budget
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
 from oracle.research.llm import ChatModel
@@ -45,6 +46,32 @@ _CITES = {"type": "array", "items": {"type": "string"}, "maxItems": MAX_CITES}
 _CLAIM_LIST = {"type": "array", "maxItems": MAX_CLAIMS,
                "items": {"type": "object", "properties": {"text": {"type": "string"}, "cites": _CITES},
                          "required": ["text", "cites"]}}
+
+
+# Room kept beside the evidence for what the later roles also read: the analysts' findings
+# and the two cases.
+LATER_ROLES_CHARS = 4000
+
+
+def digest_room(context_tokens: int) -> int:
+    """Characters of evidence digest every role can read beside its prompt."""
+    longest = max((prompt(r, who, task) for r, (who, task) in {**ANALYSTS, **SIDES, "risk": RISK}.items()), key=len)
+    return max(0, budget(context_tokens, longest) - LATER_ROLES_CHARS)
+
+
+def digest(statistics: str, read: list[str], headlines: list[str], notes: str, chars: int) -> str:
+    """The evidence the roles read. The stored data and the researcher's notes are always
+    there; then evidence with its facts, then headlines alone, strictly in that order until
+    `chars` runs out."""
+    head, tail = f"Evidence:\n{statistics}", f"\n\nResearcher's notes: {notes or '(none)'}"
+    room = chars - len(head) - len(tail)
+    kept: list[str] = []
+    for line in (*read, *headlines):
+        if len(line) + 1 > room:
+            break
+        kept.append(line)
+        room -= len(line) + 1
+    return "\n".join([head, *kept]) + tail
 
 
 async def write_report(model: ChatModel, evidence: str, shown: set[int], day: date) -> Report:

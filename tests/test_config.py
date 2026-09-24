@@ -147,7 +147,7 @@ def test_with_settings_adds_the_key_or_the_section_when_missing():
 def test_research_runs_on_local_ollama_by_default_and_each_llm_setting_can_change(tmp_path):
     llm = load_config(None, cwd=tmp_path)[0].llm
     assert (llm.backend, llm.model, llm.base_url) == ("ollama", "qwen3:4b-instruct-2507-q8_0", "http://localhost:11434")
-    assert (llm.max_steps, llm.timeout_s, llm.context) == (8, 180.0, 8192)
+    assert (llm.max_steps, llm.timeout_s, llm.context) == (16, 180.0, 16384)
     path = tmp_path / "oracle.toml"
     path.write_text('[llm]\nmodel = "qwen3:8b"\nmax_steps = 12\ntimeout_s = 60\n', encoding="utf-8")
     llm = load_config(path, cwd=tmp_path)[0].llm
@@ -236,9 +236,20 @@ def test_the_ai_account_is_off_by_default_with_a_week_long_verdict_age(tmp_path)
             load_config(path, cwd=tmp_path)
 
 
-def test_ai_research_refresh_defaults_to_a_5_percent_move_and_30_minutes(tmp_path):
+def test_a_run_reads_12_articles_by_default_and_the_count_is_a_setting(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].research.read_articles == 12
+    path = tmp_path / "oracle.toml"
+    path.write_text("[research]\nread_articles = 5\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].research.read_articles == 5
+    for line in ("read_articles = 0", "read_articles = 31", "read_articles = true", "read_articles = 2.5"):
+        path.write_text(f"[research]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="research.read_articles"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_ai_research_refresh_defaults_to_a_5_percent_move_and_120_minutes(tmp_path):
     ai = load_config(None, cwd=tmp_path)[0].ai_account
-    assert (ai.move_threshold, ai.research_budget_min) == (0.05, 30)
+    assert (ai.move_threshold, ai.research_budget_min) == (0.05, 120)
     path = tmp_path / "oracle.toml"
     path.write_text("[ai_account]\nmove_threshold = 0.1\nresearch_budget_min = 45\n", encoding="utf-8")
     ai = load_config(path, cwd=tmp_path)[0].ai_account

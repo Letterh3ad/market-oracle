@@ -29,9 +29,10 @@ from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
-__all__ = ["FinishedPage", "Job", "JobRunner", "StaleQueued", "StaleResearch", "queue_stale_research",
-           "stale_research_jobs", "submit_analyse", "submit_prices", "submit_research", "submit_tick", "submit_fx",
-           "submit_discover", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+__all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
+           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse",
+           "submit_discover", "submit_prices", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,9 @@ RECENT = 50
 """Finished jobs kept in memory, so their results can still be shown."""
 PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
+
+RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
+"""Finished states worth another try; `done` needs no retry."""
 
 
 @dataclass(eq=False)
@@ -359,3 +363,83 @@ def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
 def submit_discover(runner: JobRunner) -> Job:
     """One discovery run: related companies, themes or market movers, onto the discovered list."""
     return runner.submit("discover", "Discover companies", discover, subject="discover", link="#watchlist")
+
+
+# One resubmit per kind, rebuilding the call from what a finished job (live or from history,
+# both `Job` and `JobRow` carry kind/subject/label) stored about itself. A kind missing here
+# cannot be retried: nothing kept enough to rebuild its call.
+def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
+    subject = job.subject or ""
+    if "@" in subject:
+        symbol, day = subject.split("@", 1)
+        return submit_research(ctx, runner, symbol, date.fromisoformat(day))
+    return submit_research(ctx, runner, subject)
+
+
+def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_prices(ctx, runner, None if job.subject == "*" else job.subject)
+
+
+def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_analyse(ctx, runner, None if job.subject == "*" else job.subject)
+
+
+def _retry_tick(ctx: AppContext, runner: JobRunner, job) -> Job:
+    """Whatever started it before (scheduled or manual), a retry is asked for: a manual tick."""
+    return submit_tick(ctx, runner)
+
+
+def _retry_universe(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_universe_refresh(runner)
+
+
+def _retry_merges(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_merges(runner)
+
+
+def _retry_discover(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_discover(runner)
+
+
+def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
+    sources = [] if job.subject in (None, "*", "") else job.subject.split(",")
+    return submit_fx(runner, sources)
+
+
+_RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
+    "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
+    "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx,
+    "discover": _retry_discover,
+}
+
+
+def retry(ctx: AppContext, runner: JobRunner, job_id: int) -> Job:
+    """Re-submit a finished job of a retryable kind with the same subject and arguments."""
+    job = runner.get(job_id)
+    if job is None:
+        raise UnknownJob(f"no job {job_id}")
+    if job.state not in RETRYABLE_STATES:
+        raise InvalidQuery(f"{job.label} is {job.state}, not cancelled, interrupted or failed")
+    resubmit = _RETRY.get(job.kind)
+    if resubmit is None:
+        raise InvalidQuery(f"{job.label} cannot be retried: its kind is not one this app rebuilds")
+    return resubmit(ctx, runner, job)
+
+
+def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
+    """Every finished job that ended cancelled, interrupted or failed, still needs it (no
+    later run of the same kind and subject succeeded since), is not already queued or
+    running, and is a kind this app can rebuild."""
+    out = []
+    for row in JobHistoryRepo(ctx.conn).latest_per_subject():
+        if row.state not in RETRYABLE_STATES or row.kind not in _RETRY:
+            continue
+        if any(j.subject == row.subject for j in runner.active(row.kind)):
+            continue
+        out.append(row)
+    return out
+
+
+def retry_all(ctx: AppContext, runner: JobRunner) -> list[Job]:
+    """Re-submit every job `retryable` finds, e.g. after a restart cancelled a batch at once."""
+    return [_RETRY[row.kind](ctx, runner, row) for row in retryable(ctx, runner)]

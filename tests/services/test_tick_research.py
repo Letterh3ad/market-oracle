@@ -93,9 +93,9 @@ async def test_a_price_move_since_the_report_makes_it_due(ctx):
 
 
 async def test_the_budget_stops_new_runs_and_the_rest_wait_for_the_next_tick(ctx):
-    run = fake_research(ctx, minutes=20)
+    run = fake_research(ctx, minutes=80)
     first = await refresh_research(ctx, run=run)
-    # Runs start at 0 and 20 minutes; at 40 the 30-minute budget is spent.
+    # Runs start at 0 and 80 minutes; at 160 the 120-minute budget is spent.
     assert (first.researched, first.deferred, first.deferred_why) == (["AAPL", "IBM"], ["MSFT"], "time budget spent")
     second = await refresh_research(ctx, run=run)
     assert (second.due, second.researched, second.deferred) == (1, ["MSFT"], [])

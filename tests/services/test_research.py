@@ -394,8 +394,8 @@ async def test_filings_answers_plainly_when_there_are_none_to_get(ctx, sec, inpu
     apple_filings(sec)
     run = await research(ctx, "AAPL", ScriptedModel(step("filings", input_), step("final", "Done.")))
     assert says in run.steps[0].observation
-    if input_ != "ZZZZ":
-        assert sec.requests == []
+    # The reading stage still looks up the listing researched, and nothing else.
+    assert {r.url.path for r in sec.requests if "submissions" in r.url.path} == {f"/submissions/CIK{APPLE_CIK:010d}.json"}
 
 
 async def test_without_a_contact_the_model_is_not_offered_filings(ctx, sec):
@@ -445,10 +445,12 @@ async def test_a_run_starts_from_seed_queries_and_the_models_suggestions(ctx):
     model.suggestions = {"queries": ["Apple iPhone 18 demand", "apple SHARES", "", "x" * 150,
                                      "Apple tariffs", "Apple CEO John Ternus", "Apple services growth", "Apple AI"]}
     run = await research(ctx, "AAPL", model)
-    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple iPhone 18 demand", "Apple tariffs",
-                           "Apple CEO John Ternus", "Apple services growth")
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations",
+                           "Apple iPhone 18 demand", "Apple tariffs", "Apple CEO John Ternus", "Apple services growth",
+                           "Apple AI")
     task = model.calls[1][0][1]["content"]
-    assert "Start with these searches" in task and "- Apple CEO John Ternus" in task
+    assert "Start with these searches" in task and "- news_search: Apple CEO John Ternus" in task
+    assert "- web_search: Apple press release investor relations" in task
     assert latest_research(ctx, "AAPL").queries == run.queries
 
 
@@ -457,13 +459,39 @@ async def test_a_listing_abroad_gets_a_query_in_its_language_and_the_model_is_as
     run = await research(ctx, "6758.T", model)
     assert run.queries[:3] == ("Sony shares", "Sony earnings outlook", "Sony 株価")
     assert "Japanese" in model.calls[0][0][-1]["content"]
+    assert "- local_news_search: Sony 株価" in model.calls[1][0][1]["content"]
+
+
+async def test_a_listing_abroad_can_search_its_countrys_own_news_edition(ctx, news):
+    news.results["ソニー 決算"] = [("https://nikkei.test/1", "ソニー、純利益20%増", "日本経済新聞", utc("2026-09-20"))]
+    model = ScriptedModel(step("local_news_search", "ソニー 決算"), step("final", "Profit up [a1]."))
+    run = await research(ctx, "6758.T", model)
+    assert run.steps[0].observation == "[a1] 2026-09-20 日本経済新聞: ソニー、純利益20%増"
+    assert {k: news.params[0][k] for k in ("hl", "gl", "ceid")} == {"hl": "ja", "gl": "JP", "ceid": "JP:ja"}
+    assert "local_news_search: news headlines from Google News Japan, in Japanese" in model.calls[1][0][0]["content"]
+
+
+async def test_an_english_speaking_listing_is_offered_no_local_edition(ctx, news):
+    model = ScriptedModel(step("news_search", "Apple"), step("final", "Done."))
+    await research(ctx, "AAPL", model)
+    assert "local_news_search" not in model.calls[1][0][0]["content"]
+    assert (news.params[0]["hl"], news.params[0]["ceid"]) == ("en-GB", "GB:en")
+
+
+async def test_a_replay_searches_the_local_edition_before_its_cutoff_and_plans_no_web_search(ctx, news):
+    from datetime import date
+
+    model = ScriptedModel(step("local_news_search", "ソニー"), step("final", "Done."))
+    run = await research(ctx, "6758.T", model, as_of=date(2026, 9, 18))
+    assert news.params[0]["q"] == "ソニー before:2026-09-19" and news.params[0]["hl"] == "ja"
+    assert not any("press release" in q for q in run.queries)
 
 
 async def test_a_garbled_suggestion_reply_leaves_the_seed_queries(ctx):
     model = ScriptedModel(step("final", "Done."))
     model.suggestions = "no idea"
     run = await research(ctx, "AAPL", model)
-    assert run.queries == ("Apple shares", "Apple earnings outlook")
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations")
 
 
 async def test_citations_grouped_in_one_bracket_each_count(ctx, news):
@@ -694,7 +722,7 @@ def test_the_verdicts_budget_follows_the_configured_model(ctx):
 
     from oracle.services.research_service import CLAUDE_CONTEXT, context_tokens
 
-    assert context_tokens(ctx) == 8192
+    assert context_tokens(ctx) == 16384
     ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
     assert context_tokens(ctx) == CLAUDE_CONTEXT
 
@@ -746,6 +774,31 @@ async def test_the_sec_contact_is_not_carried_to_another_host_by_a_redirect(ctx,
     assert run.steps[0].observation.endswith("Filing text.")
     [mirror] = [r for r in pages.requests if r.url.host == "mirror.test"]
     assert "faye@example.com" not in mirror.headers.get("user-agent", "")
+
+
+async def test_a_page_whose_host_resolves_into_this_machine_is_refused_at_each_hop(ctx, pages, monkeypatch):
+    from oracle.research import web
+
+    monkeypatch.setattr(web, "resolve", lambda host: ["::1"] if host == "localtest.me" else ["93.184.216.34"])
+    pages.pages["http://localtest.me/x"] = ("text/html", "<p>Local.</p>")
+    pages.pages["https://evil.test/r"] = ("redirect", "http://localtest.me/x")
+    model = ScriptedModel(step("read_page", "http://localtest.me/x"), step("read_page", "https://evil.test/r"),
+                          step("final", "Done."))
+    direct, bounced = (await research(ctx, "AAPL", model)).steps[:2]
+    assert "private and local network addresses cannot be read" in direct.observation
+    assert "private and local network addresses cannot be read" in bounced.observation
+    assert all(r.url.host != "localtest.me" for r in pages.requests)
+
+
+@pytest.mark.parametrize("url, says", [
+    ("http://xn--/", "the page could not be read (IDNAError"),
+    ("http://a.test/\x00x", "the page could not be read (InvalidURL"),
+    ("https://news.test/gz", "the page could not be read (DecodingError"),
+])
+async def test_an_address_or_body_httpx_cannot_handle_is_an_observation(ctx, pages, url, says):
+    pages.pages["https://news.test/gz"] = ("corrupt", "")
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
+    assert run.status == "done" and says in run.steps[0].observation
 
 
 async def test_an_unexpected_failure_still_marks_the_run_failed(ctx):

@@ -1380,6 +1380,120 @@ legal forms (abbreviations spelled out, so Corp and Corporation agree) and flags
 counted in the header, merges whose sides name different legal forms (plc and Limited: maybe
 a successor company) and merges matched with no country. 728 proposed merges became 675.
 
+## 2026-09-24 - Reading stage: what is read, stored and reused
+**Context:** Deep research ticket 01: verdicts should rest on what articles say, not their
+headlines, on a 4B model.
+**Decision:** After the loop, up to 12 articles the run was shown (`READ_ARTICLES`, a setting
+in ticket 04) are read: newest first, one per outlet before any outlet's second, skipping the
+stored data and anything already settled. A fetch goes through the fetch path the `read_page`
+tool now shares with it (gate, `unsafe_url`, per-hop redirect checks, byte cap,
+readable types). Text is kept in `article_texts` up to 100,000 characters; a failure is kept
+with its reason, and a passing one (network, rate limit, open breaker, a Google News link in
+a replay) is tried again by the next run. Pages under 300 characters of text count as
+unreadable (paywall or script page); the loop's `read_page` stores its text or that verdict
+too, so the stage never fetches a page twice. Notes are kept per (article, "backend/model")
+in `article_notes`; a garbled reply or a backend error on one note is kept as the reason and
+retried next run, never failing the run. The progress line reads from a new
+`research_runs.stage` column.
+**Alternatives:** Keeping failures forever (a timeout would hide an article for good);
+reusing `articles.body` for page text (it means text Market Oracle wrote itself); notes keyed
+per article only (a model switch would reuse another model's reading).
+
+## 2026-09-24 - The note call and the context budget
+**Context:** One small model call per article must fit a 4B model at 8192 tokens today and
+16384 after ticket 04.
+**Decision:** A short system prompt naming the company, the article's evidence line as the
+heading, and its text cut to min(12,000 characters, what fits at 3 characters a token beside
+the prompt and 1024 reply tokens), marked " [cut]". Schema: `about_company` (boolean) and
+`facts` (array of strings, maxItems 3); facts are trimmed, cut to 200 characters and
+deduplicated. Not about the company means no facts and a marker on the headline line. The
+roles now read a budgeted digest: stored data and the researcher's notes always, then lines
+with facts, then headlines alone, strictly in that order within the context less the longest
+role prompt and 4000 characters kept for the analysts' findings and the cases. The verdict's
+fill order puts cited items with facts before cited headlines and a new "uncited items read"
+kind before step observations and uncited headlines.
+**Alternatives:** Several articles per call (fewer calls, but a 4B model mixes them up);
+letting the model cite ids in its facts (one article per call makes the id certain, so the
+code adds it); an unbudgeted roles digest (12 noted articles could crowd out the later
+roles' inputs).
+
+## 2026-09-24 - Resolving Google News links
+**Context:** Google News RSS links are redirect stubs `read_page` refuses.
+**Decision:** The feed's `<source url>` is now stored as `articles.site`. A stub is resolved
+by a web search (through the ddgs gate) for its headline, taking the first result on that
+site or a subdomain of it; with no site stored, a domain label must match the outlet's name.
+No match is a lasting skip with the reason; replays never search and leave the link unread.
+**Alternatives:** Following Google's redirect (it answers with a script page, not a Location
+header); decoding the article id in the stub (undocumented and has changed before).
+
+## 2026-09-24 - Local news as its own loop tool
+**Context:** Listings outside the English-speaking markets need Google News in their own
+country and language, and the ReAct loop runs on a 4B model.
+**Decision:** A separate `local_news_search` tool, offered only when the listing's country
+has an edition (`EDITION` beside `LOCAL` in `oracle/research/queries.py`). The step schema
+limits `action` to tool names, so the model cannot misspell or forget the choice; the input
+stays a plain query. English-speaking listings see the same tools and the en-GB edition as
+before. Editions were checked live (a pairing Google does not serve redirects); Denmark has
+none and uses Norway's, where Google itself sends it.
+**Alternatives:** An input flag such as `local: <query>` on `news_search` (a small model
+drops or garbles it, and nothing in the schema enforces it); always searching both editions
+in one call (doubles Google traffic and halves the room per edition in an observation).
+
+## 2026-09-24 - Planned searches name their tool and stay at six
+**Context:** Local-edition and press-release seeds mean more seeds, and each planned search
+costs one of the loop's 8 steps.
+**Decision:** Seeds and suggestions are `Search(tool, query)`; the task lists them as
+`- tool: query`. A press-release / investor-relations seed goes to `web_search` (only when
+the web is offered, so never in replays). Seeds are always kept and suggestions fill up to
+`MAX_PLANNED` = 6 in all (US: 3 seeds + 3; Japan: 4 + 2). A suggestion with non-Latin
+letters goes to the local edition. Stored queries stay plain strings, so no migration.
+**Alternatives:** Plain query lines (the model would send local-script and press queries to
+the English news tool); letting the plan grow to 8 (the loop would spend every step on seeds).
+Ticket 04 raises the steps to 16 and may raise `MAX_PLANNED` with them.
+
+## 2026-09-24 - Which filings the reading stage reads, and where they come from
+**Context:** Ticket 03: a US listing's filings text should be read, taking at most 2 of the
+run's reading slots, before articles.
+**Decision:** The stage looks the filings up itself (when a SEC contact is set), whether or
+not the loop called `filings`: the latest 10-Q or 10-K, then 8-Ks from the 30 days before the
+run's day (the as-of day in a replay, so only filings made by then), newest first. They are
+kept as the run's evidence, so they are citable, and take the first 2 unsettled slots. Other
+SEC documents the loop listed or read (older reports, proxies, amendments) are not read by
+the stage, so untrimmed filings never take article slots. A filing is always fetched again
+by the stage, since a copy the loop read is stored whole. Amendments, 20-F and 6-K are left out.
+**Alternatives:** Reading only filings the loop happened to list (a 4B model often skips the
+tool); 8-Ks before the periodic report (an earnings 8-K's main document is mostly a pointer to
+its exhibit, while MD&A carries the numbers).
+
+## 2026-09-24 - Trimming a filing to its key sections
+**Context:** A 10-Q or 10-K runs to hundreds of thousands of characters and a note call reads
+12,000. EDGAR HTML is inline XBRL, headings vary in case and layout, and the table of
+contents repeats every heading.
+**Decision:** `edgar.key_text` works on the page's plain text: a heading starts a line
+("Item 2. Management's Discussion", "ITEM 7." with the title on the next line, "Item 1A. Risk
+Factors", "Item 2.02"), a section runs to the next item heading or "Signatures", and of several
+occurrences the one with the most text under it wins. 10-Q/10-K keep MD&A then risk factors;
+an 8-K keeps every item but 9.01 (the exhibit list). Sections share `FILING_TEXT` (the note
+call's 12,000 characters) evenly, a short one leaving its room to the others. With no sections
+found (or a report's under 500 characters), the text is cut to the cap, never dropped. Filings
+are fetched with a 16 MB byte cap (pages keep 2 MB): live main documents measured 1.5 to 16 MB,
+and MD&A sits past the financial statements. `page_text` now drops `ix:header` (the hidden
+XBRL facts), which otherwise led every filing's text. Checked live on AAPL, JPM, KO, GOOGL,
+NVDA, BRK-B and XOM (a network test covers three).
+**Alternatives:** Parsing the HTML structure (bold spans, anchors from the contents table:
+layouts differ by filing agent); the XBRL financial data API (numbers, not the narrative);
+the first occurrence of a heading (that is the table of contents).
+
+## 2026-09-24 - Report pages first for listings outside the US
+**Context:** Non-US listings have no EDGAR; their results and annual reports are on the
+company's own site, found by the press-release seed and the loop's web searches.
+**Decision:** With no filings to read, undated evidence (web results) whose title or path
+names results or a report (English plus a few local words such as Geschaeftsbericht,
+resultats and kessan in Japanese script) and is not a PDF takes the same 2 first slots, read and noted like an article
+without trimming.
+**Alternatives:** A dedicated investor-relations search in the stage (another ddgs call per
+run, and the seed already makes one); reading PDFs (out of scope for this ticket).
+
 ## 2026-09-24 - Research stale listings from the Ledgers tab
 **Context:** The AI account skips listings with "no verdict yet" or a verdict too old, and the
 user wanted to act on that from the Ledgers tab rather than wait for a tick or open each company.
@@ -1396,6 +1510,68 @@ already researches stale listings.
 read time from the current due list (would also flag buys behind a price move, which the
 reason does not say); queueing one batch job for all listings (one cancel for all, and a
 listing already queued by its own button would run twice).
+
+## 2026-09-24 - Deep defaults: 16 steps, 16k context, 12 articles, 120-minute budget
+**Context:** Deep research ticket 04: every run reads, searches local and press sources and
+reads filings, so the depth numbers become settings with deep defaults.
+**Decision:** `[llm] max_steps` 8 to 16, `[llm] context` 8192 to 16384, new
+`[research] read_articles` 12 (1 to 30; replaces the `READ_ARTICLES` constant),
+`[ai_account] research_budget_min` 30 to 120. All are in the Settings form through the
+example file's hints. `MAX_PLANNED` 6 to 8 and `MAX_SUGGESTED` 4 to 5: the plan takes half the
+16 steps for every listing (US: 3 seeds + 5 suggestions; Japan: 4 + 4), leaving 8 for pages,
+filings and follow-ups.
+**Alternatives:** Keeping the plan at 6 (10 free steps the 4B model rarely uses; see the live
+run below); a plan of 12 (too few steps left for reading a page the model found).
+
+## 2026-09-24 - Tick time moves to 22:00 with the 120-minute budget
+**Context:** At 120 minutes, a tick at 22:30 could still be researching when Tokyo opens at
+01:00 UK time.
+**Decision:** The user agreed to schedule the tick at 22:00 once the budget is 120, so
+research ends by 00:00 to 00:30. `[schedule] time` keeps its code default "22:30"; the user's
+own `oracle.toml` sets the time. Their `oracle.toml` also sets `research_budget_min = 30`
+explicitly, which overrides the new default until they change it.
+**Alternatives:** Changing the code default to 22:00 (every install, not only this user's
+Tokyo concern).
+
+## 2026-09-24 - Timed live run at the deep defaults
+**Context:** The budget must cover ~25 to 30 watched listings over a night or two.
+**Decision:** Keep the defaults. One `oracle research MSFT` on a copy of the real DB, local
+Ollama `qwen3:4b-instruct-2507-q8_0` at 16384 context on an RTX 5060 Laptop (8GB): 135 s end to
+end. The GPU was otherwise idle (the live GUI was not researching then), so contention would
+add to this. Ollama loaded at context 16384 with 5.4GB for the model, 6.7GB used in all, no
+errors or fallbacks. Loop: 9 steps (the 8 planned searches, then the answer; no `read_page`),
+about 30 s. Reading: 12 picked (2 filings first, then 10 news), about 60 s: both filings read
+(the 10-K trimmed to 3,613 characters, an 8-K to 1,383), 3 news pages read, 5 Google News
+links not resolved (Fortune, pluang, IBD, Benzinga, Yahoo Finance: no search result on the
+outlet's site), 2 resolved but answered 403 (TheStreet, Seeking Alpha). 5 notes (one "not
+about the company"), about 3 s each; an unresolved link costs about 5 s of search. Roles and
+verdict about 40 s. At ~2.3 min a run, 120 minutes covers ~50 listings; even at twice that
+(all 12 readable, GPU shared with the GUI) it covers ~25 in one night.
+**Alternatives:** Fewer articles or steps (not needed at these timings); a 32k context (does
+not fit 8GB).
+
+## 2026-09-24 - Filings take at most 2 reading slots; extra 8-Ks stay headlines
+**Context:** Ticket 03 asked both for the latest 10-Q/10-K plus every 8-K from the last 30
+days and for filings to take at most 2 reading slots.
+**Decision:** The 2-slot cap wins. The periodic report and the newest 8-K are read; any further
+8-K stays in the evidence as a headline.
+**Alternatives:** Read every recent 8-K (takes article slots from news on a busy month).
+
+## 2026-09-24 - Reading stage hardening (gate round 1)
+**Context:** Review of the deep-research branch.
+**Decision:** Any per-article failure is stored as a permanent read or note failure and logged,
+never raised. An address or body httpx cannot handle is a tool error. Pages are refused when
+their host resolves to a non-global address, checked with `getaddrinfo` before each hop (a
+DNS rebind between that check and the connection remains possible; SEC hosts are exempt). A 403
+from the `web` source is one page's refusal and never counts toward its breaker. A replay reads
+and shows text and notes only from SEC filings. A model's note unusable twice is not asked for
+again (backend failures do not count). Citation tokens are stripped from noted facts. An
+outlet with no stored site is matched only on a domain's own name label.
+**Alternatives:** A connect-time check in a custom httpx network backend (closes the rebind
+window, but reaches into httpx's private pool); a separate gate source for the reading stage
+with a high 403 limit.
+**Follow-ups:** an `Evidence.read` primitive; `Reader`'s 9 constructor parameters; a filing is
+fetched again when another model notes it.
 
 ## 2026-09-24 - Repaint in place after actions; research buttons follow live jobs
 **Context:** After an action the Ledgers tab (and the Company page) blanked to "Loading..." and
@@ -1546,3 +1722,33 @@ does not trade them." from the setting. The tick's empty summary now reads "no c
 found", since not every source is about related companies.
 **Alternatives:** A switch in the section itself (Settings already holds it, one place to
 change it).
+
+
+## 2026-09-24 - Retry for cancelled, interrupted and failed jobs
+**Context:** A restart cancelled 8 queued research jobs at once with no way to redo them
+short of re-entering each request by hand. The Activity tab needed a way to retry a single
+finished job and to retry everything left in a bad state after an outage.
+**Decision:** One mapping in `oracle/services/activity_service.py` (`_RETRY`) from job kind
+to a resubmit function that rebuilds the original call from the job's stored kind, subject
+and label; `retry(job_id)` looks a job up (live or from history via `JobRunner.get`) and
+refuses anything not cancelled, interrupted or failed, or a kind not in the mapping.
+`retryable(ctx, runner)` reads `JobHistoryRepo.latest_per_subject()` (the newest finished
+row per kind+subject) and keeps only rows in a bad state, not already queued or running, and
+of a retryable kind; `retry_all` resubmits each one. A subject's older bad runs are never
+retried individually: only the latest matters, since anything before it either already
+reran or is superseded by the one that matters now. A research replay's subject
+(`SYMBOL@day`) carries its day; a tick always retries as manual, regardless of what
+triggered the original; prices, analyse and fx tell "every listing" apart from one listing
+by the same `*`/name subject `submit_*` already stores. Routes: `POST
+/api/activity/{job_id}/retry`, `POST /api/activity/retry-all`, and `GET
+/api/activity/retryable/count` for the button's badge. `activity.js` adds a Retry button
+next to Cancel (mutually exclusive by state) and a "Retry all (n)" button by the Finished
+heading, both refreshing the finished list and the count in place, no page reload.
+**Alternatives:** Storing the original submit arguments verbatim (a new column, more to keep
+in sync with every `submit_*` signature) instead of rebuilding from kind+subject, which
+already uniquely determines the call for every kind in this app; retrying every past bad run
+for a subject instead of only the latest (redundant, and confusing when an older failure was
+already fixed by a later success); a kind allow-list hard-coded in the route instead of the
+resubmit mapping doubling as the "can this be rebuilt" check (one source of truth instead of
+two lists to keep in sync).
+free, so a run is comparable across markets); keeping runs in a new table now (left to 02).

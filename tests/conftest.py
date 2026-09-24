@@ -14,6 +14,12 @@ def _in_a_temp_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch):
+    """Fake hosts resolve to a public address, so the page reader's DNS check never asks the network."""
+    monkeypatch.setattr("oracle.research.web.resolve", lambda host: ["93.184.216.34"])
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")
@@ -29,9 +35,9 @@ def finish_job(ctx):
     repo = JobHistoryRepo(ctx.conn)
     start = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc)
 
-    def finish(n, kind="prices", label=None, state="done", error=None):
+    def finish(n, kind="prices", label=None, state="done", error=None, subject=None):
         at = start + timedelta(minutes=n)
-        job_id = repo.add(kind, label or f"Job {n}", None, None, "queued", at, 999_999_999)
+        job_id = repo.add(kind, label or f"Job {n}", subject, None, "queued", at, 999_999_999)
         repo.update(job_id, state, error, at, at)
         return job_id
 

@@ -56,19 +56,27 @@ function report(r) {
     p.rejections ? el("p", { class: "dim small" }, tip("Rejected", "research_rejections"), `: ${p.rejections}`) : null);
 }
 
+// An item of evidence with the facts read from it, or what reading it gave instead.
+function evidenceItem(e) {
+  const link = safeUrl(e.link);
+  const title = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
+  return el("li", { id: `ev-${e.id}` }, el("span", { class: "mono" }, `[a${e.id}] `),
+    `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title,
+    e.query ? el("span", { class: "dim" }, ` (found by "${e.query}")`) : null,
+    e.facts.length ? el("ul", null, ...e.facts.map((f) => el("li", null, f))) : null,
+    e.read ? el("div", { class: "dim" }, `Read: ${e.read}`) : null,
+    e.body ? el("details", null, el("summary", { class: "dim" }, "what it read"),
+      el("pre", { class: "observation" }, e.body)) : null);
+}
+
 function evidence(r) {
   const cited = r.evidence.filter((e) => e.cited);
-  if (!cited.length) return null;
+  const read = r.evidence.filter((e) => !e.cited && (e.facts.length || e.read));
+  if (!cited.length && !read.length) return null;
   return el("div", null, el("div", { class: "dim small" }, tip("Evidence", "evidence")),
-    el("ul", { class: "small" }, ...cited.map((e) => {
-      const link = safeUrl(e.link);
-      const title = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
-      return el("li", { id: `ev-${e.id}` }, el("span", { class: "mono" }, `[a${e.id}] `),
-        `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title,
-        e.query ? el("span", { class: "dim" }, ` (found by "${e.query}")`) : null,
-        e.body ? el("details", null, el("summary", { class: "dim" }, "what it read"),
-          el("pre", { class: "observation" }, e.body)) : null);
-    })));
+    cited.length ? el("ul", { class: "small" }, ...cited.map(evidenceItem)) : null,
+    read.length ? el("details", null, el("summary", { class: "dim small" }, `Also read (${read.length})`),
+      el("ul", { class: "small" }, ...read.map(evidenceItem))) : null);
 }
 
 function trace(r) {

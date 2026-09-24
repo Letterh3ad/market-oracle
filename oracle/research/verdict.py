@@ -7,17 +7,13 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
+from oracle.research.budget import budget
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.roles import MAX_CITES, prompt
 from oracle.research.trace import FINAL, VERDICTS, Drop, Evidence, Report, Step, Verdict
 
-# English prose runs about 4 characters a token, but numbers and URLs nearer 3: filling at 3
-# keeps a quarter in hand so the model never truncates the material itself.
-CHARS_PER_TOKEN = 3
-# The reply is short, but the schema's grammar and the chat template take room too.
-REPLY_TOKENS = 1024
 _IDS = re.compile(r"\[a(\d+)\]")
 
 ROLE = "verdict"
@@ -36,10 +32,14 @@ SCHEMA = {"verdict": {"type": "string", "enum": list(VERDICTS)},
 _KINDS = {"notes": ("the researcher's notes", "the researcher's notes"),
           "role": ("role output", "role outputs"),
           "cited": ("cited item", "cited items"),
+          "read": ("uncited item read", "uncited items read"),
           "observation": ("step observation", "step observations"),
           "uncited": ("uncited item", "uncited items")}
 _HEADINGS = {"notes": "Researcher's notes:", "role": "The team's outputs:", "cited": "Evidence cited:",
+             "read": "Other evidence read:",
              "observation": "What the research tools returned:", "uncited": "Other evidence shown:"}
+# The order sections are shown in, which is not the fill order.
+_SHOWN = ("notes", "role", "cited", "read", "uncited", "observation")
 _REASONS = {Drop.WRONG_SHAPE: "its reason is not in the shape asked for", Drop.EMPTY_TEXT: "it gave no reason",
             Drop.NO_CITATION: "its reason cites no evidence",
             Drop.UNKNOWN_CITATION: "its reason cites nothing it was shown"}
@@ -59,6 +59,8 @@ class Material:
     steps: tuple[Step, ...]
     evidence_lines: dict[int, str]
     """How each evidence item reads to the model, by id."""
+    read: frozenset[int] = frozenset()
+    """Evidence whose line carries the facts read from it: kept before any headline alone."""
 
 
 @dataclass(frozen=True)
@@ -68,21 +70,19 @@ class Fitted:
     unread: tuple[str, ...]
 
 
-def budget(context_tokens: int, system: str) -> int:
-    """Characters of material that fit beside the system prompt and the reply."""
-    return max(0, (context_tokens - REPLY_TOKENS) * CHARS_PER_TOKEN - len(system))
-
-
 def fit(m: Material, chars: int) -> Fitted:
     """The material in fill order until the budget runs out; what was left out is counted by kind."""
     cites = m.report.cites | _ids(m.notes)
     items: list[tuple[str, str]] = [("notes", m.notes)] if m.notes.strip() else []
     items += [("role", line) for line in _role_lines(m.report)]
-    items += [("cited", m.evidence_lines[e.id]) for e in m.evidence if e.id in cites]
+    read = [e for e in m.evidence if e.id in m.read]
+    headlines = [e for e in m.evidence if e.id not in m.read]
+    items += [("cited", m.evidence_lines[e.id]) for e in (*read, *headlines) if e.id in cites]
+    items += [("read", m.evidence_lines[e.id]) for e in read if e.id not in cites]
     observations = [_observation(s) for s in m.steps if s.action != FINAL and s.observation]
     items += [("observation", o) for o in observations if _ids(o) & cites]
     items += [("observation", o) for o in observations if not _ids(o) & cites]
-    items += [("uncited", m.evidence_lines[e.id]) for e in m.evidence if e.id not in cites]
+    items += [("uncited", m.evidence_lines[e.id]) for e in headlines if e.id not in cites]
     statistics = f"Statistics:\n{m.statistics}"
     room = chars - len(statistics)
     kept: dict[str, list[str]] = {k: [] for k in _KINDS}
@@ -96,8 +96,7 @@ def fit(m: Material, chars: int) -> Fitted:
             kept[kind].append(text)
             room -= cost
     sections = [statistics]
-    sections += [f"{_HEADINGS[k]}\n" + "\n".join(kept[k]) for k in ("notes", "role", "cited", "uncited", "observation")
-                 if kept[k]]
+    sections += [f"{_HEADINGS[k]}\n" + "\n".join(kept[k]) for k in _SHOWN if kept[k]]
     text = "\n\n".join(sections)
     known = {m.statistics_id} | {e.id for e in m.evidence}
     unread = tuple(f"{n} {_KINDS[k][n != 1]}" if k != "notes" else _KINDS[k][0]

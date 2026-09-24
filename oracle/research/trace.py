@@ -44,6 +44,15 @@ class Evidence:
     """Only for evidence Market Oracle wrote itself: the stored data a run read."""
     query: str | None = None
     """The search that first found it."""
+    facts: tuple[str, ...] = ()
+    """What the run's model read in it that bears on the share price."""
+    read: str | None = None
+    """With no facts, what reading it gave: why it was not read or noted, NOT_ABOUT or NOTHING.
+    None when it was never read."""
+
+
+NOT_ABOUT = "not about the company"
+NOTHING = "nothing in it bears on the share price"
 
 
 @dataclass(frozen=True)

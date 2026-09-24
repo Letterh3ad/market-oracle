@@ -17,8 +17,8 @@ from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
-from oracle.research.queries import plan, seed_queries, suggest
-from oracle.research.roles import write_report
+from oracle.research.queries import EDITION, Search, plan, seed_queries, suggest
+from oracle.research.roles import digest, digest_room, write_report
 from oracle.research.tools import Tool
 from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
 from oracle.research.verdict import Material, add_verdict
@@ -31,8 +31,8 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
-    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, RelatedCompanies, Shelf, WebSearch, evidence_line,
-    market_summary,
+    Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
+    evidence_entry, market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import discovered_only
@@ -95,27 +95,42 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         repo.add_evidence(run_id, ids)
 
     profile = UniverseRepo(ctx.conn).profile(listing)
-    queries = plan(seed_queries(profile.name, profile.country),
-                   await suggest(model, _about(profile, day), profile.country))
-    repo.set_queries(run_id, queries)
+    # Web pages carry no reliable date, so a replay cannot search the web.
+    searcher = None if as_of else searcher or DdgsSearcher()
+    queries = plan(seed_queries(profile.name, profile.country, searcher is not None),
+                   await suggest(model, _about(profile, day), profile.country), profile.country)
+    repo.set_queries(run_id, [q.query for q in queries])
     shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
+    contact = ctx.config.research.contact
+    gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
     async with open_client(ctx) as client:
-        tools = _tools(ctx, client, shelf, listing, as_of, searcher)
+        # SEC refuses requests without a contact; offering the tool would only waste a step.
+        sec = Filings(client, ctx.conn, ctx.clock, shelf, listing, contact) if contact else None
+        tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher, gate, sec)
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
+        reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, model,
+                        f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+        filings = await sec.to_read(day) if sec else {}
+        await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
+                          lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
+        repo.set_stage(run_id, None)
     findings, cited = keep_citations(outcome.findings, shown)
     statistics, data_id = await _statistics(ctx, shelf, run_id, listing, as_of, day)
     run = repo.get(run_id)
     evidence = tuple(e for e in run.evidence if e.id != data_id)
-    lines = {e.id: evidence_line(e.id, e.published, e.outlet, e.title) for e in evidence}
-    digest = "\n".join(["Evidence:", statistics, *lines.values()]) + f"\n\nResearcher's notes: {findings or '(none)'}"
-    report = await write_report(model, digest, shown, day)
+    lines = {e.id: evidence_entry(e) for e in evidence}
+    read = frozenset(e.id for e in evidence if e.facts)
+    digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
+                         [lines[e.id] for e in evidence if e.id not in read], findings,
+                         digest_room(context_tokens(ctx)))
+    report = await write_report(model, digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
             repo.set_cited(run_id, cited)
             repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
         return
-    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines)
+    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines, read)
     report = await add_verdict(model, report, material, context_tokens(ctx))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
@@ -247,18 +262,16 @@ def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
     return ResearchRepo(ctx.conn).with_reports(resolve_symbol(ctx, symbol).symbol)
 
 
-def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, as_of: date | None,
-           searcher: WebSearcher | None) -> list[Tool]:
-    contact = ctx.config.research.contact
+def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, country: str | None,
+           as_of: date | None, searcher: WebSearcher | None, gate: SourceGate, sec: Filings | None) -> list[Tool]:
     tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
              RelatedCompanies(ctx, listing)]
-    if contact:
-        # SEC refuses requests without one; offering the tool would only waste a step.
-        tools.append(Filings(client, ctx.conn, ctx.clock, shelf, listing, contact))
-    if as_of is None:
-        # Web pages carry no reliable date, so a replay cannot use them.
-        gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-        tools += [WebSearch(searcher or DdgsSearcher(), gate, shelf), ReadPage(client, shelf, contact)]
+    if country in EDITION:
+        tools.insert(2, LocalNewsSearch(client, shelf, country))
+    if sec:
+        tools.append(sec)
+    if searcher is not None:
+        tools += [WebSearch(searcher, gate, shelf), ReadPage(client, shelf, ctx.config.research.contact)]
     return tools
 
 
@@ -267,6 +280,8 @@ def research_progress(ctx: AppContext, listing: str) -> str | None:
     run = ResearchRepo(ctx.conn).latest(listing)
     if run is None or run.status != RunStatus.RUNNING:
         return None
+    if stage := ResearchRepo(ctx.conn).stage(run.id):
+        return stage
     if not run.steps:
         return "planning searches"
     last = run.steps[-1]
@@ -313,9 +328,10 @@ def _about(p: ListingProfile, day: date) -> str:
             f"Company: {p.name} ({p.symbol}){': ' + where if where else ''}.")
 
 
-def _task(p: ListingProfile, day: date, queries: list[str]) -> str:
-    searches = "\n".join(f"- {q}" for q in queries)
-    return f"{_about(p, day)}\nResearch it. Start with these searches, then follow what you find:\n{searches}"
+def _task(p: ListingProfile, day: date, queries: list[Search]) -> str:
+    searches = "\n".join(f"- {q.tool}: {q.query}" for q in queries)
+    return (f"{_about(p, day)}\nResearch it. Start with these searches (tool: query), then follow what you "
+            f"find:\n{searches}")
 
 
 def _now(ctx: AppContext) -> str:

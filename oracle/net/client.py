@@ -38,7 +38,7 @@ class RateLimitedClient:
     backoff or Retry-After delays every process using that source, not just this call.
 
     Returns any non-429, non-5xx response as-is (403 and 404 included) for the caller
-    to interpret; the gate still counts 403s toward the breaker.
+    to interpret; the gate still counts 403s toward the breaker unless told otherwise.
     """
 
     def __init__(
@@ -67,9 +67,11 @@ class RateLimitedClient:
         headers: dict | None = None,
         max_bytes: int | None = None,
         follow_redirects: bool = True,
+        count_403: bool = True,
     ) -> httpx.Response:
         """With `max_bytes`, reading stops there (an arbitrary page can be any size);
-        `extensions["oracle_truncated"]` says whether it was cut."""
+        `extensions["oracle_truncated"]` says whether it was cut. `count_403` False: a 403
+        refuses this URL alone, so it never counts toward the breaker."""
         retries = self._gate.config(source).max_retries
         for attempt in range(retries + 1):
             last = attempt == retries
@@ -85,7 +87,8 @@ class RateLimitedClient:
                 self._gate.defer(source, _backoff(attempt))
                 continue
 
-            self._gate.record(source, resp.status_code)
+            if count_403 or resp.status_code != 403:
+                self._gate.record(source, resp.status_code)
             if resp.status_code != 429 and resp.status_code < 500:
                 return resp
             asked = self._retry_after(resp)

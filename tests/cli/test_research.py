@@ -78,6 +78,7 @@ def test_the_evidence_cited_is_listed_with_links(run, ollama, news):
     code, out, _ = run("research", "AAPL")
     assert "Evidence cited:" in out and "[a1] 2026-09-20 Reuters: Apple beats estimates" in out
     assert "https://reut.rs/1" in out and "https://bbc.in/2" not in out.split("Evidence cited:")[1]
+    assert "read: the page answered HTTP 404" in out.split("Evidence cited:")[1]
 
 
 def test_each_article_shown_gets_its_own_line(run, ollama, news):
@@ -104,7 +105,8 @@ def test_the_planned_searches_are_shown_first(run, ollama):
     ollama.suggestions = ["Apple iPhone demand"]
     ollama.contents = [step("final", "Done.")]
     _, out, _ = run("research", "AAPL")
-    assert "Searches: Apple shares; Apple earnings outlook; Apple iPhone demand" in out
+    assert ("Searches: Apple shares; Apple earnings outlook; Apple press release investor relations; "
+            "Apple iPhone demand") in out
 
 
 def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, monkeypatch):
@@ -117,7 +119,7 @@ def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, mon
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
     code, _, _ = run("research", "AAPL")
     sys.stdout.flush()
-    assert code == 0 and b"Searches: Apple shares; Apple earnings outlook; ??? ??" in raw.getvalue()
+    assert code == 0 and b"Apple press release investor relations; ??? ??" in raw.getvalue()
 
 
 def scripted_report(ollama, news, bull="Earnings momentum"):
