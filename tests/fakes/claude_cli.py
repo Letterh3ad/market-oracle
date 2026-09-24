@@ -39,6 +39,10 @@ def main() -> int:
             json.dump({"flags": flags, "prompt": prompt, "env": sorted(os.environ)}, f)
     if mode == "good":
         print(envelope('{"ok": true}'))
+    elif mode == "noisy":
+        print("A newer version of Claude Code is available.")
+        print(envelope('{"ok": true}'))
+        print()
     elif mode == "fenced":
         print(envelope('```json\n{"ok": true}\n```'))
     elif mode == "text":

@@ -125,12 +125,15 @@ CLAUDE_CODE = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n'
 ALLOWED = "[models]\nallow_claude_code = true\n"
 
 
-def test_claude_code_is_refused_unless_the_models_flag_allows_it(tmp_path):
-    with pytest.raises(ConfigError, match="models.sub: provider claude_code .* set allow_claude_code = true under"):
-        _load(tmp_path, CLAUDE_CODE)
-    with pytest.raises(ConfigError, match="models.sub: provider claude_code"):
-        _load(tmp_path, f"[models]\nallow_claude_code = false\n{CLAUDE_CODE}")
+def test_a_claude_code_profile_loads_with_the_flag_off_but_warns(tmp_path, caplog):
+    for text in (CLAUDE_CODE, f"[models]\nallow_claude_code = false\n{CLAUDE_CODE}"):
+        caplog.clear()
+        config = _load(tmp_path, text)
+        assert config.allow_claude_code is False and config.models["sub"].provider == "claude_code"
+        assert "models sub: provider claude_code is off until allow_claude_code = true" in caplog.text
+    caplog.clear()
     config = _load(tmp_path, ALLOWED + CLAUDE_CODE)
+    assert "claude_code is off" not in caplog.text
     assert config.allow_claude_code is True and list(config.models) == ["sub"]
     assert model_profiles(config)["sub"] == ModelProfile("claude_code", "sonnet", None, CLAUDE_CONTEXT, 180.0)
     assert _load(tmp_path, "[llm]\n").allow_claude_code is False
@@ -142,6 +145,8 @@ def test_claude_code_is_refused_unless_the_models_flag_allows_it(tmp_path):
     ('[models.allow_claude_code]\nprovider = "ollama"\nmodel = "x"\n', "must be true or false"),
     (ALLOWED + CLAUDE_CODE + 'base_url = "http://x"\n', "claude_code reaches no endpoint"),
     (ALLOWED + CLAUDE_CODE + 'key_env = "K"\n', "claude_code takes no key"),
+    (ALLOWED + '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet & calc"\n',
+     "models.sub.model must be a model name the claude CLI takes"),
 ])
 def test_the_flag_and_claude_code_profiles_are_checked(tmp_path, text, message):
     with pytest.raises(ConfigError, match=message):

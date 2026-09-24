@@ -278,3 +278,28 @@ def test_the_flag_applies_live_with_the_profiles(tmp_path):
         ctx.config_source.write_text(ctx.config_source.read_text(encoding="utf-8") + ALLOWED + SUB, encoding="utf-8")
         reload_live_settings(ctx)
         assert ctx.config.allow_claude_code and "claude_code" in provider_defaults(ctx)
+        assert model_profile_rows(ctx)[1]["off"] is False
+
+
+def test_turning_the_flag_off_live_keeps_the_profile_but_refuses_it(tmp_path):
+    from oracle.services.settings_service import reload_live_settings
+
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        text = ctx.config_source.read_text(encoding="utf-8")
+        ctx.config_source.write_text(text.replace("allow_claude_code = true", "allow_claude_code = false"),
+                                     encoding="utf-8")
+        reload_live_settings(ctx)
+        assert not ctx.config.allow_claude_code and "claude_code" not in provider_defaults(ctx)
+        assert [(r["name"], r["off"]) for r in model_profile_rows(ctx)] == [("default", False), ("sub", True)]
+        with pytest.raises(ModelUnavailable, match="claude_code is off"):
+            model_for(ctx, "sub")
+        with pytest.raises(InvalidQuery, match="allow_claude_code"):
+            save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "opus"}, create=False)
+        delete_model_profile(ctx, "sub")
+
+
+async def test_a_restart_with_the_flag_off_loads_and_the_test_reports_it_off(tmp_path):
+    with _ctx(tmp_path, SUB) as ctx:
+        assert ctx.config.models["sub"].provider == "claude_code" and not ctx.config.allow_claude_code
+        result = await try_model_profile(ctx, "sub")
+    assert not result.ok and "claude_code is off" in result.error

@@ -106,6 +106,7 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
+        "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
     } for name, p in model_profiles(ctx.config).items()]
 
@@ -164,6 +165,8 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
     provider = PROVIDERS.get(named) if isinstance(named, str) else None
     if old and provider and table["provider"] != old.provider:
         table = {k: v for k, v in table.items() if k not in PROVIDER_KEYS or v != getattr(old, k)}
+    if named == "claude_code" and not ctx.config.allow_claude_code:
+        raise InvalidQuery(f"claude_code is off: set {ALLOW_CLAUDE_CODE} = true under [models] in oracle.toml")
     if named in URLLESS_PROVIDERS:
         table.pop("base_url", None)
     if provider and provider.fallback_key is None:

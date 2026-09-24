@@ -264,6 +264,8 @@ PROVIDERS: dict[str, Provider] = {
 PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
 URLLESS_PROVIDERS = ("claude_code",)
 """Providers that reach no endpoint, so take no base_url."""
+CLAUDE_CODE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\[\]-]*")
+"""On Windows the CLI is often claude.cmd, whose arguments cmd.exe reparses: only plain names pass."""
 ALLOW_CLAUDE_CODE = "allow_claude_code"
 """The `[models]` key, beside the profile tables, that lets a profile name claude_code: it
 drives the user's own claude.ai login, which a distributed build must not offer."""
@@ -825,10 +827,11 @@ def _models(raw: object) -> tuple[dict[str, ModelProfile], bool]:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
     profiles = {name: check_profile(name, table) for name, table in raw.items()}
-    gated = next((n for n, p in profiles.items() if p.provider == "claude_code"), None)
-    if gated and not allow:
-        raise ConfigError(f"models.{gated}: provider claude_code runs your own logged-in claude CLI and is off; "
-                          f"set {ALLOW_CLAUDE_CODE} = true under [models] to use it")
+    off = [n for n, p in profiles.items() if p.provider == "claude_code"] if not allow else []
+    if off:
+        # Kept, so the file still loads and the profile can be edited; refused when a model is built.
+        log.warning("models %s: provider claude_code is off until %s = true is set under [models]",
+                    ", ".join(off), ALLOW_CLAUDE_CODE)
     return profiles, allow
 
 
@@ -868,6 +871,9 @@ def check_profile(name: str, raw: object) -> ModelProfile:
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
                       and p.timeout_s > 0, "a positive number"),
     }
+    if provider == "claude_code":
+        checks["model"] = (isinstance(p.model, str) and CLAUDE_CODE_MODEL.fullmatch(p.model) is not None,
+                           "a model name the claude CLI takes, like sonnet, opus or claude-opus-5")
     for key, (ok, wanted) in checks.items():
         if not ok:
             raise ConfigError(f"{where}.{key} must be {wanted}, got {getattr(p, key)!r}")

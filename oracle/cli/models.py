@@ -21,7 +21,7 @@ def _list(ctx: AppContext, args: argparse.Namespace) -> int:
         key = {"none": "-", "fallback": r["key_fallback"]}.get(r["key_state"], r["key_state"])
         if r["key_env"]:
             key += f" ({r['key_env']})"
-        source = "  from [llm]" if r["from_llm"] else ""
+        source = "  from [llm]" if r["from_llm"] else "  off (allow_claude_code is not set)" if r["off"] else ""
         print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}")
     return 0
 
