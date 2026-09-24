@@ -18,7 +18,8 @@ from oracle.services.models_service import RESEARCH_STAGES, resolve_model, slot_
 from oracle.store.cutoff import AnswerRow, CutoffRepo, ProbeRow
 
 __all__ = ["VERSION", "CutoffProbe", "ModelFacts", "ReplayCutoff", "Unprobed", "check_replay_from", "measured_cutoff",
-           "month_back", "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "stored_probe"]
+           "month_back", "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "replay_profiles",
+           "stored_probe"]
 
 TRIES = 2
 """Asks per question: a cold local model can fail its first reply while it loads."""

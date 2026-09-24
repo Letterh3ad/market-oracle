@@ -197,3 +197,11 @@ def test_update_prices_runs_the_job_and_reloads_the_score():
     asked, text = shown
     assert asked[:3] == ["POST /api/replay/prices", "GET /api/replay", "GET /api/replay/report"]
     assert "Prices fetched for 1 of 2 listings; failed: AAPL (no price data)." in text
+
+
+def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_of_the_score():
+    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "cutoff": "2026-06-30"}
+    text = run("console.log(JSON.stringify(node.textContent));", study=study, report={**REPORT, "excluded": 2})
+    assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
+            "Measured cutoff: 2026-06-30.") in text
+    assert "2 replays excluded: on or before the current cutoff." in text

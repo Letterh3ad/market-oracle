@@ -78,9 +78,12 @@ function replaySection() {
     const mean = s.mean_replay_s == null ? "no replay finished yet" : `${minutes(s.mean_replay_s)} per replay on average`;
     const polled = s.polled_at ? `Last checked ${clock(s.polled_at)} UTC.`
       : "Not checked yet: replays are paced by the running app.";
+    const stages = Object.entries(s.stages ?? {}).map(([stage, profile]) => `${stage} on ${profile}`).join(", ");
     return [
       el("p", null, `${s.done} done, ${s.pending} queued, ${s.failed.length} failed of ${s.total} `
         + `(${s.first_day} to ${s.last_day}); ${mean}.`),
+      ...(stages ? [el("p", { class: "dim small" }, `Stage models, fixed when the study was created: ${stages}.`
+        + (s.cutoff ? ` Measured cutoff: ${s.cutoff}.` : ""))] : []),
       el("p", { class: s.state === "paused" && s.paused_reason ? "warn-text small" : "small" }, current),
       el("p", { class: "dim small" }, polled),
     ];
@@ -184,6 +187,8 @@ function replaySection() {
         + `${r.to_run} still to run, of ${r.total} replays. Verdict mix: ${m.buy} buy, ${m.hold} hold, ${m.sell} sell `
         + `(${share(m.buy_share)} buys), mean confidence ${m.mean_confidence == null ? "n/a"
           : m.mean_confidence.toFixed(2)}.`),
+      ...(r.excluded ? [el("p", { class: "warn-text small" }, `${plural(r.excluded, "replay")} excluded: on or `
+        + "before the current cutoff.")] : []),
       ...r.horizons.flatMap(horizon),
       el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
         + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "

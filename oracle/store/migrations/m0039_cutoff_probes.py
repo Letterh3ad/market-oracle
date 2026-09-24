@@ -4,10 +4,12 @@ import sqlite3
 
 from oracle.store.migrations import run_ddl
 
-# Cutoff probe (replay-study 01). Numbered 39 beside replay-study 02's 38, built in parallel:
-# the branch merged second renumbers if needed. One probe per model (provider and model id), a
-# new one replacing it, with every question, reply and mark so the result can be inspected.
+# Cutoff probe (replay-study 01), after the replay study's tables (38). One probe per model
+# (provider and model id), a new one replacing it, with every question, reply and mark so the
+# result can be inspected. A study keeps the profile each stage ran on at its creation (JSON),
+# so it never mixes models.
 DDL = """
+ALTER TABLE replay_studies ADD COLUMN stages TEXT;
 CREATE TABLE cutoff_probes (
     id INTEGER PRIMARY KEY,
     provider TEXT NOT NULL,

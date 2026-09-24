@@ -105,6 +105,10 @@ def print_status(s: StudyStatus) -> None:
     print(f"  {s.done} done, {s.pending} queued ({s.retrying} to retry), {len(s.running)} running, "
           f"{len(s.failed)} failed of {s.total}")
     print(f"  listings: {', '.join(p.symbol for p in s.listings)}")
+    if s.stages:
+        print(f"  stage models: {', '.join(f'{stage} on {name}' for stage, name in s.stages.items())}")
+    if s.cutoff:
+        print(f"  measured cutoff: {s.cutoff.isoformat()}")
     mean = f"{s.mean_replay_s / 60:.1f} min" if s.mean_replay_s is not None else "none finished yet"
     print(f"  mean replay time: {mean}")
     if s.polled_at:
@@ -154,6 +158,8 @@ def print_report(s: Score) -> None:
           f"(as of {s.today.isoformat()})")
     print(f"  {s.verdicts} verdicts, {s.no_verdict} without a verdict, {s.failed} failed, {s.to_run} still to run, "
           f"of {s.total} replays")
+    if s.excluded:
+        print(f"  {s.excluded} replay{'' if s.excluded == 1 else 's'} excluded: on or before the current cutoff")
     m = s.mix
     confidence = "n/a" if m.mean_confidence is None else f"{m.mean_confidence:.2f}"
     print(f"  Verdict mix: {m.buy} buy, {m.hold} hold, {m.sell} sell ({_pct(m.buy_share)} buys), "

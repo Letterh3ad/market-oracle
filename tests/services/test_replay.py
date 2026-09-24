@@ -10,9 +10,10 @@ import pytest
 from oracle.config import AutomationConfig, Config, ModelProfile, ScheduleConfig
 from oracle.jobs import JobLock
 from oracle.services import activity_service
-from oracle.services.activity_service import JobRunner, retry, sweep_leftovers
+from oracle.services.activity_service import JobRunner, retry, retryable, sweep_leftovers
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
+from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
     BACKOFF, LONG_BACKOFF, MAX_BACKOFFS, ReplayPacer, create_study, pause_study, pick_listings, replace_listing, retry_failed,
     start_study, study_status,
@@ -696,3 +697,88 @@ async def test_status_counts_running_age_and_mean_replay_time(ctx, runner, resea
     assert (s.done, s.pending, len(s.running), s.total) == (1, 19, 1, 21)
     assert s.running[0].symbol == "JPM" and s.running[0].age_s == 30
     assert s.mean_replay_s == 120 and (s.finished, s.complete) == (False, False)
+
+
+# The cutoff and the models, checked at every submit
+
+async def test_the_study_keeps_the_stage_models_it_was_created_with(ctx):
+    s = await create_study(ctx, FIRST)
+    assert s.stages == {stage: "default" for stage in ("queries", "research", "notes", "roles", "verdict")}
+    assert s.to_json()["stages"]["verdict"] == "default"
+
+
+async def test_a_slot_pointed_at_an_unprobed_profile_after_create_pauses_the_study(ctx, runner, research):
+    await started(ctx)
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big-model")},
+                         model_slots={"verdict": "big"})
+    assert ReplayPacer(ctx, runner).check() is None and not research.calls
+    s = study_status(ctx)
+    assert s.state == "paused"
+    assert "the replay models changed since the study was created: verdict default to big" in s.paused_reason
+    with pytest.raises(InvalidQuery, match="the replay models changed"):
+        start_study(ctx)
+
+
+async def test_a_stage_model_changed_after_create_pauses_the_study_even_when_probed(ctx, runner, research):
+    await started(ctx)
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big-model")},
+                         model_slots={"notes": "big"})
+    store_probe(ctx.conn, ctx.config, profile="big")
+    assert ReplayPacer(ctx, runner).check() is None and not research.calls
+    assert "notes default to big" in study_status(ctx).paused_reason
+
+
+async def test_a_stage_model_no_longer_probed_pauses_the_study_saying_what_to_probe(ctx, runner, research):
+    await started(ctx)
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", "another-model")})
+    assert ReplayPacer(ctx, runner).check() is None and not research.calls
+    s = study_status(ctx)
+    assert s.state == "paused" and "probe default first" in s.paused_reason
+    with pytest.raises(InvalidQuery, match="probe default first"):
+        start_study(ctx)
+
+
+async def test_a_later_cutoff_stops_earlier_cells_and_drops_earlier_replays_from_the_score(ctx, runner, research):
+    await started(ctx, symbols=["AAPL", "JPM"])
+    pacer = ReplayPacer(ctx, runner)
+    await run_one(pacer, runner, research, "AAPL", FIRST)
+    store_probe(ctx.conn, ctx.config, date(2026, 7, 15))  # a re-probe found the model knows more
+    job = pacer.check()
+    assert job.subject == "AAPL@2026-08-03"
+    s = study_status(ctx)
+    assert s.cutoff == date(2026, 7, 15)
+    assert [(c.symbol, c.as_of) for c in s.failed] == [
+        ("JPM", date(2026, 6, 1)), ("AAPL", date(2026, 7, 1)), ("JPM", date(2026, 7, 1))]
+    assert all(c.error == "on or before the cutoff 2026-07-15 of default" for c in s.failed)
+    assert s.score.excluded == 1 and replay_report(ctx).excluded == 1
+    assert retry_failed(ctx) == 0
+    with pytest.raises(InvalidQuery, match="on or before the measured cutoff 2026-07-15"):
+        retry_failed(ctx, s.failed[0].id)
+
+
+async def test_a_raised_claim_stops_earlier_cells_too(ctx, runner, research):
+    await started(ctx, symbols=["AAPL"])
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", ctx.config.llm.model,
+                                                                     claimed_cutoff="2026-07-31")})
+    assert ReplayPacer(ctx, runner).check().subject == "AAPL@2026-08-03"
+    assert [c.as_of for c in study_status(ctx).failed] == [date(2026, 6, 1), date(2026, 7, 1)]
+
+
+async def test_replace_after_the_cutoff_moved_makes_no_cell_on_or_before_it(ctx):
+    await create_study(ctx, FIRST, symbols=["AAPL", "JPM"])
+    store_probe(ctx.conn, ctx.config, date(2026, 7, 15))
+    s = await replace_listing(ctx, "AAPL", "SAP.DE")
+    assert s.first_day > date(2026, 7, 15) and min(c.as_of for c in cells(ctx)) > date(2026, 7, 15)
+
+
+async def test_retrying_in_activity_a_replay_now_on_or_before_the_cutoff_is_refused(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 8, 3)
+    await run_one(pacer, runner, research, "AAPL", day, "model down")
+    job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
+    pacer.check()
+    store_probe(ctx.conn, ctx.config, date(2026, 8, 10))
+    with pytest.raises(InvalidQuery, match="on or before the measured cutoff 2026-08-10"):
+        retry(ctx, runner, job.id)
+    assert not [r for r in retryable(ctx, runner) if r.id == job.id]

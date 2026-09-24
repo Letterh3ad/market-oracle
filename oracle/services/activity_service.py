@@ -19,7 +19,7 @@ from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
-from oracle.services.cutoff_service import probe_replay_models, replay_cutoff
+from oracle.services.cutoff_service import check_replay_from, probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
@@ -468,22 +468,43 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if "@" in subject:
         symbol, day = subject.split("@", 1)
+        if why := _refused_replay(ctx, job):
+            raise InvalidQuery(why)
         again = submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
         _adopt_replay_cell(ctx, again, symbol, date.fromisoformat(day))
         return again
     return submit_research(ctx, runner, subject, profile=job.profile)
 
 
-def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
-    """A retried replay of a study cell that failed or waits for its retry counts for that
-    cell, so the study never runs it a second time."""
+def _study_cell(ctx: AppContext, job, symbol: str, day: date):
+    """The current study's cell a replay job stands for; a run on a picked profile is not one."""
     if job.profile is not None:
-        return  # the study replays on the slots; a run on a picked profile is another experiment
+        return None
     repo = ReplayRepo(ctx.conn)
     study = repo.current()
-    cell = repo.cell_at(study.id, symbol, day) if study else None
+    return repo.cell_at(study.id, symbol, day) if study else None
+
+
+def _refused_replay(ctx: AppContext, job) -> str | None:
+    """Why a replay job of a study cell may not run again: its day is now on or before the
+    cutoff, or the cutoff allows none."""
+    symbol, day = (job.subject or "").split("@", 1)
+    if _study_cell(ctx, job, symbol, date.fromisoformat(day)) is None:
+        return None
+    try:
+        check_replay_from(ctx, date.fromisoformat(day))
+    except InvalidQuery as exc:
+        return str(exc)
+    return None
+
+
+def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
+    """A retried replay of a study cell that failed or waits for its retry counts for that
+    cell, so the study never runs it a second time. The study replays on the slots, so a run on
+    a picked profile is another experiment."""
+    cell = _study_cell(ctx, job, symbol, day)
     if cell and cell.state in (PENDING, FAILED):
-        repo.adopt(cell.id, job.id, ctx.clock.utcnow())
+        ReplayRepo(ctx.conn).adopt(cell.id, job.id, ctx.clock.utcnow())
 
 
 def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -569,6 +590,8 @@ def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
         if row.profile is not None and row.profile not in profiles:
             continue
         if any(j.subject == row.subject for j in runner.active(row.kind)):
+            continue
+        if row.kind == "research" and "@" in (row.subject or "") and _refused_replay(ctx, row):
             continue
         out.append(row)
     return out
