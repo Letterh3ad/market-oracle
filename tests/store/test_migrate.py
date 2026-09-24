@@ -140,3 +140,16 @@ def test_ai_decisions_logged_before_the_flag_say_whether_they_need_research(tmp_
     repo = DecisionRepo(conn)
     assert {d.symbol: d.needs_research for d in repo.recent("ai")} == {"AAPL": True, "KO": True, "MSFT": False}
     assert [d.needs_research for d in repo.recent("strategy")] == [False]
+
+
+def test_a_database_at_version_37_runs_the_replay_study_then_the_cutoff_probe(tmp_path, monkeypatch):
+    from oracle.store import migrations
+
+    assert migrations.MIGRATIONS[-2:] == [migrations.m0038_replay_study, migrations.m0039_cutoff_probes]
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS[:37])
+    conn = connect(tmp_path / "o.db")
+    assert migrate(conn) == 37
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
+    assert migrate(conn) == 39 == current_version(conn)
+    assert {"cutoff_probes", "cutoff_answers"} <= _tables(conn)
+    conn.close()

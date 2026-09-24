@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.backtest_service import KeptBacktest
+from oracle.services.cutoff_service import CutoffProbe, ReplayCutoff
 from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
@@ -105,11 +106,38 @@ def answer(v: AnswerView) -> dict:
     }
 
 
+def cutoff_summary(p: CutoffProbe) -> dict:
+    return {"provider": p.provider, "model": p.model, "profile": p.profile, "question_set": p.question_set,
+            "claimed": p.claimed, "cutoff": p.cutoff, "last_known": p.last_known, "probed_at": p.probed_at}
+
+
+def _probe(p: CutoffProbe) -> dict:
+    """A probe with its month scores and every question, reply and mark."""
+    return {**cutoff_summary(p),
+            "months": [{"month": s.month, "right": s.right, "total": s.total, "known": s.known} for s in p.months],
+            "answers": [{"event_id": a.event_id, "day": a.day, "question": a.question, "expected": a.expected,
+                         "reply": a.reply, "right": a.right} for a in p.answers]}
+
+
+def replay_cutoff(rc: ReplayCutoff) -> dict:
+    """The stages a replay runs on, each distinct model with its probe, and the cutoff they allow together."""
+    return {"stages": [{"stage": s, "profile": name} for s, name in rc.stages.items()],
+            "models": [{"profile": name, **asdict(rc.facts[name]), "cutoff": rc.cutoff_of(name),
+                        "probe": p and _probe(p)}
+                       for name, p in rc.probes.items()],
+            "cutoff": rc.cutoff, "set_by": rc.set_by, "replay_from": rc.replay_from, "unprobed": list(rc.unprobed),
+            "note": rc.note}
+
+
+def _probes(probes: list[CutoffProbe]) -> dict:
+    return {"probes": [cutoff_summary(p) for p in probes]}
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
             "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
-            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}}
+            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes}
 
 
 def _result(j: Job) -> dict | None:

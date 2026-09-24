@@ -24,6 +24,8 @@ class StudyRow:
     paused_reason: str | None
     polled_at: datetime | None = None
     waiting: str | None = None
+    stages: str | None = None
+    """JSON: each research stage and the profile it ran on at creation."""
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ class CellRow:
     finished_at: datetime | None
 
 
-_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting"
+_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting, stages"
 _CELL = ("id, study_id, symbol, as_of, state, position, attempts, allowed, refunds, job_id, run_id, error, "
          "started_at, finished_at")
 
@@ -63,12 +65,13 @@ class ReplayRepo:
         self._conn = conn
 
     def create(self, created_at: datetime, first_day: date, last_day: date, listings: str,
-               cells: Sequence[tuple[str, date]], allowed: int) -> int:
+               cells: Sequence[tuple[str, date]], allowed: int, stages: str | None = None) -> int:
         """A paused study with its cells queued in the order given."""
         with transaction(self._conn):
             study_id = self._conn.execute(
-                "INSERT INTO replay_studies (created_at, state, first_day, last_day, listings) VALUES (?, ?, ?, ?, ?)",
-                (to_utc_iso(created_at), PAUSED, first_day.isoformat(), last_day.isoformat(), listings),
+                "INSERT INTO replay_studies (created_at, state, first_day, last_day, listings, stages) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (to_utc_iso(created_at), PAUSED, first_day.isoformat(), last_day.isoformat(), listings, stages),
             ).lastrowid
             self._insert_cells(study_id, cells, allowed)
         return int(study_id)
@@ -94,7 +97,7 @@ class ReplayRepo:
         if r is None:
             return None
         return StudyRow(r[0], datetime.fromisoformat(r[1]), r[2], date.fromisoformat(r[3]), date.fromisoformat(r[4]),
-                        r[5], r[6], _when(r[7]), r[8])
+                        r[5], r[6], _when(r[7]), r[8], r[9])
 
     def set_state(self, study_id: int, state: str, reason: str | None = None) -> None:
         with transaction(self._conn):
@@ -172,6 +175,13 @@ class ReplayRepo:
                 "position = CASE WHEN attempts + 1 < allowed THEN (SELECT MAX(position) + 1 FROM replay_cells c "
                 "WHERE c.study_id = replay_cells.study_id) ELSE position END WHERE id = ?",
                 (error, to_utc_iso(at), PENDING, FAILED, cell_id))
+
+    def stop_for_good(self, cell_ids: Sequence[int], error: str, at: datetime) -> None:
+        """Failed with no attempt left, so neither the pacer nor a retry runs them again."""
+        with transaction(self._conn):
+            self._conn.executemany(
+                "UPDATE replay_cells SET state = ?, error = ?, allowed = attempts, finished_at = ? WHERE id = ?",
+                [(FAILED, error, to_utc_iso(at), i) for i in cell_ids])
 
     def refund(self, cell_ids: Sequence[int], most: int) -> None:
         """Take back the attempt each cell's last failure used (an outage, not the cell), and

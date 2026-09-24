@@ -114,6 +114,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # the fetch the command does first.
     "replay report": "GET /api/replay/report",
     "replay report --json": "GET /api/replay/report",
+    # Ledgers tab, Replay study card: the model picker and "Probe cutoff", and the readout under them.
+    "replay probe": "POST /api/jobs/cutoff-probe",
+    "replay probe --model": "POST /api/jobs/cutoff-probe",
+    "replay cutoff": "GET /api/replay/cutoff",
+    "replay cutoff --model": "GET /api/replay/cutoff",
     "tick": "POST /api/jobs/tick",
     "tick --last": "GET /api/status",
     "schedule": "GET /api/status",

@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta
 from oracle.market.bars import Bar
 from oracle.research.trace import VERDICTS
 from oracle.services.context import AppContext
+from oracle.services.cutoff_service import replay_cutoff
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
 from oracle.store.bars import BarRepo
@@ -163,6 +164,8 @@ class Interim:
     prices_checked_at: datetime | None
     price_failures: tuple[str, ...]
     horizons: dict[str, InterimHorizon]
+    excluded: int = 0
+    """Replays left out: on or before the current cutoff."""
     note: str = NOTE
 
 
@@ -189,6 +192,9 @@ class Score:
     price_failures: tuple[str, ...]
     """Listings that update could not fetch."""
     cells: tuple[CellScore, ...]
+    excluded: int = 0
+    """Replays done on or before the current cutoff (a later probe or claim moved it), left out:
+    the model may have known what came next."""
     limits: tuple[str, ...] = LIMITS
 
     def interim(self) -> Interim:
@@ -204,7 +210,7 @@ class Score:
                                                      h.base_rate_beat_basket, h.expected_hit_rate,
                                                      h.expected_hit_rate_vs_basket,
                                                      {g.name: verdict(g) for g in h.by_verdict})
-                           for h in self.horizons})
+                           for h in self.horizons}, self.excluded)
 
     def to_json(self) -> dict:
         return json.loads(json.dumps(asdict(self), default=_iso))
@@ -268,8 +274,10 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
                for d in days for h, _ in HORIZONS}
     windows = {(s, d, h): _outcome(moves[(s, d, h)], h, baskets[(d, h)])
                for s in symbols for d in days for h, _ in HORIZONS}
-    calls = ResearchRepo(ctx.conn).verdicts([c.run_id for c in cells if c.state == DONE and c.run_id is not None])
-    scored = tuple(_cell(c, calls.get(c.run_id) if c.state == DONE else None, windows) for c in cells)
+    cutoff = replay_cutoff(ctx).cutoff
+    counted = {c.id for c in cells if c.state == DONE and not (cutoff and c.as_of <= cutoff)}
+    calls = ResearchRepo(ctx.conn).verdicts([c.run_id for c in cells if c.id in counted and c.run_id is not None])
+    scored = tuple(_cell(c, calls.get(c.run_id) if c.id in counted else None, windows) for c in cells)
     judged = [c for c in scored if c.verdict]
     state = _price_state(ctx, study.id)
     fetched = {s: date.fromisoformat(d) for s, d in state.get("fetched", {}).items()}
@@ -284,11 +292,12 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
     return Score(
         study.id, study.first_day, study.last_day, today, len(cells),
         sum(1 for c in cells if c.state not in (DONE, FAILED)), sum(1 for c in cells if c.state == FAILED),
-        sum(1 for c in cells if c.state == DONE) - len(judged), len(judged), _mix(judged),
+        len(counted) - len(judged), len(judged), _mix(judged),
         tuple(_horizon(judged, n, h, months) for n, (h, months) in enumerate(HORIZONS)),
         tuple(s for s in symbols if due(s)),
         datetime.fromisoformat(state["checked_at"]) if "checked_at" in state else None,
-        tuple(state.get("failures", ())), scored)
+        tuple(state.get("failures", ())), scored,
+        sum(1 for c in cells if c.state == DONE) - len(counted))
 
 
 @dataclass(frozen=True)

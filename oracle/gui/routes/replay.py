@@ -12,9 +12,10 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import JobRunner, submit_replay_prices
 from oracle.services.context import AppContext
+from oracle.services.cutoff_service import replay_cutoff
 from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
-    measured_cutoff, pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
+    pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
 )
 
 router = APIRouter(prefix="/api/replay")
@@ -25,14 +26,15 @@ async def status(ctx: AppContext = Depends(get_ctx)) -> dict:
     """Cheap enough for a headless daily check: counts, what runs, failures, the mean replay
     time, and the pacer's last poll (an old one means no server is pacing it)."""
     s = study_status(ctx)
-    cutoff = measured_cutoff(ctx)
-    return {"study": s.to_json() if s else None, "cutoff": cutoff.isoformat() if cutoff else None}
+    rc = replay_cutoff(ctx)
+    return {"study": s.to_json() if s else None, "cutoff": rc.cutoff, "replay_from": rc.replay_from,
+            "cutoff_note": rc.note}
 
 
 class Create(BaseModel):
     model_config = ConfigDict(extra="forbid")
     first: date | None = None
-    """None: from the model's measured cutoff."""
+    """None: the day after the measured cutoff."""
     symbols: list[StrictStr] | None = None
     """None: picked as a spread."""
 

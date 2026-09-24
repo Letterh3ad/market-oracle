@@ -38,10 +38,22 @@ REPORT = {
 }
 
 
-def run(body: str, study=STUDY, cutoff=None, report=None):
+UNPROBED = "replays run on default: probe default first (Probe cutoff on the Ledgers tab, or oracle replay probe)."
+CUTOFF = {"stages": [{"stage": "research", "profile": "default"}],
+          "models": [{"profile": "default", "provider": "ollama", "model": "qwen3:4b", "claimed": "2025-05-20",
+                      "cutoff": None, "probe": None}],
+          "cutoff": None, "set_by": None, "replay_from": None, "unprobed": ["default"], "note": UNPROBED,
+          "question_set": "2026-09-24.4"}
+
+
+def run(body: str, study=STUDY, cutoff=None, report=None, replay_from=None, note=UNPROBED):
+    status = {"study": study, "cutoff": cutoff, "replay_from": replay_from, "cutoff_note": note}
     script = f"""
         {PRELUDE}
-        ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }},
+        ANSWERS = {{ "GET /api/replay": {json.dumps(status)},
+                     "GET /api/replay/cutoff": {json.dumps(CUTOFF)},
+                     "GET /api/models": {{ profiles: [{{ name: "default" }}] }},
+                     "GET /api/activity": {{ jobs: [], elsewhere: [] }},
                      "GET /api/replay/report": {{ report: {json.dumps(report)} }},
           "POST /api/replay": {{ id: 3, kind: "replay", state: "done", result: {{ left_out: ["UK Energy"] }} }},
           "POST /api/replay/replace": {{ id: 4, kind: "replay", state: "done", result: {{}} }} }};
@@ -76,14 +88,18 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
     assert asked[0] == "POST /api/replay"
     assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
                     ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
-    assert "no model cutoff is measured yet" in text and "press Start" in text
+    assert "Creating is refused for now: replays run on default: probe default first" in text
+    assert "Model cutoff" in text and "Probe cutoff" in text and "press Start" in text
     assert "Left out, nothing fits: UK Energy." in text
 
 
-def test_a_measured_cutoff_fills_the_first_day():
-    value = run("""console.log(JSON.stringify(labelled(node, "First replay day").value));""", study=None,
-                cutoff="2025-07-01")
-    assert value == "2025-07-01"
+def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():
+    shown = run("""const first = labelled(node, "First replay day");
+        console.log(JSON.stringify([first.value, first.attrs.min, node.textContent]));""", study=None,
+                cutoff="2025-06-30", replay_from="2025-07-01", note=None)
+    value, least, text = shown
+    assert (value, least) == ("2025-07-01", "2025-07-01")
+    assert "The measured cutoff is 2025-06-30: the first replay day must be after it, from 2025-07-01." in text
 
 
 def test_a_paused_study_shows_progress_listings_and_failures_with_start():
@@ -181,3 +197,11 @@ def test_update_prices_runs_the_job_and_reloads_the_score():
     asked, text = shown
     assert asked[:3] == ["POST /api/replay/prices", "GET /api/replay", "GET /api/replay/report"]
     assert "Prices fetched for 1 of 2 listings; failed: AAPL (no price data)." in text
+
+
+def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_of_the_score():
+    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "cutoff": "2026-06-30"}
+    text = run("console.log(JSON.stringify(node.textContent));", study=study, report={**REPORT, "excluded": 2})
+    assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
+            "Measured cutoff: 2026-06-30.") in text
+    assert "2 replays excluded: on or before the current cutoff." in text

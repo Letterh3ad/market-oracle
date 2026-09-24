@@ -13,6 +13,7 @@ from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.replay import ReplayRepo
 from oracle.store.universe import UniverseRepo
+from tests.fakes.cutoff import store_probe
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar
 from tests.services.test_replay import SPREAD, SYMBOLS
@@ -34,6 +35,7 @@ def cfg(tmp_path, monkeypatch):
     with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
         UniverseRepo(c.conn).replace_all(SPREAD)
         MetaRepo(c.conn).set("universe_refreshed_at", "2026-09-24T00:00:00Z")
+        store_probe(c.conn, c.config)
     path = tmp_path / "oracle.toml"
     path.write_text('db_path = "o.db"\n[sources.yahoo]\nrate_per_second = 1000\n', encoding="utf-8")
     return str(path)
@@ -62,6 +64,7 @@ def test_create_start_pause_and_status(cfg, capsys):
     out = capsys.readouterr().out
     assert "Replay study 1, 2026-06-01" in out and ": paused" in out and "listings: AAPL, JPM" in out
     assert "has not polled yet" in out
+    assert "stage models: queries on default, research on default" in out and "measured cutoff: 2025-05-31" in out
 
 
 def test_create_with_symbols_then_replace_one(cfg, capsys):
@@ -78,9 +81,9 @@ def test_without_a_study_status_says_how_to_create_one(cfg, capsys):
     assert capsys.readouterr().out.strip() == "null"
 
 
-def test_create_without_from_or_a_cutoff_is_refused(cfg, capsys):
-    assert replay(cfg, "create") == 1
-    assert "--from" in capsys.readouterr().err
+def test_create_on_or_before_the_measured_cutoff_is_refused(cfg, capsys):
+    assert replay(cfg, "create", "--from", "2025-05-31") == 1
+    assert "on or before the measured cutoff 2025-05-31" in capsys.readouterr().err
 
 
 def test_retry_all_or_one_failed_cell(cfg, capsys, tmp_path):

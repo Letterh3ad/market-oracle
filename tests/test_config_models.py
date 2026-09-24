@@ -216,3 +216,15 @@ def test_the_flag_is_not_a_profile_name_or_a_settings_form_key():
     with pytest.raises(ConfigError, match="not a profile name"):
         check_profile_name("allow_claude_code")
     assert not [s for s in setting_list() if s.key == "allow_claude_code"]
+
+
+@pytest.mark.parametrize("line", ['claimed_cutoff = "2025-10-01"', "claimed_cutoff = 2025-10-01"])
+def test_a_profile_may_claim_its_training_cutoff_as_text_or_a_toml_date(tmp_path, line):
+    config = _load(tmp_path, f'[models.fast]\nprovider = "ollama"\nmodel = "x"\n{line}\n')
+    assert config.models["fast"].claimed_cutoff == "2025-10-01"
+
+
+@pytest.mark.parametrize("value", ['"soon"', '"2025-13-01"', "3", "2025-10-01T10:00:00"])
+def test_a_claimed_cutoff_that_is_not_a_day_is_refused(tmp_path, value):
+    with pytest.raises(ConfigError, match=r"models.fast.claimed_cutoff must be a day like 2025-05-20"):
+        _load(tmp_path, f'[models.fast]\nprovider = "ollama"\nmodel = "x"\nclaimed_cutoff = {value}\n')
