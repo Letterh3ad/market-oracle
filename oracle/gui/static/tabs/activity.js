@@ -32,7 +32,7 @@ function cancelButton(j, box) {
     } catch (err) {
       showError(`cancel: ${err.message}`);
     }
-    load(box);
+    loadNow(box);
   } }, "Cancel");
   return button;
 }
@@ -49,18 +49,13 @@ function row(j, box) {
     el("td", null, cancelButton(j, box)));
 }
 
-function section(title, jobs, empty, box) {
-  return [
-    el("h3", null, title),
-    jobs.length
-      ? el("table", { class: "results" },
-        el("thead", null, el("tr", null, ...["Job", "State", "Now / why", "Asked", "Took", ""].map((h) => el("th", null, h)))),
-        el("tbody", null, ...jobs.map((j) => row(j, box))))
-      : el("p", { class: "dim small" }, empty),
-  ];
+function table(jobs, box) {
+  return el("table", { class: "results" },
+    el("thead", null, el("tr", null, ...["Job", "State", "Now / why", "Asked", "Took", ""].map((h) => el("th", null, h)))),
+    el("tbody", null, ...jobs.map((j) => row(j, box))));
 }
 
-async function load(box) {
+async function loadNow(box) {
   let jobs, elsewhere;
   try {
     ({ jobs, elsewhere } = await api("/api/activity"));
@@ -73,21 +68,89 @@ async function load(box) {
     label: `${e.job} (pid ${e.pid} on ${e.host})`, state: "running elsewhere",
     error: "started outside this app window, e.g. from the command line; stop it there",
   }))];
-  const done = jobs.filter((j) => !active.includes(j));
-  box.replaceChildren(
-    ...section("Now and next", active, "Nothing running or waiting.", box),
-    ...section("Finished", done, "Nothing has finished yet.", box));
+  box.replaceChildren(active.length ? table(active, box) : el("p", { class: "dim small" }, "Nothing running or waiting."));
+}
+
+const OPEN_KEY = "activity.finished.open";
+
+function remembered() {
+  try {
+    return localStorage.getItem(OPEN_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
+
+function remember(open) {
+  try {
+    localStorage.setItem(OPEN_KEY, open ? "open" : "closed");
+  } catch {
+    // Storage blocked: the section still works, it just forgets.
+  }
+}
+
+// The Finished section is built once; refreshes replace only its list and pager, so the
+// search box keeps its text and focus and the page the user is on stays put.
+function finishedSection() {
+  const state = { page: 1, q: "", asked: 0 };
+  const count = el("span", { class: "dim small" });
+  const list = el("div", null, el("p", { class: "dim" }, "Loading..."));
+  const pager = el("div", { class: "row" });
+  let typing = null;
+  const search = el("input", { type: "search", placeholder: "Search by job, kind or outcome (e.g. failed, MSFT)",
+    size: "40", oninput: () => {
+      clearTimeout(typing);
+      state.page = 1;
+      typing = setTimeout(load, 250);
+    } });
+  const details = el("details", { ontoggle: () => { remember(details.open); if (details.open) load(); } },
+    el("summary", null, el("h3", { style: "display: inline" }, "Finished "), count),
+    el("div", { class: "row" }, search), list, pager);
+  details.open = remembered();
+
+  function go(page) {
+    state.page = page;
+    load();
+  }
+
+  async function load() {
+    state.q = search.value.trim();
+    const asked = ++state.asked;
+    let found;
+    try {
+      found = await api(`/api/activity/finished?page=${state.page}&q=${encodeURIComponent(state.q)}`);
+    } catch (err) {
+      if (asked === state.asked) list.replaceChildren(el("p", { class: "dim" }, `Could not load finished jobs: ${err.message}`));
+      return;
+    }
+    if (asked !== state.asked || !details.isConnected) return; // a newer request is on its way
+    state.page = found.page;
+    count.textContent = `(${found.total})`;
+    const empty = state.q ? `No finished job matches "${state.q}".` : "Nothing has finished yet.";
+    list.replaceChildren(found.items.length ? table(found.items, list) : el("p", { class: "dim small" }, empty));
+    pager.replaceChildren(...(found.pages > 1 ? [
+      el("button", { type: "button", class: "small-btn", disabled: found.page <= 1 ? "" : null,
+        onclick: () => go(found.page - 1) }, "Previous"),
+      el("span", { class: "dim small" }, `Page ${found.page} of ${found.pages}`),
+      el("button", { type: "button", class: "small-btn", disabled: found.page >= found.pages ? "" : null,
+        onclick: () => go(found.page + 1) }, "Next"),
+    ] : []));
+  }
+
+  return { node: details, refresh: () => { if (details.open) load(); } };
 }
 
 // Refreshes every 2 seconds while the tab is on screen.
 function render(pane) {
   clearInterval(timer);
   const box = el("div", null, el("p", { class: "dim" }, "Loading..."));
+  const finished = finishedSection();
   pane.replaceChildren(el("h2", null, "Activity"),
     el("p", { class: "dim small" }, "Everything the app is working on: research runs one at a time, in the order asked."),
-    box);
-  load(box);
-  timer = setInterval(() => (box.isConnected ? load(box) : clearInterval(timer)), 2000);
+    el("h3", null, "Now and next"), box, finished.node);
+  const load = () => { loadNow(box); finished.refresh(); };
+  load();
+  timer = setInterval(() => (box.isConnected ? load() : clearInterval(timer)), 2000);
 }
 
 export default { id: "activity", label: "Activity", render };

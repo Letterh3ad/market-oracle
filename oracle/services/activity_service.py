@@ -25,13 +25,15 @@ from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
-__all__ = ["Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
+__all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
            "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
 RECENT = 50
-"""Finished jobs shown in the listing."""
+"""Finished jobs kept in memory, so their results can still be shown."""
+PAGE = 20
+"""Finished jobs per page of the listing."""
 
 
 @dataclass(eq=False)
@@ -61,6 +63,14 @@ class Job:
     def progress(self) -> str | None:
         """What a running job is doing now, when its kind can tell."""
         return self.progress_fn() if self.state == "running" and self.progress_fn else None
+
+
+@dataclass(frozen=True)
+class FinishedPage:
+    items: list[Job]
+    page: int
+    pages: int
+    total: int
 
 
 class JobRunner:
@@ -98,9 +108,17 @@ class JobRunner:
         """Running, then queued in order, then the last finished (earlier servers' too),
         newest first."""
         queued = self._queued()
+        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *self.finished_page(1).items]
+
+    def finished_page(self, page: int, search: str = "") -> FinishedPage:
+        """One page of finished jobs (earlier servers' too), newest first; a page past the
+        end is the last one."""
+        total = self._history.count_finished(search)
+        pages = max(1, -(-total // PAGE))
+        page = min(max(1, page), pages)
         here = {j.id: j for j in self._finished}
-        stored = [here.get(r.id) or _from_row(r) for r in self._history.finished(RECENT)]
-        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *stored]
+        rows = self._history.finished(PAGE, (page - 1) * PAGE, search)
+        return FinishedPage([here.get(r.id) or _from_row(r) for r in rows], page, pages, total)
 
     def get(self, job_id: int) -> Job | None:
         live = [*self._running.values(), *self._queued(), *self._finished]

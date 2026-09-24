@@ -58,15 +58,31 @@ class JobHistoryRepo:
                     self._conn.execute("UPDATE jobs SET state = ?, error = ?, finished_at = ? WHERE id = ?",
                                        (*closed, to_utc_iso(at), job_id))
 
-    def finished(self, limit: int) -> list[JobRow]:
+    def finished(self, limit: int, offset: int = 0, search: str = "") -> list[JobRow]:
+        """Newest first; `search` matches label, kind, state or error, ignoring case."""
+        where, args = _finished_where(search)
         rows = self._conn.execute(
-            "SELECT * FROM jobs WHERE finished_at IS NOT NULL ORDER BY finished_at DESC, id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM jobs WHERE {where} ORDER BY finished_at DESC, id DESC LIMIT ? OFFSET ?",
+            (*args, limit, offset),
         )
         return [_row(r) for r in rows]
+
+    def count_finished(self, search: str = "") -> int:
+        where, args = _finished_where(search)
+        return self._conn.execute(f"SELECT COUNT(*) FROM jobs WHERE {where}", args).fetchone()[0]
 
     def get(self, job_id: int) -> JobRow | None:
         row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _row(row) if row else None
+
+
+def _finished_where(search: str) -> tuple[str, tuple]:
+    search = search.strip()
+    if not search:
+        return "finished_at IS NOT NULL", ()
+    pattern = "%" + search.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+    fields = " OR ".join(f"{f} LIKE ? ESCAPE '!'" for f in ("label", "kind", "state", "error"))
+    return f"finished_at IS NOT NULL AND ({fields})", (pattern,) * 4
 
 
 def _when(value: str | None) -> datetime | None:
