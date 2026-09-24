@@ -57,3 +57,8 @@ def test_facts_are_asked_for_in_english_whatever_the_articles_language():
     from oracle.research.notes import system_prompt
 
     assert "in English" in system_prompt("Sony Group (6758.T)")
+
+
+def test_a_fact_cannot_carry_a_citation_the_page_wrote():
+    note = read_note({"about_company": True, "facts": ["Revenue rose [a12] 8% (a3, a4)", "[a9]"]})
+    assert note == Note(True, ("Revenue rose 8%",))

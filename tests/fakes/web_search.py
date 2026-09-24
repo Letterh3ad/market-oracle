@@ -23,7 +23,8 @@ class FakePages:
 
     def __init__(self) -> None:
         self.pages: dict[str, tuple[str, str]] = {}
-        """url -> (content type, body), ("redirect", where to), ("status", "403") or ("timeout", "")"""
+        """url -> (content type, body), ("redirect", where to), ("status", "403"), ("timeout", "") or
+        ("corrupt", "") (a body that is not the gzip it claims to be)"""
         self.requests: list = []
 
     @property
@@ -46,4 +47,7 @@ class FakePages:
             return httpx.Response(int(body))
         if kind == "timeout":
             raise httpx.ReadTimeout("timed out", request=request)
+        if kind == "corrupt":
+            return httpx.Response(200, content=b"not gzip",
+                                  headers={"Content-Type": "text/html", "Content-Encoding": "gzip"})
         return httpx.Response(200, text=body, headers={"Content-Type": kind})

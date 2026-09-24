@@ -98,6 +98,13 @@ async def test_403s_are_returned_but_a_run_opens_the_breaker(conn, clock):
         await client.get("src", URL)
 
 
+async def test_403s_a_caller_reads_as_one_pages_refusal_never_open_the_breaker(conn, clock):
+    client = _client(conn, clock, [403, 403, 403, 403, 200])
+    for _ in range(4):
+        assert (await client.get("src", URL, count_403=False)).status_code == 403
+    assert (await client.get("src", URL, count_403=False)).status_code == 200
+
+
 async def test_a_transport_error_is_retried(conn, clock):
     client = _client(conn, clock, [httpx.ConnectError("down"), 200])
     assert (await client.get("src", URL)).status_code == 200

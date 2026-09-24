@@ -8,6 +8,9 @@ from oracle.research.news import Article
 from oracle.research.notes import Note
 from oracle.store.db import to_utc_iso, transaction
 
+# Unusable notes by one model after which it is not asked again.
+NOTE_ATTEMPTS = 2
+
 
 @dataclass(frozen=True)
 class Reading:
@@ -16,7 +19,7 @@ class Reading:
     site: str | None
     text: str | None
     settled: bool
-    """Noted by the model, or unreadable for good: nothing more to do."""
+    """Noted by the model, unusable from it NOTE_ATTEMPTS times, or unreadable for good."""
 
 
 class ArticleRepo:
@@ -37,10 +40,10 @@ class ArticleRepo:
     def reading(self, article_ids: list[int], model: str) -> dict[int, Reading]:
         rows = self._conn.execute(
             "SELECT a.id, a.site, t.text, t.failed IS NOT NULL AND t.passing = 0, "
-            "n.article_id IS NOT NULL AND n.failed IS NULL FROM articles a "
+            "n.article_id IS NOT NULL AND (n.failed IS NULL OR n.attempts >= ?) FROM articles a "
             "LEFT JOIN article_texts t ON t.article_id = a.id "
             "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ? "
-            f"WHERE a.id IN ({','.join('?' * len(article_ids))})", (model, *article_ids),
+            f"WHERE a.id IN ({','.join('?' * len(article_ids))})", (NOTE_ATTEMPTS, model, *article_ids),
         )
         return {i: Reading(site, text, bool(unreadable or noted)) for i, site, text, unreadable, noted in rows}
 
@@ -55,11 +58,15 @@ class ArticleRepo:
                 "INSERT OR REPLACE INTO article_texts (article_id, read_at, failed, passing) VALUES (?, ?, ?, ?)",
                 (article_id, at, why, int(passing)))
 
-    def save_note(self, article_id: int, model: str, note: Note | None, failed: str | None, at: str) -> None:
-        """A note, or why there is none (tried again by the next run)."""
+    def save_note(self, article_id: int, model: str, note: Note | None, failed: str | None, at: str,
+                  attempt: bool = True) -> None:
+        """A note, or why there is none (tried again by the next run). `attempt` False: the
+        failure was the backend's, not the model's reading, so it never counts toward giving up."""
         with transaction(self._conn):
             self._conn.execute(
-                "INSERT OR REPLACE INTO article_notes (article_id, model, noted_at, about, facts, failed) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO article_notes (article_id, model, noted_at, about, facts, failed, attempts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (article_id, model) DO UPDATE SET "
+                "noted_at = excluded.noted_at, about = excluded.about, facts = excluded.facts, "
+                "failed = excluded.failed, attempts = attempts + excluded.attempts",
                 (article_id, model, at, int(note.about) if note else None,
-                 json.dumps(list(note.facts)) if note else None, failed))
+                 json.dumps(list(note.facts)) if note else None, failed, int(bool(failed) and attempt)))

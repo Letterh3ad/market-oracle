@@ -1,10 +1,12 @@
 """The reading stage: after the loop, the run reads the articles it was shown and a small
 model call notes up to three facts from each. The company's own reports go first: SEC filings
 for a US listing, else a results or annual report page the run's web searches found. Texts
-and notes are stored, so no article is fetched or noted twice by the same model."""
+and notes are stored, so no article is fetched or noted twice by the same model. A replay
+reads filings alone: today's copy of an article may not be what was there on its day."""
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from collections import Counter
@@ -28,12 +30,16 @@ from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.research import note_model
 
+log = logging.getLogger(__name__)
+
 UNUSABLE_NOTE = "the model's note was unusable"
 # Advice for the loop's model, not for someone reading why an article went unread.
 TRY_ANOTHER = "; try another tool"
-# Domain labels that name no outlet, so an outlet's name is never matched on them.
+# Words that name no outlet, so "Yahoo Finance" is matched as yahoo.
 _GENERIC = frozenset({"www", "com", "org", "net", "news", "the", "finance", "money", "markets", "business"})
-_NOT_NAME = re.compile(r"[^a-z0-9]")
+# Second-level labels under a country code (bbc.co.uk, abc.net.au), where the name sits one further left.
+_SECOND_LEVEL = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"})
+_WORD = re.compile(r"[a-z0-9]+")
 # Reading slots the company's own reports take ahead of articles.
 REPORT_SLOTS = 2
 # A 10-K's main document with inline XBRL runs to several megabytes, and MD&A sits past the
@@ -72,7 +78,7 @@ class Reader:
         company's own report pages do."""
         filings = filings or {}
         # Other filings the loop listed are older or minor, and untrimmed would take article slots.
-        evidence = [e for e in evidence if e.id in filings or not edgar.is_sec(e.url)]
+        evidence = [e for e in evidence if e.id in filings or not (as_of or edgar.is_sec(e.url))]
         state = self._articles.reading([e.id for e in evidence], self._key)
         first = list(filings) or [e.id for e in evidence if report_page(e)]
         todo = pick(evidence, {i for i, r in state.items() if r.settled}, limit, as_of, first)
@@ -93,6 +99,11 @@ class Reader:
         except ToolError as exc:
             why = str(exc).removesuffix(TRY_ANOTHER)
             self._articles.save_read_failure(e.id, why, isinstance(exc, Unavailable), self._now())
+            return None
+        # One article must never cost the run, whatever breaks on it.
+        except Exception as exc:
+            log.exception("reading article %s failed", e.id)
+            self._articles.save_read_failure(e.id, unexpected(exc), False, self._now())
             return None
         text = edgar.key_text(form, page.text) if form else page.text[:MAX_TEXT]
         self._articles.save_text(e.id, page.url, text, self._now())
@@ -119,7 +130,12 @@ class Reader:
         try:
             note = await take_note(self._model, self._company, heading, text, self._context)
         except ModelError as exc:
-            self._articles.save_note(e.id, self._key, None, f"the model could not note it: {exc}", self._now())
+            self._articles.save_note(e.id, self._key, None, f"the model could not note it: {exc}", self._now(),
+                                     attempt=False)
+            return
+        except Exception as exc:
+            log.exception("noting article %s failed", e.id)
+            self._articles.save_note(e.id, self._key, None, unexpected(exc), self._now())
             return
         self._articles.save_note(e.id, self._key, note, None if note else UNUSABLE_NOTE, self._now())
 
@@ -157,10 +173,18 @@ def report_page(e: Evidence) -> bool:
 
 def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:
     """Whether a search result is on the outlet's own site: its domain when the feed named
-    one, else a domain label matching the outlet's name ("BBC" and bbc.co.uk)."""
+    one, else a domain whose own name is the outlet's ("BBC" and bbc.co.uk). The whole name,
+    so reutersnews-daily.com or bbc.fakenews.com is never taken for the outlet."""
     host = domain(url)
     if site:
         return host == site or host.endswith("." + site)
-    name = _NOT_NAME.sub("", (outlet or "").lower())
-    labels = [part for part in host.split(".")[:-1] if len(part) >= 3 and part not in _GENERIC]
-    return len(name) >= 3 and any(part in name or name in part for part in labels)
+    labels = host.split(".")[:-1]
+    if len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
+        labels.pop()
+    words = _WORD.findall((outlet or "").lower())
+    names = {"".join(words), "".join(w for w in words if w not in _GENERIC)}
+    return bool(labels) and len(labels[-1]) >= 3 and labels[-1] in names
+
+
+def unexpected(exc: Exception) -> str:
+    return f"unexpected error: {type(exc).__name__}: {exc}"

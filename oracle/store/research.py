@@ -6,6 +6,7 @@ from dataclasses import asdict
 from collections.abc import Set
 from datetime import date, datetime
 
+from oracle.research.edgar import is_sec
 from oracle.research.trace import (
     NOT_ABOUT, NOTHING, Claim, Drop, Evidence, Report, ResearchRun, RoleCheck, RunStatus, Step, Verdict,
 )
@@ -126,9 +127,13 @@ class ResearchRepo:
             "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ? WHERE e.run_id = ? "
             "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (note_model(row[2], row[3]), row[0]),
         )
+        # A replay reads only what cannot have changed since its day: a filing, not today's copy
+        # of an article nor a note a live run took from it.
+        replay = row[9] is not None
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
                            tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c), b, q,
-                                          *_reading(*r)) for i, u, t, o, p, c, b, q, *r in evidence),
+                                          *(_reading(*r) if not replay or is_sec(u) else ((), None)))
+                                 for i, u, t, o, p, c, b, q, *r in evidence),
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),

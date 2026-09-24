@@ -100,14 +100,17 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
                    await suggest(model, _about(profile, day), profile.country), profile.country)
     repo.set_queries(run_id, [q.query for q in queries])
     shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
+    contact = ctx.config.research.contact
+    gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
     async with open_client(ctx) as client:
-        tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher)
+        # SEC refuses requests without a contact; offering the tool would only waste a step.
+        sec = Filings(client, ctx.conn, ctx.clock, shelf, listing, contact) if contact else None
+        tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher, gate, sec)
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
-        contact = ctx.config.research.contact
-        reader = Reader(ctx.conn, ctx.clock, client, searcher, SourceGate(ctx.conn, ctx.clock, ctx.config.sources),
-                        contact, model, f"{profile.name} ({profile.symbol})", context_tokens(ctx))
-        filings = await Filings(client, ctx.conn, ctx.clock, shelf, listing, contact).to_read(day) if contact else {}
+        reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, model,
+                        f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+        filings = await sec.to_read(day) if sec else {}
         await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
                           lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
         repo.set_stage(run_id, None)
@@ -257,18 +260,15 @@ def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
 
 
 def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, country: str | None,
-           as_of: date | None, searcher: WebSearcher | None) -> list[Tool]:
-    contact = ctx.config.research.contact
+           as_of: date | None, searcher: WebSearcher | None, gate: SourceGate, sec: Filings | None) -> list[Tool]:
     tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
              RelatedCompanies(ctx, listing)]
     if country in EDITION:
         tools.insert(2, LocalNewsSearch(client, shelf, country))
-    if contact:
-        # SEC refuses requests without one; offering the tool would only waste a step.
-        tools.append(Filings(client, ctx.conn, ctx.clock, shelf, listing, contact))
+    if sec:
+        tools.append(sec)
     if searcher is not None:
-        gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
-        tools += [WebSearch(searcher, gate, shelf), ReadPage(client, shelf, contact)]
+        tools += [WebSearch(searcher, gate, shelf), ReadPage(client, shelf, ctx.config.research.contact)]
     return tools
 
 

@@ -1549,3 +1549,26 @@ verdict about 40 s. At ~2.3 min a run, 120 minutes covers ~50 listings; even at 
 (all 12 readable, GPU shared with the GUI) it covers ~25 in one night.
 **Alternatives:** Fewer articles or steps (not needed at these timings); a 32k context (does
 not fit 8GB).
+
+## 2026-09-24 - Filings take at most 2 reading slots; extra 8-Ks stay headlines
+**Context:** Ticket 03 asked both for the latest 10-Q/10-K plus every 8-K from the last 30
+days and for filings to take at most 2 reading slots.
+**Decision:** The 2-slot cap wins. The periodic report and the newest 8-K are read; any further
+8-K stays in the evidence as a headline.
+**Alternatives:** Read every recent 8-K (takes article slots from news on a busy month).
+
+## 2026-09-24 - Reading stage hardening (gate round 1)
+**Context:** Review of the deep-research branch.
+**Decision:** Any per-article failure is stored as a permanent read or note failure and logged,
+never raised. An address or body httpx cannot handle is a tool error. Pages are refused when
+their host resolves to a non-global address, checked with `getaddrinfo` before each hop (a
+DNS rebind between that check and the connection remains possible; SEC hosts are exempt). A 403
+from the `web` source is one page's refusal and never counts toward its breaker. A replay reads
+and shows text and notes only from SEC filings. A model's note unusable twice is not asked for
+again (backend failures do not count). Citation tokens are stripped from noted facts. An
+outlet with no stored site is matched only on a domain's own name label.
+**Alternatives:** A connect-time check in a custom httpx network backend (closes the rebind
+window, but reaches into httpx's private pool); a separate gate source for the reading stage
+with a high 403 limit.
+**Follow-ups:** an `Evidence.read` primitive; `Reader`'s 9 constructor parameters; a filing is
+fetched again when another model notes it.

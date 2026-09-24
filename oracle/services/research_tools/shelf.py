@@ -98,13 +98,17 @@ def query(input: str) -> str:
 
 async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *, params: dict | None = None,
                 headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = True,
-                accept: tuple[int, ...] = (200,)) -> httpx.Response:
+                accept: tuple[int, ...] = (200,), count_403: bool = True) -> httpx.Response:
     """A GET through the gate whose failures read as tool errors the model can act on."""
     try:
         resp = await client.get(source, url, params=params, headers=headers, max_bytes=max_bytes,
-                                follow_redirects=follow_redirects)
+                                follow_redirects=follow_redirects, count_403=count_403)
     except (CircuitOpen, RequestFailed) as exc:
         raise Unavailable(f"{label} unavailable ({exc}); try another tool") from exc
+    # An address httpx cannot encode (an IDNA label, a control character) or a body it cannot
+    # decode: the same next time, so not passing.
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        raise ToolError(f"{label} could not be read ({type(exc).__name__}: {exc})") from exc
     if resp.status_code not in accept:
         raise ToolError(f"{label} answered HTTP {resp.status_code}")
     return resp

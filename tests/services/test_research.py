@@ -776,6 +776,31 @@ async def test_the_sec_contact_is_not_carried_to_another_host_by_a_redirect(ctx,
     assert "faye@example.com" not in mirror.headers.get("user-agent", "")
 
 
+async def test_a_page_whose_host_resolves_into_this_machine_is_refused_at_each_hop(ctx, pages, monkeypatch):
+    from oracle.research import web
+
+    monkeypatch.setattr(web, "resolve", lambda host: ["::1"] if host == "localtest.me" else ["93.184.216.34"])
+    pages.pages["http://localtest.me/x"] = ("text/html", "<p>Local.</p>")
+    pages.pages["https://evil.test/r"] = ("redirect", "http://localtest.me/x")
+    model = ScriptedModel(step("read_page", "http://localtest.me/x"), step("read_page", "https://evil.test/r"),
+                          step("final", "Done."))
+    direct, bounced = (await research(ctx, "AAPL", model)).steps[:2]
+    assert "private and local network addresses cannot be read" in direct.observation
+    assert "private and local network addresses cannot be read" in bounced.observation
+    assert all(r.url.host != "localtest.me" for r in pages.requests)
+
+
+@pytest.mark.parametrize("url, says", [
+    ("http://xn--/", "the page could not be read (IDNAError"),
+    ("http://a.test/\x00x", "the page could not be read (InvalidURL"),
+    ("https://news.test/gz", "the page could not be read (DecodingError"),
+])
+async def test_an_address_or_body_httpx_cannot_handle_is_an_observation(ctx, pages, url, says):
+    pages.pages["https://news.test/gz"] = ("corrupt", "")
+    run = await research(ctx, "AAPL", ScriptedModel(step("read_page", url), step("final", "Done.")))
+    assert run.status == "done" and says in run.steps[0].observation
+
+
 async def test_an_unexpected_failure_still_marks_the_run_failed(ctx):
     model = ScriptedModel(step("market_data"), RuntimeError("disk full"))
     with pytest.raises(RuntimeError):

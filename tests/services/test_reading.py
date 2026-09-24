@@ -10,6 +10,7 @@ from oracle.research.llm import ModelError
 from oracle.research.trace import NOT_ABOUT, NOTHING, Evidence
 from oracle.research.web import WebResult
 from oracle.services.research_service import latest_research, research, research_progress
+from oracle.store.research import ResearchRepo
 from tests.fakes.llm import ScriptedModel, step
 from tests.services.test_research import (  # noqa: F401
     APPLE_CIK, ARCHIVE, apple_filings, ctx, gdelt, news, pages, searcher, sec, utc, with_contact,
@@ -141,6 +142,68 @@ async def test_a_garbled_note_gives_no_facts_and_is_asked_again_next_time(ctx, n
     assert len(note_calls(model)) == 1 and by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
 
 
+async def test_a_note_garbled_twice_by_one_model_is_not_asked_for_again(ctx, news, pages):
+    news.results["Apple"] = [story(1, "Reuters", "2026-09-20")]
+    pages.pages["https://reuters.test/1"] = ("text/html", BODY)
+    for _ in range(2):
+        await research(ctx, "AAPL", model_reading(note_taker="garbled"))
+    model = model_reading()
+    run = await research(ctx, "AAPL", model)
+    assert note_calls(model) == [] and by_id(run, 1).read == "the model's note was unusable"
+
+
+async def test_a_backend_failing_does_not_count_toward_giving_up_on_a_note(ctx, news, pages):
+    news.results["Apple"] = [story(1, "Reuters", "2026-09-20")]
+    pages.pages["https://reuters.test/1"] = ("text/html", BODY)
+    for _ in range(2):
+        await research(ctx, "AAPL", model_reading(note_taker=ModelError("ollama timed out")))
+    run = await research(ctx, "AAPL", model_reading())
+    assert by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
+
+
+async def test_paywalls_never_stop_the_reads_after_them(ctx, news, pages):
+    news.results["Apple"] = [story(n, f"Outlet{n}", "2026-09-20") for n in range(1, 5)] + [
+        story(5, "Reuters", "2026-09-19")]
+    for n, status in zip(range(1, 5), ("403", "403", "403", "451")):
+        pages.pages[f"https://outlet{n}.test/{n}"] = ("status", status)
+    pages.pages["https://reuters.test/5"] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading())
+    assert [by_id(run, n).read for n in range(1, 5)] == ["the page answered HTTP 403", "the page answered HTTP 403",
+                                                         "the page answered HTTP 403", "the page answered HTTP 451"]
+    assert by_id(run, 5).facts == ("Revenue rose 8% to $95bn",)
+
+
+async def test_an_unreadable_body_or_any_surprise_costs_only_that_article(ctx, news, pages, monkeypatch, caplog):
+    from oracle.services.research_tools import reading as stage
+
+    news.results["Apple"] = [story(1, "Reuters", "2026-09-20"), story(2, "BBC", "2026-09-19"),
+                             story(3, "FT", "2026-09-18")]
+    pages.pages["https://reuters.test/1"] = ("corrupt", "")
+    pages.pages["https://bbc.test/2"] = ("text/html", BODY)
+    pages.pages["https://ft.test/3"] = ("text/html", BODY)
+    real = stage.read_page
+
+    async def read_page(client, url, *args):
+        if url == "https://bbc.test/2":
+            raise RuntimeError("boom")
+        return await real(client, url, *args)
+
+    monkeypatch.setattr(stage, "read_page", read_page)
+    run = await research(ctx, "AAPL", model_reading())
+    assert run.status == "done" and by_id(run, 1).read.startswith("the page could not be read (DecodingError")
+    assert by_id(run, 2).read == "unexpected error: RuntimeError: boom" and "boom" in caplog.text
+    assert by_id(run, 3).facts == ("Revenue rose 8% to $95bn",)
+    run = await research(ctx, "AAPL", model := model_reading())
+    assert note_calls(model) == [] and by_id(run, 2).read == "unexpected error: RuntimeError: boom"
+
+
+async def test_a_surprise_while_noting_costs_only_that_note(ctx, news, pages):
+    news.results["Apple"] = [story(1, "Reuters", "2026-09-20")]
+    pages.pages["https://reuters.test/1"] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(note_taker=RuntimeError("bad json")))
+    assert run.status == "done" and by_id(run, 1).read == "unexpected error: RuntimeError: bad json"
+
+
 async def test_a_backend_failing_on_one_note_costs_only_that_note(ctx, news, pages):
     news.results["Apple"] = [story(1, "Reuters", "2026-09-20")]
     pages.pages["https://reuters.test/1"] = ("text/html", BODY)
@@ -189,14 +252,29 @@ async def test_a_google_news_link_with_no_match_at_the_outlet_is_skipped_with_wh
     assert by_id(run, 1).read == "could not resolve the Google News link: no search result from reuters.com"
 
 
-async def test_a_replay_reads_dated_articles_but_leaves_google_news_links_unresolved(ctx, news, pages, searcher):
+async def test_a_replay_reads_no_article_since_todays_copy_may_differ_from_the_one_then(ctx, news, pages, searcher):
     news.results["Apple before:2026-09-20"] = [(GOOGLE, "Apple beats estimates", "Reuters", utc("2026-09-19")),
                                                story(2, "BBC", "2026-09-18")]
     pages.pages["https://bbc.test/2"] = ("text/html", BODY)
-    run = await research(ctx, "AAPL", model_reading(), as_of=date(2026, 9, 19), searcher=searcher)
-    assert searcher.queries == [] and fetched(pages) == ["https://bbc.test/2"]
-    assert by_id(run, 1).read.startswith("not resolved in a replay")
-    assert by_id(run, 2).facts == ("Revenue rose 8% to $95bn",)
+    model = model_reading()
+    run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 19), searcher=searcher)
+    assert searcher.queries == [] and pages.requests == [] and note_calls(model) == []
+    assert all((e.facts, e.read) == ((), None) for e in run.evidence)
+
+
+async def test_a_replay_shows_no_text_or_notes_a_live_run_took_from_an_article(ctx, news, pages):
+    news.results["Apple"] = [story(2, "BBC", "2026-09-18")]
+    news.results["Apple before:2026-09-20"] = news.results["Apple"]
+    pages.pages["https://bbc.test/2"] = ("text/html", BODY)
+    live = await research(ctx, "AAPL", model_reading())
+    [article] = [e for e in live.evidence if e.url == "https://bbc.test/2"]
+    assert article.facts == ("Revenue rose 8% to $95bn",)
+    model = model_reading()
+    replay = await research(ctx, "AAPL", model, as_of=date(2026, 9, 19))
+    assert (by_id(replay, article.id).facts, by_id(replay, article.id).read) == ((), None)
+    assert len(pages.requests) == 1 and "Revenue rose" not in role_input(model, "verdict")
+    assert by_id(latest_research(ctx, "AAPL"), article.id).facts == ()
+    assert by_id(ResearchRepo(ctx.conn).get(live.id), article.id).facts == article.facts
 
 
 async def test_a_page_the_loop_read_is_noted_without_a_second_fetch(ctx, pages):
@@ -252,7 +330,11 @@ def test_an_outlet_name_is_matched_to_a_domain_when_the_feed_named_no_site():
     assert not from_outlet("https://notreuters.com/x", "reuters.com", "Reuters")
     assert from_outlet("https://finance.yahoo.com/x", None, "Yahoo Finance")
     assert from_outlet("https://www.bbc.co.uk/news/1", None, "BBC")
+    assert from_outlet("https://www.reuters.com/x", None, "Reuters.com")
     assert not from_outlet("https://copycat.test/x", None, "Reuters")
+    assert not from_outlet("https://reutersnews-daily.com/x", None, "Reuters")
+    assert not from_outlet("https://reuters-news.com/x", None, "Reuters")
+    assert not from_outlet("https://bbc.fakenews.com/x", None, "BBC News")
     assert not from_outlet("https://www.reuters.com/x", None, None)
 
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import re
+import socket
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Protocol
@@ -18,6 +19,7 @@ _OPAQUE = frozenset({"script", "style", "noscript", "svg", "template", "nav", "f
                      "ix:header"})
 # Characters of body text below which a page probably renders with scripts.
 THIN_PAGE = 300
+PRIVATE = "private and local network addresses cannot be read"
 _BLOCK = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "tr", "section", "article"})
 
 
@@ -87,9 +89,34 @@ def unsafe_url(url: str) -> str | None:
         ip = ipaddress.ip_address(host)
     except ValueError:
         return None
-    if not ip.is_global:
-        return "private and local network addresses cannot be read"
-    return None
+    return None if ip.is_global else PRIVATE
+
+
+def system_addresses(host: str) -> list[str]:
+    """Every address `host` resolves to; none when it cannot be resolved."""
+    try:
+        found = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except (OSError, UnicodeError):
+        return []
+    return [info[4][0] for info in found]
+
+
+resolve = system_addresses
+
+
+async def unsafe_address(url: str) -> str | None:
+    """Like `unsafe_url`, by where the host resolves: a public name can point back into this
+    machine (localtest.me is ::1). Checked just before each request, which narrows but cannot
+    close a DNS rebind between this lookup and the connection's own. A host that does not
+    resolve is left for the request itself to fail."""
+    host = urlsplit(url).hostname or ""
+    try:
+        ipaddress.ip_address(host)
+        return None
+    except ValueError:
+        pass
+    found = await asyncio.to_thread(resolve, host)
+    return PRIVATE if any(not ipaddress.ip_address(a).is_global for a in found) else None
 
 
 class _Text(HTMLParser):

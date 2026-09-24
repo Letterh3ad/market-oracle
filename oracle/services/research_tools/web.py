@@ -13,7 +13,7 @@ from oracle.net.gate import SourceGate
 from oracle.research import edgar
 from oracle.research.news import Article
 from oracle.research.tools import ToolError
-from oracle.research.web import THIN_PAGE, WebResult, WebSearcher, WebSearchFailed, page_text, unsafe_url
+from oracle.research.web import THIN_PAGE, WebResult, WebSearcher, WebSearchFailed, page_text, unsafe_address, unsafe_url
 from oracle.services.research_tools.shelf import MAX_TITLE, Shelf, Unavailable, cut, domain, fetch, query
 
 # Fewer than news: with a snippet each, five fill an observation.
@@ -101,12 +101,17 @@ async def _get(client: RateLimitedClient, url: str, contact: str | None, max_byt
     if domain(url) == "news.google.com":
         raise ToolError("Google News links only redirect; search its headline with web_search instead")
     # Uncompressed, so the bytes read over the wire are the bytes the cap counts.
-    source, headers = "web", {"Accept-Encoding": "identity"}
+    headers = {"Accept-Encoding": "identity"}
     if edgar.is_sec(url):
         # SEC refuses requests without a declared contact, and has its own budget.
-        source, headers = "sec_edgar", {**headers, "User-Agent": edgar.user_agent(need_contact(contact))}
-    return await fetch(client, source, "the page", url, headers=headers, max_bytes=max_bytes,
-                       follow_redirects=False, accept=(200, *REDIRECTS))
+        headers["User-Agent"] = edgar.user_agent(need_contact(contact))
+        return await fetch(client, "sec_edgar", "the page", url, headers=headers, max_bytes=max_bytes,
+                           follow_redirects=False, accept=(200, *REDIRECTS))
+    if why := await unsafe_address(url):
+        raise ToolError(why)
+    # "web" spans every site: a 403 is one paywall, not a block on the next site.
+    return await fetch(client, "web", "the page", url, headers=headers, max_bytes=max_bytes,
+                       follow_redirects=False, accept=(200, *REDIRECTS), count_403=False)
 
 
 class ReadPage:

@@ -14,6 +14,12 @@ def _in_a_temp_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
 
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch):
+    """Fake hosts resolve to a public address, so the page reader's DNS check never asks the network."""
+    monkeypatch.setattr("oracle.research.web.resolve", lambda host: ["93.184.216.34"])
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")

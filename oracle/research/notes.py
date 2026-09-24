@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from oracle.research.budget import budget, cut
+from oracle.research.citations import strip_citations
 from oracle.research.llm import ChatModel
 
 MAX_FACTS = 3
@@ -63,7 +64,8 @@ def read_note(reply: object) -> Note | None:
         return Note(False, ())
     kept: list[str] = []
     for fact in facts:
-        text = cut(fact.strip(), MAX_FACT) if isinstance(fact, str) else ""
+        # A fact is cited as its article; a page writing "[a12]" must not cite another.
+        text = cut(strip_citations(fact).strip(), MAX_FACT) if isinstance(fact, str) else ""
         if text and text not in kept:
             kept.append(text)
     return Note(True, tuple(kept[:MAX_FACTS]))
