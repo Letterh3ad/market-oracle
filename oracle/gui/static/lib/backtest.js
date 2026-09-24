@@ -11,12 +11,15 @@ import { fillPicker } from "./watchlists.js";
 
 const ACTIVE = ["queued", "running"];
 
-// A year after `day`, as the leans need a year of prices before they see the trend.
-function yearAfter(day) {
+// `day` shifted by whole years, as the leans need a year of prices before they see the trend
+// and the default window is capped so it does not run forever on a long-lived list.
+function shiftYears(day, years) {
   const d = new Date(`${day}T00:00:00Z`);
-  d.setUTCFullYear(d.getUTCFullYear() + 1);
+  d.setUTCFullYear(d.getUTCFullYear() + years);
   return d.toISOString().slice(0, 10);
 }
+
+const DEFAULT_YEARS = 5;
 
 function runLabel(r) {
   const [strategy, held] = r.lines;
@@ -95,12 +98,14 @@ function backtestSection() {
       box.setAttribute("max", s.last);
     }
     if (reset || !from.value || !to.value) {
-      const warmed = yearAfter(s.first);
-      from.value = warmed < s.last ? warmed : s.first;
+      const warmed = shiftYears(s.first, 1);
+      const capped = shiftYears(s.last, -DEFAULT_YEARS);
+      from.value = warmed >= s.last ? s.first : capped > warmed ? capped : warmed;
       to.value = s.last;
     }
     span.replaceChildren(`Prices are stored for the ${s.watchlist} list from ${s.first} to ${s.last}. `
-      + "The form starts a year in, because each day's lean needs a year of earlier prices to see the trend.");
+      + "The form starts a year in, because each day's lean needs a year of earlier prices to see the trend, "
+      + `and defaults to the last ${DEFAULT_YEARS} years at most: pick an earlier day to go back further.`);
   }
 
   async function loadRuns(pick) {

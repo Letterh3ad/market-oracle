@@ -80,6 +80,17 @@ def test_a_question_prompt_carries_the_question_and_numbers_the_items():
     assert QUESTION_SCHEMA["properties"]["companies"]["items"]["properties"]["why"]["maxLength"] <= 200
 
 
+def test_a_links_evidence_is_only_the_cited_items_with_one_line_naming_both_companies():
+    items = ["Denso to supply Toyota with new chips", "Denso raises its outlook\n  - Toyota orders rise",
+             "Denso results\n  - Denso ships Toyota more sensors"]
+    reply = {"companies": [{"name": "Denso", "why": "Chips", "headlines": [1, 2, 3], "related_to": "Toyota",
+                            "relation": "supplier"}]}
+    [m] = parse_mentions(reply, items)
+    assert (m.headlines, m.related_to, m.link_items) == ((0, 1, 2), "Toyota", (0, 2))
+    reply["companies"][0]["headlines"] = [2]
+    assert parse_mentions(reply, items)[0].related_to == "", "the names are on different lines"
+
+
 def test_a_stated_link_comes_back_only_when_a_cited_item_names_the_other_company():
     props = QUESTION_SCHEMA["properties"]["companies"]["items"]
     assert "related_to" in props["properties"] and "related_to" not in props["required"]

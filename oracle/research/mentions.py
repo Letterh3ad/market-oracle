@@ -57,6 +57,8 @@ class Mention:
     """One line on why, where the schema asks for it."""
     related_to: str = ""
     """Another company a cited item names and states this one is `relation` of; empty for none."""
+    link_items: tuple[int, ...] = ()
+    """The cited items with a line (its title or one fact) naming both companies: the link's evidence."""
 
 
 def mentions_prompt(seed: str, headlines: list[str]) -> list[dict]:
@@ -117,21 +119,25 @@ def parse_mentions(reply: object, headlines: list[str], seed: str | None = None)
         if not at:
             continue
         relation = item.get("relation") if item.get("relation") in RELATIONS else "other"
-        out[key] = Mention(name, relation, at, _why(item.get("why"), len(headlines)),
-                           _related(item, key, [texts[i] for i in at]))
+        related, link_items = _related(item, key, {i: headlines[i] for i in at})
+        out[key] = Mention(name, relation, at, _why(item.get("why"), len(headlines)), related, link_items)
     return list(out.values())
 
 
-def _related(item: dict, key: str, cited: list[str]) -> str:
-    """The other company of a stated link, only when a cited item names it too."""
+def _related(item: dict, key: str, cited: dict[int, str]) -> tuple[str, tuple[int, ...]]:
+    """The other company of a stated link and the cited items with one line naming both
+    companies, or ("", ()) when no such line holds it."""
     other = item.get("related_to")
     if item.get("relation") not in LINKS or not isinstance(other, str):
-        return ""
+        return "", ()
     other = " ".join(other.split())[:MAX_NAME]
     other_key = blind_name(other)
-    if not other_key or same_company(other_key, key) or not any(f" {other_key} " in t for t in cited):
-        return ""
-    return other
+    if not other_key or same_company(other_key, key):
+        return "", ()
+    both = tuple(i for i, text in cited.items()
+                 if any(f" {key} " in line and f" {other_key} " in line
+                        for line in (f" {normalise_name(x)} " for x in text.splitlines())))
+    return (other, both) if both else ("", ())
 
 
 def same_company(a: str, b: str) -> bool:

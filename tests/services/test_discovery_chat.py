@@ -484,3 +484,47 @@ async def test_an_answer_stating_no_link_keeps_none(ctx):
     view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
     assert all(company_links(ctx, s) == [] for s in ("ENR.DE", "FLNC", "RWE.DE"))
     assert not any("link" in n for n in view.answer.notes)
+
+
+def with_item(news, title):
+    """A fifth item, the oldest, after HEADLINES."""
+    news.results["grid battery Europe"].append(("https://news.test/5", title, "Wire",
+                                                datetime(2026, 9, 23, 10, tzinfo=timezone.utc)))
+
+
+RWE_BUYS = {"name": "RWE", "why": "Buys storage", "headlines": [3, 5], "related_to": "Fluence Energy",
+            "relation": "customer"}
+
+
+async def test_a_link_counts_only_its_items_naming_both_and_survives_its_company_being_filtered_off(ctx, news):
+    from oracle.services.links_service import company_links
+
+    with_item(news, "RWE buys Fluence Energy batteries for German grid")
+    view = await ask(ctx, GRID, model=model({"companies": [RWE_BUYS]}, planned=plan("grid battery Europe",
+                                                                                     exclude=["utilities"])),
+                     searcher=FakeSearcher())
+    assert "RWE" in skipped(view), "the question leaves utilities out"
+    [link] = company_links(ctx, "FLNC")
+    assert (link.symbol, link.relations) == ("RWE.DE", ("customer",))
+    assert [e.title for e in link.evidence] == ["RWE buys Fluence Energy batteries for German grid"]
+
+
+async def test_a_link_to_a_never_listed_company_is_not_kept(ctx, news):
+    from oracle.services.links_service import company_links
+
+    with_item(news, "Tesla and Fluence Energy fight for grid storage deals")
+    reply = {"companies": [{"name": "Fluence Energy", "why": "Storage", "headlines": [5], "related_to": "Tesla",
+                            "relation": "competitor"}]}
+    view = await ask(ctx, GRID, model=model(reply), searcher=FakeSearcher())
+    assert company_links(ctx, "FLNC") == [] and not any("link" in n for n in view.answer.notes)
+
+
+async def test_a_rerun_never_brings_back_a_deleted_chat_link(ctx, news):
+    from oracle.services.links_service import company_links, delete_link
+
+    with_item(news, "RWE buys Fluence Energy batteries for German grid")
+    view = await ask(ctx, GRID, model=model({"companies": [RWE_BUYS]}), searcher=FakeSearcher())
+    [link] = company_links(ctx, "FLNC")
+    delete_link(ctx, "FLNC", link.id)
+    again = await answer(ctx, view.answer.question_id, model({"companies": [RWE_BUYS]}), FakeSearcher())
+    assert company_links(ctx, "FLNC") == [] and not any("link" in n for n in again.answer.notes)
