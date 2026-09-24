@@ -14,8 +14,9 @@ from datetime import datetime, timedelta
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.mentions import (
-    QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
+    MAX_ANSWERS, QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
 )
+from oracle.research.notes import listed
 from oracle.research.queries import EDITION, MAX_QUERY
 from oracle.research.tools import ToolError
 from oracle.research.trace import Evidence
@@ -63,7 +64,8 @@ MAX_LOCAL = 2
 MAX_GDELT = 1
 MAX_ITEMS = 24
 READ = 4
-MAX_PRICE_CHECKS = 8
+# Every company the naming call may name (a list page's can fill it) gets its check.
+MAX_PRICE_CHECKS = MAX_ANSWERS
 MAX_EXCLUDE = 5
 MAX_INDUSTRIES = 3
 MAX_REGIONS = 5
@@ -80,7 +82,7 @@ NOTE_KEY = "#q{root}"
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
-"queries": up to {queries} short English news search queries (under 8 words each) likely to find headlines naming such companies. No dates, no words like "latest" or "news".
+"queries": up to {queries} short English news search queries (under 8 words each) likely to find headlines naming such companies. No dates, no words like "latest" or "news". When the question asks which companies fit, make one a search for a page listing them ("list of European chipmakers", "top battery makers").
 "local": when the question names a country or region with its own language, up to {local} searches written in that language, each with its "country" from the list; else empty.
 "market_caps": the company sizes the question asks for, from the list; empty for any size.
 "exclude": sectors or industries the question rules out, a word or two each; empty for none.
@@ -356,7 +358,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
             notes.append("the searches found nothing to read")
         else:
             reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, ctx.config.research.contact, model,
-                            f'companies that answer "{asked}"', resolved.context, note_key)
+                            f'companies that answer "{asked}"', resolved.context, note_key, lists=True)
             newest_first = sorted(evidence_of(ctx.conn, ids, note_key),
                                   key=lambda e: (e.published is not None, e.published), reverse=True)
             await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
@@ -365,6 +367,8 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     if ids:
         stage("naming companies")
         evidence = evidence_of(ctx.conn, ids, note_key)
+        notes.extend(f'{len(names)} compan{"y" if len(names) == 1 else "ies"} from the list page "{e.title}"'
+                     for e in evidence if (names := listed(e.facts)))
         reply = await model.reply(question_prompt(asked, [item_text(e) for e in evidence]), QUESTION_SCHEMA)
         # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
         mentions = parse_mentions(reply, [item_words(e) for e in evidence])
