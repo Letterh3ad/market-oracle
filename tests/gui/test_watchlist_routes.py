@@ -20,7 +20,11 @@ async def test_an_unpriced_listing_shows_and_says_how_to_price_it(watching):
 
 async def test_updating_prices_then_analysing_fills_in_price_signals_and_lean(watching):
     prices = (await run_job(watching, "/api/jobs/prices"))["result"]
-    assert prices["listings"] == [{"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}]
+    aapl = next(l for l in prices["listings"] if l["symbol"] == "AAPL")
+    assert aapl == {"symbol": "AAPL", "added": 300, "source": "yahoo", "error": None, "skipped": None}
+    # The default benchmarks (VWRL.L, VUSA.L) are priced alongside the watchlist but are not
+    # in this fixture's universe, so they are skipped rather than failed.
+    assert all(l["skipped"] for l in prices["listings"] if l["symbol"] != "AAPL")
     assert prices["fills"] == []
     [item] = (await watching.get("/api/watchlists/main")).json()["items"]
     assert item["last_date"] == DAYS[-1].isoformat() and not item["stale"] and item["close_base"] is not None
