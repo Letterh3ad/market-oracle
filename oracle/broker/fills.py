@@ -26,6 +26,8 @@ class Costs:
     """Lost on each conversion between the base currency and the listing's."""
     stamp_duty: float = 0.005
     """UK stamp duty on LSE buys."""
+    commission: float | None = None
+    """A flat fee per trade in the listing's currency, in place of the broker's table."""
 
 
 COSTS = Costs()
@@ -47,6 +49,8 @@ class Fill:
 
 
 def fee(country: str, shares: int, price: float, costs: Costs = COSTS) -> float:
+    if costs.commission is not None:
+        return costs.commission
     value = shares * price
     if country == "United States":
         return min(max(shares * US_PER_SHARE, US_MIN), value * US_CAP)

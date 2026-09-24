@@ -32,7 +32,7 @@ __all__ = [
     "ACCOUNTS", "AI_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
     "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
-    "strategy_step",
+    "strategy_rules", "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "ai", "manual")
@@ -201,9 +201,8 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
     sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
-    rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
-                  ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
-    decided = decide(found, holdings, view.cash - committed, view.equity, sizes, rules, {o.symbol for o in orders})
+    decided = decide(found, holdings, view.cash - committed, view.equity, sizes, strategy_rules(ctx),
+                     {o.symbol for o in orders})
     # One decision per listing: a sell or a pending order says more than a lean problem.
     covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == Action.SELL}
     decisions = [d for d in unusable if d.symbol not in covered] + decided
@@ -218,6 +217,12 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
                                 reports.get(d.symbol), d.needs_research)])
     return decisions
+
+
+def strategy_rules(ctx: AppContext) -> Rules:
+    """The fixed rules both trading accounts and the backtest share, from the settings."""
+    return Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
+                 ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
 
 
 def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple[dict[str, Lean], list[Decision]]:

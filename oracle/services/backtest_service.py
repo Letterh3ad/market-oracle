@@ -1,0 +1,113 @@
+"""A backtest: the strategy's fixed rules replayed over a watchlist's stored history, in
+memory, against an equal-weight buy-and-hold. It only reads: the paper accounts, leans,
+signals and decision log never change. AI verdicts are never backtested."""
+
+from __future__ import annotations
+
+import math
+from dataclasses import asdict, dataclass
+from datetime import date
+
+from oracle.analysts.indicators import YEAR
+from oracle.broker.backtest import Trade, replay
+from oracle.broker.baseline import ceiling
+from oracle.broker.compare import buy_and_hold, max_fall, returns_since
+from oracle.services.context import AppContext
+from oracle.services.errors import InvalidQuery, NoPrices, UnknownSymbol
+from oracle.services.paper_service import Line, strategy_rules
+from oracle.services.prices_service import ConvertedBar, price_history_in_base
+from oracle.services.watch_service import watchlist_symbols
+
+__all__ = ["Backtest", "Line", "Trade", "run_backtest"]
+
+BPS = 10_000
+
+
+@dataclass(frozen=True)
+class Backtest:
+    watchlist: str
+    start: date
+    end: date
+    slippage_bps: float
+    commission: float
+    """Per trade, base currency."""
+    listings: tuple[str, ...]
+    """The list's listings with prices in the range; the rest are named in the notes."""
+    lines: tuple[Line, Line]
+    """The strategy, then buy and hold, each as its return since the first day."""
+    equity: tuple[tuple[date, float], ...]
+    """The strategy's cash plus positions at each day's close, base currency."""
+    trades: tuple[Trade, ...]
+    notes: tuple[str, ...]
+
+
+def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
+                 commission: float = 0.0) -> Backtest:
+    """Replay the strategy's rules day by day from `start` to `end` over the list's stored
+    bars, each day seeing only bars up to its own close."""
+    if start >= end:
+        raise InvalidQuery(f"the first day ({start.isoformat()}) must be before the last ({end.isoformat()})")
+    if not (math.isfinite(slippage_bps) and slippage_bps >= 0):
+        raise InvalidQuery(f"slippage must be zero or more basis points, not {slippage_bps}")
+    if not (math.isfinite(commission) and commission >= 0):
+        raise InvalidQuery(f"commission must be zero or more, not {commission}")
+    name, symbols = watchlist_symbols(ctx, watchlist)
+    history, gone, no_prices = {}, [], []
+    for symbol in symbols:
+        try:
+            rows = [c for c in price_history_in_base(ctx, symbol) if c.bar.date <= end]
+        except UnknownSymbol:
+            gone.append(symbol)
+            continue
+        if any(c.bar.date >= start for c in rows):
+            history[symbol] = rows
+        else:
+            no_prices.append(symbol)
+    if not history:
+        raise NoPrices(f"no stored prices for the {name} list from {start.isoformat()} to {end.isoformat()}")
+    rules, capital, base = strategy_rules(ctx), ctx.config.risk.account, ctx.config.base_currency
+    r = replay(history, start, end, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
+               commission=commission)
+    strategy = Line("strategy", "Strategy: the fixed rules on technicals-only leans.",
+                    tuple(returns_since(r.equity, start)), max_fall(r.equity), len(r.trades),
+                    sum(t.costs for t in r.trades))
+    closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
+    held, no_rate = buy_and_hold(closes, start, capital)
+    n = len(history) - len(no_rate)
+    held_line = Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'}, bought "
+                                     f"at the first close from {start.isoformat()} and never sold, with no costs.",
+                     tuple(returns_since(held, start)) if held else (), max_fall(held), 0, 0.0)
+    notes = _notes(ctx, name, start, end, slippage_bps, commission, rules.min_probability, history)
+    notes += [f"Left out, no longer in the universe: {', '.join(gone)}."] if gone else []
+    notes += [f"Left out, no stored prices from {start.isoformat()} to {end.isoformat()}: {', '.join(no_prices)}."
+              ] if no_prices else []
+    notes += [f"Left out of buy and hold, no {base} exchange rate from {start.isoformat()} on: {', '.join(no_rate)}."
+              ] if no_rate else []
+    notes += [f"Could not fill: {note}." for note in r.rejected]
+    notes += [f"Still waiting to fill on the last day: {', '.join(r.unfilled)}."] if r.unfilled else []
+    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line), r.equity,
+                    r.trades, tuple(notes))
+
+
+def _notes(ctx: AppContext, name: str, start: date, end: date, slippage_bps: float, commission: float,
+           threshold: float, history: dict[str, list[ConvertedBar]]) -> list[str]:
+    base, cap = ctx.config.base_currency, ceiling(1)
+    fundamentals = (f"Value, quality and growth are left out: only today's fundamentals are stored, so using them on "
+                    f"past days would leak the future. Each lean is the technicals baseline alone, so its probability "
+                    f"is at most {cap:.1%}.")
+    if threshold > cap:
+        fundamentals += f" That is under the {threshold:.0%} threshold, so the strategy cannot buy anything."
+    notes = [
+        f"The {name} list is today's: companies that were delisted, taken over or went bust before today are "
+        "missing from it, so both lines likely look better than investing back then would have (survivorship bias).",
+        fundamentals,
+        f"Each day's decisions see only prices up to that day's close. Orders fill at the next trading day's open, "
+        f"{slippage_bps:g} basis points worse, at that day's exchange rate, plus {commission:,.2f} {base} "
+        "commission per trade. No FX spread, stamp duty or exchange fees.",
+        "Only the fixed rules are replayed; AI verdicts are never backtested.",
+    ]
+    short = [s for s, rows in history.items() if sum(1 for c in rows if c.bar.date < start) <= YEAR]
+    if short:
+        notes.append(f"Under a year of prices before {start.isoformat()}, so their leans start late or lack the "
+                     f"trend: {', '.join(short)}.")
+    return notes

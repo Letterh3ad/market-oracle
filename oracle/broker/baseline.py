@@ -27,6 +27,11 @@ def baseline_lean(symbol: str, signals: Sequence[AnalystSignal]) -> Lean | None:
     return Lean(symbol, technicals.as_of, _label(score), round(probability, 4), SOURCE)
 
 
+def ceiling(present: int) -> float:
+    """The highest probability a lean can reach with only `present` of the INPUTS."""
+    return 0.5 + 0.5 * present / len(INPUTS)
+
+
 def inputs(signals: Sequence[AnalystSignal]) -> list[AnalystSignal]:
     """The signals a baseline lean is built from."""
     return [s for s in signals if s.analyst in INPUTS]
