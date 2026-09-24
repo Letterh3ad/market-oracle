@@ -33,6 +33,19 @@ def test_is_claude_matches_name_or_command_line_in_any_case():
     assert not is_claude(proc(1, name="python.exe", cmd="python -m oracle gui"), pats)
 
 
+def test_the_desktop_app_and_claude_codes_daemon_are_never_reaped():
+    """Seen on the user's PC: all of these are claude.exe."""
+    spared = [
+        proc(1, cmd=r'"C:\Program Files\WindowsApps\Claude_2.9939.2.0_x64__pzs8sxrjxfjjc\app\claude.exe" --type=gpu',
+             age_min=5000),
+        proc(2, cmd=r"C:\Users\lette\.local\bin\claude.exe daemon run --json-path C:\x", age_min=5000),
+        proc(3, cmd=r"C:\Users\lette\.local\bin\claude.exe --bg-pty-host \\.\pipe\cc-daemon-1", age_min=5000),
+    ]
+    session = proc(4, 3, cmd=r"C:\Users\lette\.local\bin\claude.exe --session-id 55f9c7b7", age_min=5000)
+    assert not any(is_claude(p, CFG.reaper_match, CFG.reaper_spare) for p in spared)
+    assert [k.proc.pid for k in choose_kills([*spared, session], NOW, {}, set(), CFG)] == [4]
+
+
 def test_tree_walks():
     procs = [proc(1, 0, "a"), proc(2, 1, "b"), proc(3, 2, "c"), proc(4, 1, "d"), proc(5, 9, "e")]
     assert descendants(procs, {2}) == {2, 3}

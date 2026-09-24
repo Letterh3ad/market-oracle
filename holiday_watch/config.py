@@ -40,6 +40,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
     },
     "reaper": {
         "match": ["claude.exe", "@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"],
+        "spare": ["\\WindowsApps\\Claude_", " daemon run", "--bg-pty-host"],
         "idle_min": 30, "idle_cpu_s": 2.0, "max_age_h": 3,
     },
     "report": {"timeout_min": 10},
@@ -77,6 +78,8 @@ class Config:
     tick_grace_min: float
     stall_h: float
     reaper_match: tuple[str, ...]
+    reaper_spare: tuple[str, ...]
+    """Never reaped: the Claude desktop app and Claude Code's own daemon, which share the name."""
     idle_min: float
     idle_cpu_s: float
     max_age_h: float
@@ -132,7 +135,8 @@ def load(path: Path | None = None) -> Config:
         app_restarts=int(t["app_restarts"]), failure_rate=float(t["failure_rate"]),
         failure_min=int(t["failure_min"]), same_error=int(t["same_error"]), job_max_h=float(t["job_max_h"]),
         tick_time=s(t["tick_time"]), tick_grace_min=float(t["tick_grace_min"]), stall_h=float(t["stall_h"]),
-        reaper_match=tuple(str(m) for m in r["match"]), idle_min=float(r["idle_min"]),
+        reaper_match=tuple(str(m) for m in r["match"]), reaper_spare=tuple(str(m) for m in r["spare"]),
+        idle_min=float(r["idle_min"]),
         idle_cpu_s=float(r["idle_cpu_s"]), max_age_h=float(r["max_age_h"]),
         report_timeout_min=float(raw["report"]["timeout_min"]),
     )

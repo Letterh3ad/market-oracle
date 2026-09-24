@@ -45,6 +45,7 @@ stall_h = 6           # a running study with no replay done this long while idle
 
 [reaper]
 match = ["claude.exe", "@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"]   # name or command line, any case
+spare = ["\\WindowsApps\\Claude_", " daemon run", "--bg-pty-host"]   # never reaped: the desktop app, Claude Code's daemon
 idle_min = 30         # kill a claude process using under idle_cpu_s of CPU over this long
 idle_cpu_s = 2.0
 max_age_h = 3         # kill any claude process older than this

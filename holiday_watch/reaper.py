@@ -18,9 +18,10 @@ class Kill:
     age_s: float | None
 
 
-def is_claude(p: Proc, patterns: Sequence[str]) -> bool:
+def is_claude(p: Proc, patterns: Sequence[str], spare: Sequence[str] = ()) -> bool:
+    """Name or command line holds a pattern and no spare one, in any case."""
     text = f"{p.name} {p.cmdline}".lower()
-    return any(pat.lower() in text for pat in patterns)
+    return any(pat.lower() in text for pat in patterns) and not any(s.lower() in text for s in spare)
 
 
 def track_cpu(track: dict, procs: Sequence[Proc], now: datetime, cfg: Config) -> dict:
@@ -28,7 +29,7 @@ def track_cpu(track: dict, procs: Sequence[Proc], now: datetime, cfg: Config) ->
     idle_cpu_s above it, retaken when it works or the PID is a new process."""
     out = {}
     for p in procs:
-        if not is_claude(p, cfg.reaper_match):
+        if not is_claude(p, cfg.reaper_match, cfg.reaper_spare):
             continue
         created = iso(p.created) if p.created else None
         seen = track.get(str(p.pid))
@@ -53,7 +54,7 @@ def choose_kills(procs: Sequence[Proc], now: datetime, track: dict, protected: s
                  cfg: Config) -> list[Kill]:
     kills: list[Kill] = []
     for p in procs:
-        if p.pid in protected or not is_claude(p, cfg.reaper_match):
+        if p.pid in protected or not is_claude(p, cfg.reaper_match, cfg.reaper_spare):
             continue
         age = (now - p.created).total_seconds() if p.created else None
         seen = track.get(str(p.pid))
