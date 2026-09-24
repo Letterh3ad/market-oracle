@@ -53,7 +53,10 @@ def normalise_name(name: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
 
 
-_RECEIPT = re.compile(r"\b(?:[ABCG]DRS?|CEDEARS?)\b", re.IGNORECASE)
+# Sao Paulo ends a BDR's name in "DRN", sometimes glued on ("ECOPETROL SADRN").
+_RECEIPT = re.compile(r"\b(?:[ABCG]DRS?|CEDEARS?)\b|DRN\b", re.IGNORECASE)
+# B3 gives BDRs four letters or digits and 32, 33, 34, 35 or 39 (C1HI34.SA is Sinopec's).
+_B3_RECEIPT = re.compile(r"^[A-Z0-9]{4}3[23459]\.SA$", re.IGNORECASE)
 
 
 def is_receipt(name: str) -> bool:
@@ -61,6 +64,11 @@ def is_receipt(name: str) -> bool:
     elsewhere (Samsung's GDRs; Brazil's BDRs, Canada's CDRs, Argentina's CEDEARs) as if it
     were another."""
     return _RECEIPT.search(name) is not None
+
+
+def is_receipt_symbol(symbol: str) -> bool:
+    """A depositary receipt told by its ticker, whatever its name says."""
+    return _B3_RECEIPT.match(symbol) is not None
 
 
 def blind_name(name: str) -> str:

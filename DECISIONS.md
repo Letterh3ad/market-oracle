@@ -2288,3 +2288,88 @@ moving the extra GDELT searches to Google News (each query is there already).
 **Context:** The cutoff was checked only when a study was created, but each replay job resolves its stage models from the slots when it runs, so a slot moved after creation, a re-probe or a raised claim could let the pacer replay days the model knows.
 **Decision:** A study stores the profile each research stage ran on at creation (`replay_studies.stages`, added in migration 39) and shows it in status, the CLI and the card. Before every submit the pacer reads the slots, probes and claims again: stage profiles that differ from the stored ones pause the study ("the replay models changed since the study was created: verdict default to big"), as does an unprobed model or a cutoff that leaves no day (its note); pending cells on or before the current cutoff fail for good ("on or before the cutoff X of profile", no attempt left). Start refuses on the same grounds. Replace builds cells from the later of the study's first day and the day after the cutoff. Retry, in the study or in Activity, never requeues a cell on or before the cutoff (Retry all skips them). The score leaves out done replays on or before the current cutoff and says how many.
 **Alternatives:** Pinning each replay job to the stored profiles (a run would then ignore a slot the user moved on purpose, silently). Letting a study run on mixed models (its verdicts would no longer measure one set of models).
+
+## 2026-09-24 - The universe screen answers "which companies" questions (discovery 01)
+**Context:** Three live questions named 11 companies and matched 1: headlines favour famous names
+and startups, so real listed mid caps that fit a question's industry, region and size never came up.
+**Decision:** The chat plan also returns `industries` (up to 3, offered the universe's industry names
+in the prompt) and `regions` (up to 5). Industries map onto the universe's classifications with the
+exclude matcher, now `industry_words.classes` (the most specific level); regions and countries
+through one table, `oracle/universe/regions.py` (regions, nationality words, each country's
+currency), which also replaces 03's Europe and nationality tables in `business_fit`. A word naming
+nothing is dropped with a note. A screen needs an industry: a region or a size alone would list any
+big company there. `universe_screen` takes active primary equity companies in any of the
+classifications, based in the countries asked (or with a US OTC primary, where the universe's
+country is often wrong), within the plan's bands, biggest band first then most widely listed; it
+drops never-listed companies (any line's name), depositary receipts and companies with no live home
+line. The home line is the replay picker's rule, moved to `regions.home_line` and used by both: the
+best-ranked line on a main board (tier 1 or 2) in the country's own currency, inside the countries
+asked (STMicro is STM.PA for Europe, not its New York primary). Replay's per-region currency sets
+became per-country currencies; its slot regions stay its own (`STUDY_REGIONS`: Europe there leaves
+out the UK). In the shortlist, companies both named and screened rank first and carry both kinds of
+evidence, then those only named, then those only screened, up to 15, with their own budget of 20
+price checks; one without recent prices is passed over for the next and only counted. The evidence
+line ("universe: Semiconductors & Semiconductor Equipment, Netherlands, Mega Cap") is stored per
+item (m0040) and shown on the Discover tab and in `oracle discover show`; a note says how many
+matched and how many are shown. The recognised industry words join the question in `NamedIn.asked`,
+so 03's sector check holds a name matched by its start to them. Auto: a company only the screen found
+is never validated or added ("a universe match alone is not evidence"); a named one on its screened
+home line passes the line check. When nothing screens, answers work as before, and the screen runs
+even when the news finds nothing.
+**Alternatives:** Screening lines rather than companies (each line carries the company's same wrong
+sector, so nothing gained); trusting the universe's country alone (US OTC lines hide Rheinmetall);
+the primary line as it is (New York ADR-like lines and OTC lines of foreign companies); listing
+screened companies without prices as left off (no one named them: noise); a screen on region or size
+alone; letting auto add on a universe match (DECISIONS 05 wants outlet evidence).
+
+## 2026-09-24 - Universe screen follow-ups left open
+**Context:** Found while building discovery 01 on the live universe.
+**Decision:** Recorded, not fixed: wrong sectors hide companies from the screen (Rheinmetall is
+Consumer Discretionary / Specialty Retail on every line, so a defence question misses it); the
+universe keeps acquired companies (Dialog Semiconductor, Meggitt), which the price check passes over;
+the plan's region is still not enforced on news-named companies; words below the universe's
+industries ("robotics", "batteries", "solar") screen nothing unless the model picks a listed name;
+NXP's Europe line is Xetra (VNX.DE), as it has none in Amsterdam; a company split in two by the
+universe with its home line carrying no currency (Prysmian: PRY.MI apart from AEU.F) has no home line.
+**Alternatives:** A sector override table (hand upkeep); a company-level country vote across lines
+(every Rheinmetall line says United States).
+
+## 2026-09-24 - Universe screen gate round 1 fixes
+**Context:** The gate found that a screen with no region picked ADRs, BDRs and foreign secondaries
+(NIO, TSM, TMCO34.SA), that an unrecognised region ("EU") widened the screen to the world, and that
+named companies and screened ones had separate price-check budgets and screened checks ignored the
+auto deadline.
+**Decision:** With no region asked, a company's home line must be in its own country, unless its
+primary is a US OTC line (the universe's country is then not trusted and any home line counts); a
+company with no country, or no such line, is dropped. Receipt lines are never chosen, and "DRN" (Sao
+Paulo's BDR suffix) counts as a receipt. Regions asked of which none is recognised skip the screen with
+a note. `countries_of` ignores dots and hyphens and knows the EU, Eurozone, Western Europe, Southeast
+Asia, Asia-Pacific/APAC, Africa, emerging markets (roughly MSCI's), England/Scotland/Wales and more
+nationalities. One price-check budget per answer (8, plus 20 when the screen runs): named companies
+take from it first. Screened companies are not price-checked past the auto deadline, and the note says
+so. A plan industry phrase naming nothing whole is tried a word at a time ("defence contractors",
+"oil majors"); aliases ev, homebuilder and miner.
+**Alternatives:** The best main-board line anywhere (brought back NIO and TSM); screening the world
+for an unknown region (answers a different question); a separate screen budget (named companies could
+go unchecked while the screen spent its own).
+
+## 2026-09-24 - Universe screen gate round 2 fixes
+**Context:** The word-by-word retry matched phrases by their first known word ("electric vehicles" as
+Electric Utilities, "private equity" as Equity REITs, "car parts" as Automobiles), and Brazilian BDRs
+kept as companies of their own passed a region screen (C1HI34.SA for Sinopec, "ECOPETROL SADRN").
+**Decision:** A plan phrase is matched whole, else once more without a trade noun at its end (makers,
+manufacturers, contractors, companies, firms, producers, suppliers, majors, players, stocks, groups,
+providers, operators, developers); anything else stays unrecognised with the note. A name ending in
+"DRN", glued or not, is a receipt, and so is a B3 ticker of four letters or digits and 32, 33, 34, 35
+or 39 (`is_receipt_symbol`); the screen checks both on the primary and on every line it may choose.
+**Alternatives:** Keeping the per-word retry with a stop list (every new phrase finds a new wrong
+word); dropping every Sao Paulo line of a foreign company (the ticker says which are receipts).
+
+## 2026-09-24 - Universe screen gate round 3: foreign quotes on Latin American boards
+**Context:** With a region asked, Mexico's SIC quotes and Buenos Aires' CEDEARs of foreign companies
+stood as home lines (TSMN.MX for TSMC, SQ.BA for Square): they trade on a main board in the local
+currency.
+**Decision:** The screen never takes a line on BUE, MEX or SAO for a company whose universe country is
+not that exchange's country. The replay picker's rule is left as it is.
+**Alternatives:** Changing `home_line` itself (would change the replay spread); a ticker pattern per
+board (SIC and CEDEAR tickers follow no one pattern).

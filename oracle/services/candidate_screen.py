@@ -21,6 +21,7 @@ from oracle.store.health import HealthRepo
 from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import MARKET_CAP_BANDS, blind_name, is_receipt
+from oracle.universe.regions import home_country
 
 NEVER = "on the never list"
 REMOVED = "you removed it before"
@@ -115,9 +116,9 @@ class Screen:
     def now_listed(self, profile: ListingProfile, symbol: str) -> None:
         self._listed[profile.company_key] = symbol
 
-    async def priced_line(self, profile: ListingProfile) -> tuple[str | None, str | None]:
-        """The company's live line once its recent prices are fetched, else why not."""
-        listing = self.live_line(profile)
+    async def priced_line(self, profile: ListingProfile, line: str | None = None) -> tuple[str | None, str | None]:
+        """The company's live line (or `line`) once its recent prices are fetched, else why not."""
+        listing = line or self.live_line(profile)
         if listing is None:
             return None, "no listing with live prices"
         self.checks += 1
@@ -163,6 +164,13 @@ class Screen:
             return primary
         siblings = live_siblings(self._ctx, primary)
         return siblings[0].symbol if siblings else None
+
+    def is_home_line(self, profile: ListingProfile, symbol: str) -> bool:
+        """`symbol` is a live line of the company on a main board at home, in the home currency."""
+        line = next((x for x in self._universe.company_listings(profile.company_key)
+                     if x.symbol.upper() == symbol.upper()), None)
+        return line is not None and home_country(line) is not None and not HealthRepo(self._ctx.conn).get(
+            line.symbol).dead
 
     def _keys(self, symbols) -> set[str]:
         return {r.company_key for s in symbols if (r := self._universe.resolve(s))}

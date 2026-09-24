@@ -119,6 +119,8 @@ def print_answer(v: AnswerView) -> int:
                                                   ("discovered", line.discovered_as is not None)) if on)
         print(f"  {i.n:>2}. {i.symbol}  {i.company}{marks}")
         _wrapped(i.why, "        ")
+        if i.universe:
+            _wrapped(i.universe, "        ")
         if i.validation:
             _wrapped(f"auto: {validation_line(i.validation)}", "        ")
         for e in line.evidence:
