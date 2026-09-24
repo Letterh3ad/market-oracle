@@ -149,3 +149,124 @@ async def test_a_backend_that_cannot_write_the_verdict_leaves_the_report_with_wh
 
 def test_an_older_report_has_no_verdict_and_says_so():
     assert REPORT.verdict is None and REPORT.no_verdict == "written before reports had verdicts"
+
+
+# The 2026-08-24 replays' verdicts (oracle.db runs 68, 70, 71): each restated evidence where
+# the condition belongs.
+REPLAYS = {
+    "MSFT": ("Microsoft's strong cloud revenue growth (27% YoY), Azure growth (41% YoY), and $678 billion commercial "
+             "remaining performance obligation demonstrate robust demand and long-term momentum, supported by AI "
+             "innovation and major strategic deals, all of which are cited across multiple sources as key drivers "
+             "of stock performance and investor confidence.",
+             "The company's cloud revenue grew 27% year-over-year to $214.4 billion in fiscal year 2026, with Azure "
+             "and other cloud services up 41%, and a commercial remaining performance obligation of $678 billion "
+             "reflecting strong long-term demand. This is backed by robust AI innovation, including in-house AI "
+             "models and security platforms, and major strategic partnerships like the $9.7B U.S. military "
+             "contract and $278M Macquarie deal, all of which support sustained growth and market momentum. "
+             "Despite short-term legal noise, these are not material to the company's core performance or "
+             "trajectory."),
+    "AZN.L": ("AstraZeneca's stock is supported by strong Q2 earnings beats, robust sales from cancer drugs "
+              "(especially Enhertu and breast cancer therapies in EU and India), and multiple regulatory approvals, "
+              "all of which are cited across multiple sources and align with positive technical momentum and "
+              "investor sentiment. These fundamentals are consistent and not driven by speculative merger rumors, "
+              "which have been widely debunked and dismissed by analysts and market participants.",
+              "AstraZeneca's Q2 2026 earnings beat and robust sales from cancer drugs\u2014particularly Enhertu and "
+              "breast cancer therapies in EU and India\u2014demonstrate resilient profitability and market demand, "
+              "supported by multiple regulatory approvals and positive investor sentiment. Hedge funds are "
+              "bullish, and the stock has climbed on this performance, indicating strong confidence in the "
+              "company's self-sustained growth through innovation and strategic partnerships, not M&A "
+              "speculation."),
+    "7203.T": ("Toyota's strong profitability in Q2 2026, with earnings exceeding estimates by 43.77%, is driven by "
+               "a weak yen and hybrid/EV sales, supported by multiple sources, and is reinforced by strategic "
+               "initiatives like a \u00a51 trillion share buyback, new vehicle launches, and leadership changes in "
+               "supply chain, indicating long-term operational resilience and innovation.",
+               "Toyota's Q2 2026 earnings exceed estimates by 43.77% due to a weak yen and strong hybrid/EV sales, "
+               "as cited in a3168, a3170, a3183, a3193, and a452 \u2014 this claim is directly contradicted by "
+               "evidence showing that the profit uplift is attributable to currency effects, not operational or "
+               "margin improvements, and that vehicle sales volume declined, as noted in a3194 and a3191."),
+}
+FACTS = "its condition names no future event, only facts"
+REPEATS = "its condition repeats its reason"
+
+
+@pytest.mark.parametrize("symbol", REPLAYS)
+def test_a_condition_that_restates_the_evidence_is_rejected(symbol):
+    reason, condition = REPLAYS[symbol]
+    assert check({**GOOD, "reason": reason, "invalidated_if": condition}, {1}) == (None, FACTS)
+
+
+@pytest.mark.parametrize("condition", [
+    "Guidance cut", "Guidance is cut", "a guidance cut", "Next quarter misses", "margin below 20%",
+    "loss of the contract", "an FDA rejection", "The FDA rejects the drug", "the deal is not approved",
+    "Q3 revenue under $60B", "The stock closes below $400", "a dividend cut", "Azure growth slows next quarter",
+    "Toyota loses its lead in hybrids", "The yen strengthens past 140 per dollar", "a recall of the RAV4",
+    "Revenue falls short of guidance", "the CEO resigns", "Cloud revenue growth stalls or the full-year profit "
+    "outlook is cut further, indicating that AI-driven revenue is not materializing as expected.",
+    "A significant regulatory penalty or enforcement action is issued against JPMorgan Chase in Europe within the "
+    "next 30 days that directly impacts its core banking operations.",
+    "If the share price drops 10% from here", "Enhertu approval in China is delayed",
+    "P&G reports a 10% or greater increase in core EPS for fiscal 2027",
+    "Tesla's Cybercab is approved for sale in the U.S. and regulatory investigations are resolved",
+    "Guidance is raised", "Margins improve", "an analyst upgrade", "The stock rebounds to $20",
+])
+def test_a_genuine_condition_passes_in_any_phrasing(condition):
+    verdict, why = check({**GOOD, "invalidated_if": condition}, {1})
+    assert why is None and verdict.invalidated_if == condition
+
+
+def test_a_condition_that_copies_a_sentence_of_the_reason_is_rejected():
+    reason = "Azure demand will keep rising as AI spending grows [a1]. Margins stay above 40%."
+    for condition in ("Azure demand will keep rising as AI spending grows.",
+                      "Unless something changes: margins stay above 40%!"):
+        assert check({**GOOD, "reason": reason, "invalidated_if": condition}, {1}) == (None, REPEATS)
+    assert check({**GOOD, "reason": reason, "invalidated_if": "Margins fall below 40%"}, {1})[1] is None
+
+
+def _answers(*replies):
+    queue = list(replies)
+    return lambda messages: queue.pop(0)
+
+
+BAD = {**GOOD, "invalidated_if": "Earnings beat estimates by 12%."}
+
+
+async def test_a_bad_condition_is_asked_again_once_with_why_and_a_good_second_answer_is_kept():
+    model = ScriptedModel()
+    model.roles = {"verdict": _answers(BAD, GOOD)}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict == Verdict("buy", 0.7, "Beat and momentum", (1,), "Guidance cut") and r.verdict_rejected is None
+    first, second = (m for m, _ in model.calls)
+    assert second[0] == first[0] and second[1]["content"].startswith(first[1]["content"])
+    assert FACTS in second[1]["content"] and "Earnings beat estimates by 12%." in second[1]["content"]
+
+
+async def test_a_second_bad_condition_rejects_the_verdict_as_before():
+    model = ScriptedModel()
+    model.roles = {"verdict": BAD}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict is None and r.verdict_rejected == FACTS and len(model.calls) == 2
+
+
+async def test_other_rejections_are_not_asked_again():
+    model = ScriptedModel()
+    model.roles = {"verdict": {**GOOD, "confidence": 7}}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict_rejected == "confidence 7 is not a number from 0 to 1" and len(model.calls) == 1
+
+
+async def test_the_second_ask_still_fits_the_budget_and_records_what_it_left_out():
+    from math import ceil
+
+    from oracle.research.roles import prompt
+    from oracle.research.verdict import ROLE, TASK, WHO
+
+    model = ScriptedModel()
+    model.roles = {"verdict": _answers({**BAD, "invalidated_if": "Earnings beat estimates. " * 100}, GOOD)}
+    m = material(uncited=40)
+    system = prompt(ROLE, WHO, TASK)
+    context = ceil((len(fit(m, 100_000).text) + len(system)) / 3) + 1024  # the first ask just fits
+    room = budget(context, system)
+    r = await add_verdict(model, REPORT, m, context)
+    first, second = (msgs[1]["content"] for msgs, _ in model.calls)
+    assert len(first) <= room and len(second) <= room
+    assert r.verdict is not None and r.unread and fit(m, room).unread == ()

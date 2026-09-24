@@ -7,9 +7,10 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from oracle.research.budget import budget, reply_room
+from oracle.research.budget import budget, cut, reply_room
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
+from oracle.research.conditions import FACTS, REPEATS, condition_problem
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.roles import MAX_CITES, prompt
 from oracle.research.trace import FINAL, VERDICTS, Drop, Evidence, Report, Step, Verdict
@@ -20,13 +21,19 @@ ROLE = "verdict"
 WHO = "the portfolio manager"
 TASK = ("Decide buy, hold or sell for the next days to few weeks, weighing the statistics, the researcher's "
         "notes, the team's outputs and the evidence. Give a confidence from 0 to 1, a one-sentence reason "
-        'citing evidence, and one plain condition that would prove the verdict wrong. Reply with JSON: '
+        'citing evidence, and one plain condition, a future event and not the evidence restated, that would '
+        'prove the verdict wrong. Reply with JSON: '
         '"verdict", "confidence", "reason", "cites" and "invalidated_if".')
 SCHEMA = {"verdict": {"type": "string", "enum": list(VERDICTS)},
           "confidence": {"type": "number", "minimum": 0, "maximum": 1},
           "reason": {"type": "string"},
           "cites": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_CITES},
           "invalidated_if": {"type": "string"}}
+_ASK_AGAIN = ('Your last reply was not used: {why}. It said the verdict is wrong if: "{condition}". Name instead '
+              "a future event that would prove the verdict wrong, like revenue falling below a figure or a "
+              "guidance cut, not the evidence or the reason. Reply again with the whole JSON.")
+# Kept short, so the material given up for the second ask stays small.
+_QUOTED = 200
 
 # Kinds of material, in fill order: the last ones are the first left out.
 _KINDS = {"notes": ("the researcher's notes", "the researcher's notes"),
@@ -106,22 +113,33 @@ def fit(m: Material, chars: int) -> Fitted:
 
 async def add_verdict(model: ChatModel, report: Report, material: Material, context_tokens: int) -> Report:
     """The report with the verdict, or with why there is none; it never guesses one. A backend
-    that cannot answer costs only the verdict, never the report."""
+    that cannot answer costs only the verdict, never the report. A condition that is no condition
+    is asked for again once, saying why."""
     system = prompt(ROLE, WHO, TASK)
-    fitted = fit(material, budget(context_tokens, system, reply_room(model)))
-    try:
-        reply = await model.reply([{"role": "system", "content": system}, {"role": "user", "content": fitted.text}],
+    room = budget(context_tokens, system, reply_room(model))
+    fitted = fit(material, room)
+
+    async def ask(note: str = "") -> tuple[object, Verdict | None, str | None]:
+        reply = await model.reply([{"role": "system", "content": system},
+                                   {"role": "user", "content": fitted.text + note}],
                                   {"type": "object", "properties": SCHEMA, "required": list(SCHEMA)})
+        return reply, *check(reply, fitted.shown)
+
+    try:
+        reply, verdict, rejected = await ask()
+        if rejected in (FACTS, REPEATS):
+            condition = cut(" ".join(str(reply.get("invalidated_if")).split()), _QUOTED)
+            note = "\n\n" + _ASK_AGAIN.format(why=rejected, condition=condition)
+            fitted = fit(material, room - len(note))
+            _, verdict, rejected = await ask(note)
     except ModelError as exc:
         verdict, rejected = None, f"the model could not write a verdict: {exc}"
-    else:
-        verdict, rejected = check(reply, fitted.shown)
     return replace(report, verdict=verdict, verdict_rejected=rejected, unread=fitted.unread)
 
 
 def check(reply: object, shown: set[int]) -> tuple[Verdict | None, str | None]:
     """A valid verdict, or None and why: the label is in the set, the confidence in range,
-    and the reason cites something the verdict role was shown."""
+    the reason cites something the verdict role was shown, and the condition is one."""
     answer = Answer(ROLE, reply, {"verdict": str, "reason": str, "cites": list, "invalidated_if": str}, shown)
     if not answer.usable:
         return None, "not in the shape asked for"
@@ -138,6 +156,8 @@ def check(reply: object, shown: set[int]) -> tuple[Verdict | None, str | None]:
     condition = str(answer.get("invalidated_if")).strip()
     if not condition:
         return None, "it gave no condition that would prove it wrong"
+    if why := condition_problem(condition, reason.text):
+        return None, why
     return Verdict(label, float(confidence), reason.text, reason.cites, condition), None
 
 
