@@ -23,6 +23,7 @@ from oracle.services.discovery_service import SOURCE_QUESTION, Added, add_by_han
 from oracle.services.errors import InvalidQuery, ModelUnavailable, SearchFailed, UnknownQuestion
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
+from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
 from oracle.services.research_service import configured_model, context_tokens
 from oracle.services.research_tools import GdeltSearch, LocalNewsSearch, NewsSearch, Reader, Shelf, WebSearch
 from oracle.services.research_tools.reading import TRY_ANOTHER
@@ -287,7 +288,19 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     # More items behind a name first; the model's own order among equals.
     ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    return await _Shortlist(ctx, plan).screen(ranked, [e.id for e in evidence])
+    shortlist = _Shortlist(ctx, plan)
+    items = await shortlist.screen(ranked, [e.id for e in evidence])
+    if kept := record_links(ctx, _links(shortlist, ranked, [e.id for e in evidence]), SOURCE_CHAT):
+        notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
+                     "(shown on their Company pages)")
+    return items
+
+
+def _links(screen: Screen, mentions: list[Mention], item_ids: list[int]) -> list[LinkFound]:
+    """The links the model says an item states, both companies resolved, with those items as evidence."""
+    return [LinkFound(other.symbol, named.symbol, m.relation, tuple(item_ids[i] for i in m.headlines))
+            for m in mentions if m.related_to
+            and (other := screen.resolve(m.related_to)) and (named := screen.resolve(m.name))]
 
 
 async def _plan(model: ChatModel, asked: str) -> Plan:

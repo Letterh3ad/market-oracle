@@ -1,6 +1,7 @@
 """Links between companies (supplier, customer, competitor, partner, named beside, same
 industry), kept with the articles that showed them. Discovery records them as it reads the
-news, the discovery chat will too, and research on a company reads its strongest links."""
+news, the discovery chat when an answer's news states one, and research on a company reads its
+strongest links."""
 
 from __future__ import annotations
 
@@ -18,11 +19,12 @@ from oracle.store.links import LinkRepo, StoredLink
 from oracle.store.universe import Resolved, UniverseRepo
 
 __all__ = [
-    "RELATIONS", "SOURCE_DISCOVERY", "CompanyLink", "LinkFound", "company_links", "delete_link", "record_links",
+    "RELATIONS", "SOURCE_CHAT", "SOURCE_DISCOVERY", "CompanyLink", "LinkFound", "company_links", "delete_link", "record_links",
     "research_links",
 ]
 
 SOURCE_DISCOVERY = "discovery"
+SOURCE_CHAT = "chat"
 # What the other company is to the one it was found from; "other" is named beside it.
 RELATIONS = ("supplier", "customer", "competitor", "partner", "other", "peer")
 _INVERSE = {"supplier": "customer", "customer": "supplier"}

@@ -2015,3 +2015,18 @@ stored links first (why, article count, last seen), then universe peers minus th
 **Alternatives:** A separate reading slot for linked articles (the reader already reads what
 the loop was shown); tagging evidence by the tool call (a model that rewords the query loses
 the tag either way; matching the planned query needs no new plumbing in the tools).
+
+## 2026-09-24 - The discovery chat keeps a link only when an item states one
+**Context:** Ticket 07 wants links from the chat too, but a chat answer names companies that fit
+a question, not companies related to a seed: its naming call returned no relation at all.
+**Decision:** The naming schema gets two optional fields per company, `related_to` (another
+company) and `relation` (supplier, customer, competitor or partner; never "other"). The prompt
+asks for them only when a cited item says so. Code keeps the pair only when a cited item names
+the other company too (the same invention check names get), and not the company itself. Both
+names resolve through the screen's plain lookup (no shortlist rules), and
+`record_links(..., source="chat")` applies the never list and deleted pairs, with the cited items
+as evidence. Links are kept whatever the question's filters leave off: the item states a fact
+about the two companies, not an answer to the question. The answer's notes say how many were kept.
+**Alternatives:** Linking every shortlisted company to the others (invents relations); linking
+them to the question's subject (a question has no company to link to); a second model call per
+answer to extract relations (more model time for something most answers do not state).

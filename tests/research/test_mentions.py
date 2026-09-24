@@ -80,6 +80,21 @@ def test_a_question_prompt_carries_the_question_and_numbers_the_items():
     assert QUESTION_SCHEMA["properties"]["companies"]["items"]["properties"]["why"]["maxLength"] <= 200
 
 
+def test_a_stated_link_comes_back_only_when_a_cited_item_names_the_other_company():
+    props = QUESTION_SCHEMA["properties"]["companies"]["items"]
+    assert "related_to" in props["properties"] and "related_to" not in props["required"]
+    assert "other" not in props["properties"]["relation"]["enum"]
+    reply = {"companies": [
+        {"name": "Denso", "why": "Chips", "headlines": [2], "related_to": "Toyota", "relation": "supplier"},
+        {"name": "Panasonic", "why": "Venture", "headlines": [1], "related_to": "Honda", "relation": "partner"},
+        {"name": "Honda", "why": "Hybrids", "headlines": [3], "related_to": "Toyota", "relation": "other"},
+        {"name": "Toyota", "why": "Itself", "headlines": [1], "related_to": "Toyota Motor", "relation": "partner"},
+    ]}
+    found = {m.name: (m.related_to, m.relation) for m in parse_mentions(reply, HEADLINES)}
+    assert found == {"Denso": ("Toyota", "supplier"), "Panasonic": ("", "partner"), "Honda": ("", "other"),
+                     "Toyota": ("", "partner")}
+
+
 def test_a_why_line_comes_back_without_item_numbers_or_citations():
     reply = {"companies": [{"name": "Panasonic", "why": "Battery venture with Toyota [1] (a3)", "headlines": [1]}]}
     [m] = parse_mentions(reply, HEADLINES)

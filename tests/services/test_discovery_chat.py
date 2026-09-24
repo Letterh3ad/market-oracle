@@ -419,3 +419,31 @@ async def test_an_answer_a_stopped_app_left_running_is_marked_failed(ctx):
     repo.start(q.id, "scripted script", "2026-09-24T10:00:00Z")
     sweep_interrupted_answers(ctx)
     assert repo.answers(q.id)[0].status == "failed"
+
+
+async def test_a_link_an_answers_news_states_is_kept_with_its_items_never_one_it_does_not(ctx):
+    from oracle.services.links_service import company_links
+
+    reply = {"companies": [
+        {"name": "Fluence Energy", "why": "Storage with Siemens", "headlines": [2], "related_to": "Siemens Energy",
+         "relation": "partner"},
+        {"name": "Tesla", "why": "Megapacks", "headlines": [4], "related_to": "Siemens Energy",
+         "relation": "competitor"},
+        {"name": "RWE", "why": "Runs batteries", "headlines": [3], "related_to": "Fluence Energy",
+         "relation": "customer"},
+        {"name": "Siemens Energy", "why": "Orders", "headlines": [1]},
+    ]}
+    view = await ask(ctx, GRID, model=model(reply), searcher=FakeSearcher())
+    [link] = company_links(ctx, "ENR.DE")
+    assert (link.symbol, link.relations, link.source) == ("FLNC", ("partner",), "chat")
+    assert [e.title for e in link.evidence] == [HEADLINES[1]]
+    assert company_links(ctx, "RWE.DE") == [], "item 3 never names Fluence"
+    assert "kept 1 link between companies the news states (shown on their Company pages)" in view.answer.notes
+
+
+async def test_an_answer_stating_no_link_keeps_none(ctx):
+    from oracle.services.links_service import company_links
+
+    view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
+    assert all(company_links(ctx, s) == [] for s in ("ENR.DE", "FLNC", "RWE.DE"))
+    assert not any("link" in n for n in view.answer.notes)

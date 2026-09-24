@@ -10,6 +10,8 @@ from oracle.research.citations import strip_citations
 from oracle.universe.listings import blind_name, normalise_name
 
 RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
+LINKS = RELATIONS[:-1]
+"""Relations a news item can state between two companies it names."""
 MAX_COMPANIES = 8
 MAX_NAME = 80
 MAX_WHY = 200
@@ -18,17 +20,20 @@ MAX_WHY = 200
 _ITEM_REFS = re.compile(r"\s*[\[(]\s*(\d+(?:\s*,\s*\d+)*)\s*[\])]")
 
 
-def _schema(relation: bool, why: bool = False) -> dict:
+def _schema(relation: bool, why: bool = False, link: bool = False) -> dict:
     item = {"name": {"type": "string", "maxLength": MAX_NAME},
             "headlines": {"type": "array", "maxItems": 5, "items": {"type": "integer"}}}
     if relation:
         item["relation"] = {"type": "string", "enum": list(RELATIONS)}
     if why:
         item["why"] = {"type": "string", "maxLength": MAX_WHY}
+    # Optional: most answers state no link between two companies.
+    optional = {"related_to": {"type": "string", "maxLength": MAX_NAME},
+                "relation": {"type": "string", "enum": list(LINKS)}} if link else {}
     return {
         "type": "object",
         "properties": {"companies": {"type": "array", "maxItems": MAX_COMPANIES, "items": {
-            "type": "object", "properties": item, "required": list(item)}}},
+            "type": "object", "properties": item | optional, "required": list(item)}}},
         "required": ["companies"],
     }
 
@@ -36,8 +41,9 @@ def _schema(relation: bool, why: bool = False) -> dict:
 MENTIONS_SCHEMA = _schema(relation=True)
 TOPIC_SCHEMA = _schema(relation=False)
 """For headlines about a topic, not a company: nothing to relate to."""
-QUESTION_SCHEMA = _schema(relation=False, why=True)
-"""For news items found for a question: each company with one line on why it answers it."""
+QUESTION_SCHEMA = _schema(relation=False, why=True, link=True)
+"""For news items found for a question: each company with one line on why it answers it, and
+another company an item states it supplies, buys from, competes or partners with, if any."""
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,8 @@ class Mention:
     """0-based positions in the headlines given."""
     why: str = ""
     """One line on why, where the schema asks for it."""
+    related_to: str = ""
+    """Another company a cited item names and states this one is `relation` of; empty for none."""
 
 
 def mentions_prompt(seed: str, headlines: list[str]) -> list[dict]:
@@ -71,8 +79,11 @@ def question_prompt(question: str, items: list[str]) -> list[dict]:
     system = (f"You answer an investor's question from numbered news items. The question: {question}\n"
               f"List the listed companies the items show answer it, best first, at most {MAX_COMPANIES}: each "
               "company's usual name as written in an item, one short line on why it fits (from the items only), "
-              "and the numbers of the items that show it. Leave out people, places, regulators, funds, indexes "
-              "and news outlets. Name only companies that an item names; an empty list is a fine answer.")
+              "and the numbers of the items that show it. When one of those items says the company is a "
+              "supplier, customer, competitor or partner of another company it names, also give that "
+              "company's name as \"related_to\" and the \"relation\"; otherwise leave both out. Leave out people, "
+              "places, regulators, funds, indexes and news outlets. Name only companies that an item names; an "
+              "empty list is a fine answer.")
     return _messages(system, items, "News items")
 
 
@@ -105,8 +116,21 @@ def parse_mentions(reply: object, headlines: list[str], seed: str | None = None)
         if not at:
             continue
         relation = item.get("relation") if item.get("relation") in RELATIONS else "other"
-        out[key] = Mention(name, relation, at, _why(item.get("why"), len(headlines)))
+        out[key] = Mention(name, relation, at, _why(item.get("why"), len(headlines)),
+                           _related(item, key, [texts[i] for i in at]))
     return list(out.values())
+
+
+def _related(item: dict, key: str, cited: list[str]) -> str:
+    """The other company of a stated link, only when a cited item names it too."""
+    other = item.get("related_to")
+    if item.get("relation") not in LINKS or not isinstance(other, str):
+        return ""
+    other = " ".join(other.split())[:MAX_NAME]
+    other_key = blind_name(other)
+    if not other_key or same_company(other_key, key) or not any(f" {other_key} " in t for t in cited):
+        return ""
+    return other
 
 
 def same_company(a: str, b: str) -> bool:
