@@ -35,11 +35,12 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx),
 
 
 @router.post("/research", status_code=202)
-async def research(symbol: str, as_of: date | None = None, ctx: AppContext = Depends(get_ctx),
-                   runner: JobRunner = Depends(get_runner)) -> dict:
+async def research(symbol: str, as_of: date | None = None, model: str | None = None,
+                   ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """One research run (about a minute on the default local model); its report shows on
-    the company page when done. `as_of` replays that day, seeing only what existed by then."""
-    return shapes.job(submit_research(ctx, runner, symbol, as_of))
+    the company page when done. `as_of` replays that day, seeing only what existed by then;
+    `model` runs every stage on that profile instead of the slots."""
+    return shapes.job(submit_research(ctx, runner, symbol, as_of, model or None))
 
 
 @router.post("/tick", status_code=202)
@@ -80,17 +81,18 @@ async def discover(runner: JobRunner = Depends(get_runner)) -> dict:
 
 
 @router.post("/ask", status_code=202)
-async def ask(question: str, refines: int | None = None, ctx: AppContext = Depends(get_ctx),
-              runner: JobRunner = Depends(get_runner)) -> dict:
+async def ask(question: str, refines: int | None = None, model: str | None = None,
+              ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """Save a question (or, with `refines`, a follow-up narrowing that one) and answer it with a
-    shortlist; a blank or overlong question is refused now."""
-    return shapes.job(submit_ask(ctx, runner, question, refines))
+    shortlist, on the discovery slot or `model`; a blank or overlong question is refused now."""
+    return shapes.job(submit_ask(ctx, runner, question, refines, model or None))
 
 
 @router.post("/ask/{question_id}/rerun", status_code=202)
-async def rerun(question_id: int, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+async def rerun(question_id: int, model: str | None = None, ctx: AppContext = Depends(get_ctx),
+                runner: JobRunner = Depends(get_runner)) -> dict:
     """Answer a saved question again; the new answer marks what is new since the last."""
-    return shapes.job(submit_rerun(ctx, runner, question_id))
+    return shapes.job(submit_rerun(ctx, runner, question_id, model or None))
 
 
 @router.post("/backtest", status_code=202)

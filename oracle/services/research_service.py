@@ -18,7 +18,9 @@ from oracle.research.news import Article
 from oracle.research.queries import EDITION, MAX_LINKED, Search, link_queries, plan, seed_queries, suggest
 from oracle.research.roles import digest, digest_room, write_report
 from oracle.research.tools import Tool
-from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
+from oracle.research.trace import (
+    UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, StageModel, Step, Verdict,
+)
 from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
@@ -29,7 +31,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import research_links
-from oracle.services.models_service import DEFAULT_PROFILE, resolve_model
+from oracle.services.models_service import RESEARCH_STAGES, RunModel, resolve_stages
 from oracle.services.research_tools import (
     Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
     evidence_entry, market_summary,
@@ -59,23 +61,24 @@ LEASE_S = 3600.0
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
-                   as_of: date | None = None, searcher: WebSearcher | None = None) -> ResearchRun:
-    """One run over the listing, one at a time across processes. `model` defaults to the
-    default model profile. With `as_of`, the run replays that day: every tool sees only what
-    existed by its end, for backtests after the model's training cutoff."""
+                   as_of: date | None = None, searcher: WebSearcher | None = None,
+                   profile: str | None = None) -> ResearchRun:
+    """One run over the listing, one at a time across processes. Each stage runs on its slot's
+    profile, or every stage on `profile` (a run's picked model); `model` (a test's) answers
+    every stage. With `as_of`, the run replays that day: every tool sees only what existed by
+    its end, for backtests after the model's training cutoff."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    resolved = resolve_model(ctx, DEFAULT_PROFILE, model)
-    model = resolved.model
+    stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, profile, model))
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
-        model.fell_back_to.clear()
-        run_id = repo.start(listing, model.name, model.model, _now(ctx), as_of)
+        lead = stages.peek("research")
+        run_id = repo.start(listing, lead.name, lead.model, _now(ctx), as_of, stages.records())
         try:
-            await _run(ctx, repo, run_id, listing, model, resolved.context, as_of or today, as_of, searcher)
+            await _run(ctx, repo, run_id, listing, stages, as_of or today, as_of, searcher)
         except BaseException as exc:
-            _record_failure(ctx, repo, run_id, model, exc)
+            _record_failure(ctx, repo, run_id, stages, exc)
             if isinstance(exc, ModelError):
                 unavailable = ModelUnavailable(str(exc))
                 for note in getattr(exc, "__notes__", ()):
@@ -85,7 +88,42 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
         return repo.get(run_id)
 
 
-async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, model: ChatModel, context: int,
+class _Stages:
+    """Each stage's model and context, and what each stage's model fell back to. Stages run
+    one after another, so a model shared by two stages counts each fallback for the stage
+    that was running."""
+
+    def __init__(self, resolved: dict[str, RunModel]) -> None:
+        self._resolved = resolved
+        self._fell: dict[str, set[str]] = {stage: set() for stage in resolved}
+        self._current: str | None = None
+
+    def peek(self, stage: str) -> ChatModel:
+        return self._resolved[stage].model
+
+    def context(self, stage: str) -> int:
+        return self._resolved[stage].context
+
+    def model(self, stage: str) -> ChatModel:
+        """The stage's model, from now on counting its fallbacks as this stage's."""
+        self._settle()
+        model = self._resolved[stage].model
+        model.fell_back_to.clear()
+        self._current = stage
+        return model
+
+    def _settle(self) -> None:
+        if self._current:
+            self._fell[self._current] |= self._resolved[self._current].model.fell_back_to
+
+    def records(self) -> tuple[StageModel, ...]:
+        self._settle()
+        self._current = None
+        return tuple(StageModel(stage, r.profile, r.model.name, r.model.model, tuple(sorted(self._fell[stage])))
+                     for stage, r in self._resolved.items())
+
+
+async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, stages: _Stages,
                day: date, as_of: date | None, searcher: WebSearcher | None) -> None:
     shown: set[int] = set()
 
@@ -98,7 +136,8 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     searcher = None if as_of else searcher or DdgsSearcher()
     linked = [(x.name or x.symbol, x.label) for x in research_links(ctx, listing, MAX_LINKED, as_of)]
     seeds = seed_queries(profile.name, profile.country, searcher is not None) + link_queries(profile.name, linked)
-    queries = plan(seeds, await suggest(model, _about(profile, day), profile.country), profile.country)
+    queries = plan(seeds, await suggest(stages.model("queries"), _about(profile, day), profile.country),
+                   profile.country)
     repo.set_queries(run_id, [(q.query, q.via) for q in queries])
     shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
     contact = ctx.config.research.contact
@@ -107,10 +146,10 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         # SEC refuses requests without a contact; offering the tool would only waste a step.
         sec = Filings(client, ctx.conn, ctx.clock, shelf, listing, contact) if contact else None
         tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher, gate, sec)
-        outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
-                              lambda s: repo.add_step(run_id, s))
-        reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, model,
-                        f"{profile.name} ({profile.symbol})", context)
+        outcome = await react(stages.model("research"), tools, _task(profile, day, queries),
+                              ctx.config.llm.max_steps, lambda s: repo.add_step(run_id, s))
+        reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, stages.model("notes"),
+                        f"{profile.name} ({profile.symbol})", stages.context("notes"))
         filings = await sec.to_read(day) if sec else {}
         await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
                           lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
@@ -123,20 +162,26 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     read = frozenset(e.id for e in evidence if e.facts)
     digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
                          [lines[e.id] for e in evidence if e.id not in read], findings,
-                         digest_room(context))
-    report = await write_report(model, digest_text, shown, day)
+                         digest_room(stages.context("roles")))
+    report = await write_report(stages.model("roles"), digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
             repo.set_cited(run_id, cited)
-            repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
+            _finish(ctx, repo, run_id, stages, RunStatus.FAILED, findings, UNUSABLE)
         return
     material = Material(statistics, data_id, findings, report, evidence, run.steps, lines, read)
-    report = await add_verdict(model, report, material, context)
+    report = await add_verdict(stages.model("verdict"), report, material, stages.context("verdict"))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)
         repo.set_cited(run_id, cited | report.cites)
-        repo.finish(run_id, outcome.status, findings, None, _now(ctx), model.fell_back_to)
+        _finish(ctx, repo, run_id, stages, outcome.status, findings, None)
+
+
+def _finish(ctx: AppContext, repo: ResearchRepo, run_id: int, stages: _Stages, status: RunStatus,
+            findings: str | None, error: str | None) -> None:
+    records = stages.records()
+    repo.finish(run_id, status, findings, error, _now(ctx), {m for s in records for m in s.fell_back_to}, records)
 
 
 @dataclass(frozen=True)
@@ -157,8 +202,9 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
                            budget_min: float | None = None) -> Refresh:
     """Research the watched listings whose report is missing, too old or behind a price move
     (`[ai_account]`), most stale first, starting runs only while the time budget (`budget_min`,
-    else the tick's) lasts. `progress` hears each listing as it starts; `run` defaults to `research`."""
-    run = run or research
+    else the tick's) lasts. `progress` hears each listing as it starts; `run` defaults to `research`
+    on the ai_account slot's profile when set, else on the slots like any run."""
+    run = run or (lambda c, symbol: research(c, symbol, profile=c.config.model_slots.get("ai_account")))
     budget = timedelta(minutes=ctx.config.ai_account.research_budget_min if budget_min is None else budget_min)
     started = ctx.clock.utcnow()
     due = stale_research(ctx)
@@ -217,7 +263,7 @@ def _known(ctx: AppContext, symbol: str) -> Known:
                  bool(latest and latest.report.verdict), repo.last_attempt(symbol))
 
 
-def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: ChatModel, exc: BaseException) -> None:
+def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, stages: _Stages, exc: BaseException) -> None:
     """Never leave a run marked running (the GUI would show it as the latest forever), and
     never let a failure to record that hide the error itself."""
     if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
@@ -225,7 +271,7 @@ def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: Cha
     else:
         error = str(exc) if isinstance(exc, ModelError) else f"unexpected error: {exc!r}"
     try:
-        repo.finish(run_id, RunStatus.FAILED, None, error, _now(ctx), model.fell_back_to)
+        _finish(ctx, repo, run_id, stages, RunStatus.FAILED, None, error)
     except Exception as also:
         exc.add_note(f"the run could not be marked failed either: {also!r}")
 

@@ -4,6 +4,7 @@ import { el, showError, clearError } from "../lib/dom.js";
 import { busyButton, runJob } from "../lib/ui.js";
 import { repaint } from "../lib/repaint.js";
 import { questionList, questionView } from "../lib/questions.js";
+import { modelParams, modelPicker } from "../lib/model_picker.js";
 
 let current = null; // the question shown, reopened when the tab is picked without one
 let seq = 0;
@@ -24,14 +25,18 @@ async function load(pane) {
   if (q?.answers[0]?.status === "running") setTimeout(() => { if (mine === seq) load(pane); }, 3000);
 }
 
-// Runs an ask or rerun job, telling its stage as it goes, then shows the question it answered.
+// Runs an ask or rerun job on the picked model, telling its stage as it goes, then shows the
+// question it answered.
 function asking(label, path, pane, before = () => true) {
   const status = pane.querySelector("#q-status");
   return busyButton(label, async (onState) => {
     if (!before()) return;
     try {
       clearError();
-      const r = await runJob(path(), (job) => {
+      const [base, query] = path().split("?");
+      const params = new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(query ?? "")),
+        ...modelParams(pane.querySelector("#q-model")) });
+      const r = await runJob(params.toString() ? `${base}?${params}` : base, (job) => {
         onState(job);
         status.textContent = job.progress ? `Answering: ${job.progress}...` : `${job.state}...`;
       });
@@ -67,7 +72,7 @@ function render(pane, arg) {
       + "a real listing with recent prices, never one on your never list or one you removed. Nothing is added "
       + "until you press a button, unless you switch a question to auto: then its answers (and the midday pass's "
       + "reruns) add the companies that pass every validation check."),
-    el("div", { class: "row" }, question, el("span", { id: "q-ask" })),
+    el("div", { class: "row" }, question, el("span", { id: "q-ask" }), Object.assign(modelPicker(), { id: "q-model" })),
     el("div", { id: "q-status", class: "result" }),
     el("div", { id: "q-view" }),
     el("h3", null, "Your questions"),

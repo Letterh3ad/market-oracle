@@ -22,7 +22,8 @@ def _list(ctx: AppContext, args: argparse.Namespace) -> int:
         if r["key_env"]:
             key += f" ({r['key_env']})"
         source = "  from [llm]" if r["from_llm"] else ""
-        print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}")
+        slots = f"  slots: {', '.join(r['slots'])}" if r["slots"] else ""
+        print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}{slots}")
     return 0
 
 

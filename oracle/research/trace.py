@@ -189,9 +189,38 @@ class ResearchRun:
     """The searches the run was told to start from."""
     report: Report | None = None
     fell_back_to: tuple[str, ...] = ()
-    """Models that answered after `model` refused."""
+    """Models that answered after a stage's model refused, over the whole run."""
+    stages: tuple[StageModel, ...] = ()
+    """What each stage ran on, in stage order; empty for runs from before stages were kept.
+    `backend` and `model` are the research stage's."""
+
+    @property
+    def mixed(self) -> bool:
+        """Its stages ran on more than one model."""
+        return len({(s.backend, s.model) for s in self.stages}) > 1
 
     @property
     def model_label(self) -> str:
-        fell_back = f" ({', '.join(self.fell_back_to)} answered when it refused)" if self.fell_back_to else ""
-        return f"{self.backend} {self.model}{fell_back}"
+        if not self.mixed:
+            return f"{self.backend} {self.model}{_fell_back(self.fell_back_to)}"
+        groups: dict[tuple[str, str], list[StageModel]] = {}
+        for s in self.stages:
+            groups.setdefault((s.backend, s.model), []).append(s)
+        return "; ".join(
+            f"{backend} {model} ({', '.join(s.stage for s in group)})"
+            f"{_fell_back(tuple(sorted({m for s in group for m in s.fell_back_to})))}"
+            for (backend, model), group in groups.items())
+
+
+@dataclass(frozen=True)
+class StageModel:
+    stage: str
+    """The slot it ran on: queries, research, notes, roles or verdict."""
+    profile: str
+    backend: str
+    model: str
+    fell_back_to: tuple[str, ...] = ()
+
+
+def _fell_back(models: tuple[str, ...]) -> str:
+    return f" ({', '.join(models)} answered when it refused)" if models else ""

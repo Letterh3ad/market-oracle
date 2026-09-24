@@ -113,3 +113,17 @@ def test_a_midday_time_equal_to_the_tick_time_is_refused_on_write(ctx):
     with pytest.raises(InvalidQuery, match="midday_time must differ"):
         set_schedule(ctx, True, "12:30")
     assert ctx.config_source.read_bytes() == before
+
+
+def test_a_slot_is_a_row_choosing_a_profile_that_applies_at_once(ctx):
+    path = ctx.config_source
+    path.write_text(path.read_text(encoding="utf-8") + '\n[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n',
+                    encoding="utf-8")
+    notes = row(ctx, "models.slots", "notes")
+    assert (notes["value"], notes["choices"], notes["live"]) == (None, ["default", "big"], True)
+    assert set_setting(ctx, "models.slots", "notes", "big")["value"] == "big"
+    assert ctx.config.model_slots == {"notes": "big"}
+    with pytest.raises(InvalidQuery, match="names no profile 'huge'"):
+        set_setting(ctx, "models.slots", "verdict", "huge")
+    set_setting(ctx, "models.slots", "notes", None)
+    assert ctx.config.model_slots == {}

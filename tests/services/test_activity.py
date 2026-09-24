@@ -401,6 +401,42 @@ async def test_retrying_a_failed_research_run_resubmits_the_same_symbol(runner, 
     assert again.kind == "research" and again.subject == "AAPL" and again.label == "Research AAPL"
 
 
+async def test_a_picked_profile_stays_with_the_queued_job_and_its_retry(runner, ctx, monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from oracle.config import ModelProfile
+    from oracle.services import activity_service
+    from oracle.services.activity_service import retry, submit_ask, submit_research
+    from oracle.services.errors import UnknownModelProfile
+    from oracle.store.job_history import JobHistoryRepo
+
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big")})
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    ran = []
+
+    async def research(c, symbol, as_of=None, profile=None):
+        ran.append((symbol, profile))
+        raise ValueError("model down")
+
+    monkeypatch.setattr(activity_service, "research", research)
+    with pytest.raises(UnknownModelProfile):
+        submit_research(ctx, runner, "AAPL", profile="huge")
+    plain = submit_research(ctx, runner, "AAPL")
+    picked = submit_research(ctx, runner, "AAPL", profile="big")
+    assert picked is not plain and picked.label == "Research AAPL on big"
+    assert submit_research(ctx, runner, "AAPL", profile="big") is picked
+    await runner.wait(picked.id)
+    assert ran == [("AAPL", None), ("AAPL", "big")]
+    assert JobHistoryRepo(ctx.conn).get(picked.id).profile == "big"
+    again = retry(ctx, runner, picked.id)
+    assert again.profile == "big" and again.label == "Research AAPL on big"
+    await runner.wait(again.id)
+    assert ran[-1] == ("AAPL", "big")
+    with pytest.raises(UnknownModelProfile):
+        submit_ask(ctx, runner, "which grid companies?", profile="huge")
+
+
 async def test_retrying_a_research_replay_keeps_its_day(runner, ctx, monkeypatch):
     from types import SimpleNamespace
 
@@ -570,7 +606,7 @@ async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, mo
     from oracle.services import activity_service
     from oracle.services.activity_service import submit_research
 
-    async def unusable(c, listing, as_of=None):
+    async def unusable(c, listing, as_of=None, profile=None):
         return SimpleNamespace(status=RunStatus.FAILED, error="the model's answers were unusable")
 
     monkeypatch.setattr(activity_service, "research", unusable)

@@ -268,6 +268,14 @@ PROVIDER_KEYS = ("base_url", "context")
 LLM_PROFILE_KEYS = ("backend", "model", "base_url", "timeout_s", "context", "claude_model")
 """The `[llm]` keys that describe the default profile; `[models.default]` makes them moot."""
 
+SLOTS_TABLE = "slots"
+"""`[models.slots]`: which profile each model task runs on. Never a profile's name."""
+SLOTS = ("research", "notes", "roles", "queries", "verdict", "discovery", "ai_account")
+"""research: the loop; notes: article notes; roles: the report's roles; queries: query planning;
+verdict; discovery: chat and tick discovery; ai_account: every stage of the research a tick
+starts for the AI account. Unset, a slot runs on `default`, except ai_account: unset, that
+research uses the other slots like any run."""
+
 
 def model_profiles(config: Config) -> dict[str, ModelProfile]:
     """Every profile, `default` first, with the provider's defaults filled in."""
@@ -350,6 +358,8 @@ class Config:
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
     """The `[models.<name>]` tables only; model_profiles adds the implicit default."""
+    model_slots: dict[str, str] = field(default_factory=dict)
+    """`[models.slots]`: slot -> profile, only the slots set. Parsed with `models`, never a top-level key."""
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
@@ -392,8 +402,10 @@ def setting_list(extra_sources: tuple[str, ...] = ()) -> list[Setting]:
                         for s in fields(SourceConfig)]
         elif f.name == "keys":
             out += [Setting("keys", name, "str", None) for name in KEY_NAMES]
-        elif f.name == "models":
-            continue  # edited as whole profiles, in the Models section
+        elif f.name == "models":  # profiles are edited whole, in the Models section
+            out += [Setting(f"models.{SLOTS_TABLE}", slot, "str", None) for slot in SLOTS]
+        elif f.name == "model_slots":
+            continue
         elif hasattr(value, "__dataclass_fields__"):
             out += [_setting(f.name, s.name, getattr(value, s.name), s.type) for s in fields(value)]
         else:
@@ -516,6 +528,8 @@ def _reject_unknown(raw: dict, cls: type, where: str) -> None:
 
 def _apply(raw: dict) -> Config:
     _reject_unknown(raw, Config, "oracle.toml")
+    if "model_slots" in raw:
+        raise ConfigError(f"unknown key(s) in oracle.toml: model_slots (slots go in [models.{SLOTS_TABLE}])")
     values = {}
     for name, value in raw.items():
         if name == "sources":
@@ -564,7 +578,7 @@ def _apply(raw: dict) -> Config:
             values[name] = _llm(value)
             continue
         if name == "models":
-            values[name] = _models(value)
+            values["models"], values["model_slots"] = _models(value)
             continue
         if name == "research":
             values[name] = _research(value)
@@ -800,21 +814,40 @@ PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _models(raw: object) -> dict[str, ModelProfile]:
+def _models(raw: object) -> tuple[dict[str, ModelProfile], dict[str, str]]:
+    """The profiles and the slots."""
     if not isinstance(raw, dict):
         raise ConfigError("models must be a table of [models.<name>] sections")
+    raw = dict(raw)
+    slots = raw.pop(SLOTS_TABLE, {})
     seen: dict[str, str] = {}
     for name in raw:
         check_profile_name(name)
         if name.lower() in seen:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
-    return {name: check_profile(name, table) for name, table in raw.items()}
+    profiles = {name: check_profile(name, table) for name, table in raw.items()}
+    return profiles, check_slots(slots, {DEFAULT_PROFILE, *profiles})
+
+
+def check_slots(raw: object, profiles: set[str]) -> dict[str, str]:
+    where = f"models.{SLOTS_TABLE}"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where} must be a table of slot = \"profile\"")
+    unknown = sorted(set(raw) - set(SLOTS))
+    if unknown:
+        raise ConfigError(f"unknown slot(s) in [{where}]: {', '.join(unknown)}; the slots are {', '.join(SLOTS)}")
+    for slot, profile in raw.items():
+        if not (isinstance(profile, str) and profile in profiles):
+            raise ConfigError(f"{where}.{slot} names no profile {profile!r}; the profiles are {', '.join(sorted(profiles))}")
+    return {slot: raw[slot] for slot in SLOTS if slot in raw}
 
 
 def check_profile_name(name: object) -> str:
     if not (isinstance(name, str) and PROFILE_NAME.fullmatch(name)):
         raise ConfigError(f"models: {name!r} is not a profile name (letters, digits, _ and -, up to 40)")
+    if name.lower() == SLOTS_TABLE:
+        raise ConfigError(f"models: {name!r} is reserved for [models.{SLOTS_TABLE}]; pick another profile name")
     return name
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -29,7 +29,10 @@ __all__ = [
 ]
 
 LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts", "universe", "discovery", "models")
-"""Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart."""
+"""Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
+A nested table ([models.slots]) is live with its section."""
+LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots")
+"""The Config fields those sections load into."""
 
 
 def set_peer_count(ctx: AppContext, count: int) -> Path:
@@ -107,7 +110,7 @@ def set_setting(ctx: AppContext, section: str, key: str, value: object) -> dict:
     if section == "schedule":
         _check_schedule_write(ctx, {key: value})
     _save(ctx, section, {key: value})
-    if section in LIVE_SECTIONS:
+    if _live(section):
         reload_live_settings(ctx)
     return next(r for r in settings_form(ctx) if (r["section"], r["key"]) == (section, key))
 
@@ -117,13 +120,15 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
     for part in filter(None, setting.section.split(".")):
         table = table.get(part, {})
     row = {"section": setting.section, "key": setting.key, "kind": setting.kind, "default": setting.default,
-           "meaning": setting.meaning_in(meanings) or "", "live": setting.section in LIVE_SECTIONS,
+           "meaning": setting.meaning_in(meanings) or "", "live": _live(setting.section),
            "secret": setting.secret}
     if setting.secret:
         env = key_env_var(setting.key)
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
     if (setting.section, setting.key) in BLANK_OFF:
         row["blank_off"] = True
+    if setting.section == f"models.{SLOTS_TABLE}":
+        row["choices"] = [DEFAULT_PROFILE, *(n for n in raw.get("models", {}) if n not in (DEFAULT_PROFILE, SLOTS_TABLE))]
     if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):
         row["ignored"] = "ignored: [models.default] replaces it (Settings > Models)"
     return {**row, "value": table.get(setting.key, setting.default)}
@@ -146,7 +151,11 @@ def reload_live_settings(ctx: AppContext) -> None:
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
-    ctx.config = replace(ctx.config, **{section: getattr(loaded, section) for section in LIVE_SECTIONS})
+    ctx.config = replace(ctx.config, **{name: getattr(loaded, name) for name in LIVE_FIELDS})
+
+
+def _live(section: str) -> bool:
+    return section.split(".")[0] in LIVE_SECTIONS
 
 
 def _check_schedule_write(ctx: AppContext, values: dict[str, object]) -> ScheduleConfig:

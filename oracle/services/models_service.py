@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields
 
 from oracle.config import (
-    DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
+    DEFAULT_PROFILE, PROVIDER_KEYS, SLOTS, SLOTS_TABLE, Config, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
     model_profiles, profile_tables, with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
@@ -21,8 +21,9 @@ from oracle.services.jobs_service import job_statuses
 from oracle.services.settings_service import edit_config, reload_live_settings
 
 __all__ = [
-    "DEFAULT_PROFILE", "ModelTest", "RunModel", "delete_model_profile", "model_for", "model_profile_rows",
-    "provider_defaults", "resolve_model", "save_model_profile", "try_model_profile",
+    "DEFAULT_PROFILE", "RESEARCH_STAGES", "SLOTS", "ModelTest", "RunModel", "check_model_profile", "delete_model_profile",
+    "model_for", "model_profile_rows", "profile_names", "provider_defaults", "resolve_model", "resolve_stages",
+    "save_model_profile", "slot_profile", "try_model_profile",
 ]
 
 Builder = Callable[[AppContext, str, ModelProfile], ChatModel]
@@ -55,12 +56,43 @@ class RunModel:
 
     model: ChatModel
     context: int
+    profile: str = DEFAULT_PROFILE
+
+
+RESEARCH_STAGES = ("queries", "research", "notes", "roles", "verdict")
+"""A research run's stages in the order they run, each named for the slot it runs on."""
 
 
 def resolve_model(ctx: AppContext, profile: str, model: ChatModel | None = None) -> RunModel:
     """The named profile's model (or `model`, which a test or caller supplies) and its context."""
     p = _profile(ctx, profile)
-    return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context)
+    return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context, profile)
+
+
+def slot_profile(config: Config, slot: str) -> str:
+    """The profile a slot names; unset, `default`."""
+    return config.model_slots.get(slot, DEFAULT_PROFILE)
+
+
+def resolve_stages(ctx: AppContext, stages: tuple[str, ...], override: str | None = None,
+                   model: ChatModel | None = None) -> dict[str, RunModel]:
+    """Each stage's model and context, from its slot or, with `override` (a run's picked
+    profile), that profile for every stage. One model per profile, so stages on the same
+    profile share it. `model` (a test's) answers every stage."""
+    names = {stage: override or slot_profile(ctx.config, stage) for stage in stages}
+    built = {name: resolve_model(ctx, name, model) for name in dict.fromkeys(names.values())}
+    return {stage: built[name] for stage, name in names.items()}
+
+
+def check_model_profile(ctx: AppContext, name: str | None) -> str | None:
+    """`name` when it names a profile (None passes: no pick), refusing it otherwise."""
+    if name is not None:
+        _profile(ctx, name)
+    return name
+
+
+def profile_names(config: Config) -> list[str]:
+    return list(profile_tables(config))
 
 
 def model_for(ctx: AppContext, profile: str) -> ChatModel:
@@ -98,6 +130,7 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
+        "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
     } for name, p in model_profiles(ctx.config).items()]
 
 
@@ -169,6 +202,9 @@ def delete_model_profile(ctx: AppContext, name: str) -> None:
         raise InvalidQuery("the default profile cannot be deleted")
     if name not in ctx.config.models:
         raise UnknownModelProfile(f"no model profile {name}")
+    if using := [slot for slot, profile in ctx.config.model_slots.items() if profile == name]:
+        raise InvalidQuery(f"{name} is in use by slot{'s' if len(using) > 1 else ''} {', '.join(using)} "
+                           f"([models.{SLOTS_TABLE}]): point {'them' if len(using) > 1 else 'it'} at another profile first")
     edit_config(ctx, lambda text: without_section(text, f"models.{name}"), f"remove [models.{name}]")
     reload_live_settings(ctx)
 

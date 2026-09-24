@@ -23,6 +23,12 @@ function input(row) {
     box.checked = row.value === true;
     return box;
   }
+  if (row.choices) {
+    const box = el("select", null, el("option", { value: "" }, "unset"),
+      ...row.choices.map((c) => el("option", { value: c }, c)));
+    box.value = row.value ?? "";
+    return box;
+  }
   const number = row.kind === "int" || row.kind === "float";
   const box = el("input", { type: number ? "number" : "text", step: number ? "any" : null, size: 28 });
   box.value = row.value === null ? "" : show(row.value);
