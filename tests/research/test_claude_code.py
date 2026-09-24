@@ -91,6 +91,40 @@ async def test_the_session_gets_no_api_credentials_or_parent_claude_code_state(t
     assert not env & set(stripped) and "ORACLE_KEEP_ME" in env
 
 
+async def test_the_subscription_token_and_git_bash_path_pass_through(tmp_path, monkeypatch):
+    record = tmp_path / "record.json"
+    monkeypatch.setenv("FAKE_CLAUDE_RECORD", str(record))
+    kept = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_GIT_BASH_PATH")
+    for name in kept:
+        monkeypatch.setenv(name, "x")
+    await chat("good").reply(PROBE, SCHEMA)
+    assert set(kept) <= set(json.loads(record.read_text(encoding="utf-8"))["env"])
+
+
+def test_a_relative_cli_path_is_made_absolute(tmp_path, monkeypatch):
+    (tmp_path / "tools").mkdir()
+    found = shim(tmp_path / "tools", "good")
+    monkeypatch.chdir(tmp_path)
+    relative = os.path.join("tools", found.name)
+    assert claude_code.find_cli(relative) == str(found)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="the job object and taskkill are Windows only")
+async def test_killing_a_live_cli_also_walks_its_tree_for_children_started_before_the_job(monkeypatch):
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    tree = claude_code._Tree(proc)
+    started = []
+    real = subprocess.Popen
+    monkeypatch.setattr(claude_code.subprocess, "Popen", lambda argv, **kw: started.append(argv) or real(argv, **kw))
+    try:
+        tree.kill()
+        assert started == [["taskkill", "/F", "/T", "/PID", str(proc.pid)]]
+        proc.wait(10)
+    finally:
+        tree.close()
+        proc.kill()
+
+
 def test_the_flattened_prompt_keeps_every_turn_in_order_and_the_schema():
     messages = [{"role": "system", "content": "Rules A."}, {"role": "system", "content": "Rules B."},
                 {"role": "user", "content": "First."}, {"role": "assistant", "content": "{}"},

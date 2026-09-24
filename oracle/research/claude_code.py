@@ -36,11 +36,15 @@ LOGGED_OUT = re.compile(r"/login|not logged in|invalid api key|oauth token|authe
 FENCE = re.compile(r"^```(?:json)?\s*\n(.*)\n```$", re.DOTALL)
 
 
+KEPT_ENV = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_GIT_BASH_PATH")
+"""Subscription auth from `claude setup-token`, and where the CLI finds Git Bash on Windows."""
+
+
 def _inherited(name: str) -> bool:
     # API credentials would make the CLI bill the API, not the subscription; a parent Claude
     # Code session's variables would make it act as that session's child.
     upper = name.upper()
-    return not (upper == "CLAUDECODE" or upper.startswith(("CLAUDE_CODE_", "ANTHROPIC_")))
+    return upper in KEPT_ENV or not (upper == "CLAUDECODE" or upper.startswith(("CLAUDE_CODE_", "ANTHROPIC_")))
 
 
 def find_cli(name: str) -> str | None:
@@ -48,7 +52,7 @@ def find_cli(name: str) -> str | None:
     folder, as Windows' own lookup would. On Windows only PATHEXT kinds, so npm's sh launcher
     beside claude.cmd is passed over."""
     if os.path.dirname(name):
-        return name if Path(name).is_file() else None
+        return os.path.abspath(name) if Path(name).is_file() else None
     exts = [""]
     if os.name == "nt":
         exts = [e for e in (os.environ.get("PATHEXT") or ".COM;.EXE;.BAT;.CMD").lower().split(os.pathsep) if e]
@@ -210,9 +214,14 @@ class _Tree:
         if os.name != "nt":
             with contextlib.suppress(OSError):
                 os.killpg(self._proc.pid, signal.SIGKILL)
-        elif not (self._job and _kernel32().TerminateJobObject(self._job, 1)) and self._proc.poll() is None:
+        elif self._proc.poll() is None:
+            # taskkill /T also reaches a child started before the job was attached, but only
+            # while the CLI is alive to be walked from, so the job waits for close() to end
+            # the rest rather than killing the CLI first.
             subprocess.Popen(["taskkill", "/F", "/T", "/PID", str(self._proc.pid)], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, creationflags=subprocess.CREATE_NO_WINDOW)
+        elif self._job:
+            _kernel32().TerminateJobObject(self._job, 1)
 
     def close(self) -> None:
         if self._job:
