@@ -25,8 +25,8 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "day_change", "listing_health", "price_history", "price_history_in_base", "price_sources", "update_listing",
-    "update_watched",
+    "benchmark_history_in_base", "day_change", "listing_health", "price_history", "price_history_in_base",
+    "price_sources", "update_listing", "update_watched",
 ]
 
 JOB = "prices_update"
@@ -94,14 +94,23 @@ async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
 
 
 async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
-    """Every watched listing once, then (with `fx`) the FX their currencies need, in one
-    process at a time. A listing that fails is reported and the rest carry on."""
+    """Every watched listing and configured benchmark once, then (with `fx`) the FX their
+    currencies need, in one process at a time. A watched listing that fails is reported as a
+    failure; a benchmark not in the universe is skipped with a note instead (it is nobody's
+    watchlist entry gone missing, just an index that is not set up yet). Either way the rest
+    carry on."""
     with single_flight(ctx, JOB, LEASE_S) as held:
         outcomes = []
         health = HealthRepo(ctx.conn)
+        watched = WatchlistRepo(ctx.conn).all_symbols()
+        universe = UniverseRepo(ctx.conn)
+        benchmarks = [s for s in ctx.config.compare.benchmarks if s not in watched]
         async with open_client(ctx) as client:
-            for symbol in WatchlistRepo(ctx.conn).all_symbols():
+            for symbol in watched + benchmarks:
                 held.check()
+                if symbol in benchmarks and universe.resolve(symbol) is None:
+                    outcomes.append(ListingOutcome(symbol, 0, None, None, "not in the universe: benchmark skipped"))
+                    continue
                 if (h := health.get(symbol)).dead:
                     outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
                     continue
@@ -123,11 +132,21 @@ def price_history(ctx: AppContext, symbol: str, days: int | None = None) -> list
 
 def price_history_in_base(ctx: AppContext, symbol: str, days: int | None = None) -> list[ConvertedBar]:
     """Stored bars with each close converted to the base currency at that day's rate."""
+    return _bars_in_base(ctx, price_history(ctx, symbol, days))
+
+
+def benchmark_history_in_base(ctx: AppContext, symbol: str) -> list[ConvertedBar]:
+    """A benchmark's stored bars converted to the base currency, read by symbol directly: a
+    benchmark need not resolve in the universe, only have bars (see `update_watched`)."""
+    return _bars_in_base(ctx, BarRepo(ctx.conn).history(symbol))
+
+
+def _bars_in_base(ctx: AppContext, bars: Sequence[Bar]) -> list[ConvertedBar]:
     base = ctx.config.base_currency
     fx = FxRepo(ctx.conn, base)
     series: dict[str, RateSeries] = {}
     out = []
-    for b in price_history(ctx, symbol, days):
+    for b in bars:
         if b.currency == base:
             out.append(ConvertedBar(b, 1.0, b.close))
             continue

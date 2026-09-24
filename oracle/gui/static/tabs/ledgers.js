@@ -167,7 +167,8 @@ function column(a, base, rules, ai, stale) {
     el("h3", null, tip("Sells", "realised")), sold);
 }
 
-// Every account and buy-and-hold, each as its return since the AI account started.
+// Every account, buy-and-hold and configured benchmark, each as its return since the AI
+// account started.
 function comparison(c, base) {
   const lines = compareLines(c.lines, base,
     "The comparison chart starts once the AI account has equity on two different days (Update prices records it).");

@@ -11,6 +11,20 @@ const LINES = {
   manual: { label: "Manual", colour: "--text" },
   buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
 };
+const BENCH_COLOURS = ["--bench1", "--bench2"];
+
+// Every account and buy_and_hold has a fixed entry above; a benchmark's name is whichever
+// symbol is configured, so its label and colour come from the line itself and its order
+// among the other benchmarks, dashed like buy and hold (another line held, not traded).
+function lineInfos(lines) {
+  const out = {};
+  let bench = 0;
+  for (const l of lines) {
+    out[l.name] = LINES[l.name] ?? { label: l.label || l.name, colour: BENCH_COLOURS[bench++ % BENCH_COLOURS.length],
+      dashed: true };
+  }
+  return out;
+}
 
 // headers: [label, glossary key or null, numeric?]
 function table(headers, rows, empty) {
@@ -21,17 +35,18 @@ function table(headers, rows, empty) {
     el("tbody", null, ...rows));
 }
 
-function swatch(name) {
-  return el("span", { class: LINES[name].dashed ? "swatch dashed" : "swatch",
-    style: `background: var(${LINES[name].colour}); color: var(${LINES[name].colour})` });
+function swatch(info) {
+  return el("span", { class: info.dashed ? "swatch dashed" : "swatch",
+    style: `background: var(${info.colour}); color: var(${info.colour})` });
 }
 
 // The chart beside the table and each line's caption. `draw()` fills the chart once `node` is
 // on screen (it sizes to its box) and returns it, or null when there is nothing to draw.
 function compareLines(lines, base, emptyChart) {
+  const info = lineInfos(lines);
   const holder = el("div", { class: "compare-chart" });
   const rows = lines.map((l) => el("tr", null,
-    el("td", null, swatch(l.name), " ", LINES[l.name].label),
+    el("td", null, swatch(info[l.name]), " ", info[l.name].label),
     el("td", { class: `num ${tone(l.return)}` }, l.return == null ? "no history yet" : pct(l.return)),
     el("td", { class: `num ${l.max_fall < 0 ? "down" : ""}` }, pct(l.max_fall)),
     el("td", { class: "num" }, String(l.trades)),
@@ -47,7 +62,7 @@ function compareLines(lines, base, emptyChart) {
       holder.replaceChildren(el("p", { class: "dim small" }, emptyChart));
       return null;
     }
-    return linesChart(holder, drawn.map((l) => ({ ...LINES[l.name], title: LINES[l.name].label, percent: true,
+    return linesChart(holder, drawn.map((l) => ({ ...info[l.name], title: info[l.name].label, percent: true,
       points: l.points.map(([day, r]) => ({ time: day, value: r * 100 })) })), 220);
   };
   return { node, draw };

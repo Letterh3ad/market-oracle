@@ -7,7 +7,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from oracle.broker.compare import buy_and_hold, max_fall, returns_since
+from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
@@ -15,7 +15,7 @@ from oracle.market.fx import RateSeries, pick_rate
 from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
-from oracle.services.prices_service import price_history_in_base
+from oracle.services.prices_service import benchmark_history_in_base, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -109,6 +109,9 @@ class Line:
     trades: int
     costs: float
     """Paid since the start, base currency."""
+    label: str = ""
+    """Display name for a benchmark line (the universe's company name, or a nice fallback);
+    empty for an account or buy-and-hold line, whose label the page already knows."""
 
     @property
     def return_(self) -> float | None:
@@ -318,6 +321,10 @@ CAPTIONS = {
     "manual": "Manual: your own buys and sells.",
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
+BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
+"""Nice fallback labels for the two default benchmarks, used when the symbol is not (or
+not yet) in the universe under its own company name."""
+BENCHMARK_DESCRIPTIONS = {"VWRL.L": "the whole world market", "VUSA.L": "the S&P 500"}
 
 
 def comparison(ctx: AppContext) -> Comparison:
@@ -331,6 +338,7 @@ def comparison(ctx: AppContext) -> Comparison:
         notes = ("The AI account has no history yet: each account is shown from its own first record, and buy and "
                  "hold starts once the AI account has one.", NOT_VALIDATED)
         lines.append(Line("buy_and_hold", "Buy and hold: starts with the AI account.", (), 0.0, 0, 0.0))
+        lines += [_benchmark_line(ctx, s, None) for s in ctx.config.compare.benchmarks]
         return Comparison(None, tuple(lines), (), notes)
     closes = {}
     for symbol in WatchlistRepo(ctx.conn).all_symbols():
@@ -344,10 +352,36 @@ def comparison(ctx: AppContext) -> Comparison:
                                       f"watched today, bought at the first close from {start.isoformat()} and never "
                                       "sold, with no costs.",
                       tuple(returns_since(held, start)), max_fall(held), 0, 0.0))
+    lines += [_benchmark_line(ctx, s, start) for s in ctx.config.compare.benchmarks]
     notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
     if left_out:
         notes.append(f"Left out of buy and hold, no prices from {start.isoformat()} on: {', '.join(left_out)}.")
     return Comparison(start, tuple(lines), tuple(left_out), tuple(notes))
+
+
+def _benchmark_line(ctx: AppContext, symbol: str, start: date | None) -> Line:
+    """Holding `symbol` from `start`, no costs: its own line, independent of the watchlist
+    and never traded. `start` None (the AI account has no history yet) is an empty line, like
+    every other line in that state."""
+    label = _benchmark_label(ctx, symbol)
+    if start is None:
+        return Line(symbol, _benchmark_caption(symbol, None), (), 0.0, 0, 0.0, label)
+    closes = [(c.bar.date, c.close_base) for c in benchmark_history_in_base(ctx, symbol)]
+    usable = [(d, c) for d, c in closes if d >= start and c is not None]
+    points = tuple(benchmark_return(closes, start))
+    return Line(symbol, _benchmark_caption(symbol, start), points, max_fall(usable), 0, 0.0, label)
+
+
+def _benchmark_label(ctx: AppContext, symbol: str) -> str:
+    found = UniverseRepo(ctx.conn).resolve(symbol)
+    return found.name if found else BENCHMARK_LABELS.get(symbol, symbol)
+
+
+def _benchmark_caption(symbol: str, start: date | None) -> str:
+    if start is None:
+        return f"Holding {symbol} from the AI account's start."
+    where = BENCHMARK_DESCRIPTIONS.get(symbol)
+    return f"Holding {symbol}{f' ({where})' if where else ''} from {start.isoformat()}, no costs."
 
 
 def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date | None) -> Line:

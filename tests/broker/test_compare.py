@@ -2,7 +2,7 @@ from datetime import date
 
 import pytest
 
-from oracle.broker.compare import buy_and_hold, max_fall, returns_since
+from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
 
 D1, D2, D3, D4 = (date(2026, 9, d) for d in (21, 22, 23, 24))
 
@@ -62,3 +62,18 @@ def test_a_listing_with_no_closes_in_range_is_left_out_and_named():
 def test_nothing_to_hold_is_an_empty_series():
     assert buy_and_hold({}, D1, 1000.0) == ([], [])
     assert buy_and_hold({"A": []}, D1, 1000.0) == ([], ["A"])
+
+
+def test_benchmark_return_is_the_close_series_since_the_start_day():
+    closes = [(D1, 100.0), (D2, 110.0), (D3, 121.0)]
+    assert benchmark_return(closes, D1) == approx([(D1, 0.0), (D2, 0.1), (D3, 0.21)])
+
+
+def test_benchmark_return_skips_a_missing_or_unconverted_close():
+    closes = [(D1, 100.0), (D2, None), (D3, 150.0)]
+    assert benchmark_return(closes, D1) == approx([(D1, 0.0), (D3, 0.5)])
+
+
+def test_benchmark_return_is_empty_with_no_close_from_the_start_day_on():
+    assert benchmark_return([(date(2026, 9, 18), 100.0)], D1) == []
+    assert benchmark_return([], D1) == []
