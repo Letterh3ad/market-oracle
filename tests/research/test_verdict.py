@@ -61,8 +61,9 @@ def test_observations_behind_cited_evidence_come_before_the_rest():
     assert f.unread == ("1 step observation", "1 uncited item")
 
 
-def test_the_budget_is_the_models_context_less_the_reply_and_the_prompt():
-    assert budget(8192, "s" * 100) == (8192 - 1024) * 4 - 100
+def test_the_budget_is_three_quarters_of_the_models_context_less_the_reply_and_the_prompt():
+    # Numbers and URLs run nearer 3 characters a token than 4.
+    assert budget(8192, "s" * 100) == (8192 - 1024) * 3 - 100
     assert budget(1000, "s") == 0
 
 
@@ -104,6 +105,16 @@ async def test_a_rejected_verdict_says_why_and_what_went_unread():
     assert r.verdict is None and r.verdict_rejected == "its reason cites nothing it was shown"
     assert r.no_verdict == "the verdict was rejected: its reason cites nothing it was shown"
     assert r.did_not_read == "did not read: the researcher's notes, 4 role outputs, 2 cited items, 40 uncited items"
+
+
+async def test_a_backend_that_cannot_write_the_verdict_leaves_the_report_with_why():
+    from oracle.research.llm import ModelError
+
+    model = ScriptedModel()
+    model.roles = {"verdict": ModelError("ollama timed out")}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict is None and r.verdict_rejected == "the model could not write a verdict: ollama timed out"
+    assert r.findings == REPORT.findings
 
 
 def test_an_older_report_has_no_verdict_and_says_so():

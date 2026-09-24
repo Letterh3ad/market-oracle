@@ -49,15 +49,6 @@ class ResearchRepo:
         ).fetchall()
         return [self._run(row) for row in rows]
 
-    def latest_verdict(self, symbol: str) -> ResearchRun | None:
-        """The newest live (not replayed) run whose report has a valid verdict."""
-        row = self._conn.execute(
-            "SELECT r.id FROM research_runs r JOIN research_reports p ON p.run_id = r.id "
-            "WHERE r.symbol = ? AND r.as_of IS NULL AND json_extract(p.body, '$.verdict') IS NOT NULL "
-            "ORDER BY r.started_at DESC, r.id DESC LIMIT 1", (symbol,),
-        ).fetchone()
-        return self.get(row[0]) if row else None
-
     def latest_report(self, symbol: str) -> ResearchRun | None:
         """The newest live run that wrote a report, with a verdict or not."""
         row = self._conn.execute(
@@ -65,6 +56,12 @@ class ResearchRepo:
             "WHERE r.symbol = ? AND r.as_of IS NULL ORDER BY r.started_at DESC, r.id DESC LIMIT 1", (symbol,),
         ).fetchone()
         return self.get(row[0]) if row else None
+
+    def last_attempt(self, symbol: str) -> datetime | None:
+        """When the newest live run started, whatever its outcome."""
+        (at,) = self._conn.execute("SELECT MAX(started_at) FROM research_runs WHERE symbol = ? AND as_of IS NULL",
+                                   (symbol,)).fetchone()
+        return datetime.fromisoformat(at) if at else None
 
     def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
         with transaction(self._conn):

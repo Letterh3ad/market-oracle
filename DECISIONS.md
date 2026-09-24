@@ -1266,3 +1266,19 @@ never held off forever. It applies to manual ticks too (the option is about the 
 Browser notifications ask permission only from a "Notify me" click and fire once per warning; the in-page banner
 always shows. `warn_minutes` defaults to 10 (0 to 120, 0 off).
 **Alternatives:** gating only scheduled ticks; a Windows toast (deferred to packaging); a new notification dependency.
+
+## 2026-09-24 - ai-account gate: the newest report rules, the comparison starts when the AI is first on
+
+**Context:** Review gate round 1 on ai-account overturned four recorded choices.
+**Decision:** The AI step and research freshness use each listing's newest live report: no
+valid verdict on it means skip (quoting why) and due for research; an older valid verdict is
+never traded past a newer rejected one. A backend failure at the verdict keeps the report,
+with "the model could not write a verdict: ..." as the rejection. Tick research orders due
+listings by last attempt (any run status), never tried first, so a listing whose research
+always fails cannot hold the front of the queue. The `ai` account's equity is recorded only
+while it is on, so "since the AI account started" means since it was first turned on. The
+verdict budget fills at 3 characters a token (75% of the old 4), since numbers and URLs run
+nearer 3.
+**Alternatives:** Falling back to the newest valid verdict within the age limit (trades a call
+the latest research no longer supports); ordering by report day (starvation); recording `ai`
+equity from the upgrade (a start the user never chose).

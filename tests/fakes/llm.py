@@ -14,7 +14,8 @@ class ScriptedModel:
         self.suggestions: object = {"queries": []}
         """The answer to the query-suggestion call, which comes before the loop's steps."""
         self.roles: dict[str, object] = {}
-        """Role name -> its answer, for the report calls after the loop; others answer `blank`."""
+        """Role name -> its answer (an exception is raised), for the report calls after the loop; others
+        answer `blank`."""
         self.calls: list[tuple[list[dict], dict]] = []
         self.fell_back_to: set[str] = set()
         self.falls_back_to: str | None = None
@@ -27,7 +28,10 @@ class ScriptedModel:
         if "queries" in schema.get("properties", {}):
             return self.suggestions
         if role := _role(messages):
-            return self.roles[role] if role in self.roles else blank(schema)
+            answer = self.roles[role] if role in self.roles else blank(schema)
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
         if not self.replies:
             raise AssertionError("the script ran out of replies")
         reply = self.replies.pop(0)

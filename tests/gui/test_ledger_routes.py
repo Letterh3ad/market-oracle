@@ -72,7 +72,7 @@ async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdict
     assert (await priced.put("/api/ledgers/ai", json={"enabled": True})).json() == {"enabled": True}
     assert ctx.config.ai_account.enabled is True
     on = (await priced.post("/api/ledgers/ai/step")).json()
-    assert on["off"] is None
+    assert on["off"] is None and on["badge"].startswith("unvalidated: AI research")
     assert [(d["symbol"], d["action"], d["reason"]) for d in on["decisions"]] == [
         ("AAPL", "skip", "no verdict yet: run research on it")]
     [d] = (await priced.get("/api/ledgers/decisions", params={"account": "ai"})).json()
@@ -103,6 +103,7 @@ async def test_the_comparison_waits_for_the_ai_account_history(loaded):
 
 
 async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, yahoo, clock):
+    ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=True))
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
     await run_job(priced, "/api/jobs/prices", symbol="AAPL")
     # The start day's close only exists once that session has closed.

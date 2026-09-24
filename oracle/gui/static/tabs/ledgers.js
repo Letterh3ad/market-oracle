@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { lineChart, linesChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
+import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
 
@@ -153,7 +154,7 @@ function column(a, base, rules, ai) {
     "Nothing sold yet.");
   const title = manual ? tip("Manual", "manual_account")
     : a.name === "ai" ? tipText("AI", aiRules(rules, ai)) : tipText("Strategy", strategyRules(rules));
-  const badge = a.name === "ai" ? el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")) : null;
+  const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
     a.name === "ai" ? aiResearch(ai) : null,
@@ -248,8 +249,8 @@ function jobs(base) {
     ? r.map((d) => `${account}: ${d.action} ${d.symbol}${d.cash != null ? ` for ${money(d.cash)} ${base}` : ""} (${d.reason})`)
     : [empty]);
   const strategyLines = (r) => stepLines("strategy", r, "Nothing to decide: watch listings and analyse them first.");
-  const aiLines = (r) => (r.off ? [r.off]
-    : stepLines("ai", r.decisions, "Nothing to decide: watch listings and research them first."));
+  const aiLines = (r) => (r.off ? [r.off] : [r.badge[0].toUpperCase() + r.badge.slice(1),
+    ...stepLines("ai", r.decisions, "Nothing to decide: watch listings and research them first.")]);
   return el("div", null,
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
@@ -284,7 +285,7 @@ async function render(target) {
     el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
-    el("h3", null, "AI decisions"), decisions(aiLog, base, body.ai_account.enabled
+    el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures."));
   drawCharts(body.accounts);
   drawComparison(body.compare);

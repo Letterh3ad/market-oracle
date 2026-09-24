@@ -96,6 +96,8 @@ class Verdict:
 
 
 UNVALIDATED = "unvalidated: AI research has not yet beaten the technicals-only baseline in paper trades"
+UNVALIDATED_TAG = "(unvalidated)"
+"""The short form, where a line has no room for the whole badge."""
 
 
 @dataclass(frozen=True)

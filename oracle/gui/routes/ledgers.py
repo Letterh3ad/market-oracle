@@ -10,7 +10,7 @@ from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, TRADERS, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.settings_service import set_ai_account, set_ai_research
@@ -63,7 +63,8 @@ async def step(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
 async def step_ai(ctx: AppContext = Depends(get_ctx)) -> dict:
     """Run the strategy's rules over the research verdicts on the AI account, unless it is off."""
     decisions = ai_step(ctx)
-    return {"off": AI_OFF if decisions is None else None, "decisions": [asdict(d) for d in decisions or []]}
+    return {"off": AI_OFF if decisions is None else None, "decisions": [asdict(d) for d in decisions or []],
+            "badge": UNVALIDATED}
 
 
 class AiSwitch(BaseModel):

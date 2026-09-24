@@ -634,6 +634,18 @@ async def test_an_invalid_verdict_leaves_the_report_without_one_and_says_why(ctx
     assert latest_verdict(ctx, "AAPL") is None
 
 
+async def test_a_backend_failing_at_the_verdict_keeps_the_report_and_records_why(ctx, news):
+    from oracle.research.llm import ModelError
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = ModelError("ollama went away")
+    run = await research(ctx, "AAPL", model)
+    assert run.status == "done" and run.report.bull is not None
+    assert run.report.no_verdict == "the verdict was rejected: the model could not write a verdict: ollama went away"
+    assert latest_verdict(ctx, "AAPL") is None
+
+
 async def test_a_verdict_citing_what_the_budget_left_out_is_rejected_and_the_trim_recorded(ctx, news):
     from dataclasses import replace
 

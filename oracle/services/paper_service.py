@@ -29,10 +29,10 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line", "Order",
-    "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
-    "decision_log", "equity_history", "fill_pending",
-    "pending_orders", "place_buy", "place_sell", "sells", "strategy_step",
+    "ACCOUNTS", "AI_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
+    "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
+    "strategy_step",
 ]
 
 ACCOUNTS = ("strategy", "ai", "manual")
@@ -238,29 +238,27 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
 
 
 def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lean], list[Decision], dict[str, int]]:
-    """Each listing's newest valid live verdict as a lean, unless older than the configured
-    age; with the research run behind each, skips included."""
+    """Each listing's newest live report's verdict as a lean, unless it has none (a rejected
+    verdict is never passed over for an older one) or it is older than the configured age;
+    with the research run behind each, skips included."""
     research, universe, today = ResearchRepo(ctx.conn), UniverseRepo(ctx.conn), ctx.clock.utcnow().date()
     max_age = ctx.config.ai_account.max_verdict_age_days
     found, skips, runs = {}, [], {}
     for symbol in watched:
-        run = research.latest_verdict(symbol)
+        run = research.latest_report(symbol)
         if universe.resolve(symbol) is None:
             skips.append(Decision(symbol, Action.SKIP, None, GONE))
-        elif run is None:
-            latest = research.latest_report(symbol)
-            if latest is None:
-                skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it"))
-            else:
-                runs[symbol] = latest.id
-                skips.append(Decision(symbol, Action.SKIP, None, f"no verdict: {latest.report.no_verdict}"))
+            continue
+        if run is None:
+            skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it"))
+            continue
+        runs[symbol] = run.id
+        if (v := run.report.verdict) is None:
+            skips.append(Decision(symbol, Action.SKIP, None, f"no verdict: {run.report.no_verdict}"))
         elif (today - run.report.day).days > max_age:
-            runs[symbol] = run.id
             skips.append(Decision(symbol, Action.SKIP, None, f"the verdict is from {run.report.day.isoformat()}, older "
                                                              f"than {max_age} days: run research on it again"))
         else:
-            runs[symbol] = run.id
-            v = run.report.verdict
             found[symbol] = Lean(symbol, run.report.day, v.label, v.confidence, "ai")
     return found, skips, runs
 
@@ -357,8 +355,11 @@ def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date 
 
 
 def _record_equity(ctx: AppContext) -> None:
+    """The AI account only while it is on, so the comparison starts the day it was first turned on."""
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
+        if account == "ai" and not ctx.config.ai_account.enabled:
+            continue
         view = account_view(ctx, account)
         EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
 

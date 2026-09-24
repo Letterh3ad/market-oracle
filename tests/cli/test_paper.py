@@ -93,19 +93,26 @@ def test_the_ai_account_is_shown_and_its_step_says_when_it_is_off(run):
     assert out == ""
 
 
+def ai_on(run):
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[ai_account]\nenabled = true\n", encoding="utf-8")
+
+
 def test_the_ai_step_logs_its_skips_per_account(run):
-    cfg = run.config
-    cfg.write_text(cfg.read_text(encoding="utf-8") + "[ai_account]\nenabled = true\n", encoding="utf-8")
+    ai_on(run)
     code, out, _ = run("paper", "step", "--account", "ai")
     assert code == 0 and "VOD.L: skip (no verdict yet: run research on it)" in out
+    assert out.startswith("AI decisions (unvalidated: AI research has not yet beaten")
     _, out, _ = run("paper", "log", "--account", "ai")
-    assert "VOD.L" in out and "no verdict yet" in out
+    assert "VOD.L" in out and "no verdict yet" in out and out.startswith("AI decisions (unvalidated:")
     _, out, _ = run("paper", "log")
     assert out == ""
 
 
 def test_history_compares_every_line_since_the_ai_started(run):
-    # The AI account's first record is the fixture's 2026-09-18 price run; buy and hold buys at that day's close.
+    # The AI account's first record is this 2026-09-18 price run, its first while on; buy and hold buys at that
+    # day's close.
+    ai_on(run)
+    run("prices", "update")
     run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 18), 70.0, 70.0, 70.0, 70.0, 70.0, 1000))
     run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 21), 77.0, 77.0, 77.0, 77.0, 77.0, 1000))
     run.clock.advance(3 * 86400)

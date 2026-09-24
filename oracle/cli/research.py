@@ -7,7 +7,7 @@ from datetime import date
 
 from oracle.services.context import AppContext
 from oracle.services.research_service import (
-    UNVALIDATED, Claim, Report, ResearchRun, RunStatus, report_history, research,
+    UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, report_history, research,
 )
 
 WIDTH = 96
@@ -69,7 +69,7 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
 
 def print_report(report: Report) -> None:
     print(f"Report ({UNVALIDATED}):")
-    _wrapped(f"Verdict (unvalidated): {_verdict(report)}", "  ")
+    _wrapped(f"Verdict {UNVALIDATED_TAG}: {_verdict(report)}", "  ")
     if report.verdict:
         _wrapped(f"Verdict wrong if: {report.verdict.invalidated_if}", "  ")
     if report.did_not_read:
@@ -96,7 +96,7 @@ def print_history(runs: list[ResearchRun], symbol: str) -> None:
     for r in runs:
         replay = " (replay)" if r.as_of else ""
         print(f"{r.report.day.isoformat()}{replay}  {r.model_label}")
-        _wrapped(f"verdict: {_verdict(r.report)}", "  ")
+        _wrapped(f"verdict {UNVALIDATED_TAG}: {_verdict(r.report)}", "  ")
         for label, case in (("bull", r.report.bull), ("bear", r.report.bear)):
             _wrapped(f"{label}: {case.text if case else '(none)'}", "  ")
 

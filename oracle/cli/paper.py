@@ -5,9 +5,11 @@ import argparse
 from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, TRADERS, Order, Side, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
+
+AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -118,6 +120,8 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if decisions is None:
         print(AI_OFF)
         return 0
+    if args.account == "ai":
+        print(AI_HEADER)
     if not decisions:
         print("no decisions: nothing watched or held (add listings with `oracle watch add SYMBOL`)")
     for d in decisions:
@@ -127,6 +131,9 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def log_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    for d in decision_log(ctx, args.account):
+    rows = decision_log(ctx, args.account)
+    if rows and args.account == "ai":
+        print(AI_HEADER)
+    for d in rows:
         print(f"{d.day.isoformat()}  {d.symbol:<12}{d.action:<6}{d.reason}")
     return 0

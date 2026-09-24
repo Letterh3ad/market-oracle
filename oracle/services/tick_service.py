@@ -18,7 +18,7 @@ from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import ai_step, fill_pending, strategy_step
 from oracle.services.prices_service import update_watched
-from oracle.services.research_service import refresh_research
+from oracle.services.research_service import UNVALIDATED_TAG, refresh_research
 from oracle.store.ticks import INTERRUPTED, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
 
@@ -76,7 +76,8 @@ async def _research(ctx: AppContext, say: Say) -> tuple[str, str | None]:
     done = await refresh_research(ctx, say)
     if not done.due:
         return "nothing due", None
-    parts = [f"{len(done.researched)} of {done.due} due researched"]
+    researched = f"{len(done.researched)} of {done.due} due researched"
+    parts = [f"{researched} {UNVALIDATED_TAG}" if done.researched else researched]
     if done.failed:
         parts.append(f"{len(done.failed)} failed")
     if done.deferred:
@@ -86,7 +87,9 @@ async def _research(ctx: AppContext, say: Say) -> tuple[str, str | None]:
 
 async def _ai_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     decisions = ai_step(ctx)
-    return (f"{OFF}: nothing traded", None) if decisions is None else (_decided(ctx, decisions), None)
+    if decisions is None:
+        return f"{OFF}: nothing traded", None
+    return f"{_decided(ctx, decisions)} {UNVALIDATED_TAG}", None
 
 
 def _decided(ctx: AppContext, decisions: list[Decision]) -> str:

@@ -9,11 +9,13 @@ from dataclasses import dataclass, replace
 
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
-from oracle.research.llm import ChatModel
+from oracle.research.llm import ChatModel, ModelError
 from oracle.research.roles import MAX_CITES, prompt
 from oracle.research.trace import FINAL, VERDICTS, Drop, Evidence, Report, Step, Verdict
 
-CHARS_PER_TOKEN = 4
+# English prose runs about 4 characters a token, but numbers and URLs nearer 3: filling at 3
+# keeps a quarter in hand so the model never truncates the material itself.
+CHARS_PER_TOKEN = 3
 # The reply is short, but the schema's grammar and the chat template take room too.
 REPLY_TOKENS = 1024
 _IDS = re.compile(r"\[a(\d+)\]")
@@ -104,13 +106,17 @@ def fit(m: Material, chars: int) -> Fitted:
 
 
 async def add_verdict(model: ChatModel, report: Report, material: Material, context_tokens: int) -> Report:
-    """The report with the verdict, or with why there is none; it never guesses one.
-    Raises ModelError only if the backend cannot answer."""
+    """The report with the verdict, or with why there is none; it never guesses one. A backend
+    that cannot answer costs only the verdict, never the report."""
     system = prompt(ROLE, WHO, TASK)
     fitted = fit(material, budget(context_tokens, system))
-    reply = await model.reply([{"role": "system", "content": system}, {"role": "user", "content": fitted.text}],
-                              {"type": "object", "properties": SCHEMA, "required": list(SCHEMA)})
-    verdict, rejected = check(reply, fitted.shown)
+    try:
+        reply = await model.reply([{"role": "system", "content": system}, {"role": "user", "content": fitted.text}],
+                                  {"type": "object", "properties": SCHEMA, "required": list(SCHEMA)})
+    except ModelError as exc:
+        verdict, rejected = None, f"the model could not write a verdict: {exc}"
+    else:
+        verdict, rejected = check(reply, fitted.shown)
     return replace(report, verdict=verdict, verdict_rejected=rejected, unread=fitted.unread)
 
 

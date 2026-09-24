@@ -181,7 +181,7 @@ def test_the_verdict_comes_from_the_default_ollama_model_and_is_printed_badged(r
     assert code == 0 and "Verdict (unvalidated): BUY, confidence 70%: Beat estimates [a1]" in report
     assert "Verdict wrong if: Guidance is cut" in report and "did not read" not in report
     _, out, _ = run("research", "AAPL", "--history")
-    assert "verdict: BUY, confidence 70%" in out
+    assert "verdict (unvalidated): BUY, confidence 70%" in out
 
 
 def test_a_malformed_verdict_is_printed_as_none_with_the_reason(run, ollama, news):

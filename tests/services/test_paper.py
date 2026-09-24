@@ -416,10 +416,16 @@ def verdict(ctx, symbol, label, confidence=0.7, day=date(2026, 9, 21), rejected=
     return run
 
 
-async def test_the_ai_account_starts_level_and_its_equity_is_recorded_with_the_others(ctx):
+async def test_the_ai_account_starts_level_and_its_equity_is_recorded_only_while_it_is_on(ctx, yahoo, clock):
     assert account_view(ctx, "ai").cash == 10_000.0
     fill_pending(ctx)
-    assert equity_history(ctx, "ai") == [(date(2026, 9, 21), 10_000.0)]
+    assert equity_history(ctx, "ai") == [] and equity_history(ctx, "strategy") != []
+    assert comparison(ctx).start is None
+    await next_day(ctx, yahoo, clock)
+    ai_on(ctx)
+    fill_pending(ctx)
+    assert equity_history(ctx, "ai") == [(date(2026, 9, 22), 10_000.0)]
+    assert comparison(ctx).start == date(2026, 9, 22)
 
 
 async def test_while_off_the_ai_step_does_nothing(ctx):
@@ -499,6 +505,16 @@ async def test_the_ai_step_skips_what_it_has_no_usable_verdict_for(ctx, clock):
     assert account_view(ctx, "ai").pending == ()
 
 
+async def test_a_newer_rejected_verdict_supersedes_an_older_valid_one(ctx):
+    watch(ctx, "AAPL")
+    ai_on(ctx)
+    verdict(ctx, "AAPL", "buy", 0.9, day=date(2026, 9, 20))
+    newer = verdict(ctx, "AAPL", "", rejected="its reason cites no evidence")
+    [d] = ai_step(ctx)
+    assert (d.action, d.reason) == ("skip", "no verdict: the verdict was rejected: its reason cites no evidence")
+    assert decision_log(ctx, "ai")[0].report_id == newer and account_view(ctx, "ai").pending == ()
+
+
 async def test_a_strategy_step_never_touches_the_ai_account(ctx):
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "buy")
@@ -529,6 +545,7 @@ async def test_lines_since_the_ai_started_with_buy_and_hold_of_the_watchlist_by_
     watch(ctx, "VOD.L")
     EquityRepo(ctx.conn).record("strategy", date(2026, 9, 18), 5_000.0, 0.0)  # before the AI started: dropped
     place_buy(ctx, "AAPL", 1000.0)
+    ai_on(ctx)
     fill_pending(ctx)  # 09-21: the AI account's first record
     await next_day(ctx, yahoo, clock, aapl_open=110.0)
     fill_pending(ctx)
@@ -550,6 +567,7 @@ async def test_a_watched_listing_without_prices_is_left_out_of_buy_and_hold_and_
     watch(ctx, "AAPL")
     watch(ctx, "VOD.L")
     delist(ctx, "VOD.L")
+    ai_on(ctx)
     fill_pending(ctx)
     c = comparison(ctx)
     assert c.left_out == ("VOD.L",) and any("VOD.L" in n for n in c.notes)

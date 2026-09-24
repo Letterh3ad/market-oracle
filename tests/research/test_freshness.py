@@ -1,8 +1,12 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from oracle.research.freshness import Known, due_for_research
 
 TODAY = date(2026, 9, 23)
+
+
+def at(day: int) -> datetime:
+    return datetime(2026, 9, day, 12, tzinfo=timezone.utc)
 
 
 def due(*known, max_age=7, move=0.05):
@@ -13,18 +17,28 @@ def test_a_fresh_report_with_a_small_move_is_not_due():
     assert due(Known("A", date(2026, 9, 20), 100.0, 104.9)) == []
 
 
-def test_no_report_old_report_and_a_big_move_are_due_most_stale_first():
+def test_no_report_no_verdict_old_report_and_a_big_move_are_due_least_recently_tried_first():
     assert due(
-        Known("MOVED", date(2026, 9, 22), 100.0, 94.0),
-        Known("OLD", date(2026, 9, 10), 100.0, 100.0),
+        Known("MOVED", date(2026, 9, 22), 100.0, 94.0, attempted=at(22)),
+        Known("OLD", date(2026, 9, 10), 100.0, 100.0, attempted=at(10)),
         Known("NEW", None, None, 100.0),
-        Known("OLDER", date(2026, 9, 1), None, None),
+        Known("OLDER", date(2026, 9, 1), None, None, attempted=at(1)),
+        Known("REJECTED", date(2026, 9, 21), 100.0, 100.0, has_verdict=False, attempted=at(21)),
     ) == [
         ("NEW", "no report yet"),
         ("OLDER", "report from 2026-09-01, 22 days old"),
         ("OLD", "report from 2026-09-10, 13 days old"),
+        ("REJECTED", "the report from 2026-09-21 has no verdict"),
         ("MOVED", "price moved -6.0% since the report"),
     ]
+
+
+def test_a_listing_whose_research_keeps_failing_waits_behind_ones_tried_less_recently():
+    assert [s for s, _ in due(
+        Known("FAILS", None, None, None, attempted=at(22)),
+        Known("OLD", date(2026, 9, 1), 100.0, 100.0, attempted=at(1)),
+        Known("NEVER", None, None, None),
+    )] == ["NEVER", "OLD", "FAILS"]
 
 
 def test_age_is_due_only_past_the_limit_and_the_move_only_past_the_threshold():

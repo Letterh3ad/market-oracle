@@ -20,7 +20,7 @@ from oracle.research.news import Article
 from oracle.research.queries import plan, seed_queries, suggest
 from oracle.research.roles import write_report
 from oracle.research.tools import Tool
-from oracle.research.trace import UNVALIDATED, Claim, Report, ResearchRun, RunStatus, Step, Verdict
+from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
 from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
@@ -42,8 +42,8 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.system import idle
 
 __all__ = [
-    "UNVALIDATED", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict", "latest_research",
-    "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "sweep_interrupted",
+    "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
+    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "sweep_interrupted",
 ]
 
 log = logging.getLogger(__name__)
@@ -180,10 +180,12 @@ def _defer(done: Refresh, left: list, why: str) -> Refresh:
 
 
 def _known(ctx: AppContext, symbol: str) -> Known:
-    latest = ResearchRepo(ctx.conn).latest_report(symbol)
+    repo = ResearchRepo(ctx.conn)
+    latest = repo.latest_report(symbol)
     day = latest.report.day if latest else None
     bars = BarRepo(ctx.conn)
-    return Known(symbol, day, bars.close_on(symbol, day) if day else None, bars.close_on(symbol))
+    return Known(symbol, day, bars.close_on(symbol, day) if day else None, bars.close_on(symbol),
+                 bool(latest and latest.report.verdict), repo.last_attempt(symbol))
 
 
 def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: ChatModel, exc: BaseException) -> None:
@@ -262,8 +264,10 @@ def context_tokens(ctx: AppContext) -> int:
 
 
 def latest_verdict(ctx: AppContext, symbol: str) -> ResearchRun | None:
-    """The newest live run whose report has a valid verdict; replays never count."""
-    return ResearchRepo(ctx.conn).latest_verdict(resolve_symbol(ctx, symbol).symbol)
+    """The newest live report's run when that report has a valid verdict: a newer report whose
+    verdict was rejected supersedes every older one. Replays never count."""
+    run = ResearchRepo(ctx.conn).latest_report(resolve_symbol(ctx, symbol).symbol)
+    return run if run and run.report.verdict else None
 
 
 def configured_model(ctx: AppContext) -> ChatModel:

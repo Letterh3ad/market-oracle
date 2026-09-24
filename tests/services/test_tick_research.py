@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 import pytest
 
 from oracle.config import Config
-from oracle.research.trace import Report, RunStatus
+from oracle.research.trace import Report, RunStatus, Verdict
 from oracle.services import research_service
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
@@ -41,19 +41,25 @@ async def ctx(tmp_path):
         yield c
 
 
-def reported(ctx, symbol, day):
+def reported(ctx, symbol, day, rejected=None):
+    """A live run on `day` with a report carrying a verdict, or `rejected` saying why it has none."""
     repo = ResearchRepo(ctx.conn)
     run = repo.start(symbol, "ollama", "m", f"{day.isoformat()}T12:00:00Z")
-    repo.save_report(run, symbol, Report(day, (), None, None, (), None))
+    call = None if rejected else Verdict("hold", 0.5, "Flat [a1]", (1,), "it moves")
+    repo.save_report(run, symbol, Report(day, (), None, None, (), None, verdict=call, verdict_rejected=rejected))
     repo.finish(run, RunStatus.DONE, "notes", None, f"{day.isoformat()}T12:05:00Z")
 
 
 def fake_research(ctx, minutes=0, fail=()):
-    """Writes a report dated today, taking `minutes` of the fake clock."""
+    """Writes a report dated today, taking `minutes` of the fake clock; a listing in `fail`
+    records a failed run and raises, as real research does."""
     done = []
 
     async def run(c, symbol):
         if symbol in fail:
+            repo = ResearchRepo(c.conn)
+            now = c.clock.utcnow().isoformat()
+            repo.finish(repo.start(symbol, "ollama", "m", now), RunStatus.FAILED, None, "broke", now)
             raise InvalidQuery(f"{symbol} broke")
         ctx.clock.advance(minutes * 60)
         reported(c, symbol, c.clock.utcnow().date())
@@ -98,6 +104,24 @@ async def test_a_failed_listing_is_counted_and_the_others_still_run(ctx):
     assert done.researched == ["AAPL", "IBM"] and done.failed == [("MSFT", "MSFT broke")]
 
 
+async def test_a_newest_report_without_a_valid_verdict_is_due(ctx):
+    for s in SYMBOLS:
+        reported(ctx, s, date(2026, 9, 19))
+    reported(ctx, "MSFT", date(2026, 9, 20), rejected="its reason cites no evidence")
+    done = await refresh_research(ctx, run=fake_research(ctx))
+    assert (done.due, done.researched) == (1, ["MSFT"])
+
+
+async def test_a_listing_whose_research_keeps_failing_goes_last_on_the_next_tick(ctx):
+    run = fake_research(ctx, fail={"AAPL"})
+    await refresh_research(ctx, run=run)
+    ctx.clock.advance(8 * 86400)  # every report now too old
+    said = []
+    await refresh_research(ctx, said.append, run)
+    assert said == ["research 1 of 3: IBM", "research 2 of 3: MSFT", "research 3 of 3: AAPL"]
+    assert (await refresh_research(ctx, run=fake_research(ctx, fail={"AAPL"}))).due == 1
+
+
 async def test_a_manual_research_holding_the_lock_defers_instead_of_failing(ctx):
     with single_flight(ctx, "research", 60.0):
         done = await refresh_research(ctx)
@@ -124,11 +148,12 @@ async def test_a_tick_researches_with_the_configured_model_then_runs_the_ai_step
     reported(ctx, "MSFT", date(2026, 9, 20))
     said = []
     run = await run_tick(ctx, on_stage=said.append)
-    assert _stage(run, "research").summary == "2 of 2 due researched"
+    assert _stage(run, "research").summary == "2 of 2 due researched (unvalidated)"
     assert "research 1 of 2: AAPL" in said and said.index("research") < said.index("research 1 of 2: AAPL")
     assert latest_research(ctx, "AAPL").report is not None
-    assert {d.symbol for d in decision_log(ctx, "ai")} == set(SYMBOLS)
-    assert _stage(run, "ai_step").summary.endswith("3 skip, 0 no change")
+    # MSFT's hold verdict leaves it as it is; the scripted runs' verdicts are rejected.
+    assert {d.symbol for d in decision_log(ctx, "ai")} == {"AAPL", "IBM"}
+    assert _stage(run, "ai_step").summary.endswith("2 skip, 1 no change (unvalidated)")
 
 
 async def test_the_research_stage_shows_deferred_and_failed_counts(ctx, monkeypatch):

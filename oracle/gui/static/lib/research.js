@@ -25,11 +25,16 @@ function side(label, key, claim) {
 
 const TONES = { buy: "up", sell: "down", hold: "" };
 
+// Wherever AI output shows, until the AI account's record says otherwise.
+function unvalidatedBadge() {
+  return el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated"));
+}
+
 function verdict(p) {
   const v = p.verdict;
   return el("div", { class: "card" },
     el("div", { class: "dim small" }, tip("Verdict", "verdict"),
-      el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated"))),
+      unvalidatedBadge()),
     v ? el("div", null, el("strong", { class: TONES[v.label] }, v.label.toUpperCase()),
       ` confidence ${Math.round(v.confidence * 100)}%: ${v.reason}`, ...cites(v.cites))
       : el("div", { class: "dim" }, `No verdict: ${p.no_verdict}.`),
@@ -88,7 +93,7 @@ function view(r, failed) {
   return [
     note,
     el("div", { class: "dim small" }, `${when} by ${r.model_label}`,
-      el("span", { class: "badge warn" }, "unvalidated ", tip("", "research_unvalidated")),
+      unvalidatedBadge(),
       r.status === "step_cap" ? el("span", { class: "badge" }, "stopped at the step limit") : null,
       r.status === "failed" ? el("span", { class: "badge warn" }, "failed") : null),
     report(r), evidence(r), trace(r),
@@ -149,4 +154,4 @@ function researchSection(symbol) {
   return box;
 }
 
-export { researchSection };
+export { researchSection, unvalidatedBadge };
