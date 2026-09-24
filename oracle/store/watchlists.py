@@ -64,6 +64,21 @@ class WatchlistRepo:
             )
             return cur.rowcount > 0
 
+    def swap(self, old: str, new: str) -> tuple[str, ...]:
+        """Put `new` where `old` stood on every list (dropping `old` where `new` already is);
+        the lists changed."""
+        with transaction(self._conn):
+            lists = self.lists_holding(old)
+            self._conn.execute(
+                "DELETE FROM watchlist_items WHERE symbol = ? AND watchlist IN "
+                "(SELECT watchlist FROM watchlist_items WHERE symbol = ?)", (old, new))
+            self._conn.execute("UPDATE watchlist_items SET symbol = ? WHERE symbol = ?", (new, old))
+        return lists
+
+    def lists_holding(self, symbol: str) -> tuple[str, ...]:
+        return tuple(r[0] for r in self._conn.execute(
+            "SELECT watchlist FROM watchlist_items WHERE symbol = ? ORDER BY watchlist COLLATE NOCASE", (symbol,)))
+
     def items(self, watchlist: str) -> list[WatchItem]:
         rows = self._conn.execute(
             """SELECT i.symbol, COALESCE(NULLIF(p.name, ''), NULLIF(l.name, '')) AS name,

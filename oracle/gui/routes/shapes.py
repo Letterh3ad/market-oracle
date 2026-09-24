@@ -66,7 +66,7 @@ def _fx(updates: list[FxUpdate]) -> dict:
 
 
 # What a finished job's button shows, by kind; research shows its report on the company page.
-_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx}
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict}
 
 
 def _result(j: Job) -> dict | None:

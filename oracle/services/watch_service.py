@@ -7,16 +7,19 @@ from oracle.broker.rules import Lean
 from oracle.market.bars import is_stale
 from oracle.services.analysis_service import StoredSignal, latest_lean, latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidWatchlistName, UnknownWatchlist
+from oracle.services.errors import InvalidSwap, InvalidWatchlistName, UnknownWatchlist
 from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
-from oracle.services.universe_service import resolve_symbol
+from oracle.services.universe_service import Sibling, live_siblings, resolve_symbol
 from oracle.store.db import to_utc_iso
+from oracle.store.health import HealthRepo
+from oracle.store.paper import PaperRepo
+from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
-    "DEFAULT_LIST", "WatchLine", "Watched", "WatchlistSummary",
-    "create_watchlist", "show_watchlist", "unwatch", "watch", "watchlists",
+    "DEFAULT_LIST", "Sibling", "Swapped", "WatchLine", "Watched", "WatchlistSummary",
+    "create_watchlist", "show_watchlist", "swap", "unwatch", "watch", "watchlists",
 ]
 
 DEFAULT_LIST = "main"
@@ -30,6 +33,15 @@ class Watched:
     watchlist: str
     added: bool
     """False when it was already on the list."""
+
+
+@dataclass(frozen=True)
+class Swapped:
+    old: str
+    new: str
+    watchlists: tuple[str, ...]
+    held_by: tuple[str, ...]
+    """Paper accounts still holding the old symbol: positions are never moved."""
 
 
 @dataclass(frozen=True)
@@ -50,6 +62,10 @@ class WatchLine(WatchItem):
     """The latest lean; None until it is analysed."""
     lean_stale: bool = False
     """Older than the last stored bar: the strategy will not trade on it."""
+    dead_since: date | None = None
+    """Set when no price source has had data for the listing lately."""
+    siblings: tuple[Sibling, ...] = ()
+    """A dead listing's live alternatives, best first."""
 
 
 def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watched:
@@ -58,6 +74,25 @@ def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watche
     listing = resolve_symbol(ctx, symbol)
     stored, added = WatchlistRepo(ctx.conn).add(name, listing.symbol, to_utc_iso(ctx.clock.utcnow()))
     return Watched(listing.symbol, listing.name, stored, added)
+
+
+def swap(ctx: AppContext, old: str, new: str) -> Swapped:
+    """Watch `new` instead of `old` on every list holding `old`, where `new` is another
+    live listing of the same company."""
+    was, to = resolve_symbol(ctx, old), resolve_symbol(ctx, new)
+    if was.symbol == to.symbol:
+        raise InvalidSwap(f"{to.symbol} is the same listing")
+    members = {x.symbol: x for x in UniverseRepo(ctx.conn).company_listings(was.company_key)}
+    if to.symbol not in members:
+        raise InvalidSwap(f"{to.symbol} is not a listing of {was.name}")
+    if members[to.symbol].delisted:
+        raise InvalidSwap(f"{to.symbol} is delisted")
+    if (health := HealthRepo(ctx.conn).get(to.symbol)).dead:
+        raise InvalidSwap(f"no price source has had data for {to.symbol} since {health.since}")
+    lists = WatchlistRepo(ctx.conn).swap(was.symbol, to.symbol)
+    if not lists:
+        raise InvalidSwap(f"{was.symbol} is on no watchlist")
+    return Swapped(was.symbol, to.symbol, lists, PaperRepo(ctx.conn).holders(was.symbol))
 
 
 def create_watchlist(ctx: AppContext, watchlist: str) -> tuple[str, bool]:
@@ -89,13 +124,15 @@ def watchlists(ctx: AppContext) -> list[WatchlistSummary]:
 def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:
     if item.missing:
         return WatchLine(**asdict(item))
+    since = HealthRepo(ctx.conn).get(item.symbol).since
+    dead = {"dead_since": since, "siblings": tuple(live_siblings(ctx, item.symbol)) if since else ()}
     recent = price_history_in_base(ctx, item.symbol, days=2)
     if not recent:
-        return WatchLine(**asdict(item))
+        return WatchLine(**asdict(item), **dead)
     last = recent[-1]
     lean, lean_stale = latest_lean(ctx, item.symbol)
     return WatchLine(
-        **asdict(item),
+        **asdict(item), **dead,
         last_date=last.bar.date, last_close=last.bar.close, price_currency=last.bar.currency,
         close_base=last.close_base, rate_source=last.rate_source, day_change=day_change(recent),
         stale=is_stale(last.bar.date, ctx.clock.utcnow().date()),

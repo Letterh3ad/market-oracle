@@ -185,13 +185,7 @@ class UniverseRepo:
 
     def repick_primary(self, company_key: str, dead: Set[str]) -> None:
         """Choose the company's primary listing again, as a refresh would with `dead`."""
-        rows = [
-            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], delisted=bool(r["delisted"]))
-            for r in self._conn.execute(
-                "SELECT symbol, name, type, country, exchange, delisted FROM listings WHERE company_key = ?",
-                (company_key,),
-            )
-        ]
+        rows = self.company_listings(company_key)
         if not rows:
             return
         primary = pick_primary(rows, dead).symbol
@@ -199,6 +193,27 @@ class UniverseRepo:
             self._conn.execute(
                 "UPDATE listings SET is_primary = (symbol = ?) WHERE company_key = ?", (primary, company_key)
             )
+
+    def company_listings(self, company_key: str) -> list[Listing]:
+        """What ranking a company's listings needs, with the currency to show."""
+        return [
+            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], delisted=bool(r["delisted"]),
+                    currency=r["currency"], company_key=company_key)
+            for r in self._conn.execute(
+                "SELECT symbol, name, type, country, exchange, delisted, currency FROM listings WHERE company_key = ?",
+                (company_key,),
+            )
+        ]
+
+    def grouping_rows(self) -> list[Listing]:
+        """Every listing with what grouping reads, and its stored company and primary mark."""
+        return [
+            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], r["isin"],
+                    bool(r["delisted"]), company_key=r["company_key"], is_primary=bool(r["is_primary"]))
+            for r in self._conn.execute(
+                "SELECT symbol, name, type, country, exchange, isin, delisted, company_key, is_primary "
+                "FROM listings ORDER BY rowid")
+        ]
 
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))

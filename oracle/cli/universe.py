@@ -9,7 +9,9 @@ from oracle.services.universe_service import (
     FILTER_FIELDS,
     SORTS,
     facets,
+    MergeReport,
     UniverseStatus,
+    proposed_merges,
     refresh_universe,
     search_universe,
     universe_status,
@@ -42,6 +44,9 @@ def register(parser: argparse.ArgumentParser) -> None:
     search.add_argument("--include-delisted", action="store_true")
     search.add_argument("--limit", type=int, default=20, help="at most 500")
     search.set_defaults(handler=search_cmd)
+    sub.add_parser(
+        "merges", help="companies suffix-blind grouping would join (changes nothing)"
+    ).set_defaults(handler=merges_cmd)
     facet = sub.add_parser("facets", help="the values a filter accepts, with company counts")
     facet.add_argument("field", choices=[_flag(f) for f in FILTER_FIELDS])
     facet.set_defaults(handler=facets_cmd)
@@ -84,6 +89,23 @@ def search_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
             f"{cut(h.sector or h.category, 23):<24}{size:<7}{'  '.join(notes)}".rstrip()
         )
     return 0
+
+
+def merges_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    _print_merges(proposed_merges(ctx))
+    return 0
+
+
+def _print_merges(report: MergeReport) -> None:
+    state = "on: the next refresh applies these" if report.enabled else "off: nothing changes until it is on"
+    counts = ", ".join(f"{n} {flag}" for flag, n in report.flag_counts.items())
+    print(f"{len(report.merges)} proposed merges ({counts}); [universe] suffix_blind_grouping is {state}")
+    for m in report.merges:
+        check = f"  CHECK {'; '.join(m.flags)}" if m.flags else ""
+        print(f"matched on {'; '.join(m.matched_on)}{check}")
+        for c in m.companies:
+            facts = "  ".join(filter(None, (", ".join(c.countries), " ".join(c.isins))))
+            print(f"  {cut(c.name, 40):<42}{' '.join(c.symbols)}  ({', '.join(c.exchanges)})  {facts}".rstrip())
 
 
 def facets_cmd(ctx: AppContext, args: argparse.Namespace) -> int:

@@ -1,7 +1,8 @@
 import pytest
 
 from oracle.services.jobs_service import single_flight
-from tests.gui.conftest import DAYS
+from oracle.store.health import HealthRepo
+from tests.gui.conftest import DAYS, NOW
 from tests.gui.jobs import run_job
 
 
@@ -64,3 +65,22 @@ async def test_a_list_name_too_long_is_refused(priced):
     response = await priced.post("/api/watchlists", json={"name": "x" * 41})
     assert response.status_code == 400 and "at most 40" in response.json()["error"]
     assert (await priced.get("/api/watchlists")).json() == []
+
+
+async def test_a_dead_listing_shows_its_live_siblings_and_swaps_to_one(ctx, watching):
+    HealthRepo(ctx.conn).note_no_data("AAPL", NOW.date(), 1)
+    [item] = (await watching.get("/api/watchlists/main")).json()["items"]
+    assert item["dead_since"] == NOW.date().isoformat()
+    assert [s["symbol"] for s in item["siblings"]] == ["APC.DE", "AAPL.MI"]
+    company = (await watching.get("/api/companies/AAPL", params={"refresh": "false"})).json()
+    assert company["siblings"] == item["siblings"] and company["watchlists"] == ["main"]
+
+    swapped = await watching.post("/api/watchlists/swap", json={"old": "AAPL", "new": "APC.DE"})
+    assert swapped.json() == {"old": "AAPL", "new": "APC.DE", "watchlists": ["main"], "held_by": []}
+    [item] = (await watching.get("/api/watchlists/main")).json()["items"]
+    assert item["symbol"] == "APC.DE" and item["dead_since"] is None and item["siblings"] == []
+
+
+async def test_a_swap_to_another_company_is_refused(watching):
+    refused = await watching.post("/api/watchlists/swap", json={"old": "AAPL", "new": "KO"})
+    assert refused.status_code == 400 and "not a listing of Apple" in refused.json()["error"]

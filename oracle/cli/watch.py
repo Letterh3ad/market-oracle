@@ -6,7 +6,7 @@ from oracle.cli.common import cut
 from oracle.services.analysis_service import StoredSignal
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
-from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, unwatch, watch, watchlists
+from oracle.services.watch_service import DEFAULT_LIST, show_watchlist, swap, unwatch, watch, watchlists
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -19,6 +19,10 @@ def register(parser: argparse.ArgumentParser) -> None:
         p.add_argument("symbol")
         p.add_argument("--list", default=DEFAULT_LIST, help=f"watchlist name (default {DEFAULT_LIST})")
         p.set_defaults(handler=handler)
+    swap_p = sub.add_parser("swap", help="watch another listing of the same company instead, on every list")
+    swap_p.add_argument("old")
+    swap_p.add_argument("new")
+    swap_p.set_defaults(handler=swap_cmd)
     show = sub.add_parser("show", help="a watchlist's listings")
     show.add_argument("list", nargs="?", default=DEFAULT_LIST)
     show.set_defaults(handler=show_cmd)
@@ -40,6 +44,14 @@ def remove_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     return 1
 
 
+def swap_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    s = swap(ctx, args.old, args.new)
+    print(f"watching {s.new} instead of {s.old} on {', '.join(s.watchlists)}")
+    if s.held_by:
+        print(f"paper positions stay on {s.old} ({', '.join(s.held_by)})")
+    return 0
+
+
 def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     items = show_watchlist(ctx, args.list)
     if not items:
@@ -56,6 +68,7 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         day = f"{i.day_change * 100:+.2f}%" if i.day_change is not None else ""
         notes = "  ".join(n for n in (
             i.last_date.isoformat() if i.last_date else "",
+            _dead(i),
             "STALE" if i.stale else "",
             "delisted" if i.delisted else "",
             _signals(i.signals),
@@ -71,6 +84,13 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     for credit in credits(i.rate_source for i in items):
         print(credit)
     return 0
+
+
+def _dead(i) -> str:
+    if not i.dead_since:
+        return ""
+    others = f"; live: {', '.join(s.symbol for s in i.siblings)} (`oracle watch swap`)" if i.siblings else ""
+    return f"NO DATA since {i.dead_since}{others}"
 
 
 _SHORT = {"technicals": "tech", "value": "val", "quality": "qual", "growth": "grow"}

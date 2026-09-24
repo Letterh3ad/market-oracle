@@ -12,11 +12,12 @@ from oracle.services.context import AppContext
 from oracle.services.fundamentals_service import fetch_fundamentals
 from oracle.services.fx_service import update_fx
 from oracle.services.prices_service import ConvertedBar, day_change, listing_health, price_history_in_base
-from oracle.services.universe_service import resolve_symbol
+from oracle.services.universe_service import Sibling, live_siblings, resolve_symbol
 from oracle.store.fundamentals import FundamentalsRepo
 from oracle.store.fx import FxRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "FIGURES", "CompanyProfile", "CompanyView", "Figure", "Fundamentals", "Lean", "StoredSignal", "company_view",
@@ -48,6 +49,10 @@ class CompanyView:
     """Older than the last stored bar: the strategy will not trade on it."""
     dead_since: date | None = None
     """Set when no price source has had data for the listing lately; updates skip it."""
+    siblings: tuple[Sibling, ...] = ()
+    """A dead listing's live alternatives, best first."""
+    watchlists: tuple[str, ...] = ()
+    """The lists watching this listing."""
 
 
 async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> CompanyView:
@@ -62,6 +67,7 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
     fundamentals, note = await _fundamentals(ctx, Instrument(row.primary_symbol, row.primary_currency), refresh)
     market_cap, rate_source = await _market_cap_in_base(ctx, fundamentals, refresh)
     lean, lean_stale = latest_lean(ctx, listing.symbol)
+    since = listing_health(ctx, listing.symbol).since
     return CompanyView(
         profile=profile,
         price=recent[-1] if recent else None,
@@ -71,7 +77,9 @@ async def company_view(ctx: AppContext, symbol: str, refresh: bool = True) -> Co
         market_cap_base=market_cap,
         market_cap_rate_source=rate_source,
         signals=tuple(latest_signals(ctx, listing.symbol)),
-        lean=lean, lean_stale=lean_stale, dead_since=listing_health(ctx, listing.symbol).since,
+        lean=lean, lean_stale=lean_stale, dead_since=since,
+        siblings=tuple(live_siblings(ctx, listing.symbol)) if since else (),
+        watchlists=WatchlistRepo(ctx.conn).lists_holding(listing.symbol),
     )
 
 

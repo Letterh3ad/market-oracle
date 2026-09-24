@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -22,13 +22,14 @@ from oracle.store.meta import MetaRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
-from oracle.universe.listings import MARKET_CAP_BANDS, Listing, group_companies
+from oracle.universe.listings import MARKET_CAP_BANDS, Listing, blind_link, group_companies, legal_form, rank_listings
 from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
-    "FILTER_FIELDS", "SORTS", "Facet", "Resolved", "SearchHit", "UniverseBrief", "UniverseStatus",
-    "facets", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief", "universe_status",
+    "FILTER_FIELDS", "FORMS_DIFFER", "NO_COUNTRY", "SORTS", "Facet", "MergeReport", "MergingCompany", "ProposedMerge", "Resolved", "SearchHit",
+    "Sibling", "UniverseBrief", "UniverseStatus", "facets", "live_siblings", "proposed_merges", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief",
+    "universe_status",
 ]
 
 JOB = "universe_refresh"
@@ -132,6 +133,102 @@ def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
     raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "search the universe for it"))
 
 
+@dataclass(frozen=True)
+class Sibling:
+    symbol: str
+    exchange: str | None
+    currency: str | None
+
+
+def live_siblings(ctx: AppContext, symbol: str) -> list[Sibling]:
+    """The company's other listings that are neither delisted nor dead, best first (the
+    order the primary is picked in)."""
+    listing = resolve_symbol(ctx, symbol)
+    dead = HealthRepo(ctx.conn).dead_symbols()
+    rows = rank_listings(UniverseRepo(ctx.conn).company_listings(listing.company_key), dead)
+    return [Sibling(x.symbol, x.exchange, x.currency) for x in rows
+            if x.symbol != listing.symbol and not x.delisted and x.symbol not in dead]
+
+
+FORMS_DIFFER = "legal forms differ"
+"""Two sides name different legal forms (plc and Limited): possibly a successor company."""
+NO_COUNTRY = "no country"
+"""Matched on a name alone, with no country to keep namesakes apart."""
+
+
+@dataclass(frozen=True)
+class MergingCompany:
+    company_key: str
+    name: str
+    """From its primary listing."""
+    symbols: tuple[str, ...]
+    exchanges: tuple[str, ...]
+    countries: tuple[str, ...]
+    isins: tuple[str, ...]
+    forms: tuple[str, ...]
+    """The legal forms its names carry, spelled out ("co limited")."""
+
+
+@dataclass(frozen=True)
+class ProposedMerge:
+    companies: tuple[MergingCompany, ...]
+    matched_on: tuple[str, ...]
+    """"name, country" pairs equal once legal forms are dropped."""
+    flags: tuple[str, ...]
+    """FORMS_DIFFER and NO_COUNTRY: what to check before trusting it."""
+
+
+@dataclass(frozen=True)
+class MergeReport:
+    merges: tuple[ProposedMerge, ...]
+    """Flagged first."""
+    enabled: bool
+    """Whether the setting is on, so the next refresh applies them."""
+    flag_counts: dict[str, int]
+
+
+def proposed_merges(ctx: AppContext) -> MergeReport:
+    """The companies suffix-blind grouping would join on the stored universe. Reads only:
+    seconds on the full universe, so frontends run it as a job."""
+    _require_loaded(ctx)
+    rows = UniverseRepo(ctx.conn).grouping_rows()
+    joined: dict[str, list[Listing]] = {}
+    for row, new in zip(rows, group_companies(rows, suffix_blind=True)):
+        joined.setdefault(new.company_key, []).append(row)
+    merges = [_merge(members) for members in joined.values() if len({x.company_key for x in members}) > 1]
+    return MergeReport(tuple(sorted(merges, key=lambda m: (not m.flags, m.companies[0].symbols))),
+                       ctx.config.universe.suffix_blind_grouping,
+                       {f: sum(f in m.flags for m in merges) for f in (FORMS_DIFFER, NO_COUNTRY)})
+
+
+def _merge(members: list[Listing]) -> ProposedMerge:
+    by_company: dict[str, list[Listing]] = {}
+    for x in members:
+        by_company.setdefault(x.company_key, []).append(x)
+    companies = sorted((MergingCompany(
+        key, next((x.name for x in rows if x.is_primary), rows[0].name),
+        tuple(sorted(x.symbol for x in rows)), tuple(sorted({x.exchange or "?" for x in rows})),
+        _distinct(x.country for x in rows), _distinct(x.isin for x in rows),
+        _distinct(legal_form(x.name) for x in rows),
+    ) for key, rows in by_company.items()), key=lambda c: c.symbols)
+    seen: dict[tuple, int] = {}
+    for rows in by_company.values():
+        for link in {blind_link(x) for x in rows} - {None}:
+            seen[link] = seen.get(link, 0) + 1
+    matched = [link for link, n in seen.items() if n > 1]
+    forms = [set(c.forms) for c in companies if c.forms]
+    flags = (
+        *([FORMS_DIFFER] if any(a.isdisjoint(b) for i, a in enumerate(forms) for b in forms[i + 1:]) else []),
+        *([NO_COUNTRY] if any(not country for _, _, country, _ in matched) else []),
+    )
+    return ProposedMerge(tuple(companies), tuple(sorted(f"{name}, {country}" for _, name, country, _ in matched)),
+                         flags)
+
+
+def _distinct(values: Iterable[str | None]) -> tuple[str, ...]:
+    return tuple(sorted({v for v in values if v}))
+
+
 def _require_loaded(ctx: AppContext) -> None:
     if MetaRepo(ctx.conn).get(_REFRESHED) is None:
         raise UniverseNotLoaded()
@@ -190,7 +287,8 @@ async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = la
         on_stage("downloading")
         sha, listings = await _download(ctx)
         on_stage("saving")
-        grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols())
+        grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols(),
+                                  suffix_blind=ctx.config.universe.suffix_blind_grouping)
         held.check()
         with transaction(ctx.conn):
             UniverseRepo(ctx.conn).replace_all(grouped)

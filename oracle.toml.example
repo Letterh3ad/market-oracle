@@ -29,6 +29,10 @@ sources = ["yahoo", "ecb", "frankfurter", "eodhd", "open_er_api"]   # FX sources
 [analysts]
 peers = 20   # companies a factor score is compared against (5 to 100)
 
+# How the universe groups listings into companies.
+[universe]
+suffix_blind_grouping = false   # true: names equal but for legal forms (plc, Inc., AG) are one company from the next refresh (see Proposed merges first)
+
 # Paper-account sizing, in base_currency. A position at target_volatility (yearly swing)
 # gets the full max_position; twice as volatile, half. Shares are 0 to 1.
 [risk]

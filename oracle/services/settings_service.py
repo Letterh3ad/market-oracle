@@ -25,7 +25,7 @@ __all__ = [
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts", "universe")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart."""
 
 

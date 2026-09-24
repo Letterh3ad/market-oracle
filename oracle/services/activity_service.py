@@ -23,11 +23,11 @@ from oracle.services.fx_service import check_sources, update_fx
 from oracle.services.research_service import check_as_of, research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
-from oracle.services.universe_service import refresh_universe, resolve_symbol
+from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
-           "submit_fx", "submit_universe_refresh", "sweep_leftovers"]
+           "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -293,6 +293,14 @@ def submit_universe_refresh(runner: JobRunner) -> Job:
     stage: list[str] = []
     return runner.submit("universe", "Refresh universe", lambda c: refresh_universe(c, on_stage=stage.append),
                          subject="universe", link="#universe", progress=lambda: stage[-1] if stage else None)
+
+
+def submit_merges(runner: JobRunner) -> Job:
+    """The companies suffix-blind grouping would join; reads only."""
+    async def work(c: AppContext):
+        return proposed_merges(c)
+
+    return runner.submit("merges", "Proposed merges", work, subject="merges", link="#universe")
 
 
 def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:

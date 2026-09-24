@@ -1,4 +1,8 @@
-from oracle.universe.listings import Listing, group_companies
+import pytest
+
+from itertools import permutations
+
+from oracle.universe.listings import Listing, blind_name, group_companies, legal_form
 
 
 def L(symbol, name, country, exchange, isin=None, delisted=False, type="equity"):
@@ -160,3 +164,120 @@ def test_a_shared_isin_never_merges_a_fund_with_a_company():
         L("ABC", "Acme Corp", "United States", "NYQ", "US0000000001"),
         L("ABCF.L", "Acme Tracker", None, "LSE", "US0000000001", type="etf"),
     ]) == {"ABC": {"ABC"}, "ABCF.L": {"ABCF.L"}}
+
+
+def blind(listings):
+    """companies() with suffix-blind grouping on."""
+    grouped = group_companies(listings, suffix_blind=True)
+    members = {}
+    for x in grouped:
+        members.setdefault(x.company_key, set()).add(x.symbol)
+    return sorted(sorted(m) for m in members.values())
+
+
+BT = [
+    L("BT-A.L", "BT GROUP PLC", "United Kingdom", "LSE", "GB0030913577"),
+    L("BTQ.DE", "BT Group", "United Kingdom", "GER"),
+]
+
+
+@pytest.mark.parametrize("name, stripped", [
+    ("BT GROUP PLC", "bt group"),
+    ("BP p.l.c.", "bp"),
+    ("Samsung Electronics Co., Ltd.", "samsung electronics"),
+    ("Nestlé S.A.", "nestlé"),
+    ("ASML Holding N.V.", "asml holding"),
+    ("Toyota Motor Corporation", "toyota motor"),
+    ("Siemens AG", "siemens"),
+    ("Co-operative Bank plc", "cooperative bank"),
+    ("Berkshire Hathaway Holdings", "berkshire hathaway holdings"),
+    ("AB", "ab"),
+    ("Ltd Inc.", "ltd"),
+])
+def test_legal_forms_are_stripped_from_the_end_only(name, stripped):
+    assert blind_name(name) == stripped
+
+
+def test_suffix_blind_grouping_joins_a_plc_with_its_bare_name_in_one_country():
+    assert blind(BT) == [["BT-A.L", "BTQ.DE"]]
+
+
+def test_suffix_blind_grouping_is_off_by_default():
+    assert companies(BT) == {"BT-A.L": {"BT-A.L"}, "BTQ.DE": {"BTQ.DE"}}
+
+
+def test_off_changes_nothing_even_where_on_would_merge():
+    rows = BT + [L("BT.F", "BT Group plc", "United Kingdom", "FRA", "GB0030913577")]
+    assert group_companies(rows) == group_companies(rows, suffix_blind=False)
+    assert companies(rows) == {"BT-A.L": {"BT-A.L", "BT.F"}, "BTQ.DE": {"BTQ.DE"}}
+
+
+def test_differing_isins_on_both_sides_block_the_merge():
+    assert blind([
+        L("ABC.L", "Abc plc", "United Kingdom", "LSE", "GB0000000001"),
+        L("ABC.DE", "Abc Ltd", "United Kingdom", "GER", "GB0000000002"),
+    ]) == [["ABC.DE"], ["ABC.L"]]
+
+
+def test_suffix_blind_grouping_never_merges_a_fund_with_a_company():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOOF.L", "Foo", "United Kingdom", "LSE", type="etf"),
+    ]) == [["FOO.L"], ["FOOF.L"]]
+
+
+def test_suffix_blind_grouping_keeps_countries_apart():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO", "Foo Inc.", "United States", "NYQ"),
+    ]) == [["FOO"], ["FOO.L"]]
+
+
+@pytest.mark.parametrize("name, form", [
+    ("Chiyoda Co., Ltd.", "co limited"),
+    ("TOKYU CORP.", "corporation"),
+    ("Tokyu Corporation", "corporation"),
+    ("Acme Inc", "incorporated"),
+    ("Valaris plc", "plc"),
+    ("BT Group", ""),
+    ("AB", ""),
+])
+def test_legal_form_is_what_blind_name_strips_with_abbreviations_spelled_out(name, form):
+    assert legal_form(name) == form
+
+
+def test_two_groups_with_lines_on_one_exchange_are_two_companies_and_a_third_joins_neither():
+    assert blind([
+        L("6366.T", "Chiyoda Corporation", "Japan", "JPX"),
+        L("8185.T", "Chiyoda Co., Ltd.", "Japan", "JPX"),
+        L("CHYF", "Chiyoda Corp", "Japan", "PNK"),
+    ]) == [["6366.T"], ["8185.T"], ["CHYF"]]
+
+
+def test_the_same_exchange_block_does_not_depend_on_row_order():
+    rows = [
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO2.L", "Foo Ltd", "United Kingdom", "LSE"),
+        L("FOO.DE", "Foo", "United Kingdom", "GER"),
+    ]
+    for order in permutations(rows):
+        assert blind(order) == [["FOO.DE"], ["FOO.L"], ["FOO2.L"]]
+
+
+def test_a_bare_name_never_bridges_two_conflicting_isins_whatever_the_order():
+    rows = [
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE", "GB0000000001"),
+        L("FOO.DE", "Foo AG", "United Kingdom", "GER", "DE0000000002"),
+        L("FOO.F", "Foo", "United Kingdom", "FRA"),
+    ]
+    for order in permutations(rows):
+        assert blind(order) == [["FOO.DE"], ["FOO.F"], ["FOO.L"]]
+
+
+def test_a_conflict_in_one_country_leaves_joins_in_another_alone():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO2.L", "Foo Ltd", "United Kingdom", "LSE"),
+        L("FOO", "Foo Inc.", "United States", "NYQ"),
+        L("FOOX", "Foo", "United States", "PNK"),
+    ]) == [["FOO", "FOOX"], ["FOO.L"], ["FOO2.L"]]

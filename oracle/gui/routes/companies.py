@@ -100,6 +100,8 @@ def _view(v: CompanyView, base: str) -> dict:
         },
         "day_change": v.day_change,
         "dead_since": v.dead_since,
+        "siblings": [asdict(s) for s in v.siblings],
+        "watchlists": list(v.watchlists),
         "fundamentals": None if f is None else {
             "source": f.source, "as_of": f.as_of,
             "figures": [{"name": fig.name, "label": fig.label, "kind": fig.kind, "meaning": fig.meaning,
