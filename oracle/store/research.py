@@ -128,6 +128,12 @@ class ResearchRepo:
         ).fetchone()
         return self._run(row) if row else None
 
+    def replay_run_id(self, symbol: str, as_of: date) -> int | None:
+        """The newest replay of the listing at that day."""
+        row = self._conn.execute("SELECT id FROM research_runs WHERE symbol = ? AND as_of = ? ORDER BY id DESC LIMIT 1",
+                                 (symbol, as_of.isoformat())).fetchone()
+        return row[0] if row else None
+
     def _run(self, row) -> ResearchRun:
         stages = tuple(StageModel(**{**s, "fell_back_to": tuple(s.get("fell_back_to", ()))})
                        for s in json.loads(row[11])) if row[11] else ()
