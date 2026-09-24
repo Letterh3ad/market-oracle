@@ -2,7 +2,7 @@ import pytest
 
 from oracle.store.replay import ReplayRepo
 from tests.gui.conftest import DAYS
-from tests.gui.jobs import wait_job
+from tests.gui.jobs import run_job, wait_job
 from tests.fakes.yahoo import bar
 
 
@@ -74,3 +74,29 @@ async def test_retry_one_cell_or_all_failed(ctx, listed):
     assert (await listed.post("/api/replay/retry", json={})).json() == {"moved": 1}
     r = await listed.post("/api/replay/retry", json={"cell_id": a.id})
     assert r.status_code == 400
+
+
+async def test_report_scores_from_stored_bars_and_the_status_carries_the_interim_block(listed):
+    await create(listed, first="2026-06-01", symbols=["AAPL", "7203.T"])
+    report = (await listed.get("/api/replay/report")).json()["report"]
+    assert report["verdicts"] == 0 and [h["horizon"] for h in report["horizons"]] == ["1m", "3m"]
+    assert report["refetch_listings"] == ["AAPL", "7203.T"] and report["limits"]  # no whole-window fetch yet
+    score = (await listed.get("/api/replay")).json()["study"]["score"]
+    assert score["verdicts"] == 0 and score["horizons"]["1m"]["scored"] == 0
+
+
+async def test_update_prices_is_a_job_refetching_the_whole_windows_due(listed, yahoo):
+    await create(listed, first="2026-06-01", symbols=["AAPL", "7203.T"])
+    del yahoo.series["7203.T"]
+    job = await run_job(listed, "/api/replay/prices")
+    assert job["kind"] == "replay_prices" and job["state"] == "done"
+    fetched = {o["symbol"]: o for o in job["result"]["listings"]}
+    assert fetched["AAPL"]["error"] is None and fetched["7203.T"]["error"]
+    report = (await listed.get("/api/replay/report")).json()["report"]
+    assert report["refetch_listings"] == ["7203.T"] and report["price_failures"] == ["7203.T"]
+    assert report["prices_checked_at"]
+
+
+async def test_report_without_a_study(loaded):
+    assert (await loaded.get("/api/replay/report")).json() == {"report": None}
+    assert (await loaded.post("/api/replay/prices")).status_code == 400

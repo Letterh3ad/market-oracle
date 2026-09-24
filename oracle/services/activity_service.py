@@ -27,6 +27,7 @@ from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
 from oracle.services.models_service import check_model_profile
+from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
@@ -40,7 +41,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_discover", "submit_prices", "submit_midday", "submit_rerun", "submit_research",
+           "submit_backtest", "submit_discover", "submit_prices", "submit_replay_prices", "submit_midday", "submit_rerun", "submit_research",
            "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -329,6 +330,14 @@ def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None)
                          subject=listing, link=f"#company/{listing}")
 
 
+def submit_replay_prices(ctx: AppContext, runner: JobRunner) -> Job:
+    """Bars the replay study's score lacks, fetched for the listings that need them."""
+    if ReplayRepo(ctx.conn).current() is None:
+        raise InvalidQuery("no replay study yet: create one first")
+    return runner.submit("replay_prices", "Update prices (replay study)", update_study_prices, subject="*",
+                         link="#ledgers")
+
+
 def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
     if symbol is None:
         return runner.submit("analyse", "Analyse (watchlists)", analyse_watched, subject="*",
@@ -469,6 +478,10 @@ def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_prices(ctx, runner, None if job.subject == "*" else job.subject)
 
 
+def _retry_replay_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_replay_prices(ctx, runner)
+
+
 def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_analyse(ctx, runner, None if job.subject == "*" else job.subject)
 
@@ -509,7 +522,7 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
-    "backtest": _retry_backtest, "ask": _retry_ask,
+    "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices,
 }
 
 

@@ -21,6 +21,7 @@ from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError,
 from oracle.services.jobs_service import held_elsewhere
 from oracle.services.never_list import never_company
 from oracle.services.prices_service import update_listing
+from oracle.services.replay_score import Interim, score_study
 from oracle.services.research_service import pc_in_use
 from oracle.services.schedule_service import Scheduler
 from oracle.services.tick_service import KIND_LABELS
@@ -158,6 +159,7 @@ class StudyStatus:
     """No replay submitted yet, so a listing can still be replaced."""
     left_out: tuple[str, ...] = ()
     """Slots the pick could not fill; told only by the create that left them out."""
+    score: Interim | None = None
 
     @property
     def finished(self) -> bool:
@@ -428,7 +430,8 @@ def study_status(ctx: AppContext) -> StudyStatus | None:
         counts.get(PENDING, 0), repo.retrying(study.id), running, failed,
         tuple(repo.failure_reasons(study.id, TOP_FAILURES)),
         sum(durations) / len(durations) if durations else None, measured_cutoff(ctx),
-        study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id))
+        study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id),
+        score=score_study(ctx, study).interim())
 
 
 def _require(ctx: AppContext) -> StudyRow:

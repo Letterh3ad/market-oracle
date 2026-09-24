@@ -10,8 +10,9 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
-from oracle.services.activity_service import JobRunner
+from oracle.services.activity_service import JobRunner, submit_replay_prices
 from oracle.services.context import AppContext
+from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
     measured_cutoff, pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
 )
@@ -74,3 +75,16 @@ class Retry(BaseModel):
 @router.post("/retry")
 async def retry(body: Retry, ctx: AppContext = Depends(get_ctx)) -> dict:
     return {"moved": retry_failed(ctx, body.cell_id)}
+
+
+@router.get("/report")
+async def report(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The full score from stored bars; it never fetches, so the card can ask on every change."""
+    score = replay_report(ctx)
+    return {"report": score.to_json() if score else None}
+
+
+@router.post("/prices", status_code=202)
+async def prices(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Fetch the bars the score lacks, as a job."""
+    return shapes.job(submit_replay_prices(ctx, runner))

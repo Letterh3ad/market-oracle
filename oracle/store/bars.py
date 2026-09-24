@@ -71,6 +71,15 @@ class BarRepo:
         return [Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}) for r in reversed(rows)]
 
 
+    def since(self, symbol: str, start: date) -> list[Bar]:
+        """Oldest first, from `start` on."""
+        rows = self._conn.execute(
+            f"SELECT {', '.join(_COLUMNS)} FROM bars WHERE symbol = ? AND date >= ? ORDER BY date",
+            (symbol, start.isoformat()),
+        ).fetchall()
+        return [Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}) for r in rows]
+
+
 def _value(bar: Bar, column: str):
     value = getattr(bar, column)
     return value.isoformat() if isinstance(value, date) else value
