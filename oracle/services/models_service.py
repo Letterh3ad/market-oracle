@@ -6,17 +6,18 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, replace
 
 from oracle.config import (
-    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, SLOTS, SLOTS_TABLE, URLLESS_PROVIDERS, Config,
-    ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name, model_profiles, profile_tables,
-    with_settings, without_section,
+    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROFILE_KEYS_IN_FILE, PROVIDER_KEYS, PROVIDERS, SLOTS, SLOTS_TABLE,
+    URLLESS_PROVIDERS, Config, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name, model_profiles,
+    profile_tables, with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
 from oracle.research.claude_code import ClaudeCodeChat
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
+from oracle.research.openai_compatible import OpenAICompatibleChat
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, UnknownModelProfile
 from oracle.services.jobs_service import job_statuses
@@ -33,7 +34,10 @@ Builder = Callable[[AppContext, str, ModelProfile], ChatModel]
 BUILDERS: dict[str, Builder] = {
     "ollama": lambda ctx, name, p: OllamaChat(p.model, p.base_url, p.timeout_s, p.context, transport=ctx.transport),
     "claude_api": lambda ctx, name, p: ClaudeChat(p.model, p.timeout_s, api_key=_key(name, p), base_url=p.base_url,
-                                                  **({"key_source": _key_source(name, p)} if p.key or p.key_env else {})),
+                                                  **_key_source(name, p)),
+    "openai_compatible": lambda ctx, name, p: OpenAICompatibleChat(
+        p.model, p.base_url, p.timeout_s, p.context, api_key=_key(name, p), transport=ctx.transport,
+        **_key_source(name, p)),
     "claude_code": lambda ctx, name, p: ClaudeCodeChat(_allowed(ctx, name, p).model, p.timeout_s),
 }
 
@@ -43,6 +47,7 @@ def _allowed(ctx: AppContext, name: str, p: ModelProfile) -> ModelProfile:
     if not ctx.config.allow_claude_code:
         raise ModelUnavailable(f"model profile {name}: claude_code is off; set {ALLOW_CLAUDE_CODE} = true under [models]")
     return p
+
 
 MODEL_JOBS = ("research", "discovery", "discovery_chat")
 """Jobs that keep the model busy; a test beside one would only queue behind it."""
@@ -78,6 +83,9 @@ RESEARCH_STAGES = ("queries", "research", "notes", "roles", "verdict")
 def resolve_model(ctx: AppContext, profile: str, model: ChatModel | None = None) -> RunModel:
     """The named profile's model (or `model`, which a test or caller supplies) and its context."""
     p = _profile(ctx, profile)
+    if p.unusable:
+        # Like an off profile: never built, even with `model` given, so a slot naming it falls back.
+        raise ModelUnavailable(f"model profile {profile} is unusable: {p.unusable}; fix it in Settings > Models")
     if p.provider == "claude_code":
         _allowed(ctx, profile, p)  # even with `model` given: an off profile never stands in for a stage
     return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context, profile)
@@ -139,9 +147,12 @@ def _key(name: str, p: ModelProfile) -> str | None:
     return value
 
 
-def _key_source(name: str, p: ModelProfile) -> str:
-    return (f"check {p.key_env} (key_env of model profile {name})" if p.key_env
-            else f"check the key saved in model profile {name}")
+def _key_source(name: str, p: ModelProfile) -> dict[str, str]:
+    """Where to fix a refused key, as a builder argument; none when the profile sets no key,
+    so the model's own advice applies."""
+    if p.key_env:
+        return {"key_source": f"check {p.key_env} (key_env of model profile {name})"}
+    return {"key_source": f"check the key saved in model profile {name}"} if p.key else {}
 
 
 def model_profile_rows(ctx: AppContext) -> list[dict]:
@@ -151,7 +162,8 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
     rows = [{
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
-        "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
+        "key_fallback": PROVIDERS[p.provider].fallback_key, "unusable": p.unusable,
+        "from_llm": name not in ctx.config.models,
         "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
         "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
@@ -165,6 +177,8 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
 
 def _unavailable(ctx: AppContext, p: ModelProfile) -> str | None:
     """Why the profile cannot be built now, if it cannot."""
+    if p.unusable:
+        return f"unusable: {p.unusable}"
     if p.provider == "claude_code" and not ctx.config.allow_claude_code:
         return f"claude_code is off ({ALLOW_CLAUDE_CODE} is not set)"
     return f"{p.key_env} is not set" if _key_state(p) == "unset" else None
@@ -189,19 +203,22 @@ def _unset_slots(config: Config) -> list[str]:
 def provider_defaults(ctx: AppContext) -> dict[str, dict]:
     """Each provider offered, with what its unset keys mean and whether it takes a key or a
     URL. claude_code is offered only when `[models] allow_claude_code` is set."""
-    return {name: {"base_url": spec.base_url, "context": spec.context, "timeout_s": LlmConfig.timeout_s,
-                   "keyed": spec.fallback_key is not None, "url": name not in URLLESS_PROVIDERS}
+    return {name: {"base_url": spec.base_url, "base_url_required": spec.base_url_required, "context": spec.context,
+                   "timeout_s": LlmConfig.timeout_s, "keyed": spec.keyed, "url": spec.url}
             for name, spec in PROVIDERS.items() if name != "claude_code" or ctx.config.allow_claude_code}
 
 
 def _key_state(p: ModelProfile) -> str:
     """set, unset (key_env names a missing variable), fallback (the provider's own lookup)
-    or none (the provider takes no key)."""
-    if PROVIDERS[p.provider].fallback_key is None:
+    or none (no key goes with a request)."""
+    spec = PROVIDERS[p.provider]
+    if not spec.keyed:
         return "none"
     if p.key or p.key_env and os.environ.get(p.key_env):
         return "set"
-    return "unset" if p.key_env else "fallback"
+    if p.key_env:
+        return "unset"
+    return "fallback" if spec.fallback_key else "none"
 
 
 async def try_model_profile(ctx: AppContext, name: str) -> ModelTest:
@@ -221,12 +238,12 @@ async def try_model_profile(ctx: AppContext, name: str) -> ModelTest:
     return ModelTest(name, True, seconds)
 
 
-PROFILE_KEYS = tuple(f.name for f in fields(ModelProfile))
 
 
 def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], create: bool) -> None:
     """Add (`create`) or replace a profile; keys left out take the provider's defaults. A
-    literal `key` left out (None) is kept unless `key_env` replaces it; "" removes it. On a
+    literal `key` left out (None) is kept unless `key_env` replaces it or the provider
+    changes (one provider's key must never reach another's host); "" removes it. On a
     provider change, values equal to the old provider's (carried over by a form) and keys
     the new provider cannot take are dropped. Editing `default` writes `[models.default]`,
     which then overrides `[llm]`."""
@@ -244,13 +261,13 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
         raise InvalidQuery(f"claude_code is off: set {ALLOW_CLAUDE_CODE} = true under [models] in oracle.toml")
     if named in URLLESS_PROVIDERS:
         table.pop("base_url", None)
-    if provider and provider.fallback_key is None:
+    if provider and not provider.keyed:
         table = {k: v for k, v in table.items() if k not in ("key", "key_env")}
-    elif values.get("key") is None and "key_env" not in table and old and old.key:
+    elif values.get("key") is None and "key_env" not in table and old and old.key and old.provider == named:
         table["key"] = old.key
     _checked(check_profile, name, table)
     section = f"models.{name}"
-    edit_config(ctx, lambda text: with_settings(text, section, {k: table.get(k) for k in PROFILE_KEYS}),
+    edit_config(ctx, lambda text: with_settings(text, section, {k: table.get(k) for k in PROFILE_KEYS_IN_FILE}),
                 f"edit [{section}]")
     reload_live_settings(ctx)
 

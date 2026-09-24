@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import re
@@ -7,6 +8,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
@@ -245,25 +247,37 @@ class ModelProfile:
     """The environment variable holding the key."""
     key: str | None = field(default=None, repr=False)
     """The key itself, kept in oracle.toml; never shown."""
+    unusable: str | None = field(default=None, metadata={"derived": True})
+    """Why a profile the file holds may not be used (a rule it predates); never set in the file."""
+
+
+PROFILE_KEYS_IN_FILE = tuple(f.name for f in fields(ModelProfile) if not f.metadata.get("derived"))
 
 
 @dataclass(frozen=True)
 class Provider:
     base_url: str | None
+    """None: the provider's own endpoint, or none it could default to (`base_url_required`, or no `url`)."""
     context: int
-    fallback_key: str | None
-    """Where the provider looks with no key or key_env; None: it takes no key at all."""
+    keyed: bool
+    """Whether it takes a key."""
+    fallback_key: str | None = None
+    """Where it looks with no key or key_env; None: it goes without one."""
+    base_url_required: bool = False
+    url: bool = True
+    """False: it reaches no endpoint, so takes no base_url."""
 
 
 PROVIDERS: dict[str, Provider] = {
-    "ollama": Provider(LlmConfig.base_url, LlmConfig.context, None),
-    "claude_api": Provider(None, CLAUDE_CONTEXT, "env / ant login"),
-    "claude_code": Provider(None, CLAUDE_CONTEXT, None),
+    "ollama": Provider(LlmConfig.base_url, LlmConfig.context, keyed=False),
+    "claude_api": Provider(None, CLAUDE_CONTEXT, keyed=True, fallback_key="env / ant login"),
+    # Local servers need no key, and OPENAI_API_KEY is never read: a key goes only where a profile sends it.
+    "openai_compatible": Provider(None, LlmConfig.context, keyed=True, base_url_required=True),
+    "claude_code": Provider(None, CLAUDE_CONTEXT, keyed=False, url=False),
 }
 """Every provider a profile can name, with what its unset keys mean."""
 PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
-URLLESS_PROVIDERS = ("claude_code",)
-"""Providers that reach no endpoint, so take no base_url."""
+URLLESS_PROVIDERS = tuple(name for name, spec in PROVIDERS.items() if not spec.url)
 CLAUDE_CODE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\[\]-]*")
 """On Windows the CLI is often claude.cmd, whose arguments cmd.exe reparses: only plain names pass."""
 ALLOW_CLAUDE_CODE = "allow_claude_code"
@@ -533,7 +547,7 @@ def key_env_var(name: str) -> str:
 
 
 def _reject_unknown(raw: dict, cls: type, where: str) -> None:
-    unknown = sorted(set(raw) - {f.name for f in fields(cls)})
+    unknown = sorted(set(raw) - {f.name for f in fields(cls) if not f.metadata.get("derived")})
     if unknown:
         raise ConfigError(f"unknown key(s) in {where}: {', '.join(unknown)}")
 
@@ -843,7 +857,7 @@ def _models(raw: object, strict: bool = False) -> tuple[dict[str, ModelProfile],
         if name.lower() in seen:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
-    profiles = {name: check_profile(name, table) for name, table in raw.items()}
+    profiles = {name: check_profile(name, table, strict=False) for name, table in raw.items()}
     off = [n for n, p in profiles.items() if p.provider == "claude_code"] if not allow else []
     if off:
         # Kept, so the file still loads and the profile can be edited; refused when a model is built.
@@ -879,8 +893,10 @@ def check_profile_name(name: object) -> str:
     return name
 
 
-def check_profile(name: str, raw: object) -> ModelProfile:
-    """`[models.<name>]` as set (None where unset); raises ConfigError naming the bad key."""
+def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
+    """`[models.<name>]` as set (None where unset); raises ConfigError naming the bad key.
+    Not `strict` (loading the file), a break of the base_url rules a profile may predate
+    marks it `unusable` with a warning instead, so one old profile cannot stop the app."""
     where = f"models.{name}"
     if not isinstance(raw, dict):
         raise ConfigError(f"{where} must be a table")
@@ -893,15 +909,17 @@ def check_profile(name: str, raw: object) -> ModelProfile:
         raise ConfigError(f"{where}.provider must be one of {', '.join(PROVIDERS)}, got {provider!r}")
     if "key" in raw and "key_env" in raw:
         raise ConfigError(f"{where} sets key and key_env; keep one")
-    if PROVIDERS[provider].fallback_key is None and ("key" in raw or "key_env" in raw):
+    if not PROVIDERS[provider].keyed and ("key" in raw or "key_env" in raw):
         raise ConfigError(f"{where}: {provider} takes no key; remove key and key_env")
+    if PROVIDERS[provider].base_url_required and "base_url" not in raw:
+        raise ConfigError(f"{where} needs a base_url: the server's API root, like http://localhost:1234/v1")
     if provider in URLLESS_PROVIDERS and "base_url" in raw:
         raise ConfigError(f"{where}: {provider} reaches no endpoint; remove base_url")
     p = ModelProfile(**raw)
     low, high = PROFILE_CONTEXT_RANGE
     checks = {
         "model": (_text(p.model), "a model name like qwen3:8b"),
-        "base_url": (p.base_url is None or isinstance(p.base_url, str) and re.match(r"https?://", p.base_url) is not None,
+        "base_url": (p.base_url is None or isinstance(p.base_url, str) and re.match(r"https?://", p.base_url),
                      "an http(s) URL"),
         "context": (p.context is None or _whole(p.context, low, high), f"a whole number of tokens from {low} to {high}"),
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
@@ -919,8 +937,19 @@ def check_profile(name: str, raw: object) -> ModelProfile:
                           "not a key; put a key itself in key")
     if p.key is not None and not _text(p.key):
         raise ConfigError(f"{where}.key must be a non-empty string")
+    unusable = None
+    if p.base_url and not _plain_url(p.base_url):
+        # Never echoed: the user or query part may hold a password or key.
+        unusable = f"{where}.base_url must be an http(s) URL with no user, password, query or fragment"
+    elif (p.key or p.key_env or PROVIDERS[p.provider].fallback_key) and p.base_url and not _safe_for_keys(p.base_url):
+        unusable = (f"{where} would send its key unencrypted to {urlsplit(p.base_url).hostname}: use https://, "
+                    "or plain http:// only to this machine")
+    if unusable and strict:
+        raise ConfigError(unusable)
+    if unusable:
+        log.warning("model profile %s is unusable until fixed: %s", name, unusable)
     return replace(p, timeout_s=None if p.timeout_s is None else float(p.timeout_s),
-                   key=p.key.strip() if p.key else None)
+                   key=p.key.strip() if p.key else None, unusable=unusable)
 
 
 KEY_PREFIXES = ("sk-", "sk_", "gsk_", "ghp_", "xai-", "AIza", "AKIA")
@@ -932,6 +961,29 @@ def _env_name(value: object) -> bool:
         return False
     mixed = value != value.upper() and value != value.lower()
     return len(value) <= 64 and not (mixed and len(value) > 24)
+
+
+def _plain_url(value: object) -> bool:
+    """An http(s) URL a request can be built on, with nothing in it that belongs in a key field."""
+    if not isinstance(value, str):
+        return False
+    try:
+        parts = urlsplit(value)
+        parts.port
+    except ValueError:
+        return False
+    return (parts.scheme in ("http", "https") and bool(parts.hostname) and "@" not in parts.netloc
+            and not parts.query and not parts.fragment and "?" not in value and "#" not in value)
+
+
+def _safe_for_keys(url: str) -> bool:
+    parts = urlsplit(url)
+    if parts.scheme == "https" or parts.hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(parts.hostname or "").is_loopback
+    except ValueError:
+        return False
 
 
 def _text(value: object) -> bool:

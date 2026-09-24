@@ -7,6 +7,7 @@ from oracle.config import CLAUDE_CONTEXT, PROVIDERS, load_config
 from oracle.research.claude import ClaudeChat
 from oracle.research.claude_code import BIN_ENV, ClaudeCodeChat
 from oracle.research.ollama import OllamaChat
+from oracle.research.openai_compatible import OpenAICompatibleChat
 from oracle.services import models_service
 from oracle.services.context import load_settings, open_context
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, UnknownModelProfile
@@ -16,6 +17,7 @@ from oracle.services.models_service import (
 )
 from tests.fakes.claude_cli import shim
 from tests.fakes.ollama import FakeOllama
+from tests.fakes.openai import FakeOpenAI
 
 
 def _ctx(tmp_path, text="", transport=None):
@@ -255,6 +257,86 @@ def test_a_profile_the_file_writes_inline_is_an_edit_by_hand_error(tmp_path):
         assert ctx.config_source.read_bytes() == before
 
 
+OPENAI = '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\nbase_url = "https://llm.test/v1"\n'
+
+
+async def test_an_openai_compatible_profile_is_built_on_the_apps_transport_and_tested(tmp_path):
+    server = FakeOpenAI({"ok": True})
+    with _ctx(tmp_path, OPENAI, transport=httpx.MockTransport(server.handle)) as ctx:
+        run = resolve_model(ctx, "lm")
+        assert (type(run.model), run.context) == (OpenAICompatibleChat, 16384)
+        result = await try_model_profile(ctx, "lm")
+    assert result.ok, result.error
+    assert "authorization" not in server.requests[0].headers
+
+
+async def test_an_openai_compatible_profile_sends_its_key_and_says_where_to_fix_a_refused_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("LM_KEY", "sk-wrong")
+    server = FakeOpenAI(key="sk-right")
+    with _ctx(tmp_path, f'{OPENAI}key_env = "LM_KEY"\n', transport=httpx.MockTransport(server.handle)) as ctx:
+        result = await try_model_profile(ctx, "lm")
+    assert not result.ok and "check LM_KEY (key_env of model profile lm)" in result.error
+    assert server.requests[0].headers["authorization"] == "Bearer sk-wrong" and "sk-wrong" not in result.error
+
+
+def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-never-used")
+    with _ctx(tmp_path, f'{OPENAI}[models.keyed]\nprovider = "openai_compatible"\nmodel = "m"\n'
+                        'base_url = "https://api.openai.com/v1"\nkey = "sk-lit"\n') as ctx:
+        _, lm, keyed = model_profile_rows(ctx)
+        assert (lm["key_state"], lm["key_fallback"], keyed["key_state"]) == ("none", None, "set")
+        assert model_for(ctx, "lm")._api_key is None
+        save_model_profile(ctx, "lm", {"provider": "openai_compatible", "model": "m", "base_url": "https://llm.test/v1",
+                                       "key_env": "LM_KEY"}, create=False)
+        assert ctx.config.models["lm"].key_env == "LM_KEY", "a keyed provider keeps the key it is given"
+        assert provider_defaults(ctx)["openai_compatible"] == {
+            "base_url": None, "base_url_required": True, "context": 16384, "timeout_s": 180.0, "keyed": True, "url": True}
+        assert provider_defaults(ctx)["ollama"]["base_url_required"] is False
+
+
+async def test_an_unusable_profile_loads_but_is_refused_when_built_and_shown_in_the_rows(tmp_path):
+    with _ctx(tmp_path, '[models.deep]\nprovider = "claude_api"\nmodel = "m"\nbase_url = "http://proxy.lan:8080"\n'
+                        'key = "sk-secret"\n') as ctx:
+        with pytest.raises(ModelUnavailable, match="model profile deep is unusable: .*unencrypted to proxy.lan"):
+            model_for(ctx, "deep")
+        result = await try_model_profile(ctx, "deep")
+        assert not result.ok and "unencrypted" in result.error
+        assert "unencrypted" in model_profile_rows(ctx)[1]["unusable"] and model_profile_rows(ctx)[0]["unusable"] is None
+
+
+def test_a_saved_key_never_follows_a_switch_to_another_provider(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        save_model_profile(ctx, "deep", {"provider": "claude_api", "model": "m", "key": "sk-ant"}, create=True)
+        save_model_profile(ctx, "deep", {"provider": "openai_compatible", "model": "m",
+                                         "base_url": "https://openrouter.ai/api/v1"}, create=False)
+        assert ctx.config.models["deep"].key is None
+        assert model_for(ctx, "deep")._api_key is None
+
+
+def test_switching_to_openai_compatible_without_a_base_url_is_refused(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        with pytest.raises(InvalidQuery, match="needs a base_url"):
+            save_model_profile(ctx, "default", {"provider": "openai_compatible", "model": "m",
+                                                "base_url": "http://localhost:11434"}, create=False)
+
+
+def test_a_slot_naming_an_unusable_profile_falls_back_to_the_research_profile_and_never_builds_it(tmp_path, monkeypatch):
+    from oracle.services.models_service import resolve_stages
+
+    built = []
+    monkeypatch.setitem(models_service.BUILDERS, "openai_compatible", lambda *a: built.append(a))
+    with _ctx(tmp_path, '[models.lm]\nprovider = "openai_compatible"\nmodel = "m"\nbase_url = "http://gpu.lan:8000/v1"\n'
+                        'key_env = "LM_KEY"\n[models.slots]\nnotes = "lm"\n') as ctx:
+        stages = resolve_stages(ctx, ("research", "notes", "verdict"), lead="research")
+        assert stages["notes"].model is stages["research"].model and stages["notes"].profile == "default"
+        assert "lm unavailable" in stages["notes"].unavailable
+        assert "unencrypted to gpu.lan" in stages["notes"].unavailable
+        assert built == []
+        lm = model_profile_rows(ctx)[1]
+        assert lm["unavailable"].startswith("unusable: ")
+        assert lm["if_unset"] == ["notes runs on the research slot's profile"]
+
+
 ALLOWED = "[models]\nallow_claude_code = true\n"
 SUB = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\ntimeout_s = 30\n'
 
@@ -264,7 +346,8 @@ def test_claude_code_is_offered_only_when_the_flag_allows_it(tmp_path):
         assert "claude_code" not in provider_defaults(ctx)
     with _ctx(tmp_path, ALLOWED) as ctx:
         assert provider_defaults(ctx)["claude_code"] == {
-            "base_url": None, "context": CLAUDE_CONTEXT, "timeout_s": 180.0, "keyed": False, "url": False}
+            "base_url": None, "base_url_required": False, "context": CLAUDE_CONTEXT, "timeout_s": 180.0, "keyed": False,
+            "url": False}
         assert provider_defaults(ctx)["ollama"]["url"] is True
 
 

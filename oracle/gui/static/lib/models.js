@@ -12,7 +12,7 @@ const PROVIDER_FIELDS = ["base_url", "context"];
 const OFF = { base_url: null, context: "", timeout_s: "", keyed: false, url: false };
 
 // Form values (strings) to the JSON the server takes: empty means the provider's default.
-function profileBody(fields, create) {
+function profileBody(fields, create, defaults = {}) {
   const text = (v) => String(v ?? "").trim() || null;
   const number = (v, label) => {
     const t = text(v);
@@ -27,6 +27,7 @@ function profileBody(fields, create) {
     key_env: text(fields.key_env), key: fields.clear_key ? "" : text(fields.key),
   };
   if (!body.model) throw new Error("type a model name");
+  if (defaults.base_url_required && !body.base_url) throw new Error("type a base_url: the server's API root");
   if (body.key && body.key_env) throw new Error("give a key or key_env, not both");
   if (create) {
     body.name = text(fields.name);
@@ -44,9 +45,18 @@ function prefill(p) {
     key_env: p.key_env ?? "" };
 }
 
+// The provider-bound boxes after a switch to `provider`: empty, since another provider's
+// endpoint or window would break it and its key must not reach this one's host; the
+// profile's own values again when switched back to its provider.
+function switchedValues(p, provider) {
+  const own = p?.provider === provider ? prefill(p) : {};
+  return Object.fromEntries([...PROVIDER_FIELDS, "key_env", "key"].map((k) => [k, own[k] ?? ""]));
+}
+
 function placeholders(defaults) {
-  return { base_url: defaults.base_url ?? "provider's own endpoint", context: String(defaults.context),
-    timeout_s: String(defaults.timeout_s) };
+  const base = defaults.base_url_required ? "required, like http://localhost:1234/v1"
+    : `default: ${defaults.base_url ?? "provider's own endpoint"}`;
+  return { base_url: base, context: `default: ${defaults.context}`, timeout_s: `default: ${defaults.timeout_s}` };
 }
 
 function keyState(p) {
@@ -101,7 +111,8 @@ function profileRow(p, providers) {
     }
   } }, "Test");
   const tr = el("tr", null,
-    el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null),
+    el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null,
+      p.unusable ? el("span", { class: "warn-text small", title: p.unusable }, " unusable: edit to fix") : null),
     el("td", null, p.provider, p.off ? el("span", { class: "warn-text", title: "set allow_claude_code = true " +
       "under [models] in oracle.toml to use it" }, " (off)") : null),
     el("td", { class: "mono" }, p.model),
@@ -145,18 +156,20 @@ function formRow(p, providers) {
   const inputs = Object.fromEntries(FIELDS.map((k) => [k, box(k, k === "key" ? { type: "password" } : {})]));
   const clear = el("input", { type: "checkbox", title: "Remove the saved key" });
   const keyCell = el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear"));
+  const hint = el("td", { class: "dim small" });
   const fit = () => {
     const defaults = providers[provider.value] ?? OFF;
-    for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = `default: ${text}`;
+    for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = text;
     inputs.key_env.placeholder = "key_env";
     inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
       ? "saved key kept" : "key";
     keyCell.hidden = !defaults.keyed;
+    hint.textContent = defaults.base_url_required ? "base_url required; other empty boxes: the provider's default"
+      : "empty: the provider's default";
     inputs.base_url.hidden = !defaults.url;
   };
   provider.addEventListener("change", () => {
-    // Another provider's endpoint or window would break this one; its own defaults apply.
-    for (const k of PROVIDER_FIELDS) inputs[k].value = "";
+    for (const [k, v] of Object.entries(switchedValues(p, provider.value))) inputs[k].value = v;
     fit();
   });
   fit();
@@ -164,7 +177,7 @@ function formRow(p, providers) {
     let body;
     try {
       body = profileBody({ name: name?.value, provider: provider.value, clear_key: clear.checked,
-        ...Object.fromEntries(FIELDS.map((k) => [k, inputs[k].value])) }, !p);
+        ...Object.fromEntries(FIELDS.map((k) => [k, inputs[k].value])) }, !p, providers[provider.value]);
     } catch (err) { showError(err.message); return; }
     try {
       draw(await (p ? sendJson(`/api/models/${encodeURIComponent(p.name)}`, body, "PUT") : sendJson("/api/models", body)));
@@ -183,7 +196,7 @@ function formRow(p, providers) {
     el("td", null,
       el("button", { type: "button", class: "small-btn", onclick: save }, "Save"),
       el("button", { type: "button", class: "small-btn", onclick: load }, "Cancel")),
-    el("td", { class: "dim small" }, "empty: the provider's default"));
+    hint);
 }
 
 async function load() {
@@ -194,4 +207,4 @@ async function load() {
   }
 }
 
-export { load, prefill, profileBody, slotsCell };
+export { load, placeholders, prefill, profileBody, slotsCell, switchedValues };

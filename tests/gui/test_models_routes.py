@@ -11,9 +11,10 @@ BIG = {"provider": "ollama", "model": "qwen3:8b", "context": 8192}
 
 async def test_profiles_are_listed_default_first_and_added_edited_and_deleted(ctx, client, tmp_path):
     listing = (await client.get("/api/models")).json()
-    assert [p["name"] for p in listing["profiles"]] == ["default"] and list(listing["providers"]) == ["ollama", "claude_api"]
-    assert listing["providers"]["ollama"] == {"base_url": "http://localhost:11434", "context": 16384, "timeout_s": 180.0,
-                                              "keyed": False, "url": True}
+    assert [p["name"] for p in listing["profiles"]] == ["default"]
+    assert list(listing["providers"]) == ["ollama", "claude_api", "openai_compatible"]
+    assert listing["providers"]["ollama"] == {"base_url": "http://localhost:11434", "base_url_required": False,
+                                              "context": 16384, "timeout_s": 180.0, "keyed": False, "url": True}
     assert listing["profiles"][0]["set"] == {"base_url": None, "context": None, "timeout_s": None}
     added = await client.post("/api/models", json={"name": "big", **BIG})
     assert added.status_code == 200 and [p["name"] for p in added.json()["profiles"]] == ["default", "big"]

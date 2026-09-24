@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from oracle.config import CLAUDE_CODE_MODEL
+from oracle.research.budget import REPLY_TOKENS
 from oracle.research.llm import ModelError
 
 BIN_ENV = "ORACLE_CLAUDE_BIN"
@@ -70,6 +71,7 @@ def find_cli(name: str) -> str | None:
 
 class ClaudeCodeChat:
     name = "claude_code"
+    reply_tokens = REPLY_TOKENS
 
     def __init__(self, model: str, timeout_s: float, command: Sequence[str] | None = None) -> None:
         """`command`: the argv that starts the CLI, before its flags; None finds `claude`."""

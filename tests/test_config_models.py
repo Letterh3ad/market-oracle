@@ -1,6 +1,9 @@
+import re
+import tomllib
+
 import pytest
 
-from oracle.config import CLAUDE_CONTEXT, ConfigError, ModelProfile, load_config, model_profiles
+from oracle.config import CLAUDE_CONTEXT, ConfigError, ModelProfile, check_profile, load_config, model_profiles
 
 
 def _load(tmp_path, text):
@@ -40,7 +43,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
 
 
 @pytest.mark.parametrize("table, message", [
-    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, claude_code, got 'gpt'"),
+    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, openai_compatible, claude_code, got 'gpt'"),
     ('model = "x"', r"models.fast needs a provider"),
     ('provider = "ollama"', r"models.fast needs a model"),
     ('provider = "ollama"\nmodel = ""', r"models.fast.model must be a model name"),
@@ -51,6 +54,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
     ('provider = "claude_api"\nmodel = "x"\nkey_env = "not a name"', r"models.fast.key_env must be the name of an"),
     ('provider = "claude_api"\nmodel = "x"\nkey = ""', r"models.fast.key must be a non-empty string"),
     ('provider = "claude_api"\nmodel = "x"\nkey = "k"\nkey_env = "K"', r"models.fast sets key and key_env"),
+    ('provider = "openai_compatible"\nmodel = "x"', r"models.fast needs a base_url: the server's API root"),
     ('provider = "ollama"\nmodel = "x"\ntemperature = 1', r"unknown key\(s\) in \[models.fast\]: temperature"),
 ])
 def test_a_bad_profile_is_refused_naming_the_key(tmp_path, table, message):
@@ -120,6 +124,59 @@ def test_a_duplicate_table_is_refused_with_the_toml_parsers_message(tmp_path):
     with pytest.raises(ConfigError, match="not valid TOML"):
         _load(tmp_path, '[models.a]\nprovider = "ollama"\nmodel = "x"\n[models.a]\nprovider = "ollama"\nmodel = "y"\n')
 
+
+def test_an_openai_compatible_profile_needs_a_base_url_and_may_take_a_key(tmp_path):
+    config = _load(tmp_path, '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\n'
+                             'base_url = "http://localhost:1234/v1"\n'
+                             '[models.router]\nprovider = "openai_compatible"\nmodel = "m"\n'
+                             'base_url = "https://openrouter.ai/api/v1"\nkey_env = "OPENROUTER_KEY"\n')
+    profiles = model_profiles(config)
+    assert profiles["lm"] == ModelProfile("openai_compatible", "qwen3-8b", "http://localhost:1234/v1", 16384, 180.0)
+    assert profiles["router"].key_env == "OPENROUTER_KEY"
+
+
+@pytest.mark.parametrize("line, says", [
+    ('base_url = "http://proxy.lan:8080"\nkey = "sk-secret"', "would send its key unencrypted to proxy.lan"),
+    ('base_url = "https://user:pw@proxy.example"', "base_url must be an http(s) URL with no user"),
+])
+def test_a_profile_that_loaded_before_the_url_rules_is_kept_but_unusable(tmp_path, caplog, line, says):
+    config = _load(tmp_path, f'[models.deep]\nprovider = "claude_api"\nmodel = "m"\n{line}\n'
+                             '[models.fine]\nprovider = "claude_api"\nmodel = "m"\n')
+    assert says in config.models["deep"].unusable and config.models["fine"].unusable is None
+    assert "model profile deep is unusable until fixed: models.deep" in caplog.text and says in caplog.text
+    assert "sk-secret" not in caplog.text and "pw" not in config.models["deep"].unusable
+    with pytest.raises(ConfigError, match=re.escape(says)):
+        check_profile("deep", {"provider": "claude_api", "model": "m", **tomllib.loads(line)})
+
+
+@pytest.mark.parametrize("table, message", [
+    ({"provider": "ollama", "base_url": "http://gpu:11434/?a=1"}, r"models.fast.base_url must be an http\(s\)"),
+    ({"provider": "ollama", "base_url": "http://gpu:11434/#a"}, r"models.fast.base_url must be an http\(s\)"),
+    ({"provider": "ollama", "base_url": "http://u:p@gpu:11434"}, r"models.fast.base_url must be an http\(s\)"),
+    ({"provider": "openai_compatible", "base_url": "http://gpu.lan:8000/v1", "key_env": "K"},
+     r"models.fast would send its key unencrypted to gpu.lan: use https://"),
+    ({"provider": "claude_api", "base_url": "http://proxy.lan:8080"},
+     r"models.fast would send its key unencrypted to proxy.lan"),
+])
+def test_a_save_refuses_what_a_load_only_marks_unusable(table, message):
+    with pytest.raises(ConfigError, match=message):
+        check_profile("fast", {"model": "x", **table})
+
+
+def test_a_keyless_profile_may_use_plain_http_when_its_provider_has_no_fallback_key():
+    check_profile("lm", {"provider": "openai_compatible", "model": "x", "base_url": "http://gpu.lan:8000/v1"})
+    check_profile("big", {"provider": "ollama", "model": "x", "base_url": "http://gpu.lan:11434"})
+
+
+def test_unusable_is_not_a_key_a_file_may_set(tmp_path):
+    with pytest.raises(ConfigError, match="unknown key"):
+        _load(tmp_path, '[models.deep]\nprovider = "ollama"\nmodel = "m"\nunusable = "no"\n')
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_a_key_may_go_over_plain_http_to_this_machine(tmp_path, host):
+    _load(tmp_path, f'[models.lm]\nprovider = "openai_compatible"\nmodel = "m"\nbase_url = "http://{host}:1234/v1"\n'
+                    'key = "k"\n')
 
 CLAUDE_CODE = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n'
 ALLOWED = "[models]\nallow_claude_code = true\n"

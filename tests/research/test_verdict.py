@@ -81,6 +81,20 @@ def test_the_budget_is_three_quarters_of_the_models_context_less_the_reply_and_t
     # Numbers and URLs run nearer 3 characters a token than 4.
     assert budget(8192, "s" * 100) == (8192 - 1024) * 3 - 100
     assert budget(1000, "s") == 0
+    assert budget(8192, "s" * 100, reply_tokens=4096) == (8192 - 4096) * 3 - 100
+
+
+def test_ollama_and_claude_keep_the_budgets_default_reply_room_and_a_bigger_one_shrinks_every_prompt():
+    from oracle.research.budget import REPLY_TOKENS, reply_room
+    from oracle.research.claude import ClaudeChat
+    from oracle.research.notes import note_room
+    from oracle.research.ollama import OllamaChat
+    from oracle.research.roles import digest_room
+
+    assert reply_room(OllamaChat("m", "http://x", 1.0, 8192)) == reply_room(ClaudeChat("m", 1.0)) == REPLY_TOKENS == 1024
+    assert reply_room(object()) == REPLY_TOKENS, "a scripted model takes the default"
+    assert digest_room(16384, 4096) == digest_room(16384) - 3072 * 3
+    assert note_room(5000, "s", "h", 4096) == note_room(5000, "s", "h") - 3072 * 3
 
 
 @pytest.mark.parametrize("reply, why", [

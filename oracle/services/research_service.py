@@ -10,6 +10,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
+from oracle.research.budget import reply_room
 from oracle.research.citations import keep_citations
 from oracle.research.engine import react
 from oracle.research.freshness import Known, due_for_research
@@ -171,7 +172,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, s
     read = frozenset(e.id for e in evidence if e.facts)
     digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
                          [lines[e.id] for e in evidence if e.id not in read], findings,
-                         digest_room(stages.context("roles")))
+                         digest_room(stages.context("roles"), reply_room(stages.model("roles"))))
     report = await write_report(stages.model("roles"), digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):

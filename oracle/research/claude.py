@@ -6,12 +6,12 @@ oracle.toml), else from ANTHROPIC_API_KEY or an `ant auth login` profile."""
 
 from __future__ import annotations
 
-import copy
 import json
 
 import anthropic
 
-from oracle.research.llm import ModelError
+from oracle.research.budget import REPLY_TOKENS
+from oracle.research.llm import ModelError, closed_schema
 
 # Room for adaptive thinking plus a short JSON answer, under the SDK's non-streaming limits.
 MAX_TOKENS = 16000
@@ -21,6 +21,7 @@ NO_CREDENTIALS = "set ANTHROPIC_API_KEY or run `ant auth login`"
 
 class ClaudeChat:
     name = "claude"
+    reply_tokens = REPLY_TOKENS
 
     def __init__(self, model: str, timeout_s: float, client: object | None = None, *,
                  api_key: str | None = None, base_url: str | None = None, key_source: str = NO_CREDENTIALS) -> None:
@@ -38,7 +39,7 @@ class ClaudeChat:
         request = {
             "model": self.model, "max_tokens": MAX_TOKENS, "messages": [m for m in messages if m["role"] != "system"],
             "system": "\n\n".join(m["content"] for m in messages if m["role"] == "system"),
-            "output_config": {"format": {"type": "json_schema", "schema": _closed(schema)}},
+            "output_config": {"format": {"type": "json_schema", "schema": closed_schema(schema)}},
             "betas": [FALLBACK_BETA], "fallbacks": "default",
         }
         try:
@@ -75,22 +76,3 @@ class ClaudeChat:
         except ValueError:
             return text
 
-
-def _closed(schema: dict) -> dict:
-    """Structured outputs need every object closed and all its fields required, and take no
-    array-length limits; the callers cap lengths themselves."""
-    out = copy.deepcopy(schema)
-
-    def walk(node: object) -> None:
-        if not isinstance(node, dict):
-            return
-        node.pop("maxItems", None)
-        node.pop("minItems", None)
-        if node.get("type") == "object":
-            node["additionalProperties"] = False
-            node["required"] = list(node.get("properties", {}))
-        for child in (*node.get("properties", {}).values(), node.get("items")):
-            walk(child)
-
-    walk(out)
-    return out

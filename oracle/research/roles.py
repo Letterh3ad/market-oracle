@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from oracle.research.budget import budget
+from oracle.research.budget import REPLY_TOKENS, budget
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
 from oracle.research.llm import ChatModel
@@ -53,10 +53,10 @@ _CLAIM_LIST = {"type": "array", "maxItems": MAX_CLAIMS,
 LATER_ROLES_CHARS = 4000
 
 
-def digest_room(context_tokens: int) -> int:
+def digest_room(context_tokens: int, reply_tokens: int = REPLY_TOKENS) -> int:
     """Characters of evidence digest every role can read beside its prompt."""
     longest = max((prompt(r, who, task) for r, (who, task) in {**ANALYSTS, **SIDES, "risk": RISK}.items()), key=len)
-    return max(0, budget(context_tokens, longest) - LATER_ROLES_CHARS)
+    return max(0, budget(context_tokens, longest, reply_tokens) - LATER_ROLES_CHARS)
 
 
 def digest(statistics: str, read: list[str], headlines: list[str], notes: str, chars: int) -> str:
