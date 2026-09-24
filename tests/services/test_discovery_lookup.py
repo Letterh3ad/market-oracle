@@ -61,9 +61,13 @@ async def named(ctx, news, *names):
     return await discover(ctx, model)
 
 
-async def test_a_name_several_companies_start_with_is_skipped_as_ambiguous(ctx, news):
+AMERICAN = ("ambiguous name: American Express Company, American Water Works Company, Inc., "
+            "American Airlines Group Inc.")
+
+
+async def test_a_name_several_companies_start_with_is_skipped_as_ambiguous_naming_them(ctx, news):
     run = await named(ctx, news, "American")
-    assert run.added == () and reasons(run)["American"] == "ambiguous name"
+    assert run.added == () and reasons(run)["American"] == AMERICAN
 
 
 async def test_a_short_name_is_never_guessed(ctx, news):
@@ -91,7 +95,16 @@ async def test_a_close_pair_by_market_cap_stays_ambiguous(ctx, news):
     # AXP (Mega) and AWK (Large) are only one band apart: too close to call, even though
     # AAL (Mid) is also in the mix.
     run = await named(ctx, news, "American")
-    assert run.added == () and reasons(run)["American"] == "ambiguous name"
+    assert run.added == () and reasons(run)["American"] == AMERICAN
+
+
+async def test_a_place_word_is_never_settled_by_the_model(ctx, news):
+    settings(ctx, per_tick=1, search_themes=False, search_movers=False)
+    headlines(news, TOYOTA, "American and Toyota in talks")
+    model = ScriptedModel({"companies": [{"name": "American", "relation": "partner", "headlines": [1]}]})
+    model.roles["name_check"] = {"company": 1}
+    run = await discover(ctx, model)
+    assert run.added == () and reasons(run)["American"] == AMERICAN
 
 
 @pytest.mark.parametrize("symbol", ["ON", "OPEN"])

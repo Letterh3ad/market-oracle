@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from oracle.services.brands import rest_words
 from oracle.services.industry_words import universe_words, word_list
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.exchanges import EXCHANGES
@@ -28,8 +29,11 @@ _TOO_COMMON = frozenset({
 })
 # In a company's name these say little of its trade: "Micron Technology" makes chips.
 _NAMES_ANY_TRADE = frozenset({"technology", "electronic", "media"})
-# Trades names carry that the universe's classifications do not spell.
-_NAMED_TRADES = frozenset({"medical", "therapeutic", "diagnostic", "bioscience", "furniture", "bancorp"})
+# Trades names carry that the universe's classifications do not spell, with their sectors.
+_NAMED_TRADES = {"medical": "Health Care", "therapeutic": "Health Care", "diagnostic": "Health Care",
+                 "bioscience": "Health Care", "furniture": "Consumer Discretionary", "bancorp": "Financials"}
+# Enough of a word to tell it from another: "robotics" and "robots" are one trade.
+_STEM = 5
 # Words that may stand between a home and the name it qualifies: "German defence group Rheinmetall".
 _DESCRIBING = frozenset({
     "startup", "start", "up", "firm", "company", "group", "maker", "giant", "rival", "unicorn", "business",
@@ -64,19 +68,28 @@ class BusinessFit:
         asked = self._industries(named_in.asked)
         if not p.sector or not asked or any(p.sector in sectors for sectors in asked.values()):
             return None
-        said = {w for text in (named_in.asked, *named_in.items) for word in word_list(text)
-                for w in universe_words(word)}
-        other_trade = [w for w in self._rest_of_name(p.name, name) if w not in said]
-        if not other_trade:
+        if not self.unsaid(self._rest_of_name(p.name, name), named_in):
             return None
         about = ", ".join(f'"{w}"' for w in list(asked)[:3])
         return (f"a different business: {p.name} is in {p.industry or p.industry_group or p.sector}, "
                 f"but the question is about {about}")
 
+    def sectors_asked(self, asked: str) -> frozenset[str]:
+        """The sectors the question's industry words name."""
+        return frozenset().union(*self._industries(asked).values())
+
+    def unsaid(self, words: list[str], named_in: NamedIn) -> list[str]:
+        """The trade words neither the question nor the items say, in their words (enough of them
+        to take "robots" for "robotics") or their sectors ("bancorp" in a question about banks)."""
+        asked = self.sectors_asked(named_in.asked)
+        said = {w[:_STEM] for text in (named_in.asked, *named_in.items) for x in word_list(text)
+                for w in universe_words(x)}
+        return [w for w in words if w[:_STEM] not in said and not asked & {
+            *self._vocabulary().get(w, ()), *filter(None, [_NAMED_TRADES.get(w)])}]
+
     def _rest_of_name(self, listed: str, name: str) -> list[str]:
         """Industry words in the listing's name after the words it was matched by."""
-        rest = word_list(listed)[len(word_list(name)):]
-        return [w for word in rest for w in universe_words(word)
+        return [w for word in rest_words(listed, name) for w in universe_words(word)
                 if w in _NAMED_TRADES or w in self._vocabulary() and w not in _NAMES_ANY_TRADE]
 
     def _trusted_home(self, p: ListingProfile) -> bool:

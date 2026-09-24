@@ -35,6 +35,10 @@ class FakeYahoo:
         self.expire_crumb_after_issue = False
         """The next quoteSummary rejects the crumb just issued (it expired)."""
         self.crumb_user_agents: list[str] = []
+        self.quotes: dict[str, list[dict] | str] = {}
+        """search text -> the quotes Yahoo's search gives (see `quote`), or a raw body; other text answers 404."""
+        self.search_status = 200
+        self.searched: list[str] = []
 
     def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
         self.series[symbol] = Series(currency, tz, bars, open_at)
@@ -51,6 +55,17 @@ class FakeYahoo:
             return httpx.Response(200, text=self.crumb)
         if request.url.path.startswith("/v10/finance/quoteSummary/"):
             return self._summary(request)
+        if request.url.path == "/v1/finance/search":
+            text = request.url.params.get("q", "")
+            self.searched.append(text)
+            if self.search_status != 200:
+                return httpx.Response(self.search_status)
+            if text not in self.quotes:
+                return httpx.Response(404)
+            if isinstance(self.quotes[text], str):
+                return httpx.Response(200, text=self.quotes[text])
+            return httpx.Response(200, json={"explains": [], "count": len(self.quotes[text]),
+                                              "quotes": self.quotes[text], "news": []})
         prefix = "/v8/finance/chart/"
         if not request.url.path.startswith(prefix):
             return httpx.Response(404)
@@ -105,6 +120,12 @@ class FakeYahoo:
 def bar(day: str, close: float, adj: float | None = None, volume: int = 1000) -> tuple:
     d = date.fromisoformat(day)
     return (d, close, close, close, close, close if adj is None else adj, volume)
+
+
+def quote(symbol: str, name: str, kind: str = "EQUITY", score: float = 20000.0, short: str | None = None) -> dict:
+    """One quote of Yahoo's search, as it answers (captured 2026-09-24)."""
+    return {"exchange": "NMS", "shortname": short or name[:31], "quoteType": kind, "symbol": symbol,
+            "index": "quotes", "score": score, "longname": name, "isYahooFinance": True}
 
 
 def summary(currency: str, market_cap=None, **figures) -> dict:

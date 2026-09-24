@@ -193,9 +193,10 @@ async def test_the_question_s_own_industry_words_count(ctx, news, question):
 
 
 async def test_with_no_industry_words_a_leading_name_passes(ctx, news):
-    found(news, "Olix raises a record round")
-    view = await asked(ctx, ("Olix", [1]), question="who raised money this week?")
-    assert [line.item.symbol for line in view.shortlist] == ["226950.KQ"]
+    # A big company: a small one whose name says a trade the news does not is refused anyway (04).
+    found(news, "Velta wins a record order")
+    view = await asked(ctx, ("Velta", [1]), question="who raised money this week?")
+    assert [line.item.symbol for line in view.shortlist] == ["VLTA"]
 
 
 @pytest.mark.parametrize(("title", "home"), [
@@ -244,11 +245,11 @@ async def test_tick_themes_refuse_a_mismatched_leading_name_too(ctx, news):
 async def test_tick_related_partners_from_other_industries_are_added(ctx, news):
     watch(ctx, "7203.T")
     settings(ctx, per_tick=2, search_themes=False, search_movers=False)
-    headlines(news, TOYOTA, "Toyota picks Rockwell for car plant automation", "Olix and Toyota team up on chips")
+    headlines(news, TOYOTA, "Toyota picks Rockwell for car plant automation", "Velta and Toyota team up on chips")
     run = await discover(ctx, ScriptedModel({"companies": [
         {"name": "Rockwell", "relation": "supplier", "headlines": [1]},
-        {"name": "Olix", "relation": "partner", "headlines": [2]}]}))
-    assert [a.symbol for a in run.added] == ["ROK", "226950.KQ"], "no question: the sector is not checked"
+        {"name": "Velta", "relation": "partner", "headlines": [2]}]}))
+    assert [a.symbol for a in run.added] == ["ROK", "VLTA"], "no question: the sector is not checked"
 
 
 @pytest.mark.parametrize(("name", "title"), CROSS_INDUSTRY)

@@ -5,16 +5,16 @@ answers yes or no. Checks run cheapest first and stop at the first that fails.""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 
 from oracle.market.bars import is_stale
 from oracle.research.llm import ChatModel, ModelError
-from oracle.research.mentions import item_text, item_words
+from oracle.research.mentions import item_text, item_words, quoted_items
 from oracle.research.trace import Evidence
 from oracle.research.web import domain, outlet_key, site_name
+from oracle.services.brands import plain_text
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
 from oracle.services.discovery_service import RELATION_AUTO, SOURCE_QUESTION, add_checked, list_full, question_full
@@ -49,7 +49,6 @@ RELEASE = "company releases"
 FILINGS = "SEC filings"
 _OWN = frozenset({RELEASE, FILINGS})
 """Outlets that carry only what the company says of itself: they never make the count alone."""
-_ITEM_TAG = re.compile(r"</?\s*item\b[^>]*>", re.IGNORECASE)
 
 RELEVANCE_SCHEMA = {
     "type": "object",
@@ -280,11 +279,11 @@ def _on_a_list(screen: Screen, item: ShortlistItem) -> bool:
 
 
 def relevance_prompt(question: str, company: str, items: list[str]) -> list[dict]:
-    quoted = "\n".join(f"<item {i}>\n{_ITEM_TAG.sub(' ', t)}\n</item {i}>" for i, t in enumerate(items, start=1))
     return [{"role": "system", "content": _RELEVANCE},
-            {"role": "user", "content": f"Question: {question}\nCompany: {company}\nNews items:\n{quoted}"}]
+            {"role": "user", "content": f"Question: {question}\nCompany: {company}\nNews items:\n"
+                                        f"{quoted_items(items)}"}]
 
 
 def _names(e: Evidence, names: set[str]) -> bool:
-    text = f" {normalise_name(item_words(e))} "
+    text = plain_text([item_words(e)])
     return any(f" {n} " in text for n in names)
