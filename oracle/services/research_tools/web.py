@@ -71,15 +71,16 @@ class Page:
     title: str
     text: str
     truncated: bool
-    """The page ran past MAX_PAGE_BYTES."""
+    """The page ran past its byte cap."""
 
 
-async def read_page(client: RateLimitedClient, url: str, contact: str | None) -> Page:
+async def read_page(client: RateLimitedClient, url: str, contact: str | None,
+                    max_bytes: int = MAX_PAGE_BYTES) -> Page:
     """A web page as plain text, through the rate gate. Redirects are followed here, one hop
     at a time: each target is checked like the first, so a public page cannot bounce the
     reader into this machine or the LAN, and the SEC contact goes to sec.gov alone."""
     for _ in range(MAX_REDIRECTS + 1):
-        resp = await _get(client, url, contact)
+        resp = await _get(client, url, contact, max_bytes)
         if resp.status_code not in REDIRECTS:
             break
         if not resp.headers.get("location"):
@@ -94,7 +95,7 @@ async def read_page(client: RateLimitedClient, url: str, contact: str | None) ->
     return Page(url, title, text, resp.extensions.get("oracle_truncated", False))
 
 
-async def _get(client: RateLimitedClient, url: str, contact: str | None) -> httpx.Response:
+async def _get(client: RateLimitedClient, url: str, contact: str | None, max_bytes: int) -> httpx.Response:
     if why := unsafe_url(url):
         raise ToolError(why)
     if domain(url) == "news.google.com":
@@ -104,7 +105,7 @@ async def _get(client: RateLimitedClient, url: str, contact: str | None) -> http
     if edgar.is_sec(url):
         # SEC refuses requests without a declared contact, and has its own budget.
         source, headers = "sec_edgar", {**headers, "User-Agent": edgar.user_agent(need_contact(contact))}
-    return await fetch(client, source, "the page", url, headers=headers, max_bytes=MAX_PAGE_BYTES,
+    return await fetch(client, source, "the page", url, headers=headers, max_bytes=max_bytes,
                        follow_redirects=False, accept=(200, *REDIRECTS))
 
 

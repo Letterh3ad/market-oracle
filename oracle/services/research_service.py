@@ -105,10 +105,12 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher)
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
+        contact = ctx.config.research.contact
         reader = Reader(ctx.conn, ctx.clock, client, searcher, SourceGate(ctx.conn, ctx.clock, ctx.config.sources),
-                        ctx.config.research.contact, model, f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+                        contact, model, f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+        filings = await Filings(client, ctx.conn, ctx.clock, shelf, listing, contact).to_read(day) if contact else {}
         await reader.read(repo.get(run_id).evidence, READ_ARTICLES, as_of,
-                          lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"))
+                          lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
         repo.set_stage(run_id, None)
     findings, cited = keep_citations(outcome.findings, shown)
     statistics, data_id = await _statistics(ctx, shelf, run_id, listing, as_of, day)

@@ -394,8 +394,8 @@ async def test_filings_answers_plainly_when_there_are_none_to_get(ctx, sec, inpu
     apple_filings(sec)
     run = await research(ctx, "AAPL", ScriptedModel(step("filings", input_), step("final", "Done.")))
     assert says in run.steps[0].observation
-    if input_ != "ZZZZ":
-        assert sec.requests == []
+    # The reading stage still looks up the listing researched, and nothing else.
+    assert {r.url.path for r in sec.requests if "submissions" in r.url.path} == {f"/submissions/CIK{APPLE_CIK:010d}.json"}
 
 
 async def test_without_a_contact_the_model_is_not_offered_filings(ctx, sec):

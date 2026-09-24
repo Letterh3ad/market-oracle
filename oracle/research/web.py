@@ -12,8 +12,10 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 _WHITESPACE = re.compile(r"\s+")
-# Never text worth reading, whatever is inside: code, styling, and page furniture.
-_OPAQUE = frozenset({"script", "style", "noscript", "svg", "template", "nav", "footer", "aside", "form", "head"})
+# Never text worth reading, whatever is inside: code, styling, page furniture, and the hidden
+# facts at the top of an inline XBRL filing.
+_OPAQUE = frozenset({"script", "style", "noscript", "svg", "template", "nav", "footer", "aside", "form", "head",
+                     "ix:header"})
 # Characters of body text below which a page probably renders with scripts.
 THIN_PAGE = 300
 _BLOCK = frozenset({"p", "div", "br", "li", "h1", "h2", "h3", "h4", "tr", "section", "article"})

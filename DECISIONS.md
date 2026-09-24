@@ -1450,3 +1450,46 @@ letters goes to the local edition. Stored queries stay plain strings, so no migr
 **Alternatives:** Plain query lines (the model would send local-script and press queries to
 the English news tool); letting the plan grow to 8 (the loop would spend every step on seeds).
 Ticket 04 raises the steps to 16 and may raise `MAX_PLANNED` with them.
+
+## 2026-09-24 - Which filings the reading stage reads, and where they come from
+**Context:** Ticket 03: a US listing's filings text should be read, taking at most 2 of the
+run's reading slots, before articles.
+**Decision:** The stage looks the filings up itself (when a SEC contact is set), whether or
+not the loop called `filings`: the latest 10-Q or 10-K, then 8-Ks from the 30 days before the
+run's day (the as-of day in a replay, so only filings made by then), newest first. They are
+kept as the run's evidence, so they are citable, and take the first 2 unsettled slots. Other
+SEC documents the loop listed or read (older reports, proxies, amendments) are not read by
+the stage, so untrimmed filings never take article slots. A filing is always fetched again
+by the stage, since a copy the loop read is stored whole. Amendments, 20-F and 6-K are left out.
+**Alternatives:** Reading only filings the loop happened to list (a 4B model often skips the
+tool); 8-Ks before the periodic report (an earnings 8-K's main document is mostly a pointer to
+its exhibit, while MD&A carries the numbers).
+
+## 2026-09-24 - Trimming a filing to its key sections
+**Context:** A 10-Q or 10-K runs to hundreds of thousands of characters and a note call reads
+12,000. EDGAR HTML is inline XBRL, headings vary in case and layout, and the table of
+contents repeats every heading.
+**Decision:** `edgar.key_text` works on the page's plain text: a heading starts a line
+("Item 2. Management's Discussion", "ITEM 7." with the title on the next line, "Item 1A. Risk
+Factors", "Item 2.02"), a section runs to the next item heading or "Signatures", and of several
+occurrences the one with the most text under it wins. 10-Q/10-K keep MD&A then risk factors;
+an 8-K keeps every item but 9.01 (the exhibit list). Sections share `FILING_TEXT` (the note
+call's 12,000 characters) evenly, a short one leaving its room to the others. With no sections
+found (or a report's under 500 characters), the text is cut to the cap, never dropped. Filings
+are fetched with a 16 MB byte cap (pages keep 2 MB): live main documents measured 1.5 to 16 MB,
+and MD&A sits past the financial statements. `page_text` now drops `ix:header` (the hidden
+XBRL facts), which otherwise led every filing's text. Checked live on AAPL, JPM, KO, GOOGL,
+NVDA, BRK-B and XOM (a network test covers three).
+**Alternatives:** Parsing the HTML structure (bold spans, anchors from the contents table:
+layouts differ by filing agent); the XBRL financial data API (numbers, not the narrative);
+the first occurrence of a heading (that is the table of contents).
+
+## 2026-09-24 - Report pages first for listings outside the US
+**Context:** Non-US listings have no EDGAR; their results and annual reports are on the
+company's own site, found by the press-release seed and the loop's web searches.
+**Decision:** With no filings to read, undated evidence (web results) whose title or path
+names results or a report (English plus a few local words such as Geschaeftsbericht,
+resultats and kessan in Japanese script) and is not a PDF takes the same 2 first slots, read and noted like an article
+without trimming.
+**Alternatives:** A dedicated investor-relations search in the stage (another ddgs call per
+run, and the seed already makes one); reading PDFs (out of scope for this ticket).

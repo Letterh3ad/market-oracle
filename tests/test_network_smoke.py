@@ -182,6 +182,31 @@ async def test_real_sec_edgar_lists_apples_filings():
     assert all(f.url.startswith(edgar.ARCHIVES) for f in filings)
 
 
+@pytest.mark.parametrize("ticker", ["AAPL", "JPM", "KO"])
+async def test_real_filings_are_trimmed_to_their_key_sections(ticker):
+    import asyncio
+
+    import httpx
+
+    from oracle.research import edgar
+    from oracle.research.web import page_text
+
+    contact = os.environ.get("ORACLE_SEC_CONTACT")
+    if not contact:
+        pytest.skip('set ORACLE_SEC_CONTACT="Name email" to check EDGAR live')
+    async with httpx.AsyncClient(timeout=60, headers={"User-Agent": edgar.user_agent(contact)}) as http:
+        cik, _ = edgar.parse_tickers((await http.get(edgar.TICKERS_URL)).json())[ticker]
+        filings = edgar.parse_filings((await http.get(edgar.submissions_url(cik))).json(), cik)
+        for form in ("10-Q", "10-K", "8-K"):
+            filing = next(f for f in filings if f.form == form)
+            await asyncio.sleep(0.2)
+            text = page_text((await http.get(filing.url)).text)[1]
+            kept = edgar.key_text(form, text)
+            assert kept != text[:edgar.FILING_TEXT], f"{form} {filing.url}: no sections found"
+            if form != "8-K":
+                assert "discussion" in kept[:300].lower(), f"{form} {filing.url}: {kept[:300]!r}"
+
+
 async def test_real_claude_answers_inside_the_research_schema():
     """Costs a fraction of a cent; runs only with ORACLE_CLAUDE_SMOKE=1 set."""
     if not os.environ.get("ORACLE_CLAUDE_SMOKE"):
