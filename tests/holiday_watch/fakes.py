@@ -39,6 +39,7 @@ class FakeSystem:
     spawned: list[tuple[tuple[str, ...], Path, bool]] = field(default_factory=list)
     killed: list[int] = field(default_factory=list)
     ran: list[tuple[tuple[str, ...], str]] = field(default_factory=list)
+    envs: list[dict | None] = field(default_factory=list)
     result: Ran = Ran(0, "all fixed")
     next_pid: int = 5000
 
@@ -54,8 +55,9 @@ class FakeSystem:
         self.killed.append(pid)
         return "SUCCESS"
 
-    def run(self, args, stdin, timeout_s, cwd):
+    def run(self, args, stdin, timeout_s, cwd, env=None):
         self.ran.append((tuple(args), stdin))
+        self.envs.append(env)
         return self.result
 
 

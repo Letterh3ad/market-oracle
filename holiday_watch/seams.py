@@ -5,6 +5,7 @@ lines."""
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import urllib.error
@@ -65,7 +66,8 @@ class System(Protocol):
     def spawn(self, args: Sequence[str], cwd: Path, *, console: bool = False, log: Path | None = None) -> int | None:
         """Start a process that outlives the watch; hidden unless `console`. Its PID, or None."""
     def kill_tree(self, pid: int) -> str: ...
-    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path) -> Ran:
+    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
+            env: dict[str, str] | None = None) -> Ran:
         """Run hidden to the end, killing its whole tree past `timeout_s`."""
 
 
@@ -97,8 +99,10 @@ class RealSystem:
     def kill_tree(self, pid: int) -> str:
         return procs.kill_tree(pid)
 
-    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path) -> Ran:
+    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
+            env: dict[str, str] | None = None) -> Ran:
         p = subprocess.Popen(resolved(args), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             env={**os.environ, **env} if env else None,
                              stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
                              creationflags=NO_WINDOW)
         try:
@@ -127,7 +131,8 @@ class DryRunSystem:
         self.say(f"would kill the process tree of PID {pid}")
         return "dry-run"
 
-    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path) -> Ran:
+    def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
+            env: dict[str, str] | None = None) -> Ran:
         self.say(f"would run: {subprocess.list2cmdline(list(args))} (in {cwd})")
         return Ran(None, "", timed_out=False)
 

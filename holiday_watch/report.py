@@ -133,6 +133,7 @@ def write_report(w: Watch) -> Path | None:
     if w.dry_run:
         w.echo(plain)
         return None
+    w.cfg.reports.mkdir(parents=True, exist_ok=True)
     prompt = Template((HERE / "summary_prompt.txt").read_text(encoding="utf-8")).substitute(report=plain)
     ran = w.system.run(summary_command(w), prompt, w.cfg.report_timeout_min * 60, w.cfg.reports)
     title, _, rest = plain.partition("\n\n")

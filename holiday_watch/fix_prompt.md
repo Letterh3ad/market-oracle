@@ -33,7 +33,8 @@ Rules:
 - A code bug: fix it on branch `holiday-fix` in a worktree at
   $repo/.claude/worktrees/holiday-fix (`git worktree add .claude/worktrees/holiday-fix -b holiday-fix integration`
   the first time, reuse it after), add a test, run the suite there with
-  `$python -m pytest -q -m "not network"`, commit. The user reviews and deploys it after the holiday.
+  `$python -m pytest -q -m "not network"`, commit (no Co-Authored-By or any attribution line).
+  The user reviews and deploys it after the holiday.
 - Do the least that fixes it. When unsure, leave it and explain.
 
 Finish with a short plain-text account (it is saved to the fix-run log and quoted in the morning

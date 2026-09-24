@@ -61,6 +61,8 @@ def test_supervise_runs_claude_saves_its_account_and_frees_the_lock(tmp_path):
     assert supervise(w, path) == 0
     (args, stdin), = system.ran
     assert "job 7 (Research X)" in stdin
+    # its holiday_watch commands find this watch's settings even from the holiday-fix worktree
+    assert system.envs[0]["HOLIDAY_WATCH_CONFIG"].endswith("config.toml")
     out = path.with_suffix(".md").read_text(encoding="utf-8")
     assert "cancelled job 7" in out and "long_job" in out
     assert read_lock(w.cfg.lock_file) is None

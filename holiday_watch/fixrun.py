@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from string import Template
 
-from holiday_watch.config import HERE, Config
+from holiday_watch.config import DEFAULT_FILE, HERE, Config
 from holiday_watch.seams import Watch
 from holiday_watch.state import clear_lock, read_lock
 
@@ -59,7 +59,10 @@ def supervise(w: Watch, trigger_file: Path) -> int:
     settings = cfg.fixruns / "settings.json"
     settings.write_text(json.dumps(fix_settings(cfg), indent=1), encoding="utf-8")
     try:
-        ran = w.system.run(fix_command(cfg, settings), fix_prompt(cfg, trigger), cfg.fix_timeout_min * 60, cfg.repo)
+        # The run's own `holiday_watch` commands read this watch's settings from any folder.
+        env = {"HOLIDAY_WATCH_CONFIG": str((w.config_path or DEFAULT_FILE).resolve())}
+        ran = w.system.run(fix_command(cfg, settings), fix_prompt(cfg, trigger), cfg.fix_timeout_min * 60, cfg.repo,
+                           env=env)
         out = trigger_file.with_suffix(".md")
         how = f"killed after {cfg.fix_timeout_min:g} min" if ran.timed_out else f"finished (exit {ran.code})"
         out.write_text(f"# Fix run: {trigger['kind']}\n\nTrigger: {trigger['detail']}\nRaised: {trigger['at']}\n"
