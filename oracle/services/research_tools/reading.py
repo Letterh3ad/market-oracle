@@ -24,8 +24,9 @@ from oracle.research.notes import take_note
 from oracle.research.tools import ToolError
 from oracle.research.trace import Evidence
 from oracle.research.web import THIN_PAGE, WebSearcher, outlet_key, site_name
+from oracle.services.research_tools.filings import press_exhibit
 from oracle.services.research_tools.shelf import Unavailable, domain, evidence_line
-from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, read_page, search_web
+from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, Page, read_page, search_web
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.research import note_model
@@ -94,6 +95,7 @@ class Reader:
             page = await read_page(self._client, url, self._contact, FILING_BYTES if form else MAX_PAGE_BYTES)
             if len(page.text) < THIN_PAGE:
                 raise ToolError(THIN)
+            read_at, text = await self._filing(form, page) if form else (page.url, page.text[:MAX_TEXT])
         except ToolError as exc:
             why = str(exc).removesuffix(TRY_ANOTHER)
             self._articles.save_read_failure(e.id, why, isinstance(exc, Unavailable), self._now())
@@ -103,9 +105,26 @@ class Reader:
             log.exception("reading article %s failed", e.id)
             self._articles.save_read_failure(e.id, unexpected(exc), False, self._now())
             return None
-        text = edgar.key_text(form, page.text) if form else page.text[:MAX_TEXT]
-        self._articles.save_text(e.id, page.url, text, self._now())
+        self._articles.save_text(e.id, read_at, text, self._now())
         return text
+
+    async def _filing(self, form: str, page: Page) -> tuple[str, str]:
+        """Where a filing's key text was read, and the text: an earnings or press 8-K's from
+        its press exhibit, which its own items only point at. SEC trouble is raised, so a
+        later run reads the exhibit; an exhibit that is missing or unreadable for good leaves
+        the 8-K's own items, which still say what happened."""
+        if form == edgar.EVENT and edgar.reads_exhibit(page.text):
+            try:
+                exhibit = await press_exhibit(self._client, self._contact, page.url)
+                if exhibit:
+                    read = await read_page(self._client, exhibit.url, self._contact, FILING_BYTES)
+                    if len(read.text) >= THIN_PAGE:
+                        return read.url, edgar.with_exhibit(exhibit, read.text, page.text)
+            except Unavailable:
+                raise
+            except ToolError:
+                log.info("reading the press exhibit of %s failed", page.url, exc_info=True)
+        return page.url, edgar.key_text(form, page.text)
 
     async def _resolve(self, e: Evidence, site: str | None) -> str:
         """The article behind a Google News redirect stub: a web search for its headline,

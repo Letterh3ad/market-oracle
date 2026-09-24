@@ -75,3 +75,108 @@ def test_a_filing_title_does_not_repeat_a_description_that_is_its_form():
 
 def test_the_hidden_inline_xbrl_header_is_not_read_as_text():
     assert text_of("aapl-8k.htm").startswith("UNITED STATES SECURITIES AND EXCHANGE COMMISSION")
+
+
+FILED = "https://www.sec.gov/Archives/edgar/data/320193/000032019326000018"
+INDEX = f"{FILED}/0000320193-26-000018-index.htm"
+
+
+def index_rows(*rows: tuple[str, str, str]) -> str:
+    """(description, href, type) per document, laid out like EDGAR's filing index."""
+    cells = "".join(f'<tr><td scope="row">{n}</td><td scope="row">{d}</td><td scope="row"><a href="{h}">x</a></td>'
+                    f'<td scope="row">{t}</td><td scope="row">100</td></tr>' for n, (d, h, t) in enumerate(rows, 1))
+    return f'<table class="tableFile" summary="Document Format Files">{cells}</table>'
+
+
+def test_the_filing_index_sits_beside_the_document_named_by_its_accession_number():
+    assert edgar.index_url(f"{FILED}/aapl-20260730.htm") == INDEX
+
+
+def test_the_filing_index_names_its_ex_99_1_document():
+    found = edgar.find_exhibit((FIXTURES / "aapl-8k-index.htm").read_text(encoding="utf-8"), INDEX)
+    assert found == edgar.Exhibit("EX-99.1", f"{FILED}/a8-kex991q3202606272026.htm", "EX-99.1")
+    assert found.label == "EX-99.1"
+
+
+def test_ex_99_1_wins_over_other_press_exhibits_and_without_it_the_first_ex_99_is_taken():
+    both = index_rows(("Presentation", f"{FILED}/ex992.htm", "EX-99.2"),
+                      ("Press release", f"{FILED}/ex991.htm", "EX-99.1"))
+    assert edgar.find_exhibit(both, INDEX).url == f"{FILED}/ex991.htm"
+    later = index_rows(("Main", f"/ix?doc={FILED.removeprefix('https://www.sec.gov')}/d.htm", "8-K"),
+                       ("Press release", "ex99.htm", "EX-99"), ("Slides", "ex992.htm", "EX-99.2"))
+    found = edgar.find_exhibit(later, INDEX)
+    assert found.url == f"{FILED}/ex99.htm" and found.label == "EX-99 Press release"
+    padded = index_rows(("Slides", "ex992.htm", "EX-99.2"), ("Press release", "ex9901.htm", "EX-99.01"))
+    assert edgar.find_exhibit(padded, INDEX).url == f"{FILED}/ex9901.htm"
+
+
+def test_index_cells_are_read_as_text_with_their_entities_decoded():
+    found = edgar.find_exhibit(index_rows(("Q3 results &amp; outlook", "ex991.htm", "EX-99.1")), INDEX)
+    assert found.label == "EX-99.1 Q3 results & outlook"
+
+
+def test_no_press_exhibit_or_one_outside_the_filing_is_none():
+    assert edgar.find_exhibit(index_rows(("Main", "d.htm", "8-K"), ("Deal", "ex10.htm", "EX-10.1")), INDEX) is None
+    elsewhere = index_rows(("Press release", "https://evil.test/ex991.htm", "EX-99.1"),
+                           ("Press release", "/Archives/edgar/data/320193/000032019399000001/ex991.htm", "EX-99.1"))
+    assert edgar.find_exhibit(elsewhere, INDEX) is None
+    assert edgar.find_exhibit("<html>not an index</html>", INDEX) is None
+
+
+def test_results_or_a_press_release_point_at_an_exhibit_other_items_do_not():
+    for item in ("2.02 Results of Operations", "7.01 Regulation FD Disclosure", "8.01 Other Events"):
+        assert edgar.reads_exhibit(f"Cover\nItem {item}.\nSee Exhibit 99.1.\nItem 9.01 Exhibits")
+    assert not edgar.reads_exhibit("Cover\nItem 5.02 Departure of Directors.\nItem 9.01 Exhibits")
+    assert not edgar.reads_exhibit("No items at all")
+
+
+def test_an_earnings_8k_reads_as_its_labelled_exhibit_then_its_other_items():
+    exhibit = text_of("aapl-ex991.htm")
+    kept = edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", "Press release"), exhibit, text_of("aapl-8k.htm"))
+    assert kept.startswith("EX-99.1 Press release\nApple reports fourth quarter results\nRecord September quarter")
+    assert "retire as Chief Operating Officer" in kept
+    for left_out in ("A copy is furnished", "Inline XBRL", "emerging growth", "duly caused"):
+        assert left_out not in kept
+    assert len(edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), exhibit * 100, "", cap=800)) <= 800
+
+
+def test_a_press_item_that_says_more_than_a_pointer_is_kept_after_the_exhibit():
+    event = "An investor day was held; " * 40
+    text = f"Cover\nItem 8.01 Other Events.\n{event}\nItem 7.01 Regulation FD.\nSee Exhibit 99.1.\nItem 9.01 Exhibits"
+    kept = edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), "Press release text.", text)
+    assert kept.startswith("EX-99.1\nPress release text.\n\nItem 8.01 Other Events.\nAn investor day")
+    assert "See Exhibit 99.1" not in kept
+
+
+def test_a_results_item_that_only_points_at_the_exhibit_under_the_usual_legend_is_dropped():
+    item = ("Item 2.02 Results of Operations and Financial Condition.\n"
+            "On July 30, 2026, Apple Inc. issued a press release regarding its financial results for its third fiscal "
+            "quarter ended June 27, 2026. A copy of the press release is furnished as Exhibit 99.1 to this Current "
+            "Report on Form 8-K.\n"
+            "The information contained in this Item 2.02 and in the accompanying Exhibit 99.1 shall not be deemed "
+            "filed for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, nor shall it be "
+            "deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the "
+            "Exchange Act, except as shall be expressly set forth by specific reference in such a filing.")
+    assert len(item) >= edgar.MIN_SECTIONS
+    kept = edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), "Press release text.", f"Cover\n{item}\nItem 9.01 X")
+    assert kept == "EX-99.1\nPress release text."
+
+
+CITI = (FIXTURES / "citi-10q.txt").read_text(encoding="utf-8")
+
+
+def test_a_report_without_item_headings_is_read_from_its_mdna_not_its_cover_or_contents():
+    kept = key_text("10-Q", CITI)
+    assert kept.startswith("MANAGEMENT’S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION\nAND RESULTS OF OPERATIONS\n"
+                           "EXECUTIVE SUMMARY")
+    assert "Citigroup’s average loans were $785 billion" in kept
+    assert "Indicate by check mark" not in kept and "Citi’s Multiyear Transformation\n9" not in kept
+
+
+def test_a_report_without_item_or_mdna_headings_skips_its_cover_and_contents():
+    words = ("MANAGEMENT’S DISCUSSION", "AND RESULTS OF OPERATIONS", "EXECUTIVE SUMMARY", "RESULTS OF OPERATIONS")
+    plain = "\n".join(line for line in CITI.split("\n") if not line.upper().startswith(words))
+    for form in ("10-K", "8-K", "DEF 14A"):
+        kept = key_text(form, plain)
+        assert kept.startswith("This Quarterly Report on Form 10-Q should be read"), form
+        assert "check mark" not in kept and "Balance Sheet Overview\n12" not in kept

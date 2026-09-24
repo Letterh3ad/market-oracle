@@ -65,6 +65,8 @@ Called over HTTP, not redistributed.
 | File | From | License | Where |
 |---|---|---|---|
 | Hand-trimmed 10-Q, 10-K and 8-K main documents | SEC EDGAR filings (Apple Inc.), prose cut and edited | Public filings with the SEC; no copyright claimed on the trimmed structure | `tests/fixtures/edgar/` |
+| `aapl-8k-index.htm`: an 8-K's filing index table | SEC EDGAR (sec.gov page, trimmed) | US government work, public domain | `tests/fixtures/edgar/` |
+| `citi-10q.txt`: first 200 lines of a 10-Q as text | SEC EDGAR filing (Citigroup Inc., Q2 2026 10-Q) | Public filing with the SEC; short excerpt kept as a test input only | `tests/fixtures/edgar/` |
 
 ## Dev dependencies
 
