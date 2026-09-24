@@ -208,7 +208,8 @@ async def test_update_refetches_whole_windows_until_each_listing_has_one_after_i
 
     monkeypatch.setattr(replay_score, "update_listings", update)
     outcomes = await update_study_prices(ctx)
-    assert asked == [(["AAA", "BBB", "CCC"], date(2026, 5, 25))]  # every listing, from the first day less a week
+    # Every listing, from 400 days before the first day: the account's risk sizes read that year.
+    assert asked == [(["AAA", "BBB", "CCC"], date(2025, 4, 27))]
     assert [(o.symbol, o.error) for o in outcomes][0] == ("AAA", "no price data for AAA")
     s = replay_report(ctx)
     assert s.refetch_listings == ("AAA",) and s.price_failures == ("AAA",) and s.prices_checked_at == NOW
