@@ -14,8 +14,10 @@ async def test_profiles_are_listed_default_first_and_added_edited_and_deleted(ct
     assert [p["name"] for p in listing["profiles"]] == ["default"]
     assert list(listing["providers"]) == ["ollama", "claude_api", "openai_compatible"]
     assert listing["providers"]["ollama"] == {"base_url": "http://localhost:11434", "base_url_required": False,
-                                              "context": 16384, "timeout_s": 180.0, "keyed": False, "url": True}
-    assert listing["profiles"][0]["set"] == {"base_url": None, "context": None, "timeout_s": None}
+                                              "context": 16384, "timeout_s": 180.0, "keyed": False, "url": True,
+                                              "claimed_cutoff": "2025-05-20"}
+    assert listing["profiles"][0]["set"] == {"base_url": None, "context": None, "timeout_s": None,
+                                             "claimed_cutoff": None}
     added = await client.post("/api/models", json={"name": "big", **BIG})
     assert added.status_code == 200 and [p["name"] for p in added.json()["profiles"]] == ["default", "big"]
     edited = (await client.put("/api/models/big", json={**BIG, "context": 4096})).json()
@@ -71,3 +73,13 @@ async def test_claude_code_is_listed_saved_and_tested_once_the_file_allows_it(ct
     monkeypatch.setenv(BIN_ENV, str(shim(tmp_path, "good")))
     tested = (await client.post("/api/models/sub/test")).json()
     assert tested["ok"] is True, tested
+
+
+async def test_a_claimed_cutoff_is_saved_shown_and_checked(ctx, client, tmp_path):
+    saved = (await client.post("/api/models", json={"name": "big", **BIG, "claimed_cutoff": "2025-10-01"})).json()
+    big = saved["profiles"][1]
+    assert (big["claimed_cutoff"], big["set"]["claimed_cutoff"]) == ("2025-10-01", "2025-10-01")
+    assert saved["profiles"][0]["claimed_cutoff"] == "2025-05-20", "unset: the default"
+    assert 'claimed_cutoff = "2025-10-01"' in (tmp_path / "oracle.toml").read_text(encoding="utf-8")
+    bad = await client.put("/api/models/big", json={**BIG, "claimed_cutoff": "soon"})
+    assert bad.status_code == 400 and "claimed_cutoff must be a day like 2025-05-20" in bad.json()["error"]

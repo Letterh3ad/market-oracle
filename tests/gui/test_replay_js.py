@@ -16,10 +16,45 @@ STUDY = {"id": 1, "state": "paused", "paused_reason": None, "created_at": "2026-
          "polled_at": "2026-09-24T12:00:05+00:00", "finished": False, "untouched": False}
 
 
-def run(body: str, study=STUDY, cutoff=None):
+def group(name, n, hit, rel, ret, vs, conf):
+    return {"name": name, "n": n, "hit_rate": hit, "hit_rate_vs_basket": rel, "mean_return": ret,
+            "mean_vs_basket": vs, "mean_confidence": conf}
+
+
+BLANK = [group(name, 0, None, None, None, None, None) for name in ("under 0.60", "0.60 to 0.80")]
+REPORT = {
+    "study_id": 1, "total": 6, "to_run": 3, "failed": 1, "no_verdict": 0, "verdicts": 2,
+    "mix": {"buy": 2, "hold": 0, "sell": 0, "buy_share": 1.0, "mean_confidence": 0.85},
+    "horizons": [
+        {"horizon": "1m", "months": 1, "scored": 2, "pending": 0, "unpriced": 0, "hit_rate": 0.5,
+         "hit_ci": [0.24, 0.76], "hit_rate_vs_basket": 1.0, "hit_vs_basket_ci": None, "base_rate_up": 0.4,
+         "base_rate_beat_basket": 0.5, "expected_hit_rate": 0.45, "expected_hit_rate_vs_basket": 0.5,
+         "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
+         "by_band": [*BLANK, group("0.80 and up", 2, 0.5, 1.0, 0.012, 0.03, 0.85)]},
+        {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
+         "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
+    "refetch_listings": ["7203.T"], "prices_checked_at": "2026-09-24T06:00:00+00:00", "price_failures": ["AAPL"],
+    "limits": ["The listings and their fundamentals are today's (survivorship)."],
+}
+
+
+UNPROBED = "replays run on default: probe default first (Probe cutoff on the Ledgers tab, or oracle replay probe)."
+CUTOFF = {"stages": [{"stage": "research", "profile": "default"}],
+          "models": [{"profile": "default", "provider": "ollama", "model": "qwen3:4b", "claimed": "2025-05-20",
+                      "cutoff": None, "probe": None}],
+          "cutoff": None, "set_by": None, "replay_from": None, "unprobed": ["default"], "note": UNPROBED,
+          "question_set": "2026-09-24.4"}
+
+
+def run(body: str, study=STUDY, cutoff=None, report=None, replay_from=None, note=UNPROBED):
+    status = {"study": study, "cutoff": cutoff, "replay_from": replay_from, "cutoff_note": note}
     script = f"""
         {PRELUDE}
-        ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }},
+        ANSWERS = {{ "GET /api/replay": {json.dumps(status)},
+                     "GET /api/replay/cutoff": {json.dumps(CUTOFF)},
+                     "GET /api/models": {{ profiles: [{{ name: "default" }}] }},
+                     "GET /api/activity": {{ jobs: [], elsewhere: [] }},
+                     "GET /api/replay/report": {{ report: {json.dumps(report)} }},
           "POST /api/replay": {{ id: 3, kind: "replay", state: "done", result: {{ left_out: ["UK Energy"] }} }},
           "POST /api/replay/replace": {{ id: 4, kind: "replay", state: "done", result: {{}} }} }};
         const sent = [];
@@ -53,14 +88,18 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
     assert asked[0] == "POST /api/replay"
     assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
                     ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
-    assert "no model cutoff is measured yet" in text and "press Start" in text
+    assert "Creating is refused for now: replays run on default: probe default first" in text
+    assert "Model cutoff" in text and "Probe cutoff" in text and "press Start" in text
     assert "Left out, nothing fits: UK Energy." in text
 
 
-def test_a_measured_cutoff_fills_the_first_day():
-    value = run("""console.log(JSON.stringify(labelled(node, "First replay day").value));""", study=None,
-                cutoff="2025-07-01")
-    assert value == "2025-07-01"
+def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():
+    shown = run("""const first = labelled(node, "First replay day");
+        console.log(JSON.stringify([first.value, first.attrs.min, node.textContent]));""", study=None,
+                cutoff="2025-06-30", replay_from="2025-07-01", note=None)
+    value, least, text = shown
+    assert (value, least) == ("2025-07-01", "2025-07-01")
+    assert "The measured cutoff is 2025-06-30: the first replay day must be after it, from 2025-07-01." in text
 
 
 def test_a_paused_study_shows_progress_listings_and_failures_with_start():
@@ -120,3 +159,49 @@ def test_a_refusal_shows_on_the_card():
         console.log(JSON.stringify(node.textContent));
     """)
     assert "no replay study yet" in text
+
+
+def test_the_score_shows_headline_numbers_a_table_and_the_limits():
+    text = run("console.log(JSON.stringify(node.textContent));", report=REPORT)
+    assert "2 verdicts, 0 without a verdict, 1 failed, 3 still to run, of 6 replays." in text
+    assert "Verdict mix: 2 buy, 0 hold, 0 sell (100% buys), mean confidence 0.85." in text
+    assert ("1 month: 2 scored, 0 pending, 0 without prices; hit rate 50% (95% 24% to 76%), 100% against the "
+            "basket. No skill: of the called windows 40% rose and 50% beat the basket, so this mix of calls would hit "
+            "45% (50% against the basket) by chance.") in text
+    assert "Study prices last checked 2026-09-24 06:00 UTC. Failed then: AAPL." in text and "mixes currencies" in text
+    assert "3 months: 0 scored, 2 pending" in text
+    assert "buy250%100%+1.20%+3.00%0.85" in text and "0.80 and up2" in text
+    assert "A window closed since 7203.T last had prices fetched" in text and "(survivorship)" in text
+
+
+def test_the_report_is_fetched_again_only_when_the_status_score_moves():
+    shown = run("""
+        button(node, "Start").fire("click"); await settle();
+        const once = asked.filter((a) => a.startsWith("GET /api/replay/report")).length;
+        ANSWERS["GET /api/replay"].study = { ...ANSWERS["GET /api/replay"].study, score: { verdicts: 3 } };
+        button(node, "Start").fire("click"); await settle();
+        console.log(JSON.stringify([once, asked.filter((a) => a.startsWith("GET /api/replay/report")).length]));
+    """, report=REPORT)
+    assert shown == [1, 2]
+
+
+def test_update_prices_runs_the_job_and_reloads_the_score():
+    shown = run("""
+        ANSWERS["POST /api/replay/prices"] = { id: 3, state: "done", result: { listings: [
+          { symbol: "7203.T", added: 40, source: "yahoo", error: null },
+          { symbol: "AAPL", added: 0, source: null, error: "no price data" }] } };
+        asked.length = 0;
+        button(node, "Update prices").fire("click"); await settle(); await settle();
+        console.log(JSON.stringify([asked, node.textContent]));
+    """, report=REPORT)
+    asked, text = shown
+    assert asked[:3] == ["POST /api/replay/prices", "GET /api/replay", "GET /api/replay/report"]
+    assert "Prices fetched for 1 of 2 listings; failed: AAPL (no price data)." in text
+
+
+def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_of_the_score():
+    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "cutoff": "2026-06-30"}
+    text = run("console.log(JSON.stringify(node.textContent));", study=study, report={**REPORT, "excluded": 2})
+    assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
+            "Measured cutoff: 2026-06-30.") in text
+    assert "2 replays excluded: on or before the current cutoff." in text

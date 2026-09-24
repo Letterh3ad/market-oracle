@@ -10,16 +10,18 @@ import logging
 import os
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from oracle.jobs import pid_alive
 from oracle.services.activity_service import Job, JobRunner, submit_research
 from oracle.services.context import AppContext
+from oracle.services.cutoff_service import ReplayCutoff, check_replay_from, month_back, replay_cutoff, replay_profiles
 from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError, UnknownSymbol
 from oracle.services.jobs_service import held_elsewhere
 from oracle.services.never_list import never_company
 from oracle.services.prices_service import update_listing
+from oracle.services.replay_score import Interim, score_study
 from oracle.services.research_service import pc_in_use
 from oracle.services.schedule_service import Scheduler
 from oracle.services.tick_service import KIND_LABELS
@@ -32,7 +34,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.listings import Listing, is_receipt
 from oracle.universe.regions import home_country, home_line
 
-__all__ = ["Picked", "ReplayPacer", "StudyStatus", "create_study", "measured_cutoff", "pause_study", "pick_listings",
+__all__ = ["Picked", "ReplayPacer", "StudyStatus", "create_study", "pause_study", "pick_listings",
            "replace_listing", "retry_failed", "start_study", "study_status", "submit_create", "submit_replace"]
 
 log = logging.getLogger(__name__)
@@ -148,6 +150,9 @@ class StudyStatus:
     """No replay submitted yet, so a listing can still be replaced."""
     left_out: tuple[str, ...] = ()
     """Slots the pick could not fill; told only by the create that left them out."""
+    score: Interim | None = None
+    stages: dict[str, str] = field(default_factory=dict)
+    """Each research stage and the profile the study runs it on, fixed at creation."""
 
     @property
     def finished(self) -> bool:
@@ -168,16 +173,6 @@ class StudyStatus:
 def _iso(value: date | datetime) -> str:
     return value.isoformat()
 
-
-def measured_cutoff(ctx: AppContext) -> date | None:
-    """The first day the research slot's model cannot know about, as the cutoff probe measured
-    it (replay-study 01). None until a probe has stored one."""
-    return None
-
-
-def _month_back(day: date) -> date:
-    y, m = (day.year - 1, 12) if day.month == 1 else (day.year, day.month - 1)
-    return date(y, m, min(day.day, calendar.monthrange(y, m)[1]))
 
 
 def _months(first: date, last: date) -> list[tuple[date, date]]:
@@ -287,14 +282,12 @@ def _window(ctx: AppContext, first: date | None) -> tuple[date, date]:
     """The first and last replay day a new study may use, refusing what cannot be one."""
     if ReplayRepo(ctx.conn).any_running():
         raise InvalidQuery("a replay is running: wait for it, or pause the study and let it finish, first")
-    cutoff = measured_cutoff(ctx)
-    first = first or cutoff
-    if first is None:
-        raise InvalidQuery("no measured model cutoff is stored yet: give the first replay day (--from)")
-    if cutoff and first < cutoff:
-        raise InvalidQuery(f"{first.isoformat()} is before the model's measured cutoff ({cutoff.isoformat()}): "
-                           "its replays could lean on what the model remembers")
-    last = _month_back(ctx.clock.utcnow().date())
+    rc = replay_cutoff(ctx)
+    if rc.note:  # a stage's model is unprobed, or knows too recent a past for any replay
+        raise InvalidQuery(rc.note)
+    first = first or rc.replay_from
+    check_replay_from(ctx, first)
+    last = month_back(ctx.clock.utcnow().date())
     if first > last:
         raise InvalidQuery(f"{first.isoformat()} leaves no replay a month of outcome: pick an earlier day")
     return first, last
@@ -315,7 +308,7 @@ async def create_study(ctx: AppContext, first: date | None = None, symbols: list
     _window(ctx, first)  # a replay may have started while prices were fetched
     cells = replay_cells(ctx, [p.symbol for p in picked], first, last)
     ReplayRepo(ctx.conn).create(ctx.clock.utcnow(), min(d for _, d in cells), max(d for _, d in cells),
-                                _listings_json(picked), cells, ALLOWED)
+                                _listings_json(picked), cells, ALLOWED, json.dumps(replay_profiles(ctx)))
     return replace(_require_status(ctx), left_out=tuple(left_out))
 
 
@@ -332,8 +325,11 @@ async def replace_listing(ctx: AppContext, old: str, new: str) -> StudyStatus:
     study = _untouched(ctx)
     listings[at] = Picked(chosen.symbol, chosen.name, listings[at].region if chosen.region == OTHER else chosen.region,
                           chosen.sector or listings[at].sector, chosen.market_cap)
-    last = _month_back(ctx.clock.utcnow().date())
-    cells = replay_cells(ctx, [p.symbol for p in listings], study.first_day, last)
+    rc = replay_cutoff(ctx)
+    if rc.note:
+        raise InvalidQuery(rc.note)
+    last = month_back(ctx.clock.utcnow().date())
+    cells = replay_cells(ctx, [p.symbol for p in listings], max(study.first_day, rc.replay_from), last)
     ReplayRepo(ctx.conn).replace_cells(study.id, min(d for _, d in cells), max(d for _, d in cells),
                                        _listings_json(listings), cells, ALLOWED)
     return _require_status(ctx)
@@ -375,8 +371,12 @@ def submit_replace(ctx: AppContext, runner: JobRunner, old: str, new: str) -> Jo
 
 
 def start_study(ctx: AppContext) -> StudyStatus:
-    """Let the pacer submit replays whenever the PC is free."""
+    """Let the pacer submit replays whenever the PC is free, unless its models changed or the
+    cutoff now allows none."""
     study = _require(ctx)
+    why, _ = cannot_run(ctx, study)
+    if why:
+        raise InvalidQuery(why)
     ReplayRepo(ctx.conn).set_state(study.id, RUNNING)
     return _require_status(ctx)
 
@@ -389,12 +389,30 @@ def pause_study(ctx: AppContext, reason: str | None = None) -> StudyStatus:
 
 
 def retry_failed(ctx: AppContext, cell_id: int | None = None) -> int:
-    """Failed cells (or the one) back in the queue, each with one more try."""
+    """Failed cells (or the one) back in the queue, each with one more try; never one on or
+    before the current cutoff, which the model may know."""
     study = _require(ctx)
-    moved = ReplayRepo(ctx.conn).retry_failed(study.id, cell_id)
-    if cell_id is not None and not moved:
+    repo = ReplayRepo(ctx.conn)
+    cutoff = replay_cutoff(ctx).cutoff
+    failed = [c for c in repo.cells(study.id, FAILED) if cell_id is None or c.id == cell_id]
+    if cell_id is not None and not failed:
         raise InvalidQuery(f"cell {cell_id} is not a failed cell of the current replay study")
-    return moved
+    if cell_id is not None and cutoff and failed[0].as_of <= cutoff:
+        raise InvalidQuery(f"{failed[0].as_of} is on or before the measured cutoff {cutoff}: a replay then could "
+                           "see ahead")
+    return sum(repo.retry_failed(study.id, c.id) for c in failed if not cutoff or c.as_of > cutoff)
+
+
+def cannot_run(ctx: AppContext, study: StudyRow) -> tuple[str | None, ReplayCutoff]:
+    """Why the study may not replay now (its stage models changed since it was created, a model
+    is unprobed, or the cutoff leaves no day), and the replay cutoff as it stands."""
+    rc = replay_cutoff(ctx)
+    was = json.loads(study.stages) if study.stages else rc.stages
+    if changed := [f"{stage} {was.get(stage)} to {name}" for stage, name in rc.stages.items()
+                   if was.get(stage) != name]:
+        return ("the replay models changed since the study was created: " + ", ".join(changed)
+                + "; point the slots back, or create a new study"), rc
+    return rc.note, rc
 
 
 def study_status(ctx: AppContext) -> StudyStatus | None:
@@ -413,8 +431,9 @@ def study_status(ctx: AppContext) -> StudyStatus | None:
         tuple(Picked(**p) for p in json.loads(study.listings)), sum(counts.values()), counts.get(DONE, 0),
         counts.get(PENDING, 0), repo.retrying(study.id), running, failed,
         tuple(repo.failure_reasons(study.id, TOP_FAILURES)),
-        sum(durations) / len(durations) if durations else None, measured_cutoff(ctx),
-        study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id))
+        sum(durations) / len(durations) if durations else None, replay_cutoff(ctx).cutoff,
+        study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id),
+        score=score_study(ctx, study).interim(), stages=json.loads(study.stages) if study.stages else {})
 
 
 def _require(ctx: AppContext) -> StudyRow:
@@ -486,7 +505,7 @@ class ReplayPacer:
             return None
         if study.state != RUNNING:
             return None
-        cell = repo.next_pending(study.id)
+        cell = self._next_allowed(repo, study)
         if cell is None:
             return None
         if why := self.hold(repo, study):
@@ -499,6 +518,21 @@ class ReplayPacer:
             return None
         repo.mark_running(cell.id, job.id, self._ctx.clock.utcnow())
         return job
+
+    def _next_allowed(self, repo: ReplayRepo, study: StudyRow) -> CellRow | None:
+        """The next cell the study's models may replay. A replay job resolves its models at run
+        time, so the slots, probes and claims are read again before every submit: a change of
+        models or an unprobed one pauses the study, and cells now on or before the cutoff stop
+        for good."""
+        if repo.next_pending(study.id) is None:
+            return None
+        why, rc = cannot_run(self._ctx, study)
+        if why:
+            repo.set_state(study.id, PAUSED, why)
+            return None
+        if early := [c.id for c in repo.cells(study.id, PENDING) if c.as_of <= rc.cutoff]:
+            repo.stop_for_good(early, f"on or before the cutoff {rc.cutoff} of {rc.set_by}", self._ctx.clock.utcnow())
+        return repo.next_pending(study.id)
 
     def hold(self, repo: ReplayRepo, study: StudyRow) -> str | None:
         """Why a replay must not start now: ticks, manual work and the user always come first."""

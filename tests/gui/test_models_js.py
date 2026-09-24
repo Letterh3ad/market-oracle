@@ -24,12 +24,17 @@ def body(fields: dict, create: bool = False) -> dict:
 
 
 FORM = {"provider": "ollama", "model": " qwen3:8b ", "base_url": "", "context": "8192", "timeout_s": "",
-        "key_env": "", "key": "", "clear_key": False}
+        "claimed_cutoff": "", "key_env": "", "key": "", "clear_key": False}
 
 
 def test_empty_boxes_mean_the_default_and_numbers_are_numbers():
     assert body(FORM) == {"value": {"provider": "ollama", "model": "qwen3:8b", "base_url": None, "context": 8192,
-                                    "timeout_s": None, "key_env": None, "key": None}}
+                                    "timeout_s": None, "claimed_cutoff": None, "key_env": None, "key": None}}
+
+
+def test_a_claimed_cutoff_is_sent_as_typed_and_must_be_a_day():
+    assert body({**FORM, "claimed_cutoff": " 2025-10-01 "})["value"]["claimed_cutoff"] == "2025-10-01"
+    assert body({**FORM, "claimed_cutoff": "soon"}) == {"refused": "claimed cutoff: a day like 2025-05-20"}
 
 
 def test_an_empty_key_box_keeps_the_saved_key_and_clear_removes_it():
@@ -55,9 +60,12 @@ def prefill(profile) -> dict:
 
 def test_an_edit_form_fills_only_what_the_profile_sets_never_the_providers_defaults():
     row = {"model": "qwen3:8b", "base_url": "http://localhost:11434", "context": 16384, "timeout_s": 180.0,
-           "key_env": None, "set": {"base_url": None, "context": 8192, "timeout_s": None}}
-    assert prefill(row) == {"model": "qwen3:8b", "base_url": "", "context": "8192", "timeout_s": "", "key_env": ""}
-    assert prefill(None) == {"model": "", "base_url": "", "context": "", "timeout_s": "", "key_env": ""}
+           "key_env": None, "set": {"base_url": None, "context": 8192, "timeout_s": None,
+                                    "claimed_cutoff": "2025-10-01"}}
+    assert prefill(row) == {"model": "qwen3:8b", "base_url": "", "context": "8192", "timeout_s": "",
+                            "claimed_cutoff": "2025-10-01", "key_env": ""}
+    assert prefill(None) == {"model": "", "base_url": "", "context": "", "timeout_s": "", "claimed_cutoff": "",
+                             "key_env": ""}
 
 
 def placeholders(defaults) -> dict:
@@ -70,9 +78,10 @@ def placeholders(defaults) -> dict:
 
 
 def test_a_provider_without_an_endpoint_of_its_own_asks_for_one():
-    own = {"base_url": None, "base_url_required": False, "context": 200000, "timeout_s": 180.0}
+    own = {"base_url": None, "base_url_required": False, "context": 200000, "timeout_s": 180.0,
+           "claimed_cutoff": "2025-05-20"}
     assert placeholders(own) == {"base_url": "default: provider's own endpoint", "context": "default: 200000",
-                                 "timeout_s": "default: 180"}
+                                 "timeout_s": "default: 180", "claimed_cutoff": "default: 2025-05-20"}
     assert placeholders({**own, "base_url_required": True})["base_url"] == "required, like http://localhost:1234/v1"
 
 

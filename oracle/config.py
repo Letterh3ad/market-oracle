@@ -7,6 +7,7 @@ import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -247,9 +248,15 @@ class ModelProfile:
     """The environment variable holding the key."""
     key: str | None = field(default=None, repr=False)
     """The key itself, kept in oracle.toml; never shown."""
+    claimed_cutoff: str | None = None
+    """The model's stated training cutoff, YYYY-MM-DD; unset, DEFAULT_CLAIMED_CUTOFF. A cutoff
+    probe never measures earlier than this."""
     unusable: str | None = field(default=None, metadata={"derived": True})
     """Why a profile the file holds may not be used (a rule it predates); never set in the file."""
 
+
+DEFAULT_CLAIMED_CUTOFF = date(2025, 5, 20)
+"""Qwen3's stated training cutoff, the default model's."""
 
 PROFILE_KEYS_IN_FILE = tuple(f.name for f in fields(ModelProfile) if not f.metadata.get("derived"))
 
@@ -916,6 +923,8 @@ def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
     if provider in URLLESS_PROVIDERS and "base_url" in raw:
         raise ConfigError(f"{where}: {provider} reaches no endpoint; remove base_url")
     p = ModelProfile(**raw)
+    if isinstance(p.claimed_cutoff, date) and not isinstance(p.claimed_cutoff, datetime):
+        p = replace(p, claimed_cutoff=p.claimed_cutoff.isoformat())  # a bare TOML date
     low, high = PROFILE_CONTEXT_RANGE
     checks = {
         "model": (_text(p.model), "a model name like qwen3:8b"),
@@ -924,6 +933,7 @@ def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
         "context": (p.context is None or _whole(p.context, low, high), f"a whole number of tokens from {low} to {high}"),
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
                       and p.timeout_s > 0, "a positive number"),
+        "claimed_cutoff": (p.claimed_cutoff is None or _iso_day(p.claimed_cutoff), "a day like 2025-05-20"),
     }
     if provider == "claude_code":
         checks["model"] = (isinstance(p.model, str) and CLAUDE_CODE_MODEL.fullmatch(p.model) is not None,
@@ -988,6 +998,21 @@ def _safe_for_keys(url: str) -> bool:
 
 def _text(value: object) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _iso_day(value: object) -> bool:
+    if not (isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value)):
+        return False
+    try:
+        date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
+def claimed_cutoff(p: ModelProfile) -> date:
+    """The profile's stated training cutoff, or the default."""
+    return date.fromisoformat(p.claimed_cutoff) if p.claimed_cutoff else DEFAULT_CLAIMED_CUTOFF
 
 
 def _research(raw: object) -> ResearchConfig:

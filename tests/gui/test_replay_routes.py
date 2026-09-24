@@ -1,14 +1,16 @@
 import pytest
 
 from oracle.store.replay import ReplayRepo
+from tests.fakes.cutoff import EARLY, store_probe
 from tests.gui.conftest import DAYS
-from tests.gui.jobs import wait_job
+from tests.gui.jobs import run_job, wait_job
 from tests.fakes.yahoo import bar
 
 
 @pytest.fixture
-async def listed(loaded, yahoo):
-    """A year of prices for three listings of the fake universe, not yet fetched."""
+async def listed(ctx, loaded, yahoo):
+    """A year of prices for three listings of the fake universe, not yet fetched, and a probed model."""
+    store_probe(ctx.conn, ctx.config)
     for symbol in ("AAPL", "7203.T", "KO"):
         yahoo.add(symbol, "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in DAYS])
     return loaded
@@ -20,8 +22,13 @@ async def create(client, **body) -> dict:
     return await wait_job(client, r.json())
 
 
-async def test_no_study_yet(loaded):
-    assert (await loaded.get("/api/replay")).json() == {"study": None, "cutoff": None}
+async def test_no_study_yet(ctx, loaded):
+    body = (await loaded.get("/api/replay")).json()
+    assert (body["study"], body["cutoff"], body["replay_from"]) == (None, None, None)
+    assert "probe default first" in body["cutoff_note"]
+    store_probe(ctx.conn, ctx.config)
+    assert (await loaded.get("/api/replay")).json() == {"study": None, "cutoff": EARLY.isoformat(),
+                                                        "replay_from": "2025-06-01", "cutoff_note": None}
 
 
 async def test_create_is_a_job_then_paused_until_start_then_pause(listed):
@@ -51,9 +58,9 @@ async def test_a_listing_without_prices_fails_the_job_with_the_reason(listed):
     assert job["state"] == "failed" and "no price data for 005930.KS" in job["error"]
 
 
-async def test_create_without_a_day_or_cutoff_is_refused_at_once(loaded):
+async def test_create_before_the_model_is_probed_is_refused_at_once(loaded):
     r = await loaded.post("/api/replay", json={})
-    assert r.status_code == 400 and "--from" in r.json()["error"]
+    assert r.status_code == 400 and "probe default first" in r.json()["error"]
 
 
 async def test_start_without_a_study_is_refused(loaded):
@@ -74,3 +81,29 @@ async def test_retry_one_cell_or_all_failed(ctx, listed):
     assert (await listed.post("/api/replay/retry", json={})).json() == {"moved": 1}
     r = await listed.post("/api/replay/retry", json={"cell_id": a.id})
     assert r.status_code == 400
+
+
+async def test_report_scores_from_stored_bars_and_the_status_carries_the_interim_block(listed):
+    await create(listed, first="2026-06-01", symbols=["AAPL", "7203.T"])
+    report = (await listed.get("/api/replay/report")).json()["report"]
+    assert report["verdicts"] == 0 and [h["horizon"] for h in report["horizons"]] == ["1m", "3m"]
+    assert report["refetch_listings"] == ["AAPL", "7203.T"] and report["limits"]  # no whole-window fetch yet
+    score = (await listed.get("/api/replay")).json()["study"]["score"]
+    assert score["verdicts"] == 0 and score["horizons"]["1m"]["scored"] == 0
+
+
+async def test_update_prices_is_a_job_refetching_the_whole_windows_due(listed, yahoo):
+    await create(listed, first="2026-06-01", symbols=["AAPL", "7203.T"])
+    del yahoo.series["7203.T"]
+    job = await run_job(listed, "/api/replay/prices")
+    assert job["kind"] == "replay_prices" and job["state"] == "done"
+    fetched = {o["symbol"]: o for o in job["result"]["listings"]}
+    assert fetched["AAPL"]["error"] is None and fetched["7203.T"]["error"]
+    report = (await listed.get("/api/replay/report")).json()["report"]
+    assert report["refetch_listings"] == ["7203.T"] and report["price_failures"] == ["7203.T"]
+    assert report["prices_checked_at"]
+
+
+async def test_report_without_a_study(loaded):
+    assert (await loaded.get("/api/replay/report")).json() == {"report": None}
+    assert (await loaded.post("/api/replay/prices")).status_code == 400
