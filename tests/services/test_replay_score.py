@@ -171,7 +171,7 @@ def test_the_wilson_interval_and_none_under_ten():
 def test_the_status_carries_a_small_interim_score(ctx, study):
     score = study_status(ctx).to_json()["score"]
     assert set(score) == {"verdicts", "no_verdict", "buy_share", "mean_confidence", "prices_checked_at",
-                          "price_failures", "horizons", "excluded", "note", "by_size"}
+                          "price_failures", "price_backoff", "horizons", "excluded", "note", "by_size"}
     assert (score["verdicts"], score["no_verdict"], score["buy_share"]) == (4, 1, 0.5)
     assert (score["prices_checked_at"], score["price_failures"]) == (None, []) and "limits" in score["note"]
     one = score["horizons"]["1m"]
@@ -222,6 +222,31 @@ async def test_update_refetches_whole_windows_until_each_listing_has_one_after_i
     # CCC now joins the June basket: (+10% + 0 + 10%) / 3.
     aaa = next(c for c in s.cells if (c.symbol, c.as_of) == ("AAA", JUN))
     assert aaa.outcomes[0].basket == pytest.approx(0.2 / 3) and aaa.outcomes[0].basket_n == 3
+
+
+async def test_a_listing_failing_three_times_in_a_row_is_not_refetched_for_a_day(ctx, study, monkeypatch):
+    asked = []
+
+    async def update(c, symbols, since):
+        asked.append(list(symbols))
+        return [ListingOutcome(s, 0, None, "timed out") if s == "AAA" else ListingOutcome(s, 1, "yahoo", None)
+                for s in symbols]
+
+    monkeypatch.setattr(replay_score, "update_listings", update)
+    for _ in range(3):
+        await update_study_prices(ctx)
+        ctx.clock.advance(3600)
+    assert len(asked) == 3 and all("AAA" in a for a in asked)
+    out = await update_study_prices(ctx)
+    assert len(asked) == 3
+    skipped = next(o for o in out if o.symbol == "AAA")
+    assert skipped.error is None and skipped.skipped.startswith("failed 3 times in a row: next try after ")
+    s = replay_report(ctx)
+    assert s.price_failures == ("AAA",) and set(s.price_backoff) == {"AAA"}
+    assert study_status(ctx).score.price_backoff == s.price_backoff
+    ctx.clock.advance(86400)
+    await update_study_prices(ctx)
+    assert "AAA" in asked[-1]
 
 
 async def test_no_study_no_report(ctx):

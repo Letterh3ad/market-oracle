@@ -142,16 +142,18 @@ def test_ai_decisions_logged_before_the_flag_say_whether_they_need_research(tmp_
     assert [d.needs_research for d in repo.recent("strategy")] == [False]
 
 
-def test_a_database_at_version_37_runs_the_replay_study_the_cutoff_probe_then_screened_items(tmp_path, monkeypatch):
+def test_a_database_at_version_37_runs_the_replay_study_the_cutoff_probe_screened_items_then_pacer_state(
+        tmp_path, monkeypatch):
     from oracle.store import migrations
 
-    assert migrations.MIGRATIONS[-3:] == [migrations.m0038_replay_study, migrations.m0039_cutoff_probes,
-                                          migrations.m0040_screened_items]
+    assert migrations.MIGRATIONS[-4:] == [migrations.m0038_replay_study, migrations.m0039_cutoff_probes,
+                                          migrations.m0040_screened_items, migrations.m0041_replay_pacer_state]
     monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS[:37])
     conn = connect(tmp_path / "o.db")
     assert migrate(conn) == 37
     monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
-    assert migrate(conn) == 40 == current_version(conn)
+    assert migrate(conn) == 41 == current_version(conn)
     assert {"cutoff_probes", "cutoff_answers"} <= _tables(conn)
     assert "universe" in {r[1] for r in conn.execute("PRAGMA table_info(discovery_answer_items)")}
+    assert {"stages", "pacer"} <= {r[1] for r in conn.execute("PRAGMA table_info(replay_studies)")}
     conn.close()

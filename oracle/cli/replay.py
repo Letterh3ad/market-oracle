@@ -113,7 +113,9 @@ def print_status(s: StudyStatus) -> None:
           f"{len(s.failed)} failed of {s.total}")
     print(f"  listings: {', '.join(p.symbol for p in s.listings)}")
     if s.stages:
-        print(f"  stage models: {', '.join(f'{stage} on {name}' for stage, name in s.stages.items())}")
+        shown = [f"{stage} on {name}" + (f" ({s.stage_models[stage]})" if stage in s.stage_models else "")
+                 for stage, name in s.stages.items()]
+        print(f"  stage models: {', '.join(shown)}")
     if s.cutoff:
         print(f"  measured cutoff: {s.cutoff.isoformat()}")
     mean = f"{s.mean_replay_s / 60:.1f} min" if s.mean_replay_s is not None else "none finished yet"
@@ -177,7 +179,9 @@ def print_report(s: Score) -> None:
         print(f"  Due a whole-window refetch: {', '.join(s.refetch_listings)}")
     checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
     failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
-    print(f"  Study prices last checked: {checked}{failed}")
+    resting = ", ".join(f"{sym} until {t:%Y-%m-%d %H:%M} UTC" for sym, t in s.price_backoff.items())
+    print(f"  Study prices last checked: {checked}{failed}"
+          + (f"; resting after repeated failures: {resting}" if resting else ""))
     if s.by_size:
         print_sizes(s)
     if s.account:

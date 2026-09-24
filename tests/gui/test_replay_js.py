@@ -34,6 +34,7 @@ REPORT = {
         {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
          "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
     "refetch_listings": ["7203.T"], "prices_checked_at": "2026-09-24T06:00:00+00:00", "price_failures": ["AAPL"],
+    "price_backoff": {"AAPL": "2026-09-25T06:00:00+00:00"},
     "limits": ["The listings and their fundamentals are today's (survivorship)."],
 }
 
@@ -112,6 +113,12 @@ def test_a_paused_study_shows_progress_listings_and_failures_with_start():
     assert "1 cell waiting for its one automatic retry" in text and "Last checked 2026-09-24 12:00 UTC." in text
 
 
+def test_failures_only_waiting_for_their_retry_render_no_empty_parts():
+    waiting = {**STUDY, "failed": [], "top_failures": [["model down", 1]]}
+    text = run("console.log(JSON.stringify(node.textContent));", study=waiting)
+    assert "1 x model down" in text and "null" not in text and "Retry failed" not in text
+
+
 def test_before_the_first_replay_a_listing_can_be_replaced():
     shown = run("""
         labelled(node, "Replace 7203.T with").value = " 6758.T ";
@@ -171,6 +178,7 @@ def test_the_score_shows_headline_numbers_a_table_and_the_limits():
             "basket. No skill: of the called windows 40% rose and 50% beat the basket, so this mix of calls would hit "
             "45% (50% against the basket) by chance.") in text
     assert "Study prices last checked 2026-09-24 06:00 UTC. Failed then: AAPL." in text and "mixes currencies" in text
+    assert "Resting after repeated failures: AAPL until 2026-09-25 06:00 UTC." in text
     assert "3 months: 0 scored, 2 pending" in text
     assert "buy250%100%+1.20%+3.00%0.85" in text and "0.80 and up2" in text
     assert "A window closed since 7203.T last had prices fetched" in text and "(survivorship)" in text
@@ -230,9 +238,10 @@ def test_without_an_account_the_score_shows_alone():
 
 
 def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_of_the_score():
-    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "cutoff": "2026-06-30"}
+    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "stage_models": {"research": "ollama q3"},
+             "cutoff": "2026-06-30"}
     text = run("console.log(JSON.stringify(node.textContent));", study=study, report={**REPORT, "excluded": 2})
-    assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
+    assert ("Stage models, fixed when the study was created: research on default (ollama q3), verdict on big. "
             "Measured cutoff: 2026-06-30.") in text
     assert "2 replays excluded: on or before the current cutoff." in text
 
