@@ -2418,3 +2418,18 @@ unless the news writes its whole name. Name trade words count their sectors ("ba
 Aleph and Cera, no to a true Kestra Medical, reason-first prompt said no to all); a built-in brand to
 parent table (goes stale, never covers startups); adding "Aktiengesellschaft" to legal forms (would
 regroup the universe's company keys).
+
+## 2026-09-24 - Brands gate round 1: bounded lookups, stakes are not ownership
+**Context:** Gate round 1 on discovery 04: "Amazon's Anthropic investment" offered Amazon, "Tesla
+Optimus" matched a small Japanese listing, name searches were unbounded on the price limiter and its
+breaker, and a non-JSON search answer could fail a whole answer.
+**Decision:** A possessive followed by stake, investment, bet, deal, backing, partnership and the like
+is no parent. A small by-start match written straight after a never-list or universe company's name
+is refused. Yahoo search has its own source `yahoo_search` (0.5/s, one retry, own breaker), at most 5
+searches per screen pass (tick or answer), owners searched only in their shortest form; past that, or
+past an answer's deadline, names are matched by rules alone. An unreadable answer is no answer. The
+model is asked once per name and news, only with 5 or fewer candidates. A Yahoo lead outside the
+universe says "listed as ...", a ".PVT" line says private; startup words must be said of the name,
+"round" only with seed, funding, venture or a Series.
+**Alternatives:** Sharing the `yahoo` source with a lower rate (prices still paused by a search
+burst); a cap per name instead of per pass (a tick with many names still floods).
