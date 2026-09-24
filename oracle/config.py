@@ -49,6 +49,8 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     # a row say little about the next site.
     "web": SourceConfig(rate_per_second=1.0, cooldown_s=120.0, max_retries=1),
     "financedatabase": SourceConfig(rate_per_second=0.5),
+    # Index member pages: a few dozen a week, well inside Wikimedia's asks of scripted readers.
+    "wikipedia": SourceConfig(rate_per_second=0.2),
 }
 
 
