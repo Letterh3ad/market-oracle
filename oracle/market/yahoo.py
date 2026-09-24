@@ -159,3 +159,37 @@ def parse_profile(symbol: str, modules: dict) -> YahooProfile:
         country=text(profile, "country"), sector=text(profile, "sector"), industry=text(profile, "industry"),
         website=text(profile, "website"), summary=text(profile, "longBusinessSummary"),
     )
+
+
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+# Its own limiter and breaker: a burst of name searches must never pause prices.
+SEARCH_SOURCE = "yahoo_search"
+
+
+@dataclass(frozen=True)
+class Quote:
+    """One line Yahoo's search finds for a name."""
+
+    symbol: str
+    name: str
+    short_name: str
+    kind: str
+    """Yahoo's quoteType: EQUITY, ETF, MUTUALFUND..."""
+    score: float
+
+
+async def search_quotes(client: RateLimitedClient, text: str) -> list[Quote]:
+    """The lines Yahoo's search finds for `text`, best first: NoData or SourceFailed when it
+    cannot say."""
+    params = {"q": text, "quotesCount": "6", "newsCount": "0", "listsCount": "0"}
+    resp = await sources.get(client, SEARCH_SOURCE, SEARCH_URL, params)
+    # A consent page, or quotes of another shape, is no answer: never a failure of the caller's run.
+    try:
+        quotes = resp.json()["quotes"]
+        if not isinstance(quotes, list):
+            raise TypeError("quotes is not a list")
+        return [Quote(q["symbol"], q.get("longname") or q.get("shortname") or q["symbol"],
+                      q.get("shortname") or "", q.get("quoteType") or "", float(q.get("score") or 0))
+                for q in quotes if isinstance(q, dict) and isinstance(q.get("symbol"), str)]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise NoData(f"unreadable search answer ({type(exc).__name__})") from None

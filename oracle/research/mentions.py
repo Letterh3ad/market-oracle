@@ -23,6 +23,7 @@ MAX_WHY = 100
 # The numbers of the items a line rests on travel with it; written into the line they are noise.
 # Only numbers of items given are taken for such, so "(2025)" stays.
 _ITEM_REFS = re.compile(r"\s*[\[(]\s*(\d+(?:\s*,\s*\d+)*)\s*[\])]")
+_ITEM_TAG = re.compile(r"</?\s*item\b[^>]*>", re.IGNORECASE)
 
 
 def _schema(relation: bool, why: bool = False, link: bool = False, most: int = MAX_COMPANIES) -> dict:
@@ -166,6 +167,12 @@ def item_text(e: Evidence) -> str:
     """A news item as a model is shown it: date, outlet, title and what reading it found."""
     day = e.published.date().isoformat() if e.published else "undated"
     return f"{day} {e.outlet or 'unknown outlet'}: {item_words(e)}"
+
+
+def quoted_items(items: list[str]) -> str:
+    """Items between numbered <item N> tags for a model to judge, never obey: tags written inside
+    an item are blanked so it cannot close its own."""
+    return "\n".join(f"<item {i}>\n{_ITEM_TAG.sub(' ', t)}\n</item {i}>" for i, t in enumerate(items, start=1))
 
 
 def item_words(e: Evidence) -> str:

@@ -377,23 +377,23 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         # More items behind a name first; the model's own order among equals.
         ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    shortlist = _Shortlist(ctx, plan, exclusions, filters, deadline)
+    shortlist = _Shortlist(ctx, plan, exclusions, filters, model, deadline)
     items = await shortlist.screen(ranked, evidence, asked_for_fit, screen_universe(ctx, filters))
     notes.extend(shortlist.screen_notes)
-    if kept := record_links(ctx, _links(shortlist, ranked, evidence, asked_for_fit), SOURCE_CHAT):
+    if kept := record_links(ctx, await _links(shortlist, ranked, evidence, asked_for_fit), SOURCE_CHAT):
         notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
                      "(shown on their Company pages)")
     return items
 
 
-def _links(screen: Screen, mentions: list[Mention], evidence: list[Evidence], asked: str) -> list[LinkFound]:
+async def _links(screen: Screen, mentions: list[Mention], evidence: list[Evidence], asked: str) -> list[LinkFound]:
     """The links the model says an item states, both companies resolved, with the items naming
     both in one line as evidence."""
     links = []
     for m in mentions:
         named_in = _named_in(m, evidence, asked)
-        if m.related_to and (other := screen.resolve(m.related_to, named_in)) and (
-                named := screen.resolve(m.name, named_in)):
+        if m.related_to and (other := await screen.resolve(m.related_to, named_in)) and (
+                named := await screen.resolve(m.name, named_in)):
             links.append(LinkFound(other.primary_symbol, named.primary_symbol, m.relation,
                                    tuple(evidence[i].id for i in m.link_items)))
     return links
@@ -470,9 +470,9 @@ class _Shortlist(Screen):
     removed companies are left off; watched and discovered ones stay on, marked, with no price
     check."""
 
-    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Classes], filters: Filters,
+    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Classes], filters: Filters, model: ChatModel,
                  deadline: datetime | None = None) -> None:
-        super().__init__(ctx, MAX_PRICE_CHECKS + (MAX_SCREEN_CHECKS if filters.usable else 0))
+        super().__init__(ctx, MAX_PRICE_CHECKS + (MAX_SCREEN_CHECKS if filters.usable else 0), model)
         self._deadline = deadline
         self._out_of_time = False
         self._plan = plan
@@ -487,9 +487,13 @@ class _Shortlist(Screen):
         screened = {s.profile.company_key: s for s in screening.companies}
         out: list[ShortlistItem] = []
         for m in mentions:
+            if self._deadline and self._ctx.clock.utcnow() >= self._deadline:
+                self.hurry()
             cited = tuple(evidence[i].id for i in m.headlines)
             why = m.why or "named in the news found for the question"
-            profile, why_not = self.identify(m.name, named_in=_named_in(m, evidence, asked))
+            profile, why_not = await self.identify(m.name, named_in=_named_in(m, evidence, asked))
+            if note := self.notes.get(m.name):
+                why = f"{note}; {why}"
             if profile is None:
                 if why_not:
                     out.append(ShortlistItem(0, m.name, None, None, None, why, cited, why_not))
@@ -525,7 +529,7 @@ class _Shortlist(Screen):
             if self._deadline and self._ctx.clock.utcnow() >= self._deadline:
                 self._out_of_time = True
                 break
-            profile, _ = self.identify(s.profile.name, symbol=s.line)
+            profile, _ = await self.identify(s.profile.name, symbol=s.line)
             if profile is None or self.removed(profile) or self._filtered(profile):
                 continue
             listing, _ = await self._check(profile, s.line)

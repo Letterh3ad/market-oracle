@@ -49,7 +49,7 @@ Called over HTTP, not redistributed.
 
 | Service | Terms | Use |
 |---|---|---|
-| Yahoo Finance chart and quoteSummary APIs (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars, FX and fundamentals (`oracle/market/yahoo.py`, `fx.py`, `fundamentals.py`) |
+| Yahoo Finance chart, quoteSummary and search APIs (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars, FX, fundamentals and name lookups (`oracle/market/yahoo.py`, `fx.py`, `fundamentals.py`) |
 | EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars, FX and fundamentals (`oracle/market/eodhd.py`, `fx.py`, `fundamentals.py`) |
 | ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
 | Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |

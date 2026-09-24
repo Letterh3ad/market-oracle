@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from oracle.market.bars import Bar
 from oracle.research.trace import VERDICTS
 from oracle.services.context import AppContext
-from oracle.services.cutoff_service import replay_cutoff
+from oracle.services.cutoff_service import pinned_cutoff
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
 from oracle.services.replay_account import Account, simulate
@@ -46,6 +46,9 @@ MIN_N = 10
 Z95 = 1.96
 SCORED, PENDING, UNPRICED = "scored", "pending", "unpriced"
 PRICES_KEY = "replay_prices"
+PRICE_TRIES = 3
+"""Fetches of a listing failing in a row before it rests: a repeated timeout would cost every tick."""
+PRICE_REST = timedelta(days=1)
 _SIGN = {"buy": 1, "hold": 0, "sell": -1}
 UNKNOWN_SIZE = "unknown"
 SIZE_LABELS = {"large": "Large", "mid-small": "Mid/small", UNKNOWN_SIZE: "Size unknown"}
@@ -189,6 +192,8 @@ class Interim:
     horizons: dict[str, InterimHorizon]
     excluded: int = 0
     """Replays left out: on or before the current cutoff."""
+    price_backoff: dict[str, datetime] = field(default_factory=dict)
+    """Listings whose fetches kept failing, and when they are next tried."""
     note: str = NOTE
     by_size: dict[str, InterimSize] = field(default_factory=dict)
     """The same by size (SIZES), when the study holds more than one."""
@@ -240,10 +245,14 @@ class Score:
     before any listing is priced."""
     by_size: tuple[SizeScore, ...] = ()
     """The headline numbers by size, when the study holds more than one."""
+    price_backoff: dict[str, datetime] = field(default_factory=dict)
+    """Listings whose fetches kept failing, left out of updates until the time given (and still
+    among `price_failures`)."""
 
     def interim(self) -> Interim:
         return Interim(self.verdicts, self.no_verdict, self.mix.buy_share, self.mix.mean_confidence,
                        self.prices_checked_at, self.price_failures, _interim_horizons(self.horizons), self.excluded,
+                       price_backoff=self.price_backoff,
                        by_size={z.size: InterimSize(z.label, len(z.listings), z.verdicts, z.mix.buy_share,
                                                     _interim_horizons(z.horizons)) for z in self.by_size})
 
@@ -301,7 +310,7 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
              only: set[str] | None = None) -> Account | None:
     """The study's account, or over `only` those listings."""
     # Days the model may know the outcome of are left out whole, so neither line starts there.
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     cells = [c for c in cells if not (cutoff and c.as_of <= cutoff) and (only is None or c.symbol in only)]
     first: dict[str, date] = {}
     for c in cells:
@@ -379,19 +388,40 @@ async def update_study_prices(ctx: AppContext) -> tuple[ListingOutcome, ...]:
     score = score_study(ctx, study)
     # From a year and more before, so the account's risk sizes read closes on the same basis.
     since = min((c.as_of for c in score.cells), default=study.first_day) - SIZE_HISTORY
-    out = await update_listings(ctx, score.refetch_listings, since) if score.refetch_listings else []
+    now = ctx.clock.utcnow()
+    resting = _resting(_price_state(ctx, study.id), now)
+    due = [s for s in score.refetch_listings if s not in resting]
+    out = await update_listings(ctx, due, since) if due else []
     state = _price_state(ctx, study.id)
-    today = ctx.clock.utcnow().date().isoformat()
+    streaks = state.get("streaks", {})
+    for o in out:
+        if o.error:
+            streaks[o.symbol] = streaks.get(o.symbol, 0) + 1
+            if streaks[o.symbol] >= PRICE_TRIES:
+                resting[o.symbol] = now + PRICE_REST
+        elif not o.skipped:
+            streaks.pop(o.symbol, None)
+    rested = {s: ListingOutcome(s, 0, None, None, f"failed {streaks.get(s, PRICE_TRIES)} times in a row: next "
+                                f"try after {resting[s]:%Y-%m-%d %H:%M} UTC")
+              for s in score.refetch_listings if s in resting and s not in due}
+    today = now.date().isoformat()
     _save_price_state(ctx, study.id, {
-        "checked_at": to_utc_iso(ctx.clock.utcnow()), "failures": [o.symbol for o in out if o.error],
-        "fetched": {**state.get("fetched", {}), **{o.symbol: today for o in out if not o.error and not o.skipped}}})
-    return tuple(out)
+        "checked_at": to_utc_iso(now), "failures": [o.symbol for o in out if o.error] + list(rested),
+        "fetched": {**state.get("fetched", {}), **{o.symbol: today for o in out if not o.error and not o.skipped}},
+        "streaks": streaks, "rest_until": {s: to_utc_iso(t) for s, t in resting.items()}})
+    return (*out, *rested.values())
 
 
 def _price_state(ctx: AppContext, study_id: int) -> dict:
     """When each listing's whole window was last fetched, and the last check's time and failures."""
     raw = MetaRepo(ctx.conn).get(f"{PRICES_KEY}:{study_id}")
     return json.loads(raw) if raw else {}
+
+
+def _resting(state: dict, now: datetime) -> dict[str, datetime]:
+    """Listings left out of updates for now, and until when."""
+    until = {s: datetime.fromisoformat(t) for s, t in state.get("rest_until", {}).items()}
+    return {s: t for s, t in until.items() if t > now}
 
 
 def _save_price_state(ctx: AppContext, study_id: int, state: dict) -> None:
@@ -410,7 +440,7 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
                for d in days for h, _ in HORIZONS}
     windows = {(s, d, h): _outcome(moves[(s, d, h)], h, baskets[(d, h)])
                for s in symbols for d in days for h, _ in HORIZONS}
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     counted = {c.id for c in cells if c.state == DONE and not (cutoff and c.as_of <= cutoff)}
     calls = ResearchRepo(ctx.conn).verdicts([c.run_id for c in cells if c.id in counted and c.run_id is not None])
     scored = tuple(_cell(c, calls.get(c.run_id) if c.id in counted else None, windows) for c in cells)
@@ -434,7 +464,7 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
         datetime.fromisoformat(state["checked_at"]) if "checked_at" in state else None,
         tuple(state.get("failures", ())), scored,
         sum(1 for c in cells if c.state == DONE) - len(counted), by_size=(by_size := _by_size(listings, judged)),
-        limits=LIMITS + ((SIZE_LIMIT,) if by_size else ()))
+        limits=LIMITS + ((SIZE_LIMIT,) if by_size else ()), price_backoff=_resting(state, ctx.clock.utcnow()))
 
 
 def _by_size(listings: Sequence[dict], judged: Sequence[CellScore]) -> tuple[SizeScore, ...]:

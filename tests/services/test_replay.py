@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
@@ -18,6 +19,7 @@ from oracle.services.replay_service import (
     BACKOFF, LONG_BACKOFF, MAX_BACKOFFS, ReplayPacer, create_study, pause_study, pick_listings, replace_listing, retry_failed,
     start_study, study_status,
 )
+from oracle.services.models_service import RESEARCH_STAGES as STAGES
 from oracle.services.schedule_service import Scheduler
 from oracle.store.health import HealthRepo
 from oracle.store.job_history import JobHistoryRepo
@@ -485,6 +487,27 @@ async def test_retry_one_cell_by_id(ctx):
         retry_failed(ctx, b.id)
 
 
+async def test_a_manual_retry_gives_a_cell_its_outage_refunds_back(ctx):
+    from oracle.services.activity_service import _adopt_replay_cell
+
+    await create_study(ctx, FIRST)
+    repo = ReplayRepo(ctx.conn)
+    a, b, c = cells(ctx)[:3]
+    for cell in (a, b, c):
+        repo.refund([cell.id], 2)
+        repo.refund([cell.id], 2)
+        fail_for_good(ctx, cell)
+    retry_failed(ctx, a.id)
+    assert repo.cell(a.id).refunds == 0 and repo.cell(b.id).refunds == 2
+    retry_failed(ctx)
+    assert repo.cell(b.id).refunds == 0
+    repo.refund([c.id], 2)
+    repo.refund([c.id], 2)
+    fail_for_good(ctx, repo.cell(c.id))
+    _adopt_replay_cell(ctx, SimpleNamespace(id=77, profile=None), c.symbol, c.as_of)
+    assert repo.cell(c.id).refunds == 0
+
+
 async def probe_fails(pacer, runner, research, error):
     job = pacer.check()
     symbol, day = research_key(job)
@@ -513,6 +536,42 @@ async def test_replays_failing_alike_back_off_without_using_attempts_and_never_p
     s = study_status(ctx)
     assert (s.state, s.paused_reason) == ("running", None) and "6 back-offs" in s.waiting
     assert all(c.attempts == 0 for c in cells(ctx))
+
+
+async def test_a_restart_mid_back_off_resumes_the_back_off(ctx, research):
+    await started(ctx)
+    first = JobRunner(ctx)
+    pacer = ReplayPacer(ctx, first)
+    day = date(2026, 6, 1)
+    for symbol in ("AAPL", "JPM", "HSBA.L"):
+        await run_one(pacer, first, research, symbol, day, "ollama is not running")
+    assert pacer.check() is None and pacer.waiting.startswith("backing off")
+    await first.stop()
+    again = JobRunner(ctx)
+    try:
+        fresh = ReplayPacer(ctx, again)
+        assert fresh.check() is None and fresh.waiting == pacer.waiting
+        ctx.clock.advance(BACKOFF.total_seconds())
+        await probe_fails(fresh, again, research, "ollama is not running")
+        restarted = ReplayPacer(ctx, again)
+        assert restarted.check() is None and "(2 back-offs;" in restarted.waiting
+        assert all(c.attempts == 0 for c in cells(ctx))
+    finally:
+        await again.stop()
+
+
+async def test_a_replay_preempted_just_before_a_restart_is_not_read_as_a_cancel(ctx, runner, research):
+    from oracle.services.activity_service import submit_research
+
+    await started(ctx)
+    job = ReplayPacer(ctx, runner).check()
+    await settle()
+    submit_research(ctx, runner, "JPM")
+    ReplayPacer(ctx, runner).check()
+    await settle()
+    assert job.state == "cancelled"
+    ReplayPacer(ctx, runner).check()  # a fresh pacer, as after a restart
+    assert study_status(ctx).state == "running" and cells(ctx)[0].state == "pending"
 
 
 def research_key(job):
@@ -612,7 +671,48 @@ async def test_a_hung_replay_is_stopped_and_counted_as_a_failure(ctx, runner, re
     pacer.check()
     aapl = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "AAPL", date(2026, 6, 1))
     assert (aapl.state, aapl.attempts) == ("pending", 1) and "over 45 minutes" in aapl.error
+    assert "the least any replay is given" in aapl.error
     assert study_status(ctx).state == "running"
+
+
+async def test_a_hung_replay_past_three_times_the_longest_recent_one_says_so(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(20 * 60)
+    research.finish("AAPL", date(2026, 6, 1))
+    await runner.wait(job.id)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(61 * 60)
+    pacer.check()
+    await settle()
+    pacer.check()
+    jpm = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "JPM", date(2026, 6, 1))
+    assert jpm.error == "stopped after running over 60 minutes (3 times the longest recent replay)"
+
+
+async def test_an_adopted_retry_is_timed_from_when_it_runs_not_when_it_was_queued(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 8, 3)
+    await run_one(pacer, runner, research, "AAPL", day, "model down")
+    job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
+    pacer.check()
+    [cell] = cells(ctx, "failed")
+    again = retry(ctx, runner, job.id)
+    await settle()
+    # As if adopted while another replay held the queue for 50 minutes.
+    ReplayRepo(ctx.conn).adopt(cell.id, again.id, ctx.clock.utcnow() - timedelta(minutes=50))
+    ctx.clock.advance(30 * 60)
+    pacer.check()
+    await settle()
+    assert again.state == "running"
+    research.finish("AAPL", day)
+    await runner.wait(again.id)
+    pacer.check()
+    assert study_status(ctx).mean_replay_s == 30 * 60
 
 
 async def test_a_retry_on_a_picked_profile_is_not_taken_for_the_cell(ctx):
@@ -632,6 +732,28 @@ async def test_create_is_refused_while_the_price_sources_do_not_answer(ctx, yaho
     yahoo.fail["MSFT"] = 503
     with pytest.raises(InvalidQuery, match="did not answer"):
         await create_study(ctx, FIRST, symbols=["MSFT"])
+
+
+async def test_a_listing_one_source_has_no_data_for_while_another_is_down_is_passed_over(ctx, monkeypatch):
+    from oracle.services import replay_service
+    from oracle.services.errors import PriceUnavailable
+
+    async def half_answered(c, symbol, since=None):
+        raise PriceUnavailable(f"no price data for {symbol} (yahoo: no data; eodhd: HTTP 503)", answered=True,
+                               down=("eodhd",))
+
+    monkeypatch.setattr(replay_service, "update_listing", half_answered)
+    said = []
+    picked, left_out = await pick_listings(ctx, date(2026, 1, 5), said.append)
+    assert picked == [] and len(left_out) == 20
+    assert any("passed over: no source that answered has data for AAPL (eodhd did not answer)" in s for s in said)
+
+    async def silent(c, symbol, since=None):
+        raise PriceUnavailable(f"no price data for {symbol} (yahoo: HTTP 503)", down=("yahoo",))
+
+    monkeypatch.setattr(replay_service, "update_listing", silent)
+    with pytest.raises(InvalidQuery, match="did not answer"):
+        await pick_listings(ctx, date(2026, 1, 5))
 
 
 async def test_create_tells_every_slot_it_left_out(ctx):
@@ -703,8 +825,61 @@ async def test_status_counts_running_age_and_mean_replay_time(ctx, runner, resea
 
 async def test_the_study_keeps_the_stage_models_it_was_created_with(ctx):
     s = await create_study(ctx, FIRST)
-    assert s.stages == {stage: "default" for stage in ("queries", "research", "notes", "roles", "verdict")}
+    assert s.stages == {stage: "default" for stage in STAGES}
     assert s.to_json()["stages"]["verdict"] == "default"
+    assert s.stage_models == {stage: f"ollama {ctx.config.llm.model}" for stage in STAGES}
+
+
+async def test_a_profile_renamed_to_the_same_model_does_not_pause_the_study(ctx, runner, research):
+    await started(ctx)
+    ctx.config = replace(ctx.config, models={"renamed": ModelProfile("ollama", ctx.config.llm.model)},
+                         model_slots={stage: "renamed" for stage in STAGES})
+    assert ReplayPacer(ctx, runner).check() is not None and study_status(ctx).state == "running"
+
+
+async def test_a_profile_keeping_its_name_but_naming_another_model_pauses_the_study(ctx, runner, research):
+    await started(ctx)
+    was = ctx.config.llm.model
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", "another-model")})
+    store_probe(ctx.conn, ctx.config)
+    assert ReplayPacer(ctx, runner).check() is None and not research.calls
+    assert (f"verdict default (ollama {was}) to default (ollama another-model)"
+            in study_status(ctx).paused_reason)
+
+
+async def test_a_study_from_before_models_were_pinned_still_compares_profile_names(ctx, runner, research):
+    s = await create_study(ctx, FIRST)
+    ctx.conn.execute("UPDATE replay_studies SET stages = ?", (json.dumps({stage: "default" for stage in STAGES}),))
+    start_study(ctx)
+    assert study_status(ctx).stage_models == {} and study_status(ctx).cutoff == s.cutoff
+    ctx.config = replace(ctx.config, models={"renamed": ModelProfile("ollama", ctx.config.llm.model)},
+                         model_slots={stage: "renamed" for stage in STAGES})
+    assert ReplayPacer(ctx, runner).check() is None
+    assert "verdict default to renamed" in study_status(ctx).paused_reason
+
+
+async def test_the_score_leaves_out_replays_by_the_studys_own_models_cutoff(ctx, runner, research):
+    await started(ctx, symbols=["AAPL"])
+    await run_one(ReplayPacer(ctx, runner), runner, research, "AAPL", FIRST)
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big-model")},
+                         model_slots={"verdict": "big"})
+    store_probe(ctx.conn, ctx.config, date(2026, 7, 15), profile="big")
+    s = study_status(ctx)
+    assert s.cutoff == date(2025, 5, 31) and s.score.excluded == 0 and replay_report(ctx).excluded == 0
+
+
+async def test_retrying_in_activity_a_study_replay_after_its_models_changed_is_refused(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 8, 3)
+    await run_one(pacer, runner, research, "AAPL", day, "model down")
+    job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
+    pacer.check()
+    ctx.config = replace(ctx.config, models={"big": ModelProfile("ollama", "big-model")},
+                         model_slots={"verdict": "big"})
+    store_probe(ctx.conn, ctx.config, profile="big")
+    with pytest.raises(InvalidQuery, match="the replay models changed"):
+        retry(ctx, runner, job.id)
 
 
 async def test_a_slot_pointed_at_an_unprobed_profile_after_create_pauses_the_study(ctx, runner, research):
@@ -714,7 +889,8 @@ async def test_a_slot_pointed_at_an_unprobed_profile_after_create_pauses_the_stu
     assert ReplayPacer(ctx, runner).check() is None and not research.calls
     s = study_status(ctx)
     assert s.state == "paused"
-    assert "the replay models changed since the study was created: verdict default to big" in s.paused_reason
+    assert ("the replay models changed since the study was created: verdict default (ollama "
+            f"{ctx.config.llm.model}) to big (ollama big-model)") in s.paused_reason
     with pytest.raises(InvalidQuery, match="the replay models changed"):
         start_study(ctx)
 
@@ -725,12 +901,12 @@ async def test_a_stage_model_changed_after_create_pauses_the_study_even_when_pro
                          model_slots={"notes": "big"})
     store_probe(ctx.conn, ctx.config, profile="big")
     assert ReplayPacer(ctx, runner).check() is None and not research.calls
-    assert "notes default to big" in study_status(ctx).paused_reason
+    assert "notes default (ollama " in study_status(ctx).paused_reason
 
 
 async def test_a_stage_model_no_longer_probed_pauses_the_study_saying_what_to_probe(ctx, runner, research):
     await started(ctx)
-    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", "another-model")})
+    ctx.conn.execute("DELETE FROM cutoff_probes")  # as if never probed
     assert ReplayPacer(ctx, runner).check() is None and not research.calls
     s = study_status(ctx)
     assert s.state == "paused" and "probe default first" in s.paused_reason

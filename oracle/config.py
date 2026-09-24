@@ -34,6 +34,8 @@ class SourceConfig:
 # an IP block costs far more than a slow tick. Reasons in DECISIONS.md.
 DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "yahoo": SourceConfig(rate_per_second=0.5),
+    # Name searches for discovery, kept apart so their failures never pause prices.
+    "yahoo_search": SourceConfig(rate_per_second=0.5, max_retries=1),
     "eodhd": SourceConfig(rate_per_second=2.0),
     "ecb": SourceConfig(rate_per_second=0.5),
     "frankfurter": SourceConfig(rate_per_second=0.5),

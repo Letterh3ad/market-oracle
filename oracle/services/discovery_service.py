@@ -199,7 +199,8 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         if not usable:
             return DiscoveryRun(note=_nothing_to_search(ctx, seeds))
         # Built before the rotation moves on, so a model that cannot be built skips no source.
-        run = _Run(ctx, held, model or model_for(ctx, slot_profile(ctx.config, "discovery")), _Screen(ctx, room))
+        model = model or model_for(ctx, slot_profile(ctx.config, "discovery"))
+        run = _Run(ctx, held, model, _Screen(ctx, room, model))
         meta = MetaRepo(ctx.conn)
         order = [s for s in _after(list(SOURCES), meta.get(_LAST_SOURCE)) if s in usable]
         meta.set(_LAST_SOURCE, order[0])
@@ -367,8 +368,11 @@ async def _related(run: _Run, seeds: list[str]) -> None:
         news = [_Candidate(m.name, m.relation, profile.symbol, ids, named_in=NamedIn(items=titles))
                 for m, ids, titles in named]
         # Every company the news links to the seed is kept, not only the one added.
-        record_links(run.ctx, [LinkFound(profile.symbol, found.primary_symbol, c.relation, c.evidence)
-                               for c in news if (found := run.screen.resolve(c.name, c.named_in))], SOURCE_DISCOVERY)
+        links = []
+        for c in news:
+            if found := await run.screen.resolve(c.name, c.named_in):
+                links.append(LinkFound(profile.symbol, found.primary_symbol, c.relation, c.evidence))
+        record_links(run.ctx, links, SOURCE_DISCOVERY)
         if await run.screen_all(news + _peers(run.ctx, seed, run.errors)):
             return
 
@@ -461,8 +465,8 @@ class _Screen(Screen):
     """Checks candidates in turn and adds those that pass, until `room` are added or the
     price checks run out."""
 
-    def __init__(self, ctx: AppContext, room: int) -> None:
-        super().__init__(ctx, MAX_PRICE_CHECKS)
+    def __init__(self, ctx: AppContext, room: int, model: ChatModel | None) -> None:
+        super().__init__(ctx, MAX_PRICE_CHECKS, model)
         self._room = room
         self.added: list[Added] = []
         self.skipped: list[Skipped] = []
@@ -472,7 +476,7 @@ class _Screen(Screen):
         return len(self.added) >= self._room or not self.checks_left
 
     async def check(self, c: _Candidate) -> None:
-        profile, why_not = self.identify(c.name, c.symbol, c.named_in)
+        profile, why_not = await self.identify(c.name, c.symbol, c.named_in)
         if profile is None:
             return self._skip(c, why_not) if why_not else None
         if self.watched(profile):
@@ -489,8 +493,8 @@ class _Screen(Screen):
         self.now_listed(profile, listing)
         if c.relation == "peer":
             record_links(self._ctx, [LinkFound(c.seed, listing, "peer")], SOURCE_DISCOVERY)
-        self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
-                                c.evidence, c.source))
+        why = _why(c.source, c.relation, c.seed) + (f" ({note})" if (note := self.notes.get(c.name)) else "")
+        self.added.append(Added(listing, profile.name, c.seed, c.relation, why, c.evidence, c.source))
         return None
 
     def _skip(self, c: _Candidate, reason: str) -> None:

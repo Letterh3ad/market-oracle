@@ -80,10 +80,15 @@ class InvalidQuery(ServiceError, ValueError):
 
 
 class PriceUnavailable(ServiceError):
-    def __init__(self, message: str, no_data: bool = False) -> None:
+    def __init__(self, message: str, no_data: bool = False, answered: bool | None = None,
+                 down: tuple[str, ...] = ()) -> None:
         super().__init__(message)
         self.no_data = no_data
         """Every source answered and none had data: the symbol, not the network."""
+        self.answered = no_data if answered is None else answered
+        """Some source answered, if with no data."""
+        self.down = down
+        """The sources that did not answer."""
 
 
 class NoPrices(ServiceError):

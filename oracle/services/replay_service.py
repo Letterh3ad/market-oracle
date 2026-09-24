@@ -16,7 +16,10 @@ from datetime import date, datetime, timedelta
 from oracle.jobs import pid_alive
 from oracle.services.activity_service import Job, JobRunner, submit_research
 from oracle.services.context import AppContext
-from oracle.services.cutoff_service import ReplayCutoff, check_replay_from, month_back, replay_cutoff, replay_profiles
+from oracle.services.cutoff_service import (
+    ReplayCutoff, check_replay_from, month_back, pin_stages, pinned_cutoff, pins, replay_cutoff,
+)
+from oracle.services.cutoff_service import cannot_run as _cannot_run
 from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError, UnknownSymbol
 from oracle.services.jobs_service import held_elsewhere
 from oracle.services.never_list import never_company
@@ -87,9 +90,9 @@ ALLOWED = 2
 OUTAGE_AFTER = 3
 """Failures in a row with the same error that mean an outage (the model or the network), not bad cells."""
 ANY_OUTAGE_AFTER = 5
+"""Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 MAX_REFUNDS = 2
 """Outages a cell's failure may be put down to; after that it counts, so a bad cell still ends failed."""
-"""Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 BACKOFF = timedelta(minutes=45)
 MAX_BACKOFFS = 4
 """Back-offs of BACKOFF before they lengthen to LONG_BACKOFF; an outage never pauses the study."""
@@ -165,6 +168,8 @@ class StudyStatus:
     score: Interim | None = None
     stages: dict[str, str] = field(default_factory=dict)
     """Each research stage and the profile the study runs it on, fixed at creation."""
+    stage_models: dict[str, str] = field(default_factory=dict)
+    """Each research stage's provider and model, fixed at creation; empty in older studies."""
 
     @property
     def finished(self) -> bool:
@@ -185,6 +190,9 @@ class StudyStatus:
 def _iso(value: date | datetime) -> str:
     return value.isoformat()
 
+
+def _when(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
 
 
 def _months(first: date, last: date) -> list[tuple[date, date]]:
@@ -221,11 +229,13 @@ async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | Non
         try:
             await update_listing(ctx, symbol)
         except PriceUnavailable as exc:
-            if not exc.no_data:
-                # A source that did not answer says nothing about the listing: picking on
+            if not exc.answered:
+                # No source answered, which says nothing about the listing: picking on
                 # without it would quietly change the spread.
                 raise InvalidQuery(f"the price sources did not answer ({exc}): try again once they do") from exc
-            return str(exc)
+            if exc.no_data:
+                return str(exc)
+            return f"no source that answered has data for {symbol} ({', '.join(exc.down)} did not answer)"
         except UnknownSymbol as exc:
             return str(exc)
         span = bars.span([symbol])
@@ -334,7 +344,7 @@ async def create_study(ctx: AppContext, first: date | None = None, symbols: list
     _window(ctx, first)  # a replay may have started while prices were fetched
     cells = replay_cells(ctx, [p.symbol for p in picked], first, last)
     ReplayRepo(ctx.conn).create(ctx.clock.utcnow(), min(d for _, d in cells), max(d for _, d in cells),
-                                _listings_json(picked), cells, ALLOWED, json.dumps(replay_profiles(ctx)))
+                                _listings_json(picked), cells, ALLOWED, pin_stages(ctx))
     return replace(_require_status(ctx), left_out=tuple(left_out))
 
 
@@ -427,7 +437,7 @@ def retry_failed(ctx: AppContext, cell_id: int | None = None) -> int:
     before the current cutoff, which the model may know."""
     study = _require(ctx)
     repo = ReplayRepo(ctx.conn)
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     failed = [c for c in repo.cells(study.id, FAILED) if cell_id is None or c.id == cell_id]
     if cell_id is not None and not failed:
         raise InvalidQuery(f"cell {cell_id} is not a failed cell of the current replay study")
@@ -438,15 +448,8 @@ def retry_failed(ctx: AppContext, cell_id: int | None = None) -> int:
 
 
 def cannot_run(ctx: AppContext, study: StudyRow) -> tuple[str | None, ReplayCutoff]:
-    """Why the study may not replay now (its stage models changed since it was created, a model
-    is unprobed, or the cutoff leaves no day), and the replay cutoff as it stands."""
-    rc = replay_cutoff(ctx)
-    was = json.loads(study.stages) if study.stages else rc.stages
-    if changed := [f"{stage} {was.get(stage)} to {name}" for stage, name in rc.stages.items()
-                   if was.get(stage) != name]:
-        return ("the replay models changed since the study was created: " + ", ".join(changed)
-                + "; point the slots back, or create a new study"), rc
-    return rc.note, rc
+    """Why the study may not replay now, and the replay cutoff as it stands."""
+    return _cannot_run(ctx, study.stages)
 
 
 def study_status(ctx: AppContext) -> StudyStatus | None:
@@ -460,14 +463,16 @@ def study_status(ctx: AppContext) -> StudyStatus | None:
                                 if c.started_at else 0.0) for c in repo.cells(study.id, RUNNING))
     failed = tuple(FailedCell(c.id, c.symbol, c.as_of, c.error, c.attempts) for c in repo.cells(study.id, FAILED))
     durations = repo.durations(study.id, RECENT_REPLAYS)
+    pinned = pins(study.stages)
     return StudyStatus(
         study.id, study.state, study.paused_reason, study.created_at, study.first_day, study.last_day,
         tuple(Picked(**p) for p in json.loads(study.listings)), sum(counts.values()), counts.get(DONE, 0),
         counts.get(PENDING, 0), repo.retrying(study.id), running, failed,
         tuple(repo.failure_reasons(study.id, TOP_FAILURES)),
-        sum(durations) / len(durations) if durations else None, replay_cutoff(ctx).cutoff,
+        sum(durations) / len(durations) if durations else None, pinned_cutoff(ctx, study.stages),
         study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id),
-        score=score_study(ctx, study).interim(), stages=json.loads(study.stages) if study.stages else {})
+        score=score_study(ctx, study).interim(), stages={stage: p.profile for stage, p in pinned.items()},
+        stage_models={stage: f"{p.provider} {p.model}" for stage, p in pinned.items() if p.model})
 
 
 def _require(ctx: AppContext) -> StudyRow:
@@ -496,27 +501,38 @@ def _error_kind(error: str, symbol: str) -> str:
 
 class ReplayPacer:
     """Submits the study's replays one at a time as research jobs, gives way to other work,
-    and records how each ended. The queue is in the store, so a restart resumes where it was;
-    what it holds in memory (jobs it stopped, a back-off) only shapes the next few polls."""
+    and records how each ended. The queue is in the store, and so is what the pacer keeps
+    between polls (jobs it stopped, a back-off), so a restart resumes where it was."""
 
     def __init__(self, ctx: AppContext, runner: JobRunner, scheduler: Scheduler | None = None) -> None:
         self._ctx = ctx
         self._runner = runner
         self._scheduler = scheduler
-        self._preempted: set[int] = set()
-        self._timed_out: dict[int, str] = {}
-        """Jobs stopped as hung, and the error their cell gets."""
-        self._run: list[tuple[int, str]] = []
-        """The failures in a row since the last replay that ended well: cell and error kind."""
-        self._outage_since: datetime | None = None
-        """While an outage is waited out, its failures cost no attempt."""
-        self._outage_kind: str | None = None
-        """The error kind of an outage found by its failures alike; None for one found by any five."""
-        self._outage_error: str | None = None
-        self._backoffs = 0
-        self._resume_at: datetime | None = None
+        self._load(None)
         self.waiting: str | None = None
         """Why the last poll held the next replay back, if it did."""
+
+    def _load(self, raw: str | None) -> None:
+        state = json.loads(raw) if raw else {}
+        self._preempted: set[int] = set(state.get("preempted", ()))
+        self._timed_out: dict[int, str] = {int(k): v for k, v in state.get("timed_out", {}).items()}
+        """Jobs stopped as hung, and the error their cell gets."""
+        self._run: list[tuple[int, str]] = [(c, k) for c, k in state.get("run", ())]
+        """The failures in a row since the last replay that ended well: cell and error kind."""
+        self._outage_since: datetime | None = _when(state.get("outage_since"))
+        """While an outage is waited out, its failures cost no attempt."""
+        self._outage_kind: str | None = state.get("outage_kind")
+        """The error kind of an outage found by its failures alike; None for one found by any five."""
+        self._outage_error: str | None = state.get("outage_error")
+        self._backoffs: int = state.get("backoffs", 0)
+        self._resume_at: datetime | None = _when(state.get("resume_at"))
+
+    def _dump(self) -> str:
+        return json.dumps({
+            "preempted": sorted(self._preempted), "timed_out": {str(k): v for k, v in self._timed_out.items()},
+            "run": self._run, "outage_since": _iso(self._outage_since) if self._outage_since else None,
+            "outage_kind": self._outage_kind, "outage_error": self._outage_error, "backoffs": self._backoffs,
+            "resume_at": _iso(self._resume_at) if self._resume_at else None})
 
     def check(self) -> Job | None:
         """One poll: record replays that ended, stop one that is in the way, then submit the
@@ -526,9 +542,11 @@ class ReplayPacer:
         study = repo.current()
         if study is None:
             return None
-        job = self._poll(repo, study)
-        repo.note_poll(study.id, self._ctx.clock.utcnow(), self.waiting)
-        return job
+        self._load(study.pacer)
+        try:
+            return self._poll(repo, study)
+        finally:
+            repo.note_poll(study.id, self._ctx.clock.utcnow(), self.waiting, self._dump())
 
     def _poll(self, repo: ReplayRepo, study: StudyRow) -> Job | None:
         for cell in repo.cells(study.id, RUNNING):
@@ -602,15 +620,17 @@ class ReplayPacer:
         model work is waiting for (its cell goes back to pending at the next poll, costing
         nothing)."""
         replays = {c.job_id for c in running}
-        cap = max(3 * self._expected(repo, study), HARD_CAP)
+        longest = 3 * self._expected(repo, study)
+        cap = max(longest, HARD_CAP)
+        cap_why = "3 times the longest recent replay" if longest >= HARD_CAP else "the least any replay is given"
         now = self._ctx.clock.utcnow()
         for cell in running:
             job = self._runner.get(cell.job_id) if cell.job_id is not None else None
             if job is None or job.work is None or job.state not in ("queued", "running"):
                 continue
-            if cell.started_at and now - cell.started_at > cap:
-                self._timed_out[job.id] = (f"stopped after running over {cap // timedelta(minutes=1)} minutes "
-                                           "(3 times the longest recent replay)")
+            # From the job's own start: an adopted Activity retry may wait in the queue first.
+            if job.state == "running" and job.started_at and now - job.started_at > cap:
+                self._timed_out[job.id] = f"stopped after running over {cap // timedelta(minutes=1)} minutes ({cap_why})"
                 self._runner.cancel(job.id)
             elif why := self._in_the_way(replays):
                 self._preempted.add(job.id)
@@ -639,7 +659,7 @@ class ReplayPacer:
         elif job.state == "done":
             run_id = getattr(job.result, "id", None) or ResearchRepo(self._ctx.conn).replay_run_id(cell.symbol,
                                                                                                   cell.as_of)
-            repo.mark_done(cell.id, run_id, job.finished_at or self._ctx.clock.utcnow())
+            repo.mark_done(cell.id, run_id, job.finished_at or self._ctx.clock.utcnow(), job.started_at)
             self._run, self._outage_since, self._backoffs, self._resume_at = [], None, 0, None
         elif job.state == "failed":
             self._failed(repo, study, cell, job.error or "failed")

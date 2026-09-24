@@ -83,7 +83,9 @@ function replaySection() {
     const mean = s.mean_replay_s == null ? "no replay finished yet" : `${minutes(s.mean_replay_s)} per replay on average`;
     const polled = s.polled_at ? `Last checked ${clock(s.polled_at)} UTC.`
       : "Not checked yet: replays are paced by the running app.";
-    const stages = Object.entries(s.stages ?? {}).map(([stage, profile]) => `${stage} on ${profile}`).join(", ");
+    const models = s.stage_models ?? {};
+    const stages = Object.entries(s.stages ?? {})
+      .map(([stage, profile]) => `${stage} on ${profile}${models[stage] ? ` (${models[stage]})` : ""}`).join(", ");
     return [
       el("p", null, `${s.done} done, ${s.pending} queued, ${s.failed.length} failed of ${s.total} `
         + `(${s.first_day} to ${s.last_day}); ${mean}.`),
@@ -119,12 +121,13 @@ function replaySection() {
       el("ul", { class: "small" }, ...s.top_failures.map(([reason, n]) => el("li", null, `${n} x ${reason}`))),
       el("p", { class: "dim small" }, `A failed replay is retried once automatically, later in the queue; after that `
         + `it stays failed until you retry it.${retrying}`),
-      s.failed.length ? el("div", { class: "row" }, press(`Retry failed (${s.failed.length})`, "/api/replay/retry", {}))
-        : null,
-      s.failed.length ? table([["Symbol"], ["As of"], ["Error"], [""]],
-        s.failed.map((c) => el("tr", null, el("td", { class: "mono" }, c.symbol), el("td", null, c.as_of),
-          el("td", { class: "small" }, c.error ?? ""),
-          el("td", null, press("Retry", "/api/replay/retry", { cell_id: c.id })))), "") : null,
+      ...(s.failed.length ? [
+        el("div", { class: "row" }, press(`Retry failed (${s.failed.length})`, "/api/replay/retry", {})),
+        table([["Symbol"], ["As of"], ["Error"], [""]],
+          s.failed.map((c) => el("tr", null, el("td", { class: "mono" }, c.symbol), el("td", null, c.as_of),
+            el("td", { class: "small" }, c.error ?? ""),
+            el("td", null, press("Retry", "/api/replay/retry", { cell_id: c.id })))), ""),
+      ] : []),
     ];
   }
 
@@ -208,7 +211,9 @@ function replaySection() {
     const missing = r.refetch_listings.length
       ? `A window closed since ${r.refetch_listings.join(", ")} last had prices fetched: press Update prices.`
       : "Every closed window has its prices fetched.";
-    const failures = r.price_failures.length ? ` Failed then: ${r.price_failures.join(", ")}.` : "";
+    const resting = Object.entries(r.price_backoff ?? {}).map(([sym, t]) => `${sym} until ${clock(t)} UTC`);
+    const failures = (r.price_failures.length ? ` Failed then: ${r.price_failures.join(", ")}.` : "")
+      + (resting.length ? ` Resting after repeated failures: ${resting.join(", ")}.` : "");
     const updated = r.prices_checked_at
       ? `Study prices last checked ${clock(r.prices_checked_at)} UTC.${failures}`
       : "Study prices not checked yet.";
