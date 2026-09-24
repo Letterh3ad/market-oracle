@@ -8,6 +8,8 @@ import { el, showError } from "./dom.js";
 
 const FIELDS = ["model", "base_url", "context", "timeout_s", "key_env", "key"];
 const PROVIDER_FIELDS = ["base_url", "context"];
+// What an edit form shows for a provider the server no longer offers (claude_code turned off).
+const OFF = { base_url: null, context: "", timeout_s: "", keyed: false, url: false };
 
 // Form values (strings) to the JSON the server takes: empty means the provider's default.
 function profileBody(fields, create) {
@@ -91,7 +93,8 @@ function profileRow(p, providers) {
   } }, "Test");
   const tr = el("tr", null,
     el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null),
-    el("td", null, p.provider),
+    el("td", null, p.provider, p.off ? el("span", { class: "warn-text", title: "set allow_claude_code = true " +
+      "under [models] in oracle.toml to use it" }, " (off)") : null),
     el("td", { class: "mono" }, p.model),
     el("td", null, String(p.context)),
     el("td", null, `${p.timeout_s}s`),
@@ -124,18 +127,22 @@ function formRow(p, providers) {
     return input;
   };
   const name = p ? null : box("name", { size: 10 });
-  const provider = el("select", null, ...Object.keys(providers).map((v) => el("option", { value: v }, v)));
-  provider.value = p?.provider ?? Object.keys(providers)[0];
+  // A profile whose provider is off is still editable; only a switch to another is saved.
+  const names = Object.keys(providers);
+  const provider = el("select", null, ...names.map((v) => el("option", { value: v }, v)),
+    p && !providers[p.provider] ? el("option", { value: p.provider, disabled: true }, `${p.provider} (off)`) : null);
+  provider.value = p?.provider ?? names[0];
   const inputs = Object.fromEntries(FIELDS.map((k) => [k, box(k, k === "key" ? { type: "password" } : {})]));
   const clear = el("input", { type: "checkbox", title: "Remove the saved key" });
   const keyCell = el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear"));
   const fit = () => {
-    const defaults = providers[provider.value];
+    const defaults = providers[provider.value] ?? OFF;
     for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = `default: ${text}`;
     inputs.key_env.placeholder = "key_env";
     inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
       ? "saved key kept" : "key";
     keyCell.hidden = !defaults.keyed;
+    inputs.base_url.hidden = !defaults.url;
   };
   provider.addEventListener("change", () => {
     // Another provider's endpoint or window would break this one; its own defaults apply.

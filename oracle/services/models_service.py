@@ -9,10 +9,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields
 
 from oracle.config import (
-    DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
-    model_profiles, profile_tables, with_settings, without_section,
+    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, URLLESS_PROVIDERS, ConfigError, LlmConfig,
+    ModelProfile, check_profile, check_profile_name, model_profiles, profile_tables, with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
+from oracle.research.claude_code import ClaudeCodeChat
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.services.context import AppContext
@@ -31,7 +32,15 @@ BUILDERS: dict[str, Builder] = {
     "ollama": lambda ctx, name, p: OllamaChat(p.model, p.base_url, p.timeout_s, p.context, transport=ctx.transport),
     "claude_api": lambda ctx, name, p: ClaudeChat(p.model, p.timeout_s, api_key=_key(name, p), base_url=p.base_url,
                                                   **({"key_source": _key_source(name, p)} if p.key or p.key_env else {})),
+    "claude_code": lambda ctx, name, p: ClaudeCodeChat(_allowed(ctx, name, p).model, p.timeout_s),
 }
+
+
+def _allowed(ctx: AppContext, name: str, p: ModelProfile) -> ModelProfile:
+    # The loader refuses such a profile already; this covers a config built another way.
+    if not ctx.config.allow_claude_code:
+        raise ModelUnavailable(f"model profile {name}: claude_code is off; set {ALLOW_CLAUDE_CODE} = true under [models]")
+    return p
 
 MODEL_JOBS = ("research", "discovery", "discovery_chat")
 """Jobs that keep the model busy; a test beside one would only queue behind it."""
@@ -97,14 +106,17 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
+        "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
     } for name, p in model_profiles(ctx.config).items()]
 
 
-def provider_defaults() -> dict[str, dict]:
-    """Each provider with what its unset keys mean, and whether it takes a key."""
+def provider_defaults(ctx: AppContext) -> dict[str, dict]:
+    """Each provider offered, with what its unset keys mean and whether it takes a key or a
+    URL. claude_code is offered only when `[models] allow_claude_code` is set."""
     return {name: {"base_url": spec.base_url, "context": spec.context, "timeout_s": LlmConfig.timeout_s,
-                   "keyed": spec.fallback_key is not None} for name, spec in PROVIDERS.items()}
+                   "keyed": spec.fallback_key is not None, "url": name not in URLLESS_PROVIDERS}
+            for name, spec in PROVIDERS.items() if name != "claude_code" or ctx.config.allow_claude_code}
 
 
 def _key_state(p: ModelProfile) -> str:
@@ -153,6 +165,10 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
     provider = PROVIDERS.get(named) if isinstance(named, str) else None
     if old and provider and table["provider"] != old.provider:
         table = {k: v for k, v in table.items() if k not in PROVIDER_KEYS or v != getattr(old, k)}
+    if named == "claude_code" and not ctx.config.allow_claude_code:
+        raise InvalidQuery(f"claude_code is off: set {ALLOW_CLAUDE_CODE} = true under [models] in oracle.toml")
+    if named in URLLESS_PROVIDERS:
+        table.pop("base_url", None)
     if provider and provider.fallback_key is None:
         table = {k: v for k, v in table.items() if k not in ("key", "key_env")}
     elif values.get("key") is None and "key_env" not in table and old and old.key:

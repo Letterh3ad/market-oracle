@@ -37,6 +37,14 @@ def test_list_shows_each_profile_with_its_key_as_set_or_unset_only(run):
     assert lines[4].split() == ["gone", "claude_api", "m", "200000", "unset", "(NOT_SET_ANYWHERE)"]
 
 
+def test_list_marks_a_claude_code_profile_off_while_the_flag_is_unset(tmp_path, capsys):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text('[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n', encoding="utf-8")
+    assert cli_main.main(["--config", str(cfg), "models", "list"]) == 0
+    assert capsys.readouterr().out.splitlines()[2].split() == [
+        "sub", "claude_code", "sonnet", "200000", "-", "off", "(allow_claude_code", "is", "not", "set)"]
+
+
 def test_test_reports_ok_with_the_reply_time_or_the_error(run):
     code, out, _ = run("models", "test", "default")
     assert code == 0 and out.startswith("default: ok in ") and out.rstrip().endswith("s")
