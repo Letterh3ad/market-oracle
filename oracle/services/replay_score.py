@@ -61,6 +61,9 @@ LIMITS = (
     "listing's currency, from stored closes (adjusted where both ends have one); the basket is the equal-weight "
     "mean of the study's listings over the same window, mixing their currencies.",
 )
+SIZE_LIMIT = ("By size: smaller companies have thinner news for a replay to read, more gaps in their data and dearer "
+              "real trading than the slippage table allows for; each size is scored against the whole study's "
+              "basket, and each half is about half the samples.")
 NOTE = "Small samples: read the hit rates with their intervals and the base rates, and see the limits in the report."
 
 
@@ -430,7 +433,8 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
         tuple(s for s in symbols if due(s)),
         datetime.fromisoformat(state["checked_at"]) if "checked_at" in state else None,
         tuple(state.get("failures", ())), scored,
-        sum(1 for c in cells if c.state == DONE) - len(counted), by_size=_by_size(listings, judged))
+        sum(1 for c in cells if c.state == DONE) - len(counted), by_size=(by_size := _by_size(listings, judged)),
+        limits=LIMITS + ((SIZE_LIMIT,) if by_size else ()))
 
 
 def _by_size(listings: Sequence[dict], judged: Sequence[CellScore]) -> tuple[SizeScore, ...]:

@@ -357,7 +357,11 @@ def test_every_headline_number_is_split_by_size(ctx, sized):
 
 
 def test_a_study_of_one_size_is_not_split(ctx, study):
-    assert replay_report(ctx).by_size == ()
+    assert replay_report(ctx).by_size == () and replay_report(ctx).limits == LIMITS
+
+
+def test_a_study_split_by_size_states_the_limits_of_the_smaller_half(ctx, sized):
+    assert any("thinner news" in line for line in replay_report(ctx).limits)
 
 
 def test_the_status_score_splits_by_size_too(ctx, sized):
