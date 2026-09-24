@@ -154,8 +154,6 @@ def check(reply: object, shown: set[int]) -> tuple[Verdict | None, str | None]:
         dropped = answer.check.dropped
         return None, _REASONS[next(iter(dropped))] if dropped else "it gave no reason"
     condition = str(answer.get("invalidated_if")).strip()
-    if not condition:
-        return None, "it gave no condition that would prove it wrong"
     if why := condition_problem(condition, reason.text):
         return None, why
     return Verdict(label, float(confidence), reason.text, reason.cites, condition), None
