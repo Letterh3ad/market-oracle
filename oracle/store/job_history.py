@@ -75,6 +75,23 @@ class JobHistoryRepo:
         row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _row(row) if row else None
 
+    def latest_per_subject(self) -> list[JobRow]:
+        """The newest finished job for each kind and subject, newest first: whether that one
+        needs retrying tells the whole story, since anything before it already ran again."""
+        rows = self._conn.execute(
+            "SELECT * FROM jobs WHERE finished_at IS NOT NULL AND subject IS NOT NULL "
+            "ORDER BY finished_at DESC, id DESC"
+        )
+        seen: set[tuple[str, str]] = set()
+        out = []
+        for r in rows:
+            key = (r["kind"], r["subject"])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(_row(r))
+        return out
+
 
 def _finished_where(search: str) -> tuple[str, tuple]:
     search = search.strip()

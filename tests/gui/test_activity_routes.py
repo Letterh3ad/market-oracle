@@ -80,3 +80,38 @@ async def test_a_search_matching_nothing_is_an_empty_page(client):
 
 async def test_a_page_below_one_is_refused(client):
     assert (await client.get("/api/activity/finished", params={"page": 0})).status_code in (400, 422)
+
+
+async def test_retrying_a_failed_job_queues_it_again(finish_job, client):
+    job_id = finish_job(1, "prices", "Update prices (watchlists)", "failed", "yahoo down", subject="*")
+    response = await client.post(f"/api/activity/{job_id}/retry")
+    assert response.status_code == 202
+    again = response.json()
+    assert again["kind"] == "prices" and again["state"] == "queued" and again["id"] != job_id
+
+
+async def test_retrying_a_done_job_is_a_400(finish_job, client):
+    job_id = finish_job(1, "prices", "Update prices (watchlists)", "done", subject="*")
+    response = await client.post(f"/api/activity/{job_id}/retry")
+    assert response.status_code == 400 and "done" in response.json()["error"]
+
+
+async def test_retrying_an_unknown_job_is_a_404(client):
+    response = await client.post("/api/activity/999/retry")
+    assert response.status_code == 404 and "no job 999" in response.json()["error"]
+
+
+async def test_retry_all_queues_every_bad_ending_and_says_how_many(finish_job, client):
+    finish_job(1, "prices", "Update prices (watchlists)", "failed", "yahoo down", subject="*")
+    finish_job(2, "merges", "Proposed merges", "cancelled", "cancelled", subject="merges")
+    finish_job(3, "prices", "Update prices (watchlists)", "done", subject="AAPL")  # nothing to retry here
+    response = await client.post("/api/activity/retry-all")
+    assert response.status_code == 202
+    kinds = sorted(j["kind"] for j in response.json()["jobs"])
+    assert kinds == ["merges", "prices"]
+
+
+async def test_retryable_count_matches_what_retry_all_would_queue(finish_job, client):
+    finish_job(1, "prices", "Update prices (watchlists)", "failed", "yahoo down", subject="*")
+    finish_job(2, "prices", "Update prices (watchlists)", "done", subject="AAPL")
+    assert (await client.get("/api/activity/retryable/count")).json() == {"total": 1}

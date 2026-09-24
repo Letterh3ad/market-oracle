@@ -4,6 +4,7 @@ import { el, showError } from "../lib/dom.js";
 const STATE_CLASS = {
   running: "up", "running elsewhere": "up", queued: "dim", done: "", failed: "down", cancelled: "dim", interrupted: "down",
 };
+const RETRYABLE = ["cancelled", "interrupted", "failed"];
 let timer = null;
 
 // Today's jobs show the time alone; history from earlier days needs the date too.
@@ -22,7 +23,7 @@ function took(j) {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-function cancelButton(j, box) {
+function cancelButton(j, onChanged) {
   // Work held elsewhere has no id: only the process running it can stop it.
   if (j.id == null || (j.state !== "running" && j.state !== "queued")) return null;
   const button = el("button", { type: "button", class: "small-btn", onclick: async () => {
@@ -32,12 +33,26 @@ function cancelButton(j, box) {
     } catch (err) {
       showError(`cancel: ${err.message}`);
     }
-    loadRunningAndQueued(box);
+    onChanged();
   } }, "Cancel");
   return button;
 }
 
-function row(j, box) {
+function retryButton(j, onChanged) {
+  if (j.id == null || !RETRYABLE.includes(j.state)) return null;
+  const button = el("button", { type: "button", class: "small-btn", onclick: async () => {
+    button.disabled = true;
+    try {
+      await api(`/api/activity/${j.id}/retry`, { method: "POST" });
+    } catch (err) {
+      showError(`retry: ${err.message}`);
+    }
+    onChanged();
+  } }, "Retry");
+  return button;
+}
+
+function row(j, onChanged) {
   const what = j.link ? el("a", { href: j.link }, j.label) : j.label;
   const detail = j.state === "running" ? j.progress ?? "" : j.error ?? "";
   return el("tr", null,
@@ -46,13 +61,13 @@ function row(j, box) {
     el("td", { class: "small" }, detail),
     el("td", { class: "small dim" }, when(j.submitted_at)),
     el("td", { class: "num small" }, took(j)),
-    el("td", null, cancelButton(j, box)));
+    el("td", null, cancelButton(j, onChanged) ?? retryButton(j, onChanged)));
 }
 
-function table(jobs, box) {
+function table(jobs, onChanged) {
   return el("table", { class: "results" },
     el("thead", null, el("tr", null, ...["Job", "State", "Now / why", "Asked", "Took", ""].map((h) => el("th", null, h)))),
-    el("tbody", null, ...jobs.map((j) => row(j, box))));
+    el("tbody", null, ...jobs.map((j) => row(j, onChanged))));
 }
 
 async function loadRunningAndQueued(box) {
@@ -68,7 +83,8 @@ async function loadRunningAndQueued(box) {
     label: `${e.job} (pid ${e.pid} on ${e.host})`, state: "running elsewhere",
     error: "started outside this app window, e.g. from the command line; stop it there",
   }))];
-  box.replaceChildren(active.length ? table(active, box) : el("p", { class: "dim small" }, "Nothing running or waiting."));
+  box.replaceChildren(active.length ? table(active, () => loadRunningAndQueued(box))
+    : el("p", { class: "dim small" }, "Nothing running or waiting."));
 }
 
 const OPEN_KEY = "activity.finished.open";
@@ -89,6 +105,37 @@ function remember(open) {
   }
 }
 
+// "Retry all" queues every finished job (cancelled, interrupted or failed) not since redone
+// successfully and not already queued or running. Its count comes with each poll, so the
+// number on the button stays current even while the section is collapsed.
+function retryAllControl(onQueued) {
+  const message = el("span", { class: "dim small" });
+  const button = el("button", { type: "button", class: "small-btn", disabled: "", onclick: async () => {
+    button.disabled = true;
+    message.textContent = "";
+    try {
+      const { jobs } = await api("/api/activity/retry-all", { method: "POST" });
+      message.textContent = jobs.length ? `Queued ${jobs.length} job${jobs.length === 1 ? "" : "s"} again.`
+        : "Nothing needed retrying.";
+    } catch (err) {
+      showError(`retry all: ${err.message}`);
+    }
+    onQueued();
+  } }, "Retry all (0)");
+
+  async function refreshCount() {
+    let found;
+    try {
+      found = await api("/api/activity/retryable/count");
+    } catch {
+      return; // a courtesy count; the next poll tries again
+    }
+    button.textContent = `Retry all (${found.total})`;
+    button.disabled = found.total === 0;
+  }
+  return { node: el("span", null, " ", button, " ", message), refreshCount };
+}
+
 // The Finished section is built once; refreshes replace only its list and pager, so the
 // search box keeps its text and focus and the page the user is on stays put.
 // `q` is the search last sent: the poll never sends what is still being typed.
@@ -97,6 +144,7 @@ function finishedSection() {
   const count = el("span", { class: "dim small" });
   const list = el("div", null, el("p", { class: "dim" }, "Loading..."));
   const pager = el("div", { class: "row" });
+  const retryAll = retryAllControl(() => { load(); retryAll.refreshCount(); });
   let typing = null;
   const search = el("input", { type: "search", placeholder: "Search by job, kind or outcome (e.g. failed, MSFT)",
     size: "40", oninput: () => {
@@ -107,7 +155,7 @@ function finishedSection() {
       }, 250);
     } });
   const details = el("details", { ontoggle: () => { remember(details.open); if (details.open) load(); } },
-    el("summary", null, el("h3", { style: "display: inline" }, "Finished "), count),
+    el("summary", null, el("h3", { style: "display: inline" }, "Finished "), count, retryAll.node),
     el("div", { class: "row" }, search), list, pager);
   details.open = remembered();
 
@@ -140,7 +188,8 @@ function finishedSection() {
     state.page = found.page;
     count.textContent = `(${found.total})`;
     const empty = state.q ? `No finished job matches "${state.q}".` : "Nothing has finished yet.";
-    list.replaceChildren(found.items.length ? table(found.items, list) : el("p", { class: "dim small" }, empty));
+    const onChanged = () => { load(); retryAll.refreshCount(); };
+    list.replaceChildren(found.items.length ? table(found.items, onChanged) : el("p", { class: "dim small" }, empty));
     pager.replaceChildren(...(found.pages > 1 ? [
       el("button", { type: "button", class: "small-btn", disabled: found.page <= 1 ? "" : null,
         onclick: () => go(found.page - 1) }, "Previous"),
@@ -151,7 +200,10 @@ function finishedSection() {
   }
 
   // A later page is left alone: new jobs would shift its rows under the reader.
-  const refresh = () => (details.open && state.page === 1 ? load() : loadCount());
+  const refresh = () => {
+    retryAll.refreshCount();
+    return details.open && state.page === 1 ? load() : loadCount();
+  };
   return { node: details, refresh };
 }
 

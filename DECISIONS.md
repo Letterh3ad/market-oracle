@@ -1572,3 +1572,79 @@ window, but reaches into httpx's private pool); a separate gate source for the r
 with a high 403 limit.
 **Follow-ups:** an `Evidence.read` primitive; `Reader`'s 9 constructor parameters; a filing is
 fetched again when another model notes it.
+
+## 2026-09-24 - Repaint in place after actions; research buttons follow live jobs
+**Context:** After an action the Ledgers tab (and the Company page) blanked to "Loading..." and
+rebuilt, so the page height collapsed and the view jumped to the top; research buttons gave no
+sign a listing was already queued or running, inviting repeat presses.
+**Decision:** One helper, `lib/repaint.js` `repaint(box, nodes, after)`: the caller fetches
+first, then the helper swaps the new nodes in one step, holds the box's old height until
+`after` (charts, parts that load later) settles, puts the window scroll back and refocuses the
+control with the same id or aria-label. Only a tab's first load shows "Loading...". Used by
+Ledgers, Company, and the Universe results and Watchlist table (for focus). Each tab keeps
+its late-answer guard (Ledgers gained a load counter beside its root check). The Ledgers
+research buttons come from `researchLive()`, which polls `/api/activity` every 3 seconds while
+the tab is on screen and repaints only those buttons: Queued, Researching... with progress,
+then "Researched" once the listing is no longer due (one `/api/ledgers/ai/stale` call when a
+job ends). A press flips its button at once, and a poll sent before the press cannot undo it.
+The Company page's Research and Replay buttons show Queueing.../Queued/Researching... and
+stay disabled until the job ends.
+**Alternatives:** Saving and restoring scroll in each tab (duplicated, easy to miss one);
+diffing the DOM (a library or a lot of code for a page this size); keeping the old
+"Loading..." rebuild but restoring scroll afterwards (still flashes, and scroll restores
+before charts are drawn land short); a server push channel for job state (more moving parts
+than a 3-second poll of a small endpoint).
+
+## 2026-09-24 - Backtest engine: in memory, technicals-only leans, a capped lookback
+**Context:** Ticket backtest/01 replays the strategy's fixed rules over stored history
+(`oracle backtest`), with no look-ahead and nothing written to the paper accounts. Chosen
+overnight while the user slept.
+**Decision:** A pure day loop in `oracle/broker/backtest.py` over each listing's stored bars
+and that day's rate; `backtest_service.run_backtest` only reads, so no migration and no run
+record (ticket 02 decides what to keep). Each day, after the close, a listing's lean is the
+baseline over the technicals signal alone (`price_signals`, now shared with `analyse`), sized
+by the risk analyst from its last year of base-currency closes, and the strategy's `Rules`
+(`strategy_rules`, shared with the paper accounts) and pure `decide` place orders. Orders
+fill at that listing's next bar with an open and a rate, reusing `buy_fill`/`sell_fill` in
+whole shares: slippage in bps, a flat commission per trade in the base currency (a new
+`Costs.commission`), no FX spread, stamp duty or exchange fees. No orders on the last day.
+Signals see the last `YEAR + MIN_BARS` bars, not the whole history: RSI and MACD averages
+forget their start well inside that (a test pins the same lean as the full history) and a
+long replay stays linear (10 listings over 5 years, about 30 s). The report states the
+survivorship bias, that fundamentals are left out and a technicals-only lean tops out at
+62.5% (and says so when the threshold is above that, as nothing can then be bought), and the
+listings left out. Buy and hold is `compare.buy_and_hold` over the same listings and days.
+`--list` defaults to `main` like the watch commands. The parity manifest marks the command
+and its flags `Pending` on ticket 02.
+**Alternatives:** Full history per day (quadratic: minutes for a few years); the IBKR fee table
+and FX spread the paper accounts use (the spec asks for commission and slippage only, default
+free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+
+## 2026-09-24 - Retry for cancelled, interrupted and failed jobs
+**Context:** A restart cancelled 8 queued research jobs at once with no way to redo them
+short of re-entering each request by hand. The Activity tab needed a way to retry a single
+finished job and to retry everything left in a bad state after an outage.
+**Decision:** One mapping in `oracle/services/activity_service.py` (`_RETRY`) from job kind
+to a resubmit function that rebuilds the original call from the job's stored kind, subject
+and label; `retry(job_id)` looks a job up (live or from history via `JobRunner.get`) and
+refuses anything not cancelled, interrupted or failed, or a kind not in the mapping.
+`retryable(ctx, runner)` reads `JobHistoryRepo.latest_per_subject()` (the newest finished
+row per kind+subject) and keeps only rows in a bad state, not already queued or running, and
+of a retryable kind; `retry_all` resubmits each one. A subject's older bad runs are never
+retried individually: only the latest matters, since anything before it either already
+reran or is superseded by the one that matters now. A research replay's subject
+(`SYMBOL@day`) carries its day; a tick always retries as manual, regardless of what
+triggered the original; prices, analyse and fx tell "every listing" apart from one listing
+by the same `*`/name subject `submit_*` already stores. Routes: `POST
+/api/activity/{job_id}/retry`, `POST /api/activity/retry-all`, and `GET
+/api/activity/retryable/count` for the button's badge. `activity.js` adds a Retry button
+next to Cancel (mutually exclusive by state) and a "Retry all (n)" button by the Finished
+heading, both refreshing the finished list and the count in place, no page reload.
+**Alternatives:** Storing the original submit arguments verbatim (a new column, more to keep
+in sync with every `submit_*` signature) instead of rebuilding from kind+subject, which
+already uniquely determines the call for every kind in this app; retrying every past bad run
+for a subject instead of only the latest (redundant, and confusing when an older failure was
+already fixed by a later success); a kind allow-list hard-coded in the route instead of the
+resubmit mapping doubling as the "can this be rebuilt" check (one source of truth instead of
+two lists to keep in sync).
+free, so a run is comparable across markets); keeping runs in a new table now (left to 02).

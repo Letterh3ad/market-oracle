@@ -19,7 +19,7 @@ from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
     "DEFAULT_LIST", "Sibling", "Swapped", "WatchLine", "Watched", "WatchlistSummary",
-    "create_watchlist", "show_watchlist", "swap", "unwatch", "watch", "watchlists",
+    "create_watchlist", "show_watchlist", "swap", "unwatch", "watch", "watchlist_symbols", "watchlists",
 ]
 
 DEFAULT_LIST = "main"
@@ -108,13 +108,25 @@ def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool
 def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[WatchLine]:
     name = _name(watchlist)
     repo = WatchlistRepo(ctx.conn)
-    if repo.name_of(name) is None:
-        if name.casefold() == DEFAULT_LIST:
-            return []
+    if repo.name_of(name) is None and name.casefold() == DEFAULT_LIST:
+        return []
+    return [_with_price(ctx, item) for item in repo.items(_existing(repo, name))]
+
+
+def watchlist_symbols(ctx: AppContext, watchlist: str) -> tuple[str, list[str]]:
+    """(the list's stored name, its symbols in the order added)."""
+    repo = WatchlistRepo(ctx.conn)
+    name = _existing(repo, _name(watchlist))
+    return name, [item.symbol for item in repo.items(name)]
+
+
+def _existing(repo: WatchlistRepo, name: str) -> str:
+    stored = repo.name_of(name)
+    if stored is None:
         known = {s.name.casefold(): s.name for s in repo.summaries()}
         near = [known[k] for k in closest(name.casefold(), known)]
         raise UnknownWatchlist(f"no watchlist {name!r}; " + hint(near, "see the list of watchlists"))
-    return [_with_price(ctx, item) for item in repo.items(name)]
+    return stored
 
 
 def watchlists(ctx: AppContext) -> list[WatchlistSummary]:

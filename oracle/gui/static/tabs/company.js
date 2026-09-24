@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { lineChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
+import { repaint } from "../lib/repaint.js";
 import { researchSection } from "../lib/research.js";
 import { deadNote, swapSummary } from "../lib/siblings.js";
 import { tip, tipText } from "../lib/tip.js";
@@ -53,7 +54,7 @@ function header(v, pane, symbol) {
     el("div", { class: "row", style: "margin-top: 8px" },
       job(v.dead_since ? "Check again" : "Update prices", "/api/jobs/prices", pane, symbol),
       job("Analyse", "/api/jobs/analyse", pane, symbol),
-      el("button", { type: "button", onclick: () => load(pane, symbol, true) }, "Refresh fundamentals")));
+      busyButton("Refresh fundamentals", () => load(pane, symbol, true))));
 }
 
 // Reload so the header stops offering Swap, keeping what the swap did in view.
@@ -162,20 +163,25 @@ async function drawChart(pane, symbol, base) {
   chart = lineChart(holder, points);
 }
 
+// A reload of the company on screen keeps it up until the new one is ready.
 async function load(pane, symbol, refresh = false) {
   const mine = ++seq;
   const body = pane.querySelector("#c-body");
-  body.replaceChildren(el("p", { class: "dim" }, refresh ? "Fetching fundamentals..." : "Loading..."));
+  const again = body.dataset.symbol === symbol;
+  if (!again) body.replaceChildren(el("p", { class: "dim" }, "Loading..."));
   let v;
   try {
     v = await api(`/api/companies/${encodeURIComponent(symbol)}${refresh ? "?refresh=true" : ""}`);
   } catch (err) {
-    if (mine === seq) body.replaceChildren(el("p", { class: "dim" }, err.message));
+    if (mine !== seq) return;
+    if (again) showError(err.message);
+    else body.replaceChildren(el("p", { class: "dim" }, err.message));
     return;
   }
   if (mine !== seq || !pane.contains(body)) return;
   current = v.profile.symbol;
-  body.replaceChildren(
+  body.dataset.symbol = current;
+  repaint(body, [
     header(v, pane, current), summary(v),
     el("div", { id: "c-chart", class: "card" }),
     researchSection(current),
@@ -183,9 +189,8 @@ async function load(pane, symbol, refresh = false) {
     el("h3", null, "Fundamentals"), fundamentals(v),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),
     ...v.credits.map((c) => el("p", { class: "dim small" }, c)),
-    v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "");
-  drawChart(pane, current, v.base_currency);
-  peers(pane, current);
+    v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "",
+  ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current)]));
 }
 
 function render(pane, arg) {
