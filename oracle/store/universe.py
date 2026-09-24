@@ -322,6 +322,13 @@ class UniverseRepo:
         column = _column(sort)
         return f"{column} IS NULL, {column} COLLATE NOCASE{way}, {tail}"
 
+    def classifications(self) -> set[str]:
+        """Every sector, industry group and industry an active company has."""
+        rows = self._conn.execute(
+            "SELECT sector, industry_group, industry FROM listings WHERE is_primary AND delisted = 0 "
+            "GROUP BY sector, industry_group, industry")
+        return {v for row in rows for v in row if v}
+
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""
         _require_field(name)

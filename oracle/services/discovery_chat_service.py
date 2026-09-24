@@ -31,7 +31,7 @@ from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.questions import DONE, FAILED, RUNNING, Answer, Question, QuestionRepo, ShortlistItem
 from oracle.store.research import evidence_of, note_model
-from oracle.store.universe import ListingProfile
+from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.listings import MARKET_CAP_BANDS
 
 __all__ = [
@@ -59,6 +59,9 @@ NOTE_KEY = "#q{root}"
 _NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "sectors", "industry", "industries",
                            "companies", "company", "stocks", "shares", "firms", "no", "not", "any"})
 _WORDS = re.compile(r"[a-z0-9]+")
+# Everyday words for what the universe names otherwise, after plurals are folded.
+_ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
+            "chip": "semiconductor", "chipmaker": "semiconductor"}
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
@@ -244,7 +247,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     stage("planning searches")
     plan = await _plan(model, asked)
     repo.set_searches(answer_id, [s.label for s in plan.searches])
-    notes.extend(_filter_notes(plan))
+    notes.extend(_filter_notes(plan, UniverseRepo(ctx.conn).classifications()))
     found: list[list[int]] = []
     failed: list[str] = []
     shelf = Shelf(ctx.conn, ctx.clock, lambda ids: found[-1].extend(ids))
@@ -321,12 +324,16 @@ def _unique(items) -> list[str]:
     return out
 
 
-def _filter_notes(plan: Plan) -> list[str]:
+def _filter_notes(plan: Plan, classifications: set[str]) -> list[str]:
+    """What the filters do, and which excludes name nothing the universe holds (they leave nothing out)."""
     notes = []
     if plan.market_caps:
         notes.append(f"only {', '.join(c.lower() + 's' for c in plan.market_caps)}")
-    if plan.exclude:
-        notes.append(f"leaving out {', '.join(plan.exclude)}")
+    known = [x for x in plan.exclude if _matching(x, classifications)]
+    if known:
+        notes.append(f"leaving out {', '.join(known)}")
+    notes.extend(f'"{x}" was not recognised as a sector or industry, so nothing was left out for it'
+                 for x in plan.exclude if x not in known)
     return notes
 
 
@@ -395,10 +402,12 @@ class _Shortlist(Screen):
 
 
 def _matching(exclude: str, fields) -> str | None:
-    """The first field sharing a whole word with `exclude`, singular or plural ("utility" finds
-    "Utilities", "oil and gas" finds "Oil, Gas & Consumable Fuels"; "tech" is not "Biotechnology")."""
-    wanted = _words(exclude) - _NOT_A_SECTOR
-    return next((f for f in fields if f and wanted & _words(f)), None)
+    """The first field holding every word of `exclude`, singular or plural and in everyday words
+    ("utility" finds "Utilities", "oil and gas" finds "Oil, Gas & Consumable Fuels", "chipmakers"
+    finds "Semiconductors"); one shared word is not enough ("consumer staples" is not "Consumer
+    Discretionary")."""
+    wanted = {_ALIASES.get(w, w) for w in _words(exclude)} - _NOT_A_SECTOR
+    return next((f for f in fields if f and wanted and wanted <= _words(f)), None)
 
 
 def _words(text: str) -> set[str]:

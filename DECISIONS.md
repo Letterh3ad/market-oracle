@@ -1937,3 +1937,15 @@ question-neutral prompt (more reuse, but "not about" would lose its meaning).
 **Decision:** Left as a follow-up: they hold different job locks, so both proceed, only slower.
 **Alternatives:** Making questions take the research lock (a question would then wait up to the
 research budget, or defer the tick's research as manual research does).
+
+## 2026-09-24 - Discovery chat excludes need every word, with everyday aliases
+**Context:** Gate round 2: one shared word excluded unrelated fields ("consumer staples" dropped
+Consumer Discretionary), and everyday words ("tech", "chipmakers") matched nothing while the
+note still claimed to leave them out.
+**Decision:** Every remaining word of an exclude must be among a field's words (after filler
+words and plural folding), with a small alias map first: tech, pharma, biotech, insurer,
+chip/chipmaker to the universe's words. The answer says "leaving out X" only for an exclude that
+matches some sector, industry group or industry the universe holds, and says an unmatched one was
+not recognised.
+**Alternatives:** Any shared word (too loose); a model-chosen enum of the universe's names (loses
+industries below the group level).

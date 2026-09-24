@@ -198,6 +198,13 @@ async def test_excluded_sectors_are_left_off(ctx):
     assert "leaving out utility" in view.answer.notes
 
 
+async def test_an_exclude_the_universe_has_no_sector_for_is_said_not_recognised(ctx):
+    view = await ask(ctx, "grid batteries, no crypto", searcher=FakeSearcher(),
+                     model=model(ALL, planned=plan("grid battery Europe", exclude=["crypto", "utilities"])))
+    assert "leaving out utilities" in view.answer.notes
+    assert '"crypto" was not recognised as a sector or industry, so nothing was left out for it' in view.answer.notes
+
+
 @pytest.mark.parametrize("exclude, fields, found", [
     ("oil and gas", ("Energy", "Energy", "Oil, Gas & Consumable Fuels"), "Oil, Gas & Consumable Fuels"),
     ("gas", ("Utilities", "Utilities", "Gas Utilities"), "Gas Utilities"),
@@ -206,6 +213,18 @@ async def test_excluded_sectors_are_left_off(ctx):
     ("banks", ("Financials", "Banks", "Banks"), "Banks"),
     ("tech", ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Biotechnology"), None),
     ("the sector", ("Energy", "Energy", "Energy"), None),
+    ("consumer staples", ("Consumer Discretionary", "Consumer Discretionary Distribution & Retail",
+                          "Broadline Retail"), None),
+    ("telecom services", ("Information Technology", "Software & Services", "Software"), None),
+    ("medical equipment", ("Information Technology", "Semiconductors & Semiconductor Equipment",
+                           "Semiconductor Equipment"), None),
+    ("tech", ("Information Technology", "Software & Services", "Software"), "Information Technology"),
+    ("pharma", ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Pharmaceuticals"),
+     "Pharmaceuticals, Biotechnology & Life Sciences"),
+    ("biotech", ("Health Care", "Health Care Equipment & Services", "Biotechnology"), "Biotechnology"),
+    ("insurers", ("Financials", "Insurance", "Insurance"), "Insurance"),
+    ("chipmakers", ("Information Technology", "Semiconductors & Semiconductor Equipment", "Semiconductors"),
+     "Semiconductors & Semiconductor Equipment"),
 ])
 def test_an_exclude_matches_whole_words_of_a_sector_or_industry(exclude, fields, found):
     assert _matching(exclude, fields) == found
