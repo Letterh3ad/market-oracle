@@ -115,9 +115,19 @@ function idle() {
   ].filter(Boolean));
 }
 
+// The same rows as `oracle status`.
+function showAbout(about) {
+  const rows = [["schema", about.schema], ["database", about.database],
+    ["config", about.config ?? "defaults (no oracle.toml found)"], ["currency", about.currency],
+    ["created", about.created], ["version", about.version]];
+  document.getElementById("app-about").replaceChildren(el("tbody", null,
+    ...rows.map(([name, value]) => el("tr", null, el("th", null, name), el("td", { class: "mono" }, String(value))))));
+}
+
 // Called with each status answer.
 function show(answer) {
   status = answer;
+  showAbout(answer.about);
   if (!asking) idle();
 }
 

@@ -21,7 +21,7 @@ class Pending:
 OUTPUT_ONLY = Exempt("formats the CLI's output; the page shows it all")
 
 MANIFEST: dict[str, str | Exempt | Pending] = {
-    "status": Pending("gui-parity 02"),
+    "status": "GET /api/status",
     "net status": "GET /api/status",
     "jobs status": Pending("untracked: job lock holders are not shown"),
     "universe refresh": Pending("gui-parity 03"),

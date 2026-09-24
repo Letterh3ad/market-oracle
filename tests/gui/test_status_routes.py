@@ -26,3 +26,16 @@ async def test_a_loaded_universe_reports_its_listings_and_when_it_was_refreshed(
     full = universe_status(ctx)
     assert universe["listings"] == full.listings
     assert universe["refreshed_at"] == full.refreshed_at.isoformat().replace("+00:00", "Z")
+
+
+async def test_the_about_block_says_what_oracle_status_prints(ctx, client, capsys):
+    from oracle.cli import status as status_cli
+
+    status_cli.run(ctx, None)
+    printed = dict(line.split(None, 1) for line in capsys.readouterr().out.splitlines()[1:])
+    about = (await client.get("/api/status")).json()["about"]
+    assert about == {
+        "schema": int(printed["schema"]), "database": printed["database"], "config": None,
+        "currency": printed["currency"], "created": printed["created"], "version": printed["version"],
+    }
+    assert printed["config"].startswith("defaults")

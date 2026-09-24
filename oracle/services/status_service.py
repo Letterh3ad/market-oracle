@@ -20,12 +20,13 @@ class StatusReport:
     """The code's commit (or files hash)."""
 
 
-def status(ctx: AppContext) -> StatusReport:
+def status(ctx: AppContext, version: str | None = None) -> StatusReport:
+    """`version` saves reading the code folder when the caller already knows it."""
     return StatusReport(
         schema_version=current_version(ctx.conn),
         db_path=ctx.config.db_path,
         config_source=ctx.config_source,
         created_at=MetaRepo(ctx.conn).get("created_at") or "",
         base_currency=ctx.config.base_currency,
-        version=code_version(),
+        version=version or code_version(),
     )
