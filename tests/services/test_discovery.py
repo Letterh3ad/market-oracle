@@ -5,7 +5,7 @@ import pytest
 
 from oracle.config import Config, DiscoveryConfig
 from oracle.research.llm import ModelError
-from oracle.services import discovery_service
+from oracle.services import candidate_screen, discovery_service
 from oracle.services.context import open_context
 from oracle.services.discovery_service import (
     discover, discovered, gdelt_query, move_discovered, news_query, remove_discovered,
@@ -272,3 +272,17 @@ async def test_a_moved_company_taken_off_my_list_is_never_rediscovered(ctx):
     run = await discover(ctx, silent())
     assert "removed" in reasons(run)["DENSO Corporation"]
     assert "6902.T" not in {a.symbol for a in run.added}
+
+
+async def test_a_company_put_on_the_list_during_the_run_is_not_added_twice(ctx, monkeypatch):
+    real = candidate_screen.update_listing
+
+    async def meanwhile(c, symbol):
+        watch(c, symbol, DISCOVERED_LIST)  # a shortlist button pressed while the run checks prices
+        return await real(c, symbol)
+
+    monkeypatch.setattr(candidate_screen, "update_listing", meanwhile)
+    run = await discover(ctx, silent())
+    assert "6902.T" not in {a.symbol for a in run.added}
+    assert reasons(run)["DENSO Corporation"] == "already discovered"
+    assert [i.symbol for i in WatchlistRepo(ctx.conn).items(DISCOVERED_LIST)].count("6902.T") == 1

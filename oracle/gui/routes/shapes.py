@@ -95,7 +95,8 @@ def answer(v: AnswerView) -> dict:
         "id": a.id, "question_id": a.question_id, "model": a.model, "started_at": a.started_at,
         "finished_at": a.finished_at, "status": a.status, "stage": a.stage, "error": a.error,
         "searches": list(a.searches), "notes": list(a.notes), "compared_to": v.compared_to,
-        "shortlist": [{**asdict(line.item), "new": line.new, "watched": line.watched, "discovered": line.discovered,
+        "shortlist": [{**asdict(line.item), "new": line.new, "watched": line.watched,
+                       "discovered": line.discovered_as is not None, "discovered_as": line.discovered_as,
                        "evidence": [{**asdict(e), "link": web_link(e.url)} for e in line.evidence]}
                       for line in v.shortlist],
         "skipped": [asdict(i) for i in v.skipped], "gone": [asdict(i) for i in v.gone],

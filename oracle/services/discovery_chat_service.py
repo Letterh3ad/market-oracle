@@ -8,7 +8,7 @@ again and says what changed."""
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
@@ -20,7 +20,7 @@ from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
 from oracle.services.discovery_service import SOURCE_QUESTION, Added, add_by_hand
-from oracle.services.errors import InvalidQuery, ModelUnavailable, UnknownQuestion
+from oracle.services.errors import InvalidQuery, ModelUnavailable, SearchFailed, UnknownQuestion
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_service import configured_model, context_tokens
@@ -51,9 +51,14 @@ MAX_ITEMS = 24
 READ = 4
 MAX_PRICE_CHECKS = 8
 MAX_EXCLUDE = 5
-# Notes taken for a question are kept apart from the same model's notes for research, where
-# "not about the company" means one company.
-NOTE_KEY = "#question"
+# Notes taken for a question are kept apart from the same model's notes for research, and from
+# other questions': "not about" means not about what that question asks. A follow-up reads
+# for its root question, so the two share notes.
+NOTE_KEY = "#q{root}"
+# Words that name no sector or industry in an exclude ("oil and gas sector").
+_NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "sectors", "industry", "industries",
+                           "companies", "company", "stocks", "shares", "firms", "no", "not", "any"})
+_WORDS = re.compile(r"[a-z0-9]+")
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
@@ -106,8 +111,8 @@ class Line:
     """Not on the answer it is compared with."""
     watched: bool
     """The company is on one of the user's own lists now."""
-    discovered: bool
-    """The company is on the discovered list now."""
+    discovered_as: str | None
+    """The discovered list's line of the company now, or None when it is not on it."""
 
 
 @dataclass(frozen=True)
@@ -170,8 +175,9 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
     with single_flight(ctx, JOB, LEASE_S):
         answer_id = repo.start(q.id, _model_label(model), _now(ctx))
         notes: list[str] = []
+        note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
-            items = await _answer(ctx, repo, answer_id, asked, model, searcher or DdgsSearcher(), notes)
+            items = await _answer(ctx, repo, answer_id, asked, model, searcher or DdgsSearcher(), notes, note_key)
         except BaseException as exc:
             error = "cancelled" if not isinstance(exc, Exception) else str(exc) or type(exc).__name__
             repo.finish(answer_id, FAILED, error, notes, (), _now(ctx))
@@ -210,16 +216,17 @@ def answer_progress(ctx: AppContext, question_id: int) -> str | None:
     return answers[0].stage if answers and answers[0].status == RUNNING else None
 
 
-def add_to_discovered(ctx: AppContext, answer_id: int, n: int) -> Added:
-    """A shortlisted company onto the discovered list, with the question as why."""
+async def add_to_discovered(ctx: AppContext, answer_id: int, n: int) -> Added:
+    """A shortlisted company onto the discovered list, with the whole question (follow-ups
+    included) as why."""
     repo = QuestionRepo(ctx.conn)
     item = repo.item(answer_id, n)
     if item is None:
         raise UnknownQuestion(f"no company {n} on answer {answer_id}")
     if item.skipped or item.symbol is None:
         raise InvalidQuery(f"{item.name} was left off the shortlist: {item.skipped}")
-    q = repo.get(repo.answer(answer_id).question_id)
-    return add_by_hand(ctx, item.symbol, SOURCE_QUESTION, q.text, "answer", item.evidence)
+    asked = _asked(repo, repo.get(repo.answer(answer_id).question_id))
+    return await add_by_hand(ctx, item.symbol, SOURCE_QUESTION, asked, "answer", item.evidence)
 
 
 def sweep_interrupted_answers(ctx: AppContext) -> None:
@@ -230,7 +237,7 @@ def sweep_interrupted_answers(ctx: AppContext) -> None:
 
 
 async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: str, model: ChatModel,
-                  searcher: WebSearcher, notes: list[str]) -> list[ShortlistItem]:
+                  searcher: WebSearcher, notes: list[str], note_key: str) -> list[ShortlistItem]:
     def stage(text: str) -> None:
         repo.set_stage(answer_id, text)
 
@@ -238,8 +245,8 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     plan = await _plan(model, asked)
     repo.set_searches(answer_id, [s.label for s in plan.searches])
     notes.extend(_filter_notes(plan))
-    note_key = note_model(model.name, model.model) + NOTE_KEY
     found: list[list[int]] = []
+    failed: list[str] = []
     shelf = Shelf(ctx.conn, ctx.clock, lambda ids: found[-1].extend(ids))
     gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
     async with open_client(ctx) as client:
@@ -252,7 +259,12 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
             try:
                 await tool.run(s.query)
             except ToolError as exc:
-                notes.append(f"could not search {s.label} ({str(exc).removesuffix(TRY_ANOTHER)})")
+                failed.append(f"{s.label} ({str(exc).removesuffix(TRY_ANOTHER)})")
+        # An outage is not an answer: saved as done it would mark everything "gone" and, once
+        # the news is back, everything "new".
+        if len(failed) == len(plan.searches):
+            raise SearchFailed(f"no search could run: {'; '.join(failed)}")
+        notes.extend(f"could not search {f}" for f in failed)
         ids = _interleave(found)[:MAX_ITEMS]
         if not ids:
             notes.append("the searches found nothing to read")
@@ -264,8 +276,9 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
     stage("naming companies")
     evidence = evidence_of(ctx.conn, ids, note_key)
-    texts = [_item_text(e) for e in evidence]
-    mentions = parse_mentions(await model.reply(question_prompt(asked, texts), QUESTION_SCHEMA), texts)
+    reply = await model.reply(question_prompt(asked, [_item_text(e) for e in evidence]), QUESTION_SCHEMA)
+    # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
+    mentions = parse_mentions(reply, [_item_words(e) for e in evidence])
     if not mentions:
         notes.append("the model named no company the news shows")
     # More items behind a name first; the model's own order among equals.
@@ -329,7 +342,11 @@ def _interleave(found: list[list[int]]) -> list[int]:
 
 def _item_text(e: Evidence) -> str:
     day = e.published.date().isoformat() if e.published else "undated"
-    return f"{day} {e.outlet or 'unknown outlet'}: {e.title}" + "".join(f"\n  - {f}" for f in e.facts)
+    return f"{day} {e.outlet or 'unknown outlet'}: {_item_words(e)}"
+
+
+def _item_words(e: Evidence) -> str:
+    return e.title + "".join(f"\n  - {f}" for f in e.facts)
 
 
 class _Shortlist(Screen):
@@ -341,6 +358,7 @@ class _Shortlist(Screen):
         self._plan = plan
 
     async def screen(self, mentions: list[Mention], item_ids: list[int]) -> list[ShortlistItem]:
+        """Shortlisted first, numbered from 1 in rank order, then those left off."""
         out: list[ShortlistItem] = []
         for m in mentions:
             evidence = tuple(item_ids[i] for i in m.headlines)
@@ -348,12 +366,12 @@ class _Shortlist(Screen):
             profile, why_not = self.identify(m.name)
             if profile is None:
                 if why_not:
-                    out.append(ShortlistItem(len(out) + 1, m.name, None, None, None, why, evidence, why_not))
+                    out.append(ShortlistItem(0, m.name, None, None, None, why, evidence, why_not))
                 continue
             listing, why_not = await self._check(profile)
-            out.append(ShortlistItem(len(out) + 1, m.name, listing, profile.company_key, profile.name, why, evidence,
-                                     why_not))
-        return out
+            out.append(ShortlistItem(0, m.name, listing, profile.company_key, profile.name, why, evidence, why_not))
+        ranked = [i for i in out if i.skipped is None] + [i for i in out if i.skipped]
+        return [replace(i, n=n) for n, i in enumerate(ranked, 1)]
 
     async def _check(self, profile: ListingProfile) -> tuple[str | None, str | None]:
         if self.removed(profile):
@@ -376,12 +394,24 @@ class _Shortlist(Screen):
         return None
 
 
-def _matching(word: str, fields) -> str | None:
-    """The first field naming `word`, singular or plural ("utility" finds "Utilities")."""
-    stem = re.sub(r"(ies|y|s)$", "", word.casefold().strip())
-    if len(stem) < 3:
-        return None
-    return next((f for f in fields if f and stem in f.casefold()), None)
+def _matching(exclude: str, fields) -> str | None:
+    """The first field sharing a whole word with `exclude`, singular or plural ("utility" finds
+    "Utilities", "oil and gas" finds "Oil, Gas & Consumable Fuels"; "tech" is not "Biotechnology")."""
+    wanted = _words(exclude) - _NOT_A_SECTOR
+    return next((f for f in fields if f and wanted & _words(f)), None)
+
+
+def _words(text: str) -> set[str]:
+    return {_singular(w) for w in _WORDS.findall(text.casefold())}
+
+
+def _singular(word: str) -> str:
+    # Short words are left alone: "gas" is no plural.
+    if len(word) <= 4:
+        return word
+    if word.endswith("ies"):
+        return word[:-3] + "y"
+    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
 
 
 def _view(ctx: AppContext, repo: QuestionRepo, q: Question, a: Answer) -> AnswerView:
@@ -395,7 +425,7 @@ def _view(ctx: AppContext, repo: QuestionRepo, q: Question, a: Answer) -> Answer
         profile = screen.profile(i.symbol) if i.symbol else None
         lines.append(Line(i, tuple(articles[e] for e in i.evidence if e in articles),
                           before is not None and i.company_key not in known,
-                          bool(profile and screen.watched(profile)), bool(profile and screen.listed(profile))))
+                          bool(profile and screen.watched(profile)), profile and screen.listed_as(profile)))
     now = {i.company_key for i in shortlist}
     gone = tuple(i for i in before.shortlist if i.company_key not in now) if before else ()
     return AnswerView(a, tuple(lines), tuple(i for i in a.items if i.skipped), gone, before and before.id)

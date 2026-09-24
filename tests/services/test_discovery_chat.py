@@ -1,17 +1,20 @@
 """Discovery chat: a question answered with a ranked shortlist, refined and rerun."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
 from oracle.config import Config
 from oracle.research.llm import ModelError
+from oracle.research.web import WebSearchFailed
 from oracle.services.context import open_context
 from oracle.services.discovery_chat_service import (
     add_to_discovered, answer, answer_progress, ask, new_question, question, questions, sweep_interrupted_answers,
 )
 from oracle.services.discovery_service import discovered, remove_discovered
-from oracle.services.errors import InvalidQuery, ModelUnavailable, UnknownQuestion
+from oracle.services.discovery_chat_service import _matching
+from oracle.services.errors import InvalidQuery, ModelUnavailable, NeverListed, SearchFailed, UnknownQuestion
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from oracle.store.discoveries import DISCOVERED_LIST
@@ -160,7 +163,7 @@ async def test_a_watched_company_stays_on_marked_and_is_not_priced_again(ctx, we
     watch(ctx, "ENR.DE")
     view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
     line = view.shortlist[0]
-    assert (line.item.symbol, line.watched, line.discovered) == ("ENR.DE", True, False)
+    assert (line.item.symbol, line.watched, line.discovered_as) == ("ENR.DE", True, None)
     priced = {r.url.path.rsplit("/", 1)[-1] for r in web.requests_to("query2.finance.yahoo.com")}
     assert "ENR.DE" not in priced and "FLNC" in priced
 
@@ -195,6 +198,19 @@ async def test_excluded_sectors_are_left_off(ctx):
     assert "leaving out utility" in view.answer.notes
 
 
+@pytest.mark.parametrize("exclude, fields, found", [
+    ("oil and gas", ("Energy", "Energy", "Oil, Gas & Consumable Fuels"), "Oil, Gas & Consumable Fuels"),
+    ("gas", ("Utilities", "Utilities", "Gas Utilities"), "Gas Utilities"),
+    ("energy sector", ("Energy", "Energy", "Oil, Gas & Consumable Fuels"), "Energy"),
+    ("utilities", ("Utilities", "Utilities", "Multi-Utilities"), "Utilities"),
+    ("banks", ("Financials", "Banks", "Banks"), "Banks"),
+    ("tech", ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Biotechnology"), None),
+    ("the sector", ("Energy", "Energy", "Energy"), None),
+])
+def test_an_exclude_matches_whole_words_of_a_sector_or_industry(exclude, fields, found):
+    assert _matching(exclude, fields) == found
+
+
 async def test_a_rerun_says_what_is_new_and_what_is_gone(ctx):
     first = await ask(ctx, GRID, model=model(names(("Siemens Energy", "Wins orders", [1]))), searcher=FakeSearcher())
     again = await answer(ctx, first.answer.question_id,
@@ -219,6 +235,21 @@ async def test_a_model_that_cannot_answer_fails_the_answer_which_stays_saved(ctx
         await ask(ctx, GRID, model=m, searcher=FakeSearcher())
     [line] = questions(ctx)
     assert (line.answers, line.last.status, line.last.error) == (1, "failed", "ollama is not running")
+
+
+async def test_an_answer_with_no_search_that_ran_fails_and_is_not_compared_against(ctx, news, gdelt):
+    first = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
+    news.status, gdelt.error_text = 503, "down"
+    outage = FakeSearcher()
+    outage.fail = WebSearchFailed("down")
+    with pytest.raises(SearchFailed, match="no search could run"):
+        await answer(ctx, first.answer.question_id, model(ALL), outage)
+    news.status, gdelt.error_text = 200, None
+    after = await answer(ctx, first.answer.question_id, model(ALL), FakeSearcher())
+    statuses = [v.answer.status for v in question(ctx, first.answer.question_id).answers]
+    assert statuses == ["done", "failed", "done"]
+    assert after.compared_to == first.answer.id and after.gone == ()
+    assert not any(line.new for line in after.shortlist)
 
 
 async def test_a_failing_search_is_noted_and_the_answer_goes_on(ctx, gdelt):
@@ -252,7 +283,44 @@ async def test_articles_are_read_and_their_facts_named_from_apart_from_research_
     await ask(ctx, GRID, model=m, searcher=FakeSearcher())
     assert "  - A 2bn grid storage order" in naming_call(m)[0][1]["content"]
     [(key,)] = ctx.conn.execute("SELECT DISTINCT model FROM article_notes").fetchall()
-    assert key == "scripted/script#question"
+    assert key == "scripted/script#q1"
+
+
+async def test_two_questions_never_share_a_note_but_a_follow_up_shares_its_root_s(ctx, pages):
+    body = "<html><body><p>" + "Siemens Energy booked a 2bn grid storage order. " * 12 + "</p></body></html>"
+    pages.pages["https://news.test/0"] = ("text/html", body)
+    notes = []
+
+    def note(messages):
+        notes.append(messages[0]["content"])
+        return {"about_company": True, "facts": ["A 2bn grid storage order"]}
+
+    def asked(text, refines=None):
+        m = model(ALL)
+        m.roles = {"note_taker": note}
+        return ask(ctx, text, refines=refines, model=m, searcher=FakeSearcher())
+
+    first = await asked(GRID)
+    await asked("which companies build grid storage?")
+    await asked("only mid caps", refines=first.answer.question_id)
+    assert len(notes) == 2, "the second question reads for itself; the follow-up reuses its root's note"
+    assert "grid storage?" in notes[1]
+    keys = {k for (k,) in ctx.conn.execute("SELECT model FROM article_notes")}
+    assert keys == {"scripted/script#q1", "scripted/script#q2"}
+
+
+async def test_a_name_only_the_outlet_holds_is_dropped(ctx, news):
+    news.results["grid battery Europe"] = [("https://news.test/9", "Grid batteries boom in Europe", "RWE Newsroom",
+                                            datetime(2026, 9, 23, 8, tzinfo=timezone.utc))]
+    view = await ask(ctx, GRID, model=model(names(("RWE", "Runs grid batteries", [1]))), searcher=FakeSearcher())
+    assert view.shortlist == () and view.skipped == ()
+
+
+async def test_the_shortlist_is_numbered_without_gaps_and_left_off_names_come_after(ctx):
+    view = await ask(ctx, GRID, searcher=FakeSearcher(), model=model(names(
+        ("Tesla", "Megapacks", [4, 1]), ("Siemens Energy", "Orders", [1]), ("RWE", "Batteries", [3]))))
+    assert [(line.item.n, line.item.symbol) for line in view.shortlist] == [(1, "ENR.DE"), (2, "RWE.DE")]
+    assert [(i.n, i.name) for i in view.skipped] == [(3, "Tesla")]
 
 
 async def test_progress_shows_the_stage_of_a_running_answer(ctx):
@@ -282,25 +350,47 @@ async def test_a_blank_question_or_an_unknown_one_to_follow_up_is_refused(ctx):
 
 async def test_add_to_discovered_keeps_the_question_as_why_and_refuses_twice_or_skipped(ctx):
     view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
-    added = add_to_discovered(ctx, view.answer.id, 2)
+    added = await add_to_discovered(ctx, view.answer.id, 2)
     assert added.symbol == "FLNC" and added.why == f'an answer to your question "{GRID}"'
     [d] = discovered(ctx)
     assert (d.symbol, d.source, d.relation) == ("FLNC", "question", "answer")
     assert [e.title for e in d.evidence] == [HEADLINES[1]]
-    with pytest.raises(InvalidQuery, match="already on the discovered list"):
-        add_to_discovered(ctx, view.answer.id, 2)
+    with pytest.raises(InvalidQuery, match="already discovered"):
+        await add_to_discovered(ctx, view.answer.id, 2)
     tesla = next(i.n for i in view.skipped if i.name == "Tesla")
     with pytest.raises(InvalidQuery):
-        add_to_discovered(ctx, view.answer.id, tesla)
-    assert question(ctx, view.answer.question_id).answers[0].shortlist[1].discovered
+        await add_to_discovered(ctx, view.answer.id, tesla)
+    assert question(ctx, view.answer.question_id).answers[0].shortlist[1].discovered_as == "FLNC"
+
+
+async def test_a_company_added_from_a_follow_up_quotes_the_whole_question(ctx):
+    first = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
+    follow = await ask(ctx, "only mid caps", refines=first.answer.question_id, searcher=FakeSearcher(),
+                       model=model(names(("Fluence Energy", "Grid storage maker", [2]))))
+    added = await add_to_discovered(ctx, follow.answer.id, 1)
+    assert added.why == f'an answer to your question "{GRID} Follow-up: only mid caps"'
+
+
+async def test_add_refuses_a_company_removed_never_listed_or_unpriced_since_the_answer(ctx, yahoo):
+    view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
+    watch(ctx, "ENR.DE", DISCOVERED_LIST)
+    assert remove_discovered(ctx, "ENR.DE")
+    with pytest.raises(InvalidQuery, match="removed"):
+        await add_to_discovered(ctx, view.answer.id, 1)
+    ctx.config = replace(ctx.config, discovery=replace(ctx.config.discovery, never=("Tesla", "Fluence")))
+    with pytest.raises(NeverListed):
+        await add_to_discovered(ctx, view.answer.id, 2)
+    del yahoo.series["RWE.DE"]
+    with pytest.raises(InvalidQuery, match="no price data"):
+        await add_to_discovered(ctx, view.answer.id, 3)
+    assert WatchlistRepo(ctx.conn).items(DISCOVERED_LIST) == []
 
 
 async def test_add_to_discovered_respects_the_list_limit(ctx):
-    from dataclasses import replace
     ctx.config = replace(ctx.config, discovery=replace(ctx.config.discovery, max_total=0))
     view = await ask(ctx, GRID, model=model(ALL), searcher=FakeSearcher())
     with pytest.raises(InvalidQuery, match="full"):
-        add_to_discovered(ctx, view.answer.id, 1)
+        await add_to_discovered(ctx, view.answer.id, 1)
     assert WatchlistRepo(ctx.conn).items(DISCOVERED_LIST) == []
 
 

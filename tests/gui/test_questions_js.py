@@ -32,7 +32,7 @@ ANSWER = {
     "stage": None, "error": None, "searches": ["Google News: grid battery Europe"], "notes": ["only mid caps"],
     "compared_to": 5,
     "shortlist": [item(1, "ENR.DE", "Siemens Energy", new=True), item(2, "FLNC", "Fluence", watched=True),
-                  item(3, "NIBE-B.ST", "Nibe", discovered=True)],
+                  item(3, "NIBE-B.ST", "Nibe", discovered=True, discovered_as="NIBE-B.ST")],
     "skipped": [{"n": 4, "name": "Tesla", "skipped": "on the never list"}],
     "gone": [{"n": 1, "name": "RWE", "company": "RWE AG", "symbol": "RWE.DE"}],
 }
@@ -62,12 +62,12 @@ def test_each_row_offers_only_the_buttons_that_still_apply_and_they_call_the_exi
         for (const b of buttons) {{ b.fire("click"); await settle(); }}
         console.log(JSON.stringify({{ labels, after: buttons.map((b) => b.textContent), asked, changes }}));
     """)
-    assert out["labels"] == ["Watch", "Research", "Add to discovered", "Research", "Watch", "Research"]
+    assert out["labels"] == ["Watch", "Research", "Add to discovered", "Research", "Move to my watchlist", "Research"]
     assert out["asked"] == ["POST /api/watchlists/main/items", "POST /api/jobs/research?symbol=ENR.DE",
                             "POST /api/questions/answers/7/items/1/discovered", "POST /api/jobs/research?symbol=FLNC",
-                            "POST /api/watchlists/main/items", "POST /api/jobs/research?symbol=NIBE-B.ST"]
+                            "POST /api/discovery/NIBE-B.ST/move", "POST /api/jobs/research?symbol=NIBE-B.ST"]
     assert out["after"][:3] == ["Watched", "Research queued", "Added"]
-    assert out["changes"] == 3, "watch and add reload the answer; research only queues"
+    assert out["changes"] == 3, "watch, add and move reload the answer; research only queues"
 
 
 def test_running_and_failed_answers_say_so():

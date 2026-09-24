@@ -56,8 +56,12 @@ function marks(i) {
 
 function buttons(i, answerId, changed) {
   const symbol = encodeURIComponent(i.symbol);
-  const watch = i.watched ? null : action("Watch", "Put it on your main watchlist",
-    () => sendJson("/api/watchlists/main/items", { symbol: i.symbol }), "Watched", changed);
+  // A discovered company moves, so it is not left on both lists.
+  const watch = i.discovered
+    ? action("Move to my watchlist", "Watch it on your main list; it leaves the discovered list",
+      () => sendJson(`/api/discovery/${encodeURIComponent(i.discovered_as)}/move`), "Moved", changed)
+    : i.watched ? null : action("Watch", "Put it on your main watchlist",
+      () => sendJson("/api/watchlists/main/items", { symbol: i.symbol }), "Watched", changed);
   const research = action("Research", "Queue a research run; its report shows on the company page",
     () => api(`/api/jobs/research?symbol=${symbol}`, { method: "POST" }), "Research queued", () => {});
   const discovered = i.watched || i.discovered ? null : action("Add to discovered",

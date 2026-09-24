@@ -1913,3 +1913,27 @@ leading "The" ("Coca-Cola" does not find "The Coca-Cola Company"), shared with 0
 region is only searched, never enforced in code (a "European" question can list a US company if
 the news names it); questions cannot be deleted; the naming call sees at most 24 items.
 **Alternatives:** A country filter from the plan (needs a region-to-country map).
+
+## 2026-09-24 - Discovery chat gate round 1 fixes
+**Context:** The ticket 04 gate found sector excludes that missed ("oil and gas") or overreached
+("tech" in Biotechnology), notes shared across questions, outages saved as answers, and a
+discovered-list add that could race a tick.
+**Decision:** An exclude now matches whole words of the sector, industry group or industry, with
+filler words ("and", "sector", "companies") dropped and plurals folded only on words over 4
+letters. Notes are keyed per root question (`<model>#q<root id>`), so a follow-up reuses its
+root's notes and no other question does. An answer where every search failed fails with "no
+search could run" (`SearchFailed`, 502) and is never compared against. Adding to the discovered
+list (a button or a tick) re-reads watched, listed, removed and room inside the insert's write
+transaction; a button add also re-checks prices first and quotes the whole question, follow-ups
+included. A discovered company on a shortlist offers Move instead of Watch. Names are checked
+against an item's title and facts, never its outlet. Only bracketed numbers that are item
+numbers are stripped from a why line. The shortlist is numbered 1..n with left-off names after it.
+**Alternatives:** An enum of the universe's sectors in the plan schema (exact, but a question
+naming an industry below the group level, "gas", would have nothing to pick); notes under a
+question-neutral prompt (more reuse, but "not about" would lose its meaning).
+
+## 2026-09-24 - Question answers and tick research share the local model
+**Context:** Gate item 4: a question answered while a tick researches runs two Ollama loads at once.
+**Decision:** Left as a follow-up: they hold different job locks, so both proceed, only slower.
+**Alternatives:** Making questions take the research lock (a question would then wait up to the
+research budget, or defer the tick's research as manual research does).

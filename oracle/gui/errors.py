@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from oracle.services.errors import (
     CannotRestart, ConfigInUse, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
-    ServiceError,
+    SearchFailed, ServiceError,
     UniverseNotLoaded, UniverseUnavailable, UnknownBacktest, UnknownFilterValue, UnknownJob, UnknownQuestion, UnknownResearchRun,
     UnknownSymbol,
     UnknownWatchlist,
@@ -21,7 +21,7 @@ STATUS = (
     ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun, UnknownBacktest, UnknownQuestion), 404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
     ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart, ConfigInUse), 409),
-    ((PriceUnavailable, UniverseUnavailable), 502),
+    ((PriceUnavailable, UniverseUnavailable, SearchFailed), 502),
     # The local model is a service of this machine, not an upstream: unavailable, not a bad gateway.
     ((ModelUnavailable,), 503),
 )

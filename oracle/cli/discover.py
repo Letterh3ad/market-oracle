@@ -76,7 +76,7 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def run_add(ctx: AppContext, args: argparse.Namespace) -> int:
-    added = add_to_discovered(ctx, args.answer_id, args.rank)
+    added = asyncio.run(add_to_discovered(ctx, args.answer_id, args.rank))
     print(f"added {added.symbol}  {added.name} to the discovered list ({added.why})")
     return 0
 
@@ -94,7 +94,7 @@ def print_answer(v: AnswerView) -> int:
     for line in v.shortlist:
         i = line.item
         marks = "".join(f" [{m}]" for m, on in (("new", line.new), ("watched", line.watched),
-                                                  ("discovered", line.discovered)) if on)
+                                                  ("discovered", line.discovered_as is not None)) if on)
         print(f"  {i.n:>2}. {i.symbol}  {i.company}{marks}")
         _wrapped(i.why, "        ")
         for e in line.evidence:

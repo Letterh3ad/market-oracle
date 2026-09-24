@@ -84,3 +84,5 @@ def test_a_why_line_comes_back_without_item_numbers_or_citations():
     reply = {"companies": [{"name": "Panasonic", "why": "Battery venture with Toyota [1] (a3)", "headlines": [1]}]}
     [m] = parse_mentions(reply, HEADLINES)
     assert m.why == "Battery venture with Toyota" and m.headlines == (0,)
+    reply = {"companies": [{"name": "Panasonic", "why": "Venture due (2027) [2, 3]", "headlines": [1]}]}
+    assert parse_mentions(reply, HEADLINES)[0].why == "Venture due (2027)", "only numbers of items given are refs"

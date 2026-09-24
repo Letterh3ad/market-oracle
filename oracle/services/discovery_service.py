@@ -34,7 +34,7 @@ from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.discoveries import DISCOVERED_LIST, Discovery, DiscoveryEvidence, DiscoveryRepo
 from oracle.store.meta import MetaRepo
-from oracle.store.universe import UniverseRepo
+from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import blind_name
 
@@ -225,27 +225,48 @@ def move_discovered(ctx: AppContext, symbol: str) -> Watched:
     return moved
 
 
-def add_by_hand(ctx: AppContext, symbol: str, source: str, seed: str, relation: str,
-                evidence: tuple[int, ...]) -> Added:
-    """A suggestion the user picked, onto the discovered list with why: the rules a run keeps
-    (never list, removals, not already watched, room on the list). Its prices were checked
-    when it was suggested."""
+async def add_by_hand(ctx: AppContext, symbol: str, source: str, seed: str, relation: str,
+                      evidence: tuple[int, ...]) -> Added:
+    """A suggestion the user picked, onto the discovered list with why, under the rules a run
+    keeps: never list, removals, not already watched or discovered, room on the list, and prices
+    checked again now (a suggestion can be days old)."""
     listing = resolve_symbol(ctx, symbol).symbol
-    screen = Screen(ctx, 0)
+    screen = Screen(ctx, 1)
     profile = screen.profile(listing)
     if company := never_company(ctx, listing, user=True):
         raise NeverListed(f"{company} is on the never list: it is never put on the discovered list")
-    if screen.removed(profile):
-        raise InvalidQuery(f"{profile.name}: {REMOVED} from the discovered list, so it is never added again")
+    if why := _cannot_add(screen, profile, ctx.config.discovery.max_total):
+        raise InvalidQuery(f"{profile.name}: {why}")
+    line, why = await screen.priced_line(profile)
+    if line is None:
+        raise InvalidQuery(f"{profile.name}: {why}")
+    if why := _add_checked(ctx, profile, line, source, seed, relation, evidence):
+        raise InvalidQuery(f"{profile.name}: {why}")
+    return Added(line, profile.name, seed, relation, _why(source, relation, seed), evidence, source)
+
+
+def _cannot_add(screen: Screen, profile: ListingProfile, cap: int) -> str | None:
     if screen.watched(profile):
-        raise InvalidQuery(f"{profile.name} is already on your watchlist")
+        return "already watched"
     if screen.listed(profile):
-        raise InvalidQuery(f"{profile.name} is already on the discovered list")
-    on_list, cap = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST)), ctx.config.discovery.max_total
-    if on_list >= cap:
-        raise InvalidQuery(_full(on_list, cap))
-    DiscoveryRepo(ctx.conn).add(listing, profile.company_key, profile.name, source, seed, relation, evidence, _now(ctx))
-    return Added(listing, profile.name, seed, relation, _why(source, relation, seed), evidence, source)
+        return "already discovered"
+    if screen.removed(profile):
+        return REMOVED
+    if screen.on_list >= cap:
+        return _full(screen.on_list, cap)
+    return None
+
+
+def _add_checked(ctx: AppContext, profile: ListingProfile, listing: str, source: str, seed: str, relation: str,
+                 evidence: tuple[int, ...]) -> str | None:
+    """Add, the rules read afresh in the same write transaction, so a tick and a button pressed
+    at once cannot both add the company or both take the list's last place; else why not."""
+    with transaction(ctx.conn):
+        if why := _cannot_add(Screen(ctx, 0), profile, ctx.config.discovery.max_total):
+            return why
+        DiscoveryRepo(ctx.conn).add(listing, profile.company_key, profile.name, source, seed, relation, evidence,
+                                    _now(ctx))
+    return None
 
 
 def _full(on_list: int, cap: int) -> str:
@@ -415,7 +436,6 @@ class _Screen(Screen):
     def __init__(self, ctx: AppContext, room: int) -> None:
         super().__init__(ctx, MAX_PRICE_CHECKS)
         self._room = room
-        self._repo = DiscoveryRepo(ctx.conn)
         self.added: list[Added] = []
         self.skipped: list[Skipped] = []
 
@@ -436,9 +456,9 @@ class _Screen(Screen):
         listing, why_not = await self.priced_line(profile)
         if listing is None:
             return self._skip(c, why_not)
-        self._repo.add(listing, profile.company_key, profile.name, c.source, c.seed, c.relation, c.evidence,
-                       _now(self._ctx))
-        self.now_listed(profile)
+        if why_not := _add_checked(self._ctx, profile, listing, c.source, c.seed, c.relation, c.evidence):
+            return self._skip(c, why_not)
+        self.now_listed(profile, listing)
         self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
                                 c.evidence, c.source))
         return None

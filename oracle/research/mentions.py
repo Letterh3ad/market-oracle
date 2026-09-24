@@ -14,7 +14,8 @@ MAX_COMPANIES = 8
 MAX_NAME = 80
 MAX_WHY = 200
 # The numbers of the items a line rests on travel with it; written into the line they are noise.
-_ITEM_REFS = re.compile(r"\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]")
+# Only numbers of items given are taken for such, so "(2025)" stays.
+_ITEM_REFS = re.compile(r"\s*[\[(]\s*(\d+(?:\s*,\s*\d+)*)\s*[\])]")
 
 
 def _schema(relation: bool, why: bool = False) -> dict:
@@ -104,7 +105,7 @@ def parse_mentions(reply: object, headlines: list[str], seed: str | None = None)
         if not at:
             continue
         relation = item.get("relation") if item.get("relation") in RELATIONS else "other"
-        out[key] = Mention(name, relation, at, _why(item.get("why")))
+        out[key] = Mention(name, relation, at, _why(item.get("why"), len(headlines)))
     return list(out.values())
 
 
@@ -113,7 +114,11 @@ def same_company(a: str, b: str) -> bool:
     return a == b or a.startswith(b + " ") or b.startswith(a + " ")
 
 
-def _why(text: object) -> str:
+def _why(text: object, items: int) -> str:
     if not isinstance(text, str):
         return ""
-    return " ".join(_ITEM_REFS.sub("", strip_citations(text)).split())[:MAX_WHY]
+
+    def refs(m: re.Match) -> str:
+        return "" if all(1 <= int(n) <= items for n in m.group(1).split(",")) else m.group(0)
+
+    return " ".join(_ITEM_REFS.sub(refs, strip_citations(text)).split())[:MAX_WHY]

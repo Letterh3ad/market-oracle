@@ -36,4 +36,4 @@ async def show(question_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
 @router.post("/answers/{answer_id}/items/{n}/discovered")
 async def discovered(answer_id: int, n: int, ctx: AppContext = Depends(get_ctx)) -> dict:
     """A shortlisted company onto the discovered list, the question kept as why."""
-    return asdict(add_to_discovered(ctx, answer_id, n))
+    return asdict(await add_to_discovered(ctx, answer_id, n))

@@ -44,7 +44,9 @@ class Screen:
         lists = WatchlistRepo(ctx.conn)
         self._watched = self._keys(s for w in lists.summaries() if w.name.casefold() != DISCOVERED_LIST
                                    for s in (i.symbol for i in lists.items(w.name)))
-        self._listed = self._keys(i.symbol for i in lists.items(DISCOVERED_LIST))
+        self._listed = {r.company_key: i.symbol for i in lists.items(DISCOVERED_LIST)
+                        if (r := self._universe.resolve(i.symbol))}
+        self.on_list = len(self._listed)
         self._seen: set[str] = set()
 
     @property
@@ -79,12 +81,16 @@ class Screen:
         """On the discovered list."""
         return profile.company_key in self._listed
 
+    def listed_as(self, profile: ListingProfile) -> str | None:
+        """The discovered list's line of the company, which may not be its primary one."""
+        return self._listed.get(profile.company_key)
+
     def removed(self, profile: ListingProfile) -> bool:
         symbols = {s.upper() for s in self._universe.company_symbols(profile.company_key)}
         return profile.company_key in self._removed_keys or bool(symbols & self._removed_symbols)
 
-    def now_listed(self, profile: ListingProfile) -> None:
-        self._listed.add(profile.company_key)
+    def now_listed(self, profile: ListingProfile, symbol: str) -> None:
+        self._listed[profile.company_key] = symbol
 
     async def priced_line(self, profile: ListingProfile) -> tuple[str | None, str | None]:
         """The company's live line once its recent prices are fetched, else why not."""
