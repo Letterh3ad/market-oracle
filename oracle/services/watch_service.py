@@ -88,6 +88,7 @@ def swap(ctx: AppContext, old: str, new: str) -> Swapped:
     """Watch `new` instead of `old` on every list holding `old`, where `new` is another
     live listing of the same company."""
     was, to = resolve_symbol(ctx, old), resolve_symbol(ctx, new)
+    refuse_never(ctx, to.symbol)
     if was.symbol == to.symbol:
         raise InvalidSwap(f"{to.symbol} is the same listing")
     members = {x.symbol: x for x in UniverseRepo(ctx.conn).company_listings(was.company_key)}

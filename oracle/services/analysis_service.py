@@ -16,7 +16,7 @@ from oracle.services.errors import InvalidQuery, NoPrices, ServiceError
 from oracle.services.fundamentals_service import PEER_MAX_AGE, fetch_fundamentals
 from oracle.services.jobs_service import single_flight
 from oracle.services.peers_service import choose_peers, with_fundamentals
-from oracle.services.prices_service import price_history_in_base
+from oracle.services.prices_service import held_unwatched, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -132,11 +132,14 @@ async def analyse_listing(ctx: AppContext, symbol: str) -> Analysis:
 
 
 async def analyse_watched(ctx: AppContext) -> list[WatchedAnalysis]:
-    """Every watched listing, in one process at a time; one failing never stops the rest."""
-    with single_flight(ctx, JOB, LEASE_S) as held:
+    """Every watched listing plus every listing a paper account holds (priced off every
+    list too, in `update_watched`; without this its lean would go stale and only the stop
+    could ever exit it), one at a time; one failing never stops the rest."""
+    watched = WatchlistRepo(ctx.conn).all_symbols()
+    with single_flight(ctx, JOB, LEASE_S) as lease:
         out = []
-        for symbol in WatchlistRepo(ctx.conn).all_symbols():
-            held.check()
+        for symbol in watched + held_unwatched(ctx, watched):
+            lease.check()
             try:
                 out.append(WatchedAnalysis(symbol, await analyse(ctx, symbol), None))
             except ServiceError as exc:

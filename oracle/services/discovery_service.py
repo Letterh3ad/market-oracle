@@ -5,7 +5,7 @@ is decided here in code."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -36,9 +36,9 @@ from oracle.store.db import to_utc_iso, transaction
 from oracle.store.discoveries import DISCOVERED_LIST, Discovery, DiscoveryEvidence, DiscoveryRepo
 from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
-from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
-from oracle.universe.listings import blind_name, is_receipt
+from oracle.universe.listings import MARKET_CAP_BANDS, blind_name, is_receipt
 
 __all__ = [
     "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
@@ -63,6 +63,11 @@ MAX_PEERS = 10
 MAX_HEADLINES = 20
 # Shorter names ("US", "GE") start too many companies' names to be matched by their start.
 MIN_LEADING_NAME = 4
+_CAP_INDEX = {band: i for i, band in enumerate(MARKET_CAP_BANDS)}
+# Adjacent bands can nearly touch (a small Large Cap barely tops a big Mid Cap), but
+# FinanceDatabase's own band floors are roughly 5x to 20x apart, so a two-band gap is
+# always at least 5x: enough to pick the bigger company instead of staying ambiguous.
+CLEARLY_BIGGER_BANDS = 2
 _LAST_SEED = "discovery_last_seed"
 _LAST_SOURCE = "discovery_last_source"
 _LAST_THEME = "discovery_last_theme"
@@ -448,7 +453,9 @@ class _Screen:
     def _lookup(self, name: str) -> tuple[ListingProfile | None, str | None]:
         """The company the name means, or why none: one of its listings named exactly that
         (legal forms aside, biggest first as the search ranks them), else the one company
-        whose name starts with it, else a listing with that symbol. A short or shared leading
+        whose name starts with it, else (when several do) the one clearly biggest by market
+        cap, else a listing with that symbol exactly as written (never a guess from case, so
+        "On" or "Open" never mean ON or OPEN). A short, shared or too-close-to-call leading
         name is never guessed at."""
         want = blind_name(name)
         hits = search_universe(self._ctx, want, filters={"type": ["equity"]}, limit=10)
@@ -460,7 +467,10 @@ class _Screen:
             return self._universe.profile(exact[0].symbol), None
         if len(want) >= MIN_LEADING_NAME and len(leading) == 1:
             return self._universe.profile(next(iter(leading.values())).symbol), None
-        if (by_symbol := self._universe.profile(name.strip())) is not None:
+        if len(want) >= MIN_LEADING_NAME and len(leading) > 1 and (biggest := _clearly_biggest(leading.values())):
+            return self._universe.profile(biggest.symbol), None
+        symbol_as_written = name.strip()
+        if symbol_as_written.isupper() and (by_symbol := self._universe.profile(symbol_as_written)) is not None:
             return by_symbol, None
         if not leading:
             return None, None
@@ -479,6 +489,19 @@ class _Screen:
 
     def _skip(self, c: _Candidate, reason: str) -> None:
         self.skipped.append(Skipped(c.name, reason))
+
+
+def _clearly_biggest(hits: Iterable[SearchHit]) -> SearchHit | None:
+    """The hit whose company is at least `CLEARLY_BIGGER_BANDS` market-cap bands over the
+    next biggest of the group, or None to stay ambiguous (either band unknown, or the two
+    are close enough that which is really bigger cannot be told from bands alone)."""
+    ranked = sorted(hits, key=lambda h: _CAP_INDEX.get(h.market_cap, len(MARKET_CAP_BANDS)))
+    best, next_best = ranked[0], ranked[1]
+    if best.market_cap is None or next_best.market_cap is None:
+        return None
+    if _CAP_INDEX[next_best.market_cap] - _CAP_INDEX[best.market_cap] < CLEARLY_BIGGER_BANDS:
+        return None
+    return best
 
 
 def _now(ctx: AppContext) -> str:

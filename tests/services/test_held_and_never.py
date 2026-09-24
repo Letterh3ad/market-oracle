@@ -15,7 +15,7 @@ from oracle.services.paper_service import (
 )
 from oracle.services.prices_service import update_listing, update_watched
 from oracle.services.universe_service import refresh_universe
-from oracle.services.watch_service import unwatch, watch
+from oracle.services.watch_service import swap, unwatch, watch
 from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DISCOVERED_LIST
 from oracle.store.watchlists import WatchlistRepo
@@ -160,6 +160,26 @@ async def test_neither_account_buys_tesla_whatever_list_it_is_on(ctx, account):
     [d] = (strategy_step if account == "strategy" else ai_step)(ctx)
     assert (d.symbol, d.action, "never" in d.reason) == ("TSLA", "skip", True)
     assert account_view(ctx, account).pending == ()
+
+
+async def test_swap_refuses_a_never_listed_target(ctx):
+    WatchlistRepo(ctx.conn).add("main", "XYZM", "2026-09-21T20:00:00Z")  # watched before the never name showed up
+    with pytest.raises(NeverListed, match="never watched or traded"):
+        swap(ctx, "XYZM", "XYZ.DE")
+    assert WatchlistRepo(ctx.conn).all_symbols() == ["XYZM"]
+
+
+async def test_a_pending_buy_for_a_now_never_listed_company_is_rejected_at_fill(ctx, yahoo, clock):
+    watch(ctx, "AAPL", DISCOVERED_LIST)
+    place_buy(ctx, "AAPL", 1000.0, "ai", source="ai")  # placed before the discovery never rule
+    never(ctx, "Apple")
+    yahoo.series["AAPL"].bars.append(ohlc("2026-09-22", 100.0, 100.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-22", 1.25))
+    clock.advance(86400)
+    await update_listing(ctx, "AAPL")
+    [outcome] = fill_pending(ctx)
+    assert (outcome.status.value, outcome.note) == ("rejected", "on the never list")
+    assert account_view(ctx, "ai").positions == ()
 
 
 async def test_no_account_places_a_tesla_buy(ctx):

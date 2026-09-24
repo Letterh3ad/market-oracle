@@ -1817,3 +1817,23 @@ little database space and nothing else. B5 (CDR, BDR and CEDEAR receipts not fil
 one-line regex widening and is fixed.
 **Alternatives:** Fixing B4 with a second model pass (costly, and still model-judged);
 checking prices without storing (would need a separate fetch path).
+
+## 2026-09-24 - Held-but-unwatched listings are analysed too; AI-held unlisted ones are
+stop-only
+**Context:** `update_watched` already prices every listing a paper account holds, off every
+list. `analyse_watched` did not: it only ran over the watchlist, so an unwatched-but-held
+listing's lean went stale the moment a new bar arrived, and `_usable_leans`/`_usable_verdicts`
+refuse a stale lean, leaving the stop as the only exit.
+**Decision:** `analyse_watched` now covers watched listings plus `held_unwatched` (the same
+helper `update_watched` uses, moved into `prices_service` for both to share). Separately, for
+a listing a paper account holds that has left the universe entirely (not just its lists):
+the strategy account trades on baseline leans and would still sell it on a sell lean once
+`analyse_watched` reaches it, same as any held-but-listed symbol. The AI account is
+different: `ai_step` decides from the newest live research verdict (`_usable_verdicts`), not
+from a lean, and `_usable_verdicts` skips a symbol outright when it fails to resolve in the
+universe (reason `GONE`), so no verdict-based sell decision is ever produced for it. An
+AI-held listing gone from the universe therefore only ever exits on the stop; a sell verdict
+can never apply to it, because none is looked up. This is left as is (a listing gone from the
+universe has nothing left to research a verdict against).
+**Alternatives:** Having `ai_step` fall back to the baseline lean for a delisted symbol
+(would trade the AI account on baseline in a rule it otherwise never uses).

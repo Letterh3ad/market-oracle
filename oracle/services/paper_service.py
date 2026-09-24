@@ -451,6 +451,10 @@ def account_view(ctx: AppContext, account: str) -> AccountView:
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
+    # A never rule set after the order was placed (or a discovery-only one, for a discovered
+    # symbol) still blocks it before it spends real-looking cash.
+    if order.side == Side.BUY and never_company(ctx, order.symbol, user=order.symbol in discovered_only(ctx)):
+        return _reject(repo, order, "on the never list")
     profile = UniverseRepo(ctx.conn).profile(order.symbol)
     if profile is None and order.side == Side.BUY:
         # Its exchange, and so any stamp duty, is unknown.
