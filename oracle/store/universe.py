@@ -327,10 +327,15 @@ class UniverseRepo:
     def classifications(self) -> dict[str, frozenset[str]]:
         """Every industry, industry group and sector an active company has, by level
         (`CLASSIFICATION_LEVELS`, the most specific first)."""
-        rows = self._conn.execute(
-            "SELECT industry, industry_group, sector FROM listings WHERE is_primary AND delisted = 0 "
-            "GROUP BY sector, industry_group, industry").fetchall()
-        return {level: frozenset(r[n] for r in rows if r[n]) for n, level in enumerate(CLASSIFICATION_LEVELS)}
+        rows = self.classification_rows()
+        return {level: frozenset(r[n] for r in rows if r[n]) for n, level in
+                zip((2, 1, 0), CLASSIFICATION_LEVELS)}
+
+    def classification_rows(self) -> list[tuple[str | None, str | None, str | None]]:
+        """Each (sector, industry group, industry) an active company has."""
+        return [tuple(r) for r in self._conn.execute(
+            "SELECT sector, industry_group, industry FROM listings WHERE is_primary AND delisted = 0 "
+            "GROUP BY sector, industry_group, industry")]
 
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""
