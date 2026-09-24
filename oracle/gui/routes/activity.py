@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
@@ -25,6 +25,14 @@ async def activity(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depen
         "elsewhere": [{"job": s.job.replace("_", " "), "pid": s.pid, "host": s.host, "age_s": s.age_s}
                       for s in held_elsewhere(ctx)],
     }
+
+
+@router.get("/finished")
+async def finished(page: int = Query(1, ge=1), q: str = "", runner: JobRunner = Depends(get_runner)) -> dict:
+    """One page of finished jobs, filtered by `q` (label, kind, state or error)."""
+    found = runner.finished_page(page, q)
+    return {"items": [shapes.job(j) for j in found.items], "page": found.page, "pages": found.pages,
+            "total": found.total}
 
 
 @router.get("/{job_id}")

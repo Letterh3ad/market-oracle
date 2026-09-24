@@ -54,3 +54,38 @@ async def test_jobs_an_earlier_server_finished_are_listed_without_their_results(
     listed = (await client.get("/api/activity")).json()["jobs"]
     assert [(j["kind"], j["state"], j["result"]) for j in listed] == [
         ("tick", "done", None), ("analyse", "done", None), ("prices", "done", None)]
+
+
+def _finish(ctx, n, label):
+    from datetime import datetime, timedelta, timezone
+
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    at = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc) + timedelta(minutes=n)
+    repo.update(repo.add("prices", label, None, None, "queued", at, 1), "done", None, at, at)
+
+
+async def test_finished_jobs_come_a_page_at_a_time(ctx, client):
+    for n in range(25):
+        _finish(ctx, n, f"Job {n}")
+    body = (await client.get("/api/activity/finished", params={"page": 2})).json()
+    assert (body["page"], body["pages"], body["total"]) == (2, 2, 25)
+    assert [j["label"] for j in body["items"]] == [f"Job {n}" for n in range(4, -1, -1)]
+    assert len((await client.get("/api/activity")).json()["jobs"]) == 20
+
+
+async def test_finished_jobs_can_be_searched(ctx, client):
+    _finish(ctx, 1, "Research MSFT")
+    _finish(ctx, 2, "Research AAPL")
+    body = (await client.get("/api/activity/finished", params={"q": "msft"})).json()
+    assert [j["label"] for j in body["items"]] == ["Research MSFT"] and body["total"] == 1
+
+
+async def test_a_search_matching_nothing_is_an_empty_page(client):
+    body = (await client.get("/api/activity/finished", params={"q": "zzz"})).json()
+    assert body == {"items": [], "page": 1, "pages": 1, "total": 0}
+
+
+async def test_a_page_below_one_is_refused(client):
+    assert (await client.get("/api/activity/finished", params={"page": 0})).status_code in (400, 422)

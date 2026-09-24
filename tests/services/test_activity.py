@@ -279,15 +279,64 @@ async def test_a_job_running_when_the_server_stops_is_interrupted_not_cancelled(
     assert (waiting.state, waiting.error) == ("cancelled", "not run: app closed")
 
 
-async def test_activity_lists_only_the_last_50_finished(ctx, runner):
+def finish(ctx, n, kind="prices", label=None, state="done", error=None):
+    from datetime import timedelta
+
     from oracle.store.job_history import JobHistoryRepo
 
     repo = JobHistoryRepo(ctx.conn)
-    for n in range(55):
-        job_id = repo.add("prices", f"Job {n}", None, None, "queued", NOW, DEAD_PID)
-        repo.update(job_id, "done", None, NOW, NOW)
+    at = NOW + timedelta(minutes=n)
+    job_id = repo.add(kind, label or f"Job {n}", None, None, "queued", at, DEAD_PID)
+    repo.update(job_id, state, error, at, at)
+    return job_id
+
+
+async def test_activity_lists_only_the_first_page_of_finished(ctx, runner):
+    for n in range(25):
+        finish(ctx, n)
     listed = runner.jobs()
-    assert len(listed) == 50 and listed[0].label == "Job 54"
+    assert len(listed) == 20 and listed[0].label == "Job 24"
+
+
+async def test_finished_pages_run_newest_first_with_totals(ctx, runner):
+    for n in range(45):
+        finish(ctx, n)
+    first, last = runner.finished_page(1), runner.finished_page(3)
+    assert (first.page, first.pages, first.total) == (1, 3, 45)
+    assert [j.label for j in first.items][:2] == ["Job 44", "Job 43"] and len(first.items) == 20
+    assert [j.label for j in last.items] == [f"Job {n}" for n in range(4, -1, -1)]
+
+
+async def test_a_page_past_the_end_shows_the_last_page(ctx, runner):
+    for n in range(3):
+        finish(ctx, n)
+    beyond = runner.finished_page(9)
+    assert (beyond.page, beyond.pages, len(beyond.items)) == (1, 1, 3)
+
+
+async def test_no_finished_jobs_is_one_empty_page(runner):
+    empty = runner.finished_page(1)
+    assert (empty.items, empty.page, empty.pages, empty.total) == ([], 1, 1, 0)
+
+
+async def test_search_matches_label_kind_state_and_error_ignoring_case(ctx, runner):
+    finish(ctx, 1, "research", "Research MSFT")
+    finish(ctx, 2, "prices", "Update prices (watchlists)", "failed", "yahoo said no")
+    finish(ctx, 3, "tick", "Tick (manual)", "cancelled", "cancelled")
+    labels = lambda q: [j.label for j in runner.finished_page(1, q).items]
+    assert labels("msft") == ["Research MSFT"]
+    assert labels("TICK") == ["Tick (manual)"]
+    assert labels("failed") == ["Update prices (watchlists)"]
+    assert labels("yahoo") == ["Update prices (watchlists)"]
+    assert labels("  ") == labels("") == ["Tick (manual)", "Update prices (watchlists)", "Research MSFT"]
+    assert runner.finished_page(1, "nothing like it").total == 0
+
+
+async def test_search_treats_like_wildcards_literally(ctx, runner):
+    finish(ctx, 1, label="Job 100%")
+    finish(ctx, 2, label="Job_2")
+    assert [j.label for j in runner.finished_page(1, "%").items] == ["Job 100%"]
+    assert [j.label for j in runner.finished_page(1, "_").items] == ["Job_2"]
 
 
 async def test_waiting_on_an_unknown_job_says_so(runner):
