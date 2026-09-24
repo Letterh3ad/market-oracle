@@ -33,7 +33,7 @@ log = logging.getLogger(__name__)
 
 RECENT = 50
 """Finished jobs kept in memory, so their results can still be shown."""
-PAGE = 20
+PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
 
@@ -105,21 +105,22 @@ class JobRunner:
             self._workers[kind] = asyncio.create_task(self._drain(kind))
         return job
 
-    def jobs(self) -> list[Job]:
-        """Running, then queued in order, then the last finished (earlier servers' too),
-        newest first."""
-        queued = self._queued()
-        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *self.finished_page(1).items]
+    def current(self) -> list[Job]:
+        """Running, then queued in order; finished jobs come a page at a time from `finished_page`."""
+        return [*self._running.values(), *sorted(self._queued(), key=lambda j: j.id)]
 
     def finished_page(self, page: int, search: str = "") -> FinishedPage:
         """One page of finished jobs (earlier servers' too), newest first; a page past the
         end is the last one."""
-        total = self._history.count_finished(search)
-        pages = max(1, -(-total // PAGE))
+        total = self.finished_count(search)
+        pages = max(1, -(-total // PAGE_SIZE))
         page = min(max(1, page), pages)
         here = {j.id: j for j in self._finished}
-        rows = self._history.finished(PAGE, (page - 1) * PAGE, search)
+        rows = self._history.finished(PAGE_SIZE, (page - 1) * PAGE_SIZE, search)
         return FinishedPage([here.get(r.id) or _from_row(r) for r in rows], page, pages, total)
+
+    def finished_count(self, search: str = "") -> int:
+        return self._history.count_finished(search)
 
     def get(self, job_id: int) -> Job | None:
         live = [*self._running.values(), *self._queued(), *self._finished]
