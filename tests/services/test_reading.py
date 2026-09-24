@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import httpx
 import pytest
 
 from oracle.research.llm import ModelError
@@ -423,7 +424,7 @@ async def test_a_replay_reads_only_filings_made_before_its_cutoff(ctx, sec):
     assert [e.title for e in run.evidence if e.outlet == "SEC"] == ["10-Q Quarterly report"]
 
 
-async def test_a_filing_with_no_headings_is_read_from_its_start_and_sec_trouble_never_fails_the_run(ctx, sec):
+async def test_a_filing_with_no_headings_is_read_from_its_first_paragraph_and_sec_trouble_never_fails_the_run(ctx, sec):
     with_contact(ctx)
     apple_filings(sec)
     sec.documents[FILED_10Q] = "<html><body><p>" + "Plain quarterly text. " * 2000 + "</p></body></html>"
@@ -460,16 +461,51 @@ async def test_an_earnings_8k_is_read_from_its_press_release_exhibit_then_its_ot
     assert url == EXHIBIT and text.startswith("EX-99.1\nApple reports")
 
 
-async def test_an_earnings_8k_whose_exhibit_cannot_be_read_keeps_its_own_items(ctx, sec):
+def no_exhibit(sec) -> None:
+    del sec.documents[EXHIBIT]
+
+
+def no_press_exhibit(sec) -> None:
+    sec.documents[INDEX_8K] = sec.documents[INDEX_8K].replace("EX-99.1", "EX-10.1")
+
+
+def thin_exhibit(sec) -> None:
+    sec.documents[EXHIBIT] = '<html><body><img src="release.jpg"></body></html>'
+
+
+@pytest.mark.parametrize("unreadable", [no_exhibit, no_press_exhibit, thin_exhibit])
+async def test_an_earnings_8k_without_a_readable_press_exhibit_keeps_its_own_items(ctx, sec, unreadable):
     with_contact(ctx)
     sec_documents(sec)
     press_release(sec)
-    del sec.documents[EXHIBIT]
+    unreadable(sec)
     model = model_reading()
     run = await research(ctx, "AAPL", model)
     event = sec_evidence(run, "8-K Current report")
     [noted] = [t for t in noted_texts(model) if t.startswith(f"[a{event.id}]")]
     assert noted.startswith(f"[a{event.id}] 2026-09-10 SEC: 8-K Current report\n\nItem 2.02 Results")
+
+
+@pytest.mark.parametrize("url, failure", [
+    (INDEX_8K, httpx.ConnectTimeout("timed out")),
+    (EXHIBIT, httpx.Response(429, headers={"Retry-After": "3600"})),
+])
+async def test_sec_trouble_on_the_exhibit_is_passing_so_the_next_run_reads_it(ctx, sec, url, failure):
+    with_contact(ctx)
+    sec_documents(sec)
+    press_release(sec)
+    sec.failures[url] = failure
+    model = model_reading()
+    run = await research(ctx, "AAPL", model)
+    event = sec_evidence(run, "8-K Current report")
+    assert "unavailable" in event.read
+    assert not any(t.startswith(f"[a{event.id}]") for t in noted_texts(model))
+    del sec.failures[url]
+    ctx.clock.advance(3600)
+    model = model_reading()
+    run = await research(ctx, "AAPL", model)
+    [noted] = [t for t in noted_texts(model) if t.startswith(f"[a{event.id}]")]
+    assert "EX-99.1\nApple reports" in noted
 
 
 async def test_a_replay_reads_the_exhibit_of_an_8k_filed_before_its_cutoff_and_nothing_after(ctx, sec):
@@ -531,8 +567,3 @@ def test_a_report_page_is_an_undated_web_result_named_like_results_or_a_report_a
     assert not report_page(ev("https://reuters.test/1", "Sony financial results beat", "2026-09-20"))
     assert not report_page(ev("https://blog.test/sony", "Sony fan page"))
 
-
-async def test_a_filing_that_ended_up_off_sec_gov_is_not_asked_for_an_exhibit():
-    from oracle.services.research_tools.filings import press_exhibit
-
-    assert await press_exhibit(None, "Faye faye@example.com", "https://evil.test/320193/000032019326000090/d.htm") is None

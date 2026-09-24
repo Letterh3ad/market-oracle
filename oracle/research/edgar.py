@@ -4,6 +4,7 @@ second."""
 
 from __future__ import annotations
 
+import html
 import re
 from bisect import bisect_right
 from dataclasses import dataclass
@@ -23,8 +24,8 @@ EVENT = "8-K"
 RECENT_EVENTS = timedelta(days=30)
 # What one note call reads: text past it would be stored and never looked at.
 FILING_TEXT = MAX_NOTE_TEXT
-# Below this a report's sections are likely a stub ("incorporated by reference"), so the
-# start of the document says more.
+# Below this a report's sections are likely a stub ("incorporated by reference"), so it is
+# read as if it had no item headings; and a press item only points at its exhibit.
 MIN_SECTIONS = 500
 
 # Headings start a line; the item number and its title may sit on separate lines, and the
@@ -36,14 +37,15 @@ _RISKS = re.compile(rf"^[ \t]*item\s*1a{_SEP}risk\s+factors", re.I | re.M)
 _ITEM = re.compile(r"^[ \t]*item\s*(\d\.\d{2})", re.I | re.M)
 # Only lists the exhibits.
 _EXHIBITS = "9.01"
-# Results, and press releases under Regulation FD or "other events": the item text only
+# Results, and press releases under Regulation FD or "other events": the item text mostly
 # points at the exhibit that says it.
 PRESS_ITEMS = frozenset({"2.02", "7.01", "8.01"})
-_PRESS = re.compile(r"EX-99(?:\.\d+)?", re.I)
+# Some filers pad the exhibit number (EX-99.01).
+_PRESS = re.compile(r"EX-99(?:\.0*(\d+))?", re.I)
 _ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.I | re.S)
 _CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.I | re.S)
 _HREF = re.compile(r'href="([^"]+)"', re.I)
-_TAG = re.compile(r"<[^>]+>|&nbsp;|&#160;")
+_TAG = re.compile(r"<[^>]+>")
 # Reports without "Item N." headings (Citigroup's) still head their MD&A in words.
 _WORDED = re.compile(r"^[ \t]*(?:management\S*\s+discussion\s+and\s+analysis|executive\s+summary|"
                      r"results\s+of\s+operations)\b[^\n]{0,80}$", re.I | re.M)
@@ -147,16 +149,17 @@ def find_exhibit(index_html: str, index: str) -> Exhibit | None:
     """The filing's EX-99.1 from its index page, else its first EX-99.x. Only a document in
     the filing's own folder, so the index cannot send the reader elsewhere."""
     folder = index.rsplit("/", 1)[0] + "/"
-    found = []
+    found: list[tuple[bool, Exhibit]] = []
     for row in _ROW.findall(index_html):
-        cells = [_TAG.sub(" ", c).strip() for c in _CELL.findall(row)]
+        cells = [html.unescape(_TAG.sub(" ", c)).strip() for c in _CELL.findall(row)]
         href = _HREF.search(row)
-        if len(cells) < 4 or not href or not _PRESS.fullmatch(cells[3]):
+        press = _PRESS.fullmatch(cells[3]) if len(cells) >= 4 else None
+        if not press or not href:
             continue
-        url = urljoin(index, href.group(1).removeprefix("/ix?doc="))
+        url = urljoin(index, html.unescape(href.group(1)).removeprefix("/ix?doc="))
         if url.startswith(folder) and "/" not in url[len(folder):]:
-            found.append(Exhibit(cells[3].upper(), url, cells[1]))
-    return next((e for e in found if e.kind == "EX-99.1"), found[0] if found else None)
+            found.append((press.group(1) == "1", Exhibit(cells[3].upper(), url, cells[1])))
+    return next((e for first, e in found if first), found[0][1] if found else None)
 
 
 def reads_exhibit(text: str) -> bool:
@@ -165,9 +168,9 @@ def reads_exhibit(text: str) -> bool:
 
 
 def with_exhibit(exhibit: Exhibit, exhibit_text: str, text: str, cap: int = FILING_TEXT) -> str:
-    """An 8-K read as its labelled press exhibit, then its items the exhibit does not cover."""
+    """An 8-K read as its labelled press exhibit, then its items that say more than point at it."""
     items = _items(text, [m.start() for m in _HEADING.finditer(text)])
-    others = [s for item, s in items.items() if item not in PRESS_ITEMS]
+    others = [s for item, s in items.items() if item not in PRESS_ITEMS or len(s) >= MIN_SECTIONS]
     return _fit([f"{exhibit.label}\n{exhibit_text.strip()}", *others], cap)
 
 

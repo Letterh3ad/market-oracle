@@ -106,6 +106,13 @@ def test_ex_99_1_wins_over_other_press_exhibits_and_without_it_the_first_ex_99_i
                        ("Press release", "ex99.htm", "EX-99"), ("Slides", "ex992.htm", "EX-99.2"))
     found = edgar.find_exhibit(later, INDEX)
     assert found.url == f"{FILED}/ex99.htm" and found.label == "EX-99 Press release"
+    padded = index_rows(("Slides", "ex992.htm", "EX-99.2"), ("Press release", "ex9901.htm", "EX-99.01"))
+    assert edgar.find_exhibit(padded, INDEX).url == f"{FILED}/ex9901.htm"
+
+
+def test_index_cells_are_read_as_text_with_their_entities_decoded():
+    found = edgar.find_exhibit(index_rows(("Q3 results &amp; outlook", "ex991.htm", "EX-99.1")), INDEX)
+    assert found.label == "EX-99.1 Q3 results & outlook"
 
 
 def test_no_press_exhibit_or_one_outside_the_filing_is_none():
@@ -131,6 +138,14 @@ def test_an_earnings_8k_reads_as_its_labelled_exhibit_then_its_other_items():
     for left_out in ("A copy is furnished", "Inline XBRL", "emerging growth", "duly caused"):
         assert left_out not in kept
     assert len(edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), exhibit * 100, "", cap=800)) <= 800
+
+
+def test_a_press_item_that_says_more_than_a_pointer_is_kept_after_the_exhibit():
+    event = "An investor day was held; " * 40
+    text = f"Cover\nItem 8.01 Other Events.\n{event}\nItem 7.01 Regulation FD.\nSee Exhibit 99.1.\nItem 9.01 Exhibits"
+    kept = edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), "Press release text.", text)
+    assert kept.startswith("EX-99.1\nPress release text.\n\nItem 8.01 Other Events.\nAn investor day")
+    assert "See Exhibit 99.1" not in kept
 
 
 CITI = (FIXTURES / "citi-10q.txt").read_text(encoding="utf-8")

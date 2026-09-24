@@ -19,6 +19,8 @@ class FakeSec:
         """cik -> [(form, filing date "YYYY-MM-DD", accession "0000320193-26-000077", document, description)]"""
         self.documents: dict[str, str] = {}
         """archive URL -> HTML"""
+        self.failures: dict[str, httpx.Response | Exception] = {}
+        """archive URL -> the response or transport error it fails with"""
         self.requests: list[httpx.Request] = []
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -36,6 +38,11 @@ class FakeSec:
             names = ("form", "filingDate", "accessionNumber", "primaryDocument", "primaryDocDescription")
             recent = {n: [r[i] for r in rows] for i, n in enumerate(names)}
             return httpx.Response(200, json={"cik": m.group(1), "filings": {"recent": recent, "files": []}})
+        failure = self.failures.get(str(request.url))
+        if isinstance(failure, Exception):
+            raise failure
+        if failure is not None:
+            return failure
         body = self.documents.get(str(request.url))
         if body is not None:
             return httpx.Response(200, text=body, headers={"Content-Type": "text/html"})

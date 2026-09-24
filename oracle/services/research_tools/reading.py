@@ -110,14 +110,18 @@ class Reader:
 
     async def _filing(self, form: str, page: Page) -> tuple[str, str]:
         """Where a filing's key text was read, and the text: an earnings or press 8-K's from
-        its press exhibit, which its own items only point at."""
+        its press exhibit, which its own items only point at. SEC trouble is raised, so a
+        later run reads the exhibit; an exhibit that is missing or unreadable for good leaves
+        the 8-K's own items, which still say what happened."""
         if form == edgar.EVENT and edgar.reads_exhibit(page.text):
             try:
                 exhibit = await press_exhibit(self._client, self._contact, page.url)
                 if exhibit:
                     read = await read_page(self._client, exhibit.url, self._contact, FILING_BYTES)
-                    return read.url, edgar.with_exhibit(exhibit, read.text, page.text)
-            # The 8-K's own items still say what happened.
+                    if len(read.text) >= THIN_PAGE:
+                        return read.url, edgar.with_exhibit(exhibit, read.text, page.text)
+            except Unavailable:
+                raise
             except ToolError:
                 log.info("reading the press exhibit of %s failed", page.url, exc_info=True)
         return page.url, edgar.key_text(form, page.text)
