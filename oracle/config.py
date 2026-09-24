@@ -150,6 +150,8 @@ class DiscoveryConfig:
     """The discovered list never holds more."""
     never: tuple[str, ...] = ("Tesla",)
     """Company names never added, matched as whole words on every listing's name."""
+    ai_trades: bool = True
+    """The AI account trades discovered listings' verdicts; off, it leaves them alone."""
 
 
 PER_TICK_RANGE = (1, 20)
@@ -539,6 +541,7 @@ def _discovery(raw: object) -> DiscoveryConfig:
     never = d.never
     checks = {
         "enabled": (isinstance(d.enabled, bool), "true or false"),
+        "ai_trades": (isinstance(d.ai_trades, bool), "true or false"),
         "per_tick": (_whole(d.per_tick, *PER_TICK_RANGE), "a whole number from {} to {}".format(*PER_TICK_RANGE)),
         "max_total": (_whole(d.max_total, *MAX_TOTAL_RANGE), "a whole number from {} to {}".format(*MAX_TOTAL_RANGE)),
         "never": (isinstance(never, (list, tuple)) and all(isinstance(n, str) and n.strip() for n in never),

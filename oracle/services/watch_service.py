@@ -20,7 +20,8 @@ from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
     "DEFAULT_LIST", "Sibling", "Swapped", "WatchLine", "Watched", "WatchlistSummary",
-    "create_watchlist", "show_watchlist", "swap", "unwatch", "watch", "watchlist_symbols", "watchlists",
+    "create_watchlist", "discovered_only", "own_picks", "show_watchlist", "swap", "unwatch", "watch",
+    "watchlist_symbols", "watchlists",
 ]
 
 DEFAULT_LIST = "main"
@@ -140,6 +141,17 @@ def _existing(repo: WatchlistRepo, name: str) -> str:
 
 def watchlists(ctx: AppContext) -> list[WatchlistSummary]:
     return WatchlistRepo(ctx.conn).summaries()
+
+
+def own_picks(ctx: AppContext) -> list[str]:
+    """Listings on the user's own lists; one also discovered still counts as theirs."""
+    return WatchlistRepo(ctx.conn).symbols_outside(DISCOVERED_LIST)
+
+
+def discovered_only(ctx: AppContext) -> list[str]:
+    """Listings only the discovered list holds."""
+    repo = WatchlistRepo(ctx.conn)
+    return sorted(set(repo.all_symbols()) - set(repo.symbols_outside(DISCOVERED_LIST)))
 
 
 def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:

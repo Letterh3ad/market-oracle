@@ -35,6 +35,7 @@ from oracle.services.research_tools import (
     market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
+from oracle.services.watch_service import discovered_only
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.job_history import INTERRUPTED
@@ -45,7 +46,7 @@ from oracle.system import idle
 
 __all__ = [
     "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "check_as_of", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
-    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "research_run", "stale_research",
+    "latest_research", "latest_verdict", "pc_in_use", "refresh_research", "report_history", "research", "research_progress", "research_run", "stale_research",
     "sweep_interrupted",
 ]
 
@@ -145,7 +146,7 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
     started = ctx.clock.utcnow()
     due = stale_research(ctx)
     done = Refresh(len(due))
-    if due and _pc_in_use(ctx):
+    if due and pc_in_use(ctx):
         return _defer(done, due, "PC in use")
     for i, symbol in enumerate(due):
         if ctx.clock.utcnow() - started >= timedelta(minutes=ctx.config.ai_account.research_budget_min):
@@ -167,14 +168,16 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
 
 def stale_research(ctx: AppContext) -> list[str]:
     """The watched listings whose report is missing, has no valid verdict, is too old or is
-    behind a price move (`[ai_account]`), in the order a tick researches them."""
+    behind a price move (`[ai_account]`), in the order a tick researches them: the user's own
+    picks before discovered ones."""
     ai = ctx.config.ai_account
     known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
     due = due_for_research(known, ctx.clock.utcnow().date(), ai.max_verdict_age_days, ai.move_threshold)
-    return [d.symbol for d in due]
+    discovered = set(discovered_only(ctx))
+    return sorted((d.symbol for d in due), key=lambda s: s in discovered)
 
 
-def _pc_in_use(ctx: AppContext) -> bool:
+def pc_in_use(ctx: AppContext) -> bool:
     """With `research_when_idle`, whether someone used the PC too recently for research to
     take its GPU. A PC that cannot tell counts as idle, so research is never held off forever."""
     s = ctx.config.schedule

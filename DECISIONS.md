@@ -1485,3 +1485,33 @@ accounts) until ticket 03 decides what the strategy account trades. Migration m0
 on the deep-research branch).
 **Alternatives:** Flagging removals on the provenance row (misses listings added by hand);
 refusing manual runs when disabled (a button that does nothing is confusing).
+
+## 2026-09-24 - Discovery in the tick: a stage before research, capped in time
+**Context:** Ticket 03 runs discovery unattended. It uses the network and the model, and it
+delays research, which has its own budget.
+**Decision:** A `discover` stage between `analyse` and `research`, run only with
+`[discovery] enabled` and `[automation] enabled`, and held like research while the PC is in
+use (`research_when_idle`). It may run for at most 10 minutes and never more than a third of
+`research_budget_min` (fixed, not a setting); at the limit it is cancelled and the summary
+lists what it had already added. A failed source makes the stage partial, a crash fails only
+the stage, and "Discover now" already running is left to finish. The stage summary is plain
+words ("added 6902.T DENSO Corporation (same industry as 7203.T)", or why nothing was added),
+and the Ledgers AI panel shows a one-line account of discovery with the last tick's result.
+`stale_research` puts the user's own picks before discovered listings, so the tick and
+"Research all stale" both research them first.
+**Alternatives:** A separate `[discovery] budget_min` setting (one more knob for little gain);
+deducting discovery time from the research budget (would couple the two stages).
+
+## 2026-09-24 - Discovered listings: the AI account trades them, the strategy account and buy-and-hold do not
+**Context:** The comparison between the strategy and AI accounts should stay fair, and
+buy-and-hold is there to benchmark the user's hand-picked list.
+**Decision:** Prices, FX, analysis and research cover every watched listing, discovered ones
+included. The strategy account decides only over the user's own picks (a listing on any
+list besides `discovered`); a discovered listing it already holds stays in so it can still be
+sold. The AI account trades discovered listings while `[discovery] ai_trades` (default true,
+in the Settings form) is on; off, each is logged as a skip with the reason and the setting,
+and a held one can still be sold. Buy-and-hold holds only the user's own picks and names the
+discovered ones it leaves out in a note.
+**Alternatives:** The strategy account trading discovered listings too (the comparison would
+then partly measure discovery, not research); buy-and-hold of everything watched (its
+benchmark would move whenever discovery adds a company).

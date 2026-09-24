@@ -37,7 +37,8 @@ async def test_the_list_shows_why_with_evidence_links_and_remove_and_move_work(s
     repo.add("7203.T", "k1", "Toyota Motor Corporation", "related", "AAPL", "partner", [a], "2026-09-23T00:00:00Z")
     repo.add("KO", "k2", "The Coca-Cola Company", "related", "AAPL", "peer", [], "2026-09-23T00:00:00Z")
     body = (await seeded.get("/api/discovery")).json()
-    assert body["settings"] == {"enabled": True, "per_tick": 1, "max_total": 10, "never": ["Tesla"]}
+    assert body["settings"] == {"enabled": True, "per_tick": 1, "max_total": 10, "never": ["Tesla"],
+                                "ai_trades": True}
     first = body["items"][0]
     assert (first["symbol"], first["why"]) == ("7203.T", "named as a partner of AAPL in the news")
     [e] = first["evidence"]

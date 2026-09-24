@@ -138,7 +138,7 @@ function sellButton(p) {
   } }, "Sell");
 }
 
-function column(a, base, rules, ai, stale) {
+function column(a, base, rules, ai, stale, discovery) {
   const manual = a.name === "manual";
   const gain = (p) => (p.value == null ? null : p.value - p.cost);
   const heads = [["Symbol"], ["Shares", null, 1], [`Cost (${base})`, "position_cost", 1],
@@ -166,6 +166,7 @@ function column(a, base, rules, ai, stale) {
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
     a.name === "ai" ? aiResearch(ai) : null, a.name === "ai" ? live.staleButton(stale, say) : null,
+    a.name === "ai" ? el("p", { class: "dim small" }, discovery) : null,
     metrics(a, base), manual ? trading(base) : null,
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,
@@ -294,7 +295,7 @@ async function load(mine) {
   repaint(mine, [
     jobs(base),
     comparison(body.compare, base),
-    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale))),
+    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale, body.discovery))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled

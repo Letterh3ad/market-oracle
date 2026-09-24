@@ -17,6 +17,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
+from oracle.services.watch_service import discovered_only, own_picks
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
@@ -25,14 +26,13 @@ from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision
 from oracle.store.research import ResearchRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
-from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
     "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
-    "strategy_rules", "strategy_step",
+    "strategy_rules", "strategy_step", "traded_by",
 ]
 
 ACCOUNTS = ("strategy", "ai", "manual")
@@ -41,6 +41,8 @@ TRADERS = ("strategy", "ai")
 GONE = "no longer in the universe"
 AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
           "or set [ai_account] enabled = true in oracle.toml")
+DISCOVERED_OFF = ("discovered, and the AI account does not trade discovered companies: turn it on in Settings "
+                  "([discovery] ai_trades)")
 
 
 @dataclass(frozen=True)
@@ -176,8 +178,7 @@ def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> st
 def strategy_step(ctx: AppContext) -> list[Decision]:
     """Run the strategy rules over every watched listing's latest lean and queue the
     resulting orders on the strategy account. Every decision, skips included, is logged."""
-    watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), watched)
+    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), traded_by(ctx, "strategy"))
     return _step(ctx, "strategy", found, skips, {})
 
 
@@ -187,9 +188,22 @@ def ai_step(ctx: AppContext) -> list[Decision] | None:
     is off. Every decision is logged with the research run its verdict came from."""
     if not ctx.config.ai_account.enabled:
         return None
-    watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, skips, runs = _usable_verdicts(ctx, watched)
+    traded = traded_by(ctx, "ai")
+    found, skips, runs = _usable_verdicts(ctx, traded)
+    skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
     return _step(ctx, "ai", found, skips, runs)
+
+
+def traded_by(ctx: AppContext, account: str) -> list[str]:
+    """The watched listings a trading account decides over. The strategy account keeps to
+    the user's own picks, so its record stays a fair test of the rules on them; the AI
+    account adds discovered ones while `[discovery] ai_trades` is on. A discovered listing
+    already held stays in, so it can still be sold."""
+    mine = own_picks(ctx)
+    if account == "ai" and ctx.config.discovery.ai_trades:
+        return sorted(mine + discovered_only(ctx))
+    held = {p.symbol for p in account_view(ctx, account).positions}
+    return sorted(mine + [s for s in discovered_only(ctx) if s in held])
 
 
 def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
@@ -333,7 +347,7 @@ def comparison(ctx: AppContext) -> Comparison:
         lines.append(Line("buy_and_hold", "Buy and hold: starts with the AI account.", (), 0.0, 0, 0.0))
         return Comparison(None, tuple(lines), (), notes)
     closes = {}
-    for symbol in WatchlistRepo(ctx.conn).all_symbols():
+    for symbol in own_picks(ctx):
         try:
             closes[symbol] = [(c.bar.date, c.close_base) for c in price_history_in_base(ctx, symbol)]
         except UnknownSymbol:
@@ -347,6 +361,9 @@ def comparison(ctx: AppContext) -> Comparison:
     notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
     if left_out:
         notes.append(f"Left out of buy and hold, no prices from {start.isoformat()} on: {', '.join(left_out)}.")
+    if found := discovered_only(ctx):
+        notes.append(f"Buy and hold measures your own picks, so the discovered listings are left out: "
+                     f"{', '.join(found)}.")
     return Comparison(start, tuple(lines), tuple(left_out), tuple(notes))
 
 

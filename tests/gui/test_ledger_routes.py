@@ -16,6 +16,7 @@ async def test_every_account_starts_level_side_by_side(loaded):
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
         assert (a["positions"], a["pending"], a["sells"], a["history"]) == ([], [], [], [])
+    assert body["discovery"].startswith("Discovery: 0 discovered companies, traded by the AI account")
 
 
 async def test_a_queued_buy_shows_as_pending_on_its_account(ctx, loaded):

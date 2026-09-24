@@ -17,7 +17,8 @@ async def show(ctx: AppContext = Depends(get_ctx)) -> dict:
     """The discovered list, each company with why it was found and the headlines behind it."""
     d = ctx.config.discovery
     return {
-        "settings": {"enabled": d.enabled, "per_tick": d.per_tick, "max_total": d.max_total, "never": list(d.never)},
+        "settings": {"enabled": d.enabled, "per_tick": d.per_tick, "max_total": d.max_total, "never": list(d.never),
+                     "ai_trades": d.ai_trades},
         "items": [{
             "symbol": line.symbol, "name": line.name, "why": line.why, "seed": line.seed, "relation": line.relation,
             "added_at": line.added_at,
