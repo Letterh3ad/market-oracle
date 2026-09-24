@@ -50,7 +50,7 @@ class CompanyLink:
     name: str | None
     relations: tuple[str, ...]
     source: str
-    """What found it first."""
+    """What found its strongest link."""
     first_seen: str
     last_seen: str
     evidence: tuple[DiscoveryEvidence, ...]

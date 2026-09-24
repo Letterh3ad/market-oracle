@@ -977,7 +977,7 @@ async def test_an_article_first_found_elsewhere_still_says_which_link_found_it_i
     assert articles(first)[0].via is None
     run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Microsoft Apple"), step("final", "Done.")))
     [deal] = articles(run)
-    assert (deal.query, deal.via) == ("Apple shares", "Microsoft (MSFT), a partner")
+    assert (deal.query, deal.via) == ("Microsoft Apple", "Microsoft (MSFT), a partner")
     third = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple shares"), step("final", "Done.")))
     assert articles(third)[0].via is None, "no link label from another run's search"
 

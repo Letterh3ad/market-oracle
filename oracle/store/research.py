@@ -123,7 +123,7 @@ class ResearchRepo:
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
         evidence = self._conn.execute(
-            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, "
+            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, COALESCE(e.query, a.query), "
             "(SELECT q.via FROM research_queries q WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE "
             "AND q.via IS NOT NULL LIMIT 1), t.failed, n.about, "
             "n.facts, n.failed FROM research_evidence e JOIN articles a ON a.id = e.article_id "
