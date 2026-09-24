@@ -404,13 +404,12 @@ async def update_study_prices(ctx: AppContext) -> tuple[ListingOutcome, ...]:
     rested = {s: ListingOutcome(s, 0, None, None, f"failed {streaks.get(s, PRICE_TRIES)} times in a row: next "
                                 f"try after {resting[s]:%Y-%m-%d %H:%M} UTC")
               for s in score.refetch_listings if s in resting and s not in due}
-    fetched = {o.symbol: o for o in out}
     today = now.date().isoformat()
     _save_price_state(ctx, study.id, {
         "checked_at": to_utc_iso(now), "failures": [o.symbol for o in out if o.error] + list(rested),
         "fetched": {**state.get("fetched", {}), **{o.symbol: today for o in out if not o.error and not o.skipped}},
         "streaks": streaks, "rest_until": {s: to_utc_iso(t) for s, t in resting.items()}})
-    return tuple(fetched.get(s) or rested[s] for s in score.refetch_listings)
+    return (*out, *rested.values())
 
 
 def _price_state(ctx: AppContext, study_id: int) -> dict:

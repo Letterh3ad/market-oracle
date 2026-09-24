@@ -622,7 +622,7 @@ class ReplayPacer:
         replays = {c.job_id for c in running}
         longest = 3 * self._expected(repo, study)
         cap = max(longest, HARD_CAP)
-        why = "3 times the longest recent replay" if longest >= HARD_CAP else "the least any replay is given"
+        cap_why = "3 times the longest recent replay" if longest >= HARD_CAP else "the least any replay is given"
         now = self._ctx.clock.utcnow()
         for cell in running:
             job = self._runner.get(cell.job_id) if cell.job_id is not None else None
@@ -630,7 +630,7 @@ class ReplayPacer:
                 continue
             # From the job's own start: an adopted Activity retry may wait in the queue first.
             if job.state == "running" and job.started_at and now - job.started_at > cap:
-                self._timed_out[job.id] = f"stopped after running over {cap // timedelta(minutes=1)} minutes ({why})"
+                self._timed_out[job.id] = f"stopped after running over {cap // timedelta(minutes=1)} minutes ({cap_why})"
                 self._runner.cancel(job.id)
             elif why := self._in_the_way(replays):
                 self._preempted.add(job.id)
