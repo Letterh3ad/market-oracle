@@ -6,11 +6,11 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 
 from oracle.config import (
-    DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
-    model_profiles, profile_tables, with_settings, without_section,
+    DEFAULT_PROFILE, PROFILE_KEYS_IN_FILE, PROVIDER_KEYS, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile,
+    check_profile_name, model_profiles, profile_tables, with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
 from oracle.research.llm import ChatModel, ModelError
@@ -33,7 +33,7 @@ BUILDERS: dict[str, Builder] = {
     "claude_api": lambda ctx, name, p: ClaudeChat(p.model, p.timeout_s, api_key=_key(name, p), base_url=p.base_url,
                                                   **_key_source(name, p)),
     "openai_compatible": lambda ctx, name, p: OpenAICompatibleChat(
-        p.model, p.base_url, p.timeout_s, api_key=_key(name, p), transport=ctx.transport, **_key_source(name, p)),
+        p.model, p.base_url, p.timeout_s, p.context, api_key=_key(name, p), transport=ctx.transport, **_key_source(name, p)),
 }
 
 MODEL_JOBS = ("research", "discovery", "discovery_chat")
@@ -63,6 +63,8 @@ class RunModel:
 def resolve_model(ctx: AppContext, profile: str, model: ChatModel | None = None) -> RunModel:
     """The named profile's model (or `model`, which a test or caller supplies) and its context."""
     p = _profile(ctx, profile)
+    if p.unusable and model is None:
+        raise ModelUnavailable(f"model profile {profile} is unusable: {p.unusable}; fix it in Settings > Models")
     return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context)
 
 
@@ -102,7 +104,8 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
     return [{
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
-        "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
+        "key_fallback": PROVIDERS[p.provider].fallback_key, "unusable": p.unusable,
+        "from_llm": name not in ctx.config.models,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
     } for name, p in model_profiles(ctx.config).items()]
 
@@ -143,7 +146,6 @@ async def try_model_profile(ctx: AppContext, name: str) -> ModelTest:
     return ModelTest(name, True, seconds)
 
 
-PROFILE_KEYS = tuple(f.name for f in fields(ModelProfile))
 
 
 def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], create: bool) -> None:
@@ -169,7 +171,7 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
         table["key"] = old.key
     _checked(check_profile, name, table)
     section = f"models.{name}"
-    edit_config(ctx, lambda text: with_settings(text, section, {k: table.get(k) for k in PROFILE_KEYS}),
+    edit_config(ctx, lambda text: with_settings(text, section, {k: table.get(k) for k in PROFILE_KEYS_IN_FILE}),
                 f"edit [{section}]")
     reload_live_settings(ctx)
 

@@ -4,15 +4,16 @@ import httpx
 import pytest
 
 from oracle.research.llm import ModelError
-from oracle.research.openai_compatible import MAX_REASONING_TOKENS, MAX_REPLY_TOKENS, OpenAICompatibleChat, chat_url
+from oracle.research.openai_compatible import MAX_REPLY_TOKENS, REPLY_MARGIN, OpenAICompatibleChat, chat_url
 from tests.fakes.openai import FakeOpenAI
 
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
+CONTEXT = 16384
 ASK = [{"role": "system", "content": "You answer in JSON."}, {"role": "user", "content": "hi"}]
 
 
-def chat(server, base="http://llm.test/v1", **kw):
-    return OpenAICompatibleChat("local-8b", base, 5.0, transport=httpx.MockTransport(server.handle), **kw)
+def chat(server, base="http://llm.test/v1", context=CONTEXT, **kw):
+    return OpenAICompatibleChat("local-8b", base, 5.0, context, transport=httpx.MockTransport(server.handle), **kw)
 
 
 async def test_a_reply_is_constrained_to_the_closed_schema_and_parsed():
@@ -150,7 +151,7 @@ async def test_a_malformed_reply_is_a_model_error_not_a_crash(choice):
     def handle(request):
         return httpx.Response(200, json={"choices": [choice]})
 
-    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle))
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, transport=httpx.MockTransport(handle))
     with pytest.raises(ModelError, match="no usable answer"):
         await model.reply(ASK, SCHEMA)
 
@@ -162,7 +163,7 @@ async def test_a_reply_is_bounded_in_wall_clock_time_not_only_per_read():
         async def handle_async_request(self, request):
             await asyncio.sleep(10)
 
-    model = OpenAICompatibleChat("m", "http://llm.test/v1", 0.05, transport=Trickle())
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 0.05, CONTEXT, transport=Trickle())
     with pytest.raises(ModelError, match="took longer than 0s"):
         await model.reply(ASK, SCHEMA)
 
@@ -173,8 +174,8 @@ async def test_a_reply_is_capped_and_a_model_that_wants_max_completion_tokens_ge
     await model.reply(ASK, SCHEMA)
     await model.reply(ASK, SCHEMA)
     caps = [{k: b[k] for k in ("max_tokens", "max_completion_tokens") if k in b} for b in server.bodies]
-    assert caps == [{"max_tokens": MAX_REPLY_TOKENS}, {"max_completion_tokens": MAX_REASONING_TOKENS},
-                    {"max_completion_tokens": MAX_REASONING_TOKENS}]
+    assert caps == [{"max_tokens": MAX_REPLY_TOKENS}, {"max_completion_tokens": MAX_REPLY_TOKENS},
+                    {"max_completion_tokens": MAX_REPLY_TOKENS}]
     assert all(b["response_format"]["type"] == "json_schema" for b in server.bodies)
 
 
@@ -183,6 +184,42 @@ async def test_a_server_taking_neither_cap_is_asked_without_one():
     await chat(server).reply(ASK, SCHEMA)
     assert [("max_tokens" in b, "max_completion_tokens" in b) for b in server.bodies] == [
         (True, False), (False, True), (False, False)]
+
+
+def ask(chars):
+    return [{"role": "system", "content": "You answer in JSON."}, {"role": "user", "content": "x" * chars}]
+
+
+async def test_the_cap_is_sized_to_the_room_the_prompt_leaves():
+    server = FakeOpenAI({"ok": True}, {"ok": True}, {"ok": True}, window=CONTEXT)
+    model = chat(server)
+    await model.reply(ask(30_000), SCHEMA)
+    await model.reply(ask(10), SCHEMA)
+    await model.reply(ask(60_000), SCHEMA)
+    long, short, longest = (b["max_tokens"] for b in server.bodies)
+    assert 1024 < long < MAX_REPLY_TOKENS and CONTEXT - long - REPLY_MARGIN >= 30_000 // 3
+    assert short == MAX_REPLY_TOKENS
+    assert longest == 1024, "never below the reply room the prompts were cut to leave"
+
+
+@pytest.mark.parametrize("wording", [0, 1])
+async def test_a_server_window_smaller_than_the_profile_gets_that_reply_uncapped_never_a_format_fallback(wording):
+    server = FakeOpenAI({"ok": True}, {"ok": True}, window=8000, wording=wording)
+    model = chat(server)
+    assert await model.reply(ask(20_000), SCHEMA) == {"ok": True}
+    assert [("max_tokens" in b, b["response_format"]["type"]) for b in server.bodies] == [
+        (True, "json_schema"), (False, "json_schema")]
+    await model.reply(ask(10), SCHEMA)
+    assert server.bodies[2]["max_tokens"] == MAX_REPLY_TOKENS, "only that reply went uncapped"
+
+
+@pytest.mark.parametrize("wording", [0, 1])
+async def test_a_prompt_longer_than_the_server_window_says_so(wording):
+    server = FakeOpenAI(window=1000, wording=wording)
+    with pytest.raises(ModelError, match="longer than the server's context.*context") as caught:
+        await chat(server).reply(ask(20_000), SCHEMA)
+    assert "refused both" not in str(caught.value)
+    assert all(b["response_format"]["type"] == "json_schema" for b in server.bodies) and len(server.bodies) == 2
 
 
 @pytest.mark.parametrize("error", [
@@ -196,7 +233,7 @@ async def test_temperature_is_kept_when_the_error_is_not_about_it(error):
     def handle(request):
         return replies.pop(0) if replies else server.handle(request)
 
-    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle))
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, transport=httpx.MockTransport(handle))
     await model.reply(ASK, SCHEMA)
     assert server.bodies[0]["temperature"] == 0 and server.bodies[0]["response_format"]["type"] == "json_object"
 
@@ -208,7 +245,8 @@ async def test_temperature_named_as_the_param_is_dropped():
     def handle(request):
         return replies.pop(0) if replies else server.handle(request)
 
-    await OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle)).reply(ASK, SCHEMA)
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, transport=httpx.MockTransport(handle))
+    await model.reply(ASK, SCHEMA)
     assert "temperature" not in server.bodies[0] and server.bodies[0]["response_format"]["type"] == "json_schema"
 
 
@@ -246,7 +284,8 @@ async def test_the_key_never_follows_a_redirect_to_another_host():
         seen.append(request)
         return httpx.Response(307, headers={"location": "http://elsewhere.test/v1/chat/completions"})
 
-    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, api_key="sk-x", transport=httpx.MockTransport(handle))
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, api_key="sk-x",
+                                 transport=httpx.MockTransport(handle))
     with pytest.raises(ModelError, match="HTTP 307"):
         await model.reply(ASK, SCHEMA)
     assert [r.url.host for r in seen] == ["llm.test"]

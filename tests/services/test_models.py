@@ -259,6 +259,16 @@ def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeyp
     assert provider_defaults()["ollama"]["base_url_required"] is False
 
 
+async def test_an_unusable_profile_loads_but_is_refused_when_built_and_shown_in_the_rows(tmp_path):
+    with _ctx(tmp_path, '[models.deep]\nprovider = "claude_api"\nmodel = "m"\nbase_url = "http://proxy.lan:8080"\n'
+                        'key = "sk-secret"\n') as ctx:
+        with pytest.raises(ModelUnavailable, match="model profile deep is unusable: .*unencrypted to proxy.lan"):
+            model_for(ctx, "deep")
+        result = await try_model_profile(ctx, "deep")
+        assert not result.ok and "unencrypted" in result.error
+        assert "unencrypted" in model_profile_rows(ctx)[1]["unusable"] and model_profile_rows(ctx)[0]["unusable"] is None
+
+
 def test_a_saved_key_never_follows_a_switch_to_another_provider(tmp_path):
     with _ctx(tmp_path) as ctx:
         save_model_profile(ctx, "deep", {"provider": "claude_api", "model": "m", "key": "sk-ant"}, create=True)

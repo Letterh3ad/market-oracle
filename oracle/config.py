@@ -247,6 +247,11 @@ class ModelProfile:
     """The environment variable holding the key."""
     key: str | None = field(default=None, repr=False)
     """The key itself, kept in oracle.toml; never shown."""
+    unusable: str | None = field(default=None, metadata={"derived": True})
+    """Why a profile the file holds may not be used (a rule it predates); never set in the file."""
+
+
+PROFILE_KEYS_IN_FILE = tuple(f.name for f in fields(ModelProfile) if not f.metadata.get("derived"))
 
 
 @dataclass(frozen=True)
@@ -517,7 +522,7 @@ def key_env_var(name: str) -> str:
 
 
 def _reject_unknown(raw: dict, cls: type, where: str) -> None:
-    unknown = sorted(set(raw) - {f.name for f in fields(cls)})
+    unknown = sorted(set(raw) - {f.name for f in fields(cls) if not f.metadata.get("derived")})
     if unknown:
         raise ConfigError(f"unknown key(s) in {where}: {', '.join(unknown)}")
 
@@ -817,7 +822,7 @@ def _models(raw: object) -> dict[str, ModelProfile]:
         if name.lower() in seen:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
-    return {name: check_profile(name, table) for name, table in raw.items()}
+    return {name: check_profile(name, table, strict=False) for name, table in raw.items()}
 
 
 def check_profile_name(name: object) -> str:
@@ -826,8 +831,10 @@ def check_profile_name(name: object) -> str:
     return name
 
 
-def check_profile(name: str, raw: object) -> ModelProfile:
-    """`[models.<name>]` as set (None where unset); raises ConfigError naming the bad key."""
+def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
+    """`[models.<name>]` as set (None where unset); raises ConfigError naming the bad key.
+    Not `strict` (loading the file), a break of the base_url rules a profile may predate
+    marks it `unusable` with a warning instead, so one old profile cannot stop the app."""
     where = f"models.{name}"
     if not isinstance(raw, dict):
         raise ConfigError(f"{where} must be a table")
@@ -848,8 +855,8 @@ def check_profile(name: str, raw: object) -> ModelProfile:
     low, high = PROFILE_CONTEXT_RANGE
     checks = {
         "model": (_text(p.model), "a model name like qwen3:8b"),
-        "base_url": (p.base_url is None or _plain_url(p.base_url),
-                     "an http(s) URL with no user, password, query or fragment"),
+        "base_url": (p.base_url is None or isinstance(p.base_url, str) and re.match(r"https?://", p.base_url),
+                     "an http(s) URL"),
         "context": (p.context is None or _whole(p.context, low, high), f"a whole number of tokens from {low} to {high}"),
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
                       and p.timeout_s > 0, "a positive number"),
@@ -863,11 +870,19 @@ def check_profile(name: str, raw: object) -> ModelProfile:
                           "not a key; put a key itself in key")
     if p.key is not None and not _text(p.key):
         raise ConfigError(f"{where}.key must be a non-empty string")
-    if (p.key or p.key_env) and p.base_url and not _safe_for_keys(p.base_url):
-        raise ConfigError(f"{where} would send its key unencrypted to {urlsplit(p.base_url).hostname}: use https://, "
-                          "or plain http:// only to this machine")
+    unusable = None
+    if p.base_url and not _plain_url(p.base_url):
+        # Never echoed: the user or query part may hold a password or key.
+        unusable = f"{where}.base_url must be an http(s) URL with no user, password, query or fragment"
+    elif (p.key or p.key_env) and p.base_url and not _safe_for_keys(p.base_url):
+        unusable = (f"{where} would send its key unencrypted to {urlsplit(p.base_url).hostname}: use https://, "
+                    "or plain http:// only to this machine")
+    if unusable and strict:
+        raise ConfigError(unusable)
+    if unusable:
+        log.warning("model profile %s is unusable until fixed: %s", name, unusable)
     return replace(p, timeout_s=None if p.timeout_s is None else float(p.timeout_s),
-                   key=p.key.strip() if p.key else None)
+                   key=p.key.strip() if p.key else None, unusable=unusable)
 
 
 KEY_PREFIXES = ("sk-", "sk_", "gsk_", "ghp_", "xai-", "AIza", "AKIA")

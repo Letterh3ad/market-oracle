@@ -14,16 +14,18 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from oracle.research.budget import CHARS_PER_TOKEN, REPLY_TOKENS
 from oracle.research.llm import ModelError, closed_schema
 
 NO_KEY = "give the model profile a key or key_env in Settings > Models"
 # Answers run to a few hundred tokens (Ollama's 1024 cap has room to spare); 8x that covers a
-# local model thinking in its content. Reasoning models count hidden thinking against the cap,
-# so theirs matches Claude's thinking budget.
+# model thinking in its content or hidden reasoning, when the prompt leaves that much room.
 MAX_REPLY_TOKENS = 8192
-MAX_REASONING_TOKENS = 16000
-CAPS = ("max_tokens", "max_completion_tokens", None)
-"""Each output cap tried in turn as the model refuses the one before; None sends none."""
+REPLY_MARGIN = 256
+"""Tokens kept free beside the estimated prompt for the chat template."""
+CAP_NAMES = ("max_tokens", "max_completion_tokens", None)
+"""The output cap's name, renamed as the model calls the one before unsupported; None sends none."""
+OVERFLOW = re.compile(r"maximum context length|too large|exceeds? the (?:available )?context|\d+ in the completion")
 THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 REFUSED = r"(?:unsupported|not supported|does not support|only the default)"
@@ -52,36 +54,43 @@ def shown_url(url: str) -> str:
 class OpenAICompatibleChat:
     name = "openai_compatible"
 
-    def __init__(self, model: str, base_url: str, timeout_s: float, *, api_key: str | None = None,
+    def __init__(self, model: str, base_url: str, timeout_s: float, context: int, *, api_key: str | None = None,
                  key_source: str = NO_KEY, transport: httpx.AsyncBaseTransport | None = None) -> None:
         """No `api_key`: no Authorization header, as local servers want. `key_source` tells
-        the user where to fix a refused key."""
+        the user where to fix a refused key. `context` sizes each reply's output cap."""
         self.model = model
         self._base = shown_url(base_url)
         self._url = chat_url(base_url)
         self._timeout = timeout_s
+        self._context = context
         self._api_key = api_key
         self._key_source = key_source
         self._transport = transport
         self._schema_format = True
         self._temperature = True
-        self._cap = 0
-        """Index into CAPS."""
+        self._cap_name = 0
+        """Index into CAP_NAMES."""
         self.fell_back_to: set[str] = set()
         """Always empty: the server never names a model that answered in this one's place."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
-        fell_back_now = False
+        fell_back_now, capped = False, True
         while True:
-            response = await self._post(self._payload(messages, schema))
+            response = await self._post(self._payload(messages, schema, capped))
             if response.status_code not in (400, 422):
                 break
             problem = _problem(response)
-            cap = CAPS[self._cap]
+            cap_name = CAP_NAMES[self._cap_name]
             if self._temperature and _refuses(response, "temperature"):
                 self._temperature = False
-            elif cap and _refuses(response, cap):
-                self._cap += 1
+            elif OVERFLOW.search(problem.lower()):
+                # The server's window is smaller than the profile says; the cap is the only give.
+                if not capped or not cap_name:
+                    raise ModelError(f"{self._where}: the prompt is longer than the server's context ({problem}); "
+                                     "set the profile's context to the server's window in Settings > Models")
+                capped = False
+            elif cap_name and _refuses(response, cap_name):
+                self._cap_name += 1
             elif self._schema_format:
                 self._schema_format, fell_back_now = False, True
             elif fell_back_now:
@@ -106,7 +115,7 @@ class OpenAICompatibleChat:
     def _where(self) -> str:
         return f"{self.model} at {self._base}"
 
-    def _payload(self, messages: list[dict], schema: dict) -> dict:
+    def _payload(self, messages: list[dict], schema: dict, capped: bool) -> dict:
         payload: dict = {"model": self.model}
         if self._schema_format:
             payload["messages"] = messages
@@ -118,10 +127,17 @@ class OpenAICompatibleChat:
         if self._temperature:
             # Research reads evidence; sampling would only make reruns disagree.
             payload["temperature"] = 0
-        cap = CAPS[self._cap]
-        if cap:
-            payload[cap] = MAX_REPLY_TOKENS if cap == "max_tokens" else MAX_REASONING_TOKENS
+        cap_name = CAP_NAMES[self._cap_name]
+        if capped and cap_name:
+            payload[cap_name] = self._cap(payload["messages"], schema)
         return payload
+
+    def _cap(self, messages: list[dict], schema: dict) -> int:
+        """What the prompt leaves of the context, estimated as the budget cuts prompts, up to
+        MAX_REPLY_TOKENS; never below the REPLY_TOKENS every prompt was cut to leave."""
+        chars = sum(len(str(m.get("content") or "")) for m in messages) + len(json.dumps(schema))
+        room = self._context - chars // CHARS_PER_TOKEN - REPLY_MARGIN
+        return max(REPLY_TOKENS, min(MAX_REPLY_TOKENS, room))
 
     async def _post(self, payload: dict) -> httpx.Response:
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}

@@ -90,6 +90,24 @@ def test_a_provider_needing_a_base_url_refuses_an_empty_one_before_sending():
                                        "base_url": "http://localhost:1234/v1"}
 
 
+def switched(profile, provider) -> dict:
+    script = f"""
+        import {{ switchedValues }} from {json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())};
+        console.log(JSON.stringify(switchedValues({json.dumps(profile)}, {json.dumps(provider)})));
+    """
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def test_switching_provider_clears_its_values_and_switching_back_restores_them():
+    row = {"provider": "claude_api", "model": "m", "key_env": "MY_KEY",
+           "set": {"base_url": "https://proxy.example/v1", "context": 100000, "timeout_s": None}}
+    assert switched(row, "openai_compatible") == {"base_url": "", "context": "", "key_env": "", "key": ""}
+    assert switched(row, "claude_api") == {"base_url": "https://proxy.example/v1", "context": "100000",
+                                           "key_env": "MY_KEY", "key": ""}
+    assert switched(None, "ollama") == {"base_url": "", "context": "", "key_env": "", "key": ""}
+
+
 def test_bad_input_is_refused_before_sending():
     assert body({**FORM, "context": "lots"}) == {"refused": "context: not a number"}
     assert body({**FORM, "key": "k", "key_env": "K"}) == {"refused": "give a key or key_env, not both"}

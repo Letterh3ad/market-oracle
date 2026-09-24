@@ -43,6 +43,14 @@ function prefill(p) {
     key_env: p.key_env ?? "" };
 }
 
+// The provider-bound boxes after a switch to `provider`: empty, since another provider's
+// endpoint or window would break it and its key must not reach this one's host; the
+// profile's own values again when switched back to its provider.
+function switchedValues(p, provider) {
+  const own = p?.provider === provider ? prefill(p) : {};
+  return Object.fromEntries([...PROVIDER_FIELDS, "key_env", "key"].map((k) => [k, own[k] ?? ""]));
+}
+
 function placeholders(defaults) {
   const base = defaults.base_url_required ? "required, like http://localhost:1234/v1"
     : `default: ${defaults.base_url ?? "provider's own endpoint"}`;
@@ -92,7 +100,8 @@ function profileRow(p, providers) {
     }
   } }, "Test");
   const tr = el("tr", null,
-    el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null),
+    el("td", { class: "mono" }, p.name, p.from_llm ? el("span", { class: "dim" }, " [llm]") : null,
+      p.unusable ? el("span", { class: "warn-text small", title: p.unusable }, " unusable: edit to fix") : null),
     el("td", null, p.provider),
     el("td", { class: "mono" }, p.model),
     el("td", null, String(p.context)),
@@ -143,8 +152,7 @@ function formRow(p, providers) {
       : "empty: the provider's default";
   };
   provider.addEventListener("change", () => {
-    // Another provider's endpoint or window would break this one, and its key must not reach this one's host.
-    for (const k of [...PROVIDER_FIELDS, "key_env", "key"]) inputs[k].value = "";
+    for (const [k, v] of Object.entries(switchedValues(p, provider.value))) inputs[k].value = v;
     fit();
   });
   fit();
@@ -181,4 +189,4 @@ async function load() {
   }
 }
 
-export { load, placeholders, prefill, profileBody };
+export { load, placeholders, prefill, profileBody, switchedValues };
