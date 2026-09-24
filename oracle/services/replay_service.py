@@ -186,6 +186,9 @@ def _iso(value: date | datetime) -> str:
     return value.isoformat()
 
 
+def _when(value: str | None) -> datetime | None:
+    return datetime.fromisoformat(value) if value else None
+
 
 def _months(first: date, last: date) -> list[tuple[date, date]]:
     """Each month from `first`'s to `last`'s, clipped to them."""
@@ -496,27 +499,38 @@ def _error_kind(error: str, symbol: str) -> str:
 
 class ReplayPacer:
     """Submits the study's replays one at a time as research jobs, gives way to other work,
-    and records how each ended. The queue is in the store, so a restart resumes where it was;
-    what it holds in memory (jobs it stopped, a back-off) only shapes the next few polls."""
+    and records how each ended. The queue is in the store, and so is what the pacer keeps
+    between polls (jobs it stopped, a back-off), so a restart resumes where it was."""
 
     def __init__(self, ctx: AppContext, runner: JobRunner, scheduler: Scheduler | None = None) -> None:
         self._ctx = ctx
         self._runner = runner
         self._scheduler = scheduler
-        self._preempted: set[int] = set()
-        self._timed_out: dict[int, str] = {}
-        """Jobs stopped as hung, and the error their cell gets."""
-        self._run: list[tuple[int, str]] = []
-        """The failures in a row since the last replay that ended well: cell and error kind."""
-        self._outage_since: datetime | None = None
-        """While an outage is waited out, its failures cost no attempt."""
-        self._outage_kind: str | None = None
-        """The error kind of an outage found by its failures alike; None for one found by any five."""
-        self._outage_error: str | None = None
-        self._backoffs = 0
-        self._resume_at: datetime | None = None
+        self._load(None)
         self.waiting: str | None = None
         """Why the last poll held the next replay back, if it did."""
+
+    def _load(self, raw: str | None) -> None:
+        state = json.loads(raw) if raw else {}
+        self._preempted: set[int] = set(state.get("preempted", ()))
+        self._timed_out: dict[int, str] = {int(k): v for k, v in state.get("timed_out", {}).items()}
+        """Jobs stopped as hung, and the error their cell gets."""
+        self._run: list[tuple[int, str]] = [(c, k) for c, k in state.get("run", ())]
+        """The failures in a row since the last replay that ended well: cell and error kind."""
+        self._outage_since: datetime | None = _when(state.get("outage_since"))
+        """While an outage is waited out, its failures cost no attempt."""
+        self._outage_kind: str | None = state.get("outage_kind")
+        """The error kind of an outage found by its failures alike; None for one found by any five."""
+        self._outage_error: str | None = state.get("outage_error")
+        self._backoffs: int = state.get("backoffs", 0)
+        self._resume_at: datetime | None = _when(state.get("resume_at"))
+
+    def _dump(self) -> str:
+        return json.dumps({
+            "preempted": sorted(self._preempted), "timed_out": {str(k): v for k, v in self._timed_out.items()},
+            "run": self._run, "outage_since": _iso(self._outage_since) if self._outage_since else None,
+            "outage_kind": self._outage_kind, "outage_error": self._outage_error, "backoffs": self._backoffs,
+            "resume_at": _iso(self._resume_at) if self._resume_at else None})
 
     def check(self) -> Job | None:
         """One poll: record replays that ended, stop one that is in the way, then submit the
@@ -526,9 +540,11 @@ class ReplayPacer:
         study = repo.current()
         if study is None:
             return None
-        job = self._poll(repo, study)
-        repo.note_poll(study.id, self._ctx.clock.utcnow(), self.waiting)
-        return job
+        self._load(study.pacer)
+        try:
+            return self._poll(repo, study)
+        finally:
+            repo.note_poll(study.id, self._ctx.clock.utcnow(), self.waiting, self._dump())
 
     def _poll(self, repo: ReplayRepo, study: StudyRow) -> Job | None:
         for cell in repo.cells(study.id, RUNNING):

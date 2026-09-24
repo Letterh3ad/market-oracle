@@ -26,6 +26,8 @@ class StudyRow:
     waiting: str | None = None
     stages: str | None = None
     """JSON: each research stage and the profile it ran on at creation."""
+    pacer: str | None = None
+    """JSON: what the pacer keeps between polls, as its last poll left it."""
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class CellRow:
     finished_at: datetime | None
 
 
-_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting, stages"
+_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting, stages, pacer"
 _CELL = ("id, study_id, symbol, as_of, state, position, attempts, allowed, refunds, job_id, run_id, error, "
          "started_at, finished_at")
 
@@ -97,17 +99,17 @@ class ReplayRepo:
         if r is None:
             return None
         return StudyRow(r[0], datetime.fromisoformat(r[1]), r[2], date.fromisoformat(r[3]), date.fromisoformat(r[4]),
-                        r[5], r[6], _when(r[7]), r[8], r[9])
+                        r[5], r[6], _when(r[7]), r[8], r[9], r[10])
 
     def set_state(self, study_id: int, state: str, reason: str | None = None) -> None:
         with transaction(self._conn):
             self._conn.execute("UPDATE replay_studies SET state = ?, paused_reason = ? WHERE id = ?",
                                (state, reason, study_id))
 
-    def note_poll(self, study_id: int, at: datetime, waiting: str | None) -> None:
+    def note_poll(self, study_id: int, at: datetime, waiting: str | None, pacer: str | None = None) -> None:
         with transaction(self._conn):
-            self._conn.execute("UPDATE replay_studies SET polled_at = ?, waiting = ? WHERE id = ?",
-                               (to_utc_iso(at), waiting, study_id))
+            self._conn.execute("UPDATE replay_studies SET polled_at = ?, waiting = ?, pacer = COALESCE(?, pacer) "
+                               "WHERE id = ?", (to_utc_iso(at), waiting, pacer, study_id))
 
     def cells(self, study_id: int, state: str | None = None) -> list[CellRow]:
         """In queue order."""

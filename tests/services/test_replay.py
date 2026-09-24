@@ -536,6 +536,42 @@ async def test_replays_failing_alike_back_off_without_using_attempts_and_never_p
     assert all(c.attempts == 0 for c in cells(ctx))
 
 
+async def test_a_restart_mid_back_off_resumes_the_back_off(ctx, research):
+    await started(ctx)
+    first = JobRunner(ctx)
+    pacer = ReplayPacer(ctx, first)
+    day = date(2026, 6, 1)
+    for symbol in ("AAPL", "JPM", "HSBA.L"):
+        await run_one(pacer, first, research, symbol, day, "ollama is not running")
+    assert pacer.check() is None and pacer.waiting.startswith("backing off")
+    await first.stop()
+    again = JobRunner(ctx)
+    try:
+        fresh = ReplayPacer(ctx, again)
+        assert fresh.check() is None and fresh.waiting == pacer.waiting
+        ctx.clock.advance(BACKOFF.total_seconds())
+        await probe_fails(fresh, again, research, "ollama is not running")
+        restarted = ReplayPacer(ctx, again)
+        assert restarted.check() is None and "(2 back-offs;" in restarted.waiting
+        assert all(c.attempts == 0 for c in cells(ctx))
+    finally:
+        await again.stop()
+
+
+async def test_a_replay_preempted_just_before_a_restart_is_not_read_as_a_cancel(ctx, runner, research):
+    from oracle.services.activity_service import submit_research
+
+    await started(ctx)
+    job = ReplayPacer(ctx, runner).check()
+    await settle()
+    submit_research(ctx, runner, "JPM")
+    ReplayPacer(ctx, runner).check()
+    await settle()
+    assert job.state == "cancelled"
+    ReplayPacer(ctx, runner).check()  # a fresh pacer, as after a restart
+    assert study_status(ctx).state == "running" and cells(ctx)[0].state == "pending"
+
+
 def research_key(job):
     symbol, day = job.subject.split("@")
     return symbol, date.fromisoformat(day)
