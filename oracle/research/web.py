@@ -79,20 +79,31 @@ OUTLET_FILLER = frozenset({"www", "com", "org", "net", "news", "the", "finance",
 _WORD = re.compile(r"[a-z0-9]+")
 
 
+# Outlets whose site is registered under a name other than their own, by outlet_key.
+REGISTERED_AS = {"motleyfool": "fool", "wallstreetjournal": "wsj", "financialtimes": "ft",
+                 "newyorktimes": "nytimes", "investorsbusinessdaily": "investors"}
+
+
 def outlet_key(outlet: str) -> str:
     """A feed's outlet name as its site's registered name would read: "Reuters" is reuters,
-    "BBC News" bbc, "PR Newswire" prnewswire."""
+    "BBC News" bbc, "PR Newswire" prnewswire, "The Motley Fool" fool."""
     words = _WORD.findall(outlet.lower())
-    return "".join(w for w in words if w not in OUTLET_FILLER) or "".join(words)
+    key = "".join(w for w in words if w not in OUTLET_FILLER) or "".join(words)
+    return REGISTERED_AS.get(key, key)
+
+
+def registered_domain(host: str) -> str:
+    """A host with its subdomains dropped: reuters.com for uk.reuters.com, bbc.co.uk for
+    www.bbc.co.uk. Empty for no host."""
+    labels = [label for label in host.lower().split(".") if label]
+    keep = 3 if len(labels) > 2 and labels[-2] in _SECOND_LEVEL else 2
+    return ".".join(labels[-keep:]) if len(labels) > 1 else ""
 
 
 def site_name(host: str) -> str:
     """The name a host is registered under, subdomains and suffix dropped: "reuters" for
     www.reuters.com or uk.reuters.com, "bbc" for bbc.co.uk. Empty for no host."""
-    labels = host.lower().split(".")[:-1]
-    if len(labels) > 1 and labels[-1] in _SECOND_LEVEL:
-        labels.pop()
-    return labels[-1] if labels else ""
+    return registered_domain(host).split(".")[0]
 
 
 def unsafe_url(url: str) -> str | None:

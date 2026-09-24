@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
@@ -72,14 +73,23 @@ class RateLimitedClient:
         """With `max_bytes`, reading stops there (an arbitrary page can be any size);
         `extensions["oracle_truncated"]` says whether it was cut. `count_403` False: a 403
         refuses this URL alone, so it never counts toward the breaker."""
+        return await self._send(source, count_403, lambda: (
+            self._http.get(url, params=params, headers=headers, follow_redirects=follow_redirects)
+            if max_bytes is None else self._get_capped(url, params, headers, max_bytes, follow_redirects)))
+
+    async def post(self, source: str, url: str, *, data: dict, headers: dict | None = None) -> httpx.Response:
+        """A form POST, gated and retried as `get` is. Redirects are not followed."""
+        return await self._send(source, True, lambda: self._http.post(
+            url, data=data, headers=headers, follow_redirects=False))
+
+    async def _send(self, source: str, count_403: bool,
+                    send: Callable[[], Awaitable[httpx.Response]]) -> httpx.Response:
         retries = self._gate.config(source).max_retries
         for attempt in range(retries + 1):
             last = attempt == retries
             await self._gate.acquire(source)
             try:
-                resp = await (
-                    self._http.get(url, params=params, headers=headers, follow_redirects=follow_redirects)
-                    if max_bytes is None else self._get_capped(url, params, headers, max_bytes, follow_redirects))
+                resp = await send()
             except httpx.TransportError as exc:
                 self._gate.record_transport_error(source)
                 if last:

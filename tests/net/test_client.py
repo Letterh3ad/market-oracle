@@ -189,3 +189,13 @@ async def test_a_body_of_exactly_max_bytes_is_not_marked_cut(conn, clock):
                                transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"x" * 1000)))
     resp = await client.get("src", URL, max_bytes=1000)
     assert len(resp.content) == 1000 and resp.extensions["oracle_truncated"] is False
+
+
+async def test_a_post_sends_its_form_through_the_gate_with_the_same_retries(conn, clock):
+    seen = []
+    client = _client(conn, clock, [503, 200], seen)
+    resp = await client.post("src", URL, data={"f.req": "[1]"}, headers={"Cookie": "a=b"})
+    assert resp.status_code == 200 and clock.sleeps == [pytest.approx(2.0)]
+    assert [r.method for r in seen] == ["POST", "POST"]
+    assert seen[1].content == b"f.req=%5B1%5D" and seen[1].headers["cookie"] == "a=b"
+    assert seen[1].headers["user-agent"] == "oracle-test/1"

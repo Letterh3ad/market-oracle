@@ -11,6 +11,7 @@ from oracle.research.trace import NOT_ABOUT, NOTHING, Evidence
 from oracle.research.web import WebResult
 from oracle.services.research_service import latest_research, research, research_progress
 from oracle.store.research import ResearchRepo
+from tests.research.test_google_links import BBC_ID, FT_ID, old_style
 from tests.fakes.llm import ScriptedModel, step
 from tests.services.test_research import (  # noqa: F401
     APPLE_CIK, ARCHIVE, apple_filings, ctx, gdelt, news, pages, searcher, sec, utc, with_contact,
@@ -228,7 +229,7 @@ async def test_an_article_not_about_the_company_says_so_and_brings_no_facts(ctx,
     assert "Pears" not in role_input(model, "verdict")
 
 
-GOOGLE = "https://news.google.com/rss/articles/CBMiabc"
+GOOGLE = f"https://news.google.com/rss/articles/{FT_ID}"
 
 
 async def test_a_google_news_link_is_resolved_by_its_headline_at_the_outlets_own_site(ctx, news, pages, searcher):
@@ -249,7 +250,70 @@ async def test_a_google_news_link_with_no_match_at_the_outlet_is_skipped_with_wh
     searcher.results["Apple beats estimates"] = [WebResult("https://copycat.test/apple", "Apple beats", "")]
     run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
     assert pages.requests == []
-    assert by_id(run, 1).read == "could not resolve the Google News link: no search result from reuters.com"
+    assert by_id(run, 1).read == ("could not resolve the Google News link: Google's link decoder found no signature "
+                                  "on the link's page, and no search result from reuters.com")
+
+
+BBC_ARTICLE = "https://www.bbc.com/news/articles/cp87m46g392o"
+
+
+def stub(stub_id: str) -> str:
+    return f"https://news.google.com/rss/articles/{stub_id}?oc=5"
+
+
+async def test_an_older_google_news_link_is_decoded_offline(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(old_style(BBC_ARTICLE)), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    pages.pages[BBC_ARTICLE] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert fetched(pages) == [BBC_ARTICLE] and searcher.queries == [] and news.stub_pages == []
+    assert by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
+
+
+async def test_a_newer_google_news_link_is_decoded_by_google_through_its_gate(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.decoded[BBC_ID] = BBC_ARTICLE
+    pages.pages[BBC_ARTICLE] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert fetched(pages) == [BBC_ARTICLE] and searcher.queries == []
+    assert by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
+    [page] = news.stub_pages
+    assert page.url.params["gl"] == "GB" and "SOCS=" in page.headers["cookie"]
+    assert [r.method for r in news.decodes] == ["POST"]
+    (gated,) = ctx.conn.execute("SELECT COUNT(*) FROM source_requests WHERE source = 'google_news'").fetchone()
+    assert gated == len(news.queries) + 2
+
+
+async def test_a_failed_decode_falls_back_to_the_headline_search(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(FT_ID), "Apple beats estimates", "Reuters", utc("2026-09-20"))]
+    searcher.results["Apple beats estimates"] = [WebResult("https://www.reuters.com/markets/a", "Apple", "")]
+    pages.pages["https://www.reuters.com/markets/a"] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert news.decodes == [] and searcher.queries == ["Apple beats estimates"]
+    assert fetched(pages) == ["https://www.reuters.com/markets/a"] and by_id(run, 1).facts
+
+
+async def test_a_decoder_outage_with_no_search_match_is_tried_again_by_the_next_run(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.decoded[BBC_ID] = BBC_ARTICLE
+    news.stub_status = 503
+    pages.pages[BBC_ARTICLE] = ("text/html", BODY)
+    await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert pages.requests == []
+    news.stub_status = 200
+    ctx.clock.advance(7200)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
+
+
+@pytest.mark.parametrize("decoded", ["https://copycat.test/apple", "http://127.0.0.1/apple",
+                                     "https://reuters.com.copycat.test/apple"])
+async def test_a_decoded_address_off_the_outlets_site_or_unsafe_is_never_read(ctx, news, pages, searcher, decoded):
+    news.results["Apple"] = [(stub(FT_ID), "Apple beats estimates", "Reuters", utc("2026-09-20"))]
+    news.decoded[FT_ID] = decoded
+    pages.pages[decoded] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert pages.requests == [] and searcher.queries == ["Apple beats estimates"]
+    assert by_id(run, 1).read.startswith(f"could not resolve the Google News link: {decoded} is not")
 
 
 async def test_a_replay_reads_no_article_since_todays_copy_may_differ_from_the_one_then(ctx, news, pages, searcher):
@@ -336,6 +400,35 @@ def test_an_outlet_name_is_matched_to_a_domain_when_the_feed_named_no_site():
     assert not from_outlet("https://reuters-news.com/x", None, "Reuters")
     assert not from_outlet("https://bbc.fakenews.com/x", None, "BBC News")
     assert not from_outlet("https://www.reuters.com/x", None, None)
+
+
+def test_a_host_reduces_to_its_registered_domain_and_an_outlet_to_its_sites_name():
+    from oracle.research.web import outlet_key, registered_domain, site_name
+
+    assert registered_domain("uk.finance.yahoo.com") == "yahoo.com" and site_name("uk.finance.yahoo.com") == "yahoo"
+    assert registered_domain("www.bbc.co.uk") == "bbc.co.uk" and site_name("www.bbc.co.uk") == "bbc"
+    assert registered_domain("localhost") == "" and site_name("") == ""
+    assert outlet_key("The Motley Fool") == "fool" and outlet_key("The Wall Street Journal") == "wsj"
+    assert outlet_key("Reuters") == "reuters" and outlet_key("Fool's Gold Weekly") == "foolsgoldweekly"
+
+
+def test_an_outlet_is_matched_at_its_registered_site_when_name_and_domain_differ_in_form():
+    from oracle.services.research_tools.reading import from_outlet
+
+    assert from_outlet("https://www.fool.com/investing/x", None, "The Motley Fool")
+    assert from_outlet("https://www.fool.co.uk/x", None, "Motley Fool")
+    assert from_outlet("https://www.wsj.com/x", None, "The Wall Street Journal")
+    assert from_outlet("https://www.ft.com/content/x", None, "Financial Times")
+    assert from_outlet("https://www.morningstar.com/x", "global.morningstar.com", "Morningstar")
+    assert from_outlet("https://uk.finance.yahoo.com/x", "finance.yahoo.com", "Yahoo Finance")
+    assert not from_outlet("https://fool.com.evil.test/x", None, "The Motley Fool")
+    assert not from_outlet("https://foolnews.com/x", None, "The Motley Fool")
+    assert not from_outlet("https://www.thetimes.com/x", None, "Financial Times")
+    assert not from_outlet("https://ft.fake.test/x", None, "Financial Times")
+    assert not from_outlet("https://www.fool.com/x", None, "Fool's Gold Weekly")
+    assert not from_outlet("https://other.substack.com/p/x", "jane.substack.com", "Jane's Notes")
+    assert not from_outlet("https://www.yahoo.com.evil.test/x", "finance.yahoo.com", "Yahoo Finance")
+    assert not from_outlet("https://www.morningstar.com/x", "global.morningstar.com", "Morning Brief")
 
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "edgar"
