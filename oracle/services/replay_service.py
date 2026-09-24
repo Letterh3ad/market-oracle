@@ -15,6 +15,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ServiceError
 from oracle.services.jobs_service import held_elsewhere
 from oracle.services.never_list import never_company
+from oracle.services.replay_score import Interim, score_study
 from oracle.services.research_service import pc_in_use
 from oracle.services.schedule_service import Scheduler
 from oracle.services.tick_service import KIND_LABELS
@@ -116,6 +117,7 @@ class StudyStatus:
     cutoff: date | None
     waiting: str | None = None
     """Why the pacer holds the next replay back; known only to the server running it."""
+    score: Interim | None = None
 
     @property
     def complete(self) -> bool:
@@ -245,7 +247,7 @@ def study_status(ctx: AppContext, waiting: str | None = None) -> StudyStatus | N
         tuple(Picked(**p) for p in json.loads(study.listings)), sum(counts.values()), counts.get(DONE, 0),
         counts.get(PENDING, 0), retrying, running, failed, tuple(repo.failure_reasons(study.id, TOP_FAILURES)),
         sum(durations) / len(durations) if durations else None, measured_cutoff(ctx),
-        waiting if study.state == RUNNING else None)
+        waiting if study.state == RUNNING else None, score_study(ctx, study).interim())
 
 
 def _require(ctx: AppContext) -> StudyRow:

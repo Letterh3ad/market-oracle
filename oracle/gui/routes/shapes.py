@@ -107,7 +107,8 @@ def answer(v: AnswerView) -> dict:
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
-            "discover": asdict, "backtest": backtest_summary, "ask": answer}
+            "discover": asdict, "backtest": backtest_summary, "ask": answer,
+            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}}
 
 
 def _result(j: Job) -> dict | None:

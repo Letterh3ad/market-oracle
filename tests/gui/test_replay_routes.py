@@ -1,4 +1,7 @@
 from oracle.store.replay import ReplayRepo
+from tests.fakes.yahoo import bar
+from tests.gui.conftest import DAYS
+from tests.gui.jobs import run_job
 
 
 async def test_no_study_yet(loaded):
@@ -40,3 +43,28 @@ async def test_retry_one_cell_or_all_failed(ctx, loaded):
     assert (await loaded.post("/api/replay/retry", json={})).json() == {"moved": 1}
     r = await loaded.post("/api/replay/retry", json={"cell_id": a.id})
     assert r.status_code == 400
+
+
+async def test_report_scores_from_stored_bars_and_the_status_carries_the_interim_block(loaded):
+    await loaded.post("/api/replay", json={"first": "2026-06-01"})
+    report = (await loaded.get("/api/replay/report")).json()["report"]
+    assert report["verdicts"] == 0 and [h["horizon"] for h in report["horizons"]] == ["1m", "3m"]
+    assert report["unpriced_listings"] == ["AAPL", "7203.T", "005930.KS"] and report["limits"]
+    score = (await loaded.get("/api/replay")).json()["study"]["score"]
+    assert score["verdicts"] == 0 and score["horizons"]["1m"]["scored"] == 0
+
+
+async def test_update_prices_is_a_job_fetching_only_what_the_score_lacks(loaded, yahoo):
+    yahoo.add("AAPL", "USD", "America/New_York", [bar(d.isoformat(), 100 + n) for n, d in enumerate(DAYS)])
+    await loaded.post("/api/replay", json={"first": "2026-06-01"})
+    job = await run_job(loaded, "/api/replay/prices")
+    assert job["kind"] == "replay_prices" and job["state"] == "done"
+    fetched = {o["symbol"]: o for o in job["result"]["listings"]}
+    assert fetched["AAPL"]["added"] == len(DAYS) and fetched["7203.T"]["error"]
+    report = (await loaded.get("/api/replay/report")).json()["report"]
+    assert report["unpriced_listings"] == ["7203.T", "005930.KS"]
+
+
+async def test_report_without_a_study(loaded):
+    assert (await loaded.get("/api/replay/report")).json() == {"report": None}
+    assert (await loaded.post("/api/replay/prices")).status_code == 400

@@ -3,12 +3,15 @@
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
+import { pct } from "./fmt.js";
 import { repaint } from "./repaint.js";
-import { busyButton, sendJson } from "./ui.js";
+import { busyButton, runJob, sendJson } from "./ui.js";
 
 const POLL_MS = 15000;
 const minutes = (s) => `${Math.max(0, Math.round(s / 60))} min`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const share = (v) => (v == null ? "n/a" : `${Math.round(v * 100)}%`);
+const HORIZON_NAMES = { "1m": "1 month", "3m": "3 months" };
 
 function replaySection() {
   let started = false;
@@ -16,6 +19,8 @@ function replaySection() {
   const note = el("div", { class: "form-note" });
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
   const body = el("div");
+  let report = null; // the last score fetched, and the status score it was fetched for
+  let reportKey = null;
 
   // Every press reloads the card, so it always shows what the store holds.
   const press = (label, path, payload) => busyButton(label, async () => {
@@ -94,6 +99,71 @@ function replaySection() {
     ];
   }
 
+  function group(g) {
+    return el("tr", null, el("td", null, g.name), el("td", { class: "num" }, String(g.n)),
+      el("td", { class: "num" }, share(g.hit_rate)), el("td", { class: "num" }, share(g.hit_rate_vs_basket)),
+      el("td", { class: "num" }, pct(g.mean_return)), el("td", { class: "num" }, pct(g.mean_vs_basket)),
+      el("td", { class: "num" }, g.mean_confidence == null ? "n/a" : g.mean_confidence.toFixed(2)));
+  }
+
+  function horizon(h) {
+    return [
+      el("p", null, `${HORIZON_NAMES[h.horizon] ?? h.horizon}: ${h.scored} scored, ${h.pending} pending, `
+        + `${h.unpriced} without prices; hit rate ${share(h.hit_rate)}, ${share(h.hit_rate_vs_basket)} against `
+        + `the basket.`),
+      table([["Verdict or band"], ["Count", null, true], ["Hit", null, true], ["Hit vs basket", null, true],
+        ["Mean return", null, true], ["Mean vs basket", null, true], ["Confidence", null, true]],
+      [...h.by_verdict, ...h.by_band].map(group), ""),
+    ];
+  }
+
+  const updatePrices = busyButton("Update prices", async (onState) => {
+    try {
+      const r = await runJob("/api/replay/prices", onState);
+      const failed = r.listings.filter((o) => o.error);
+      say(r.listings.length ? `Prices fetched for ${r.listings.length - failed.length} of `
+        + `${plural(r.listings.length, "listing")}${failed.length ? `; failed: ${failed.map((o) => `${o.symbol} `
+        + `(${o.error})`).join(", ")}` : ""}.` : "No listing was missing prices.", failed.length > 0);
+    } catch (err) {
+      say(err.message);
+    }
+    reportKey = null;
+    await load();
+  });
+
+  function score(r) {
+    if (!r) return [];
+    const m = r.mix;
+    const missing = r.unpriced_listings.length
+      ? `No stored prices cover ${r.unpriced_listings.join(", ")} for a window that has closed: press Update prices.`
+      : "Every closed window has its prices.";
+    return [
+      el("h3", null, "Score"),
+      el("p", null, `${r.verdicts} verdicts, ${r.no_verdict} without a verdict, ${r.failed} failed, `
+        + `${r.to_run} still to run, of ${r.total} replays. Verdict mix: ${m.buy} buy, ${m.hold} hold, ${m.sell} sell `
+        + `(${share(m.buy_share)} buys), mean confidence ${m.mean_confidence == null ? "n/a"
+          : m.mean_confidence.toFixed(2)}.`),
+      ...r.horizons.flatMap(horizon),
+      el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
+        + "bands hold buys and sells only, their returns as called (a sell's sign flipped)."),
+      el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, missing)),
+      el("h3", null, "Limits"),
+      el("ul", { class: "small" }, ...r.limits.map((line) => el("li", null, line))),
+    ];
+  }
+
+  // The status poll is cheap; the full report is fetched only when the status's score moved.
+  async function loadReport(s) {
+    const key = `${s.id}:${JSON.stringify(s.score)}`;
+    if (key === reportKey) return;
+    try {
+      report = (await api("/api/replay/report")).report;
+      reportKey = key;
+    } catch (err) {
+      say(`Could not load the replay score: ${err.message}`);
+    }
+  }
+
   async function load() {
     let r;
     try {
@@ -103,7 +173,8 @@ function replaySection() {
       return;
     }
     const s = r.study;
-    repaint(body, s ? [...study(s), el("details", null, el("summary", null, "New study"),
+    if (s) await loadReport(s);
+    repaint(body, s ? [...study(s), ...score(report), el("details", null, el("summary", null, "New study"),
       el("p", { class: "dim small" }, "The current study is kept; the new one takes its place here, paused."),
       createForm(r.cutoff, "Create new study"))] : [createForm(r.cutoff, "Create study")]);
   }

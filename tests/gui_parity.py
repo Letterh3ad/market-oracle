@@ -108,6 +108,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "replay status": "GET /api/replay",
     "replay status --json": "GET /api/replay",
     "replay retry": "POST /api/replay/retry",  # the card's "Retry failed" and each failed cell's Retry
+    # The card's Score, read from stored bars; its "Update prices" (POST /api/replay/prices) is
+    # the fetch the command does first.
+    "replay report": "GET /api/replay/report",
+    "replay report --json": "GET /api/replay/report",
     "tick": "POST /api/jobs/tick",
     "tick --last": "GET /api/status",
     "schedule": "GET /api/status",

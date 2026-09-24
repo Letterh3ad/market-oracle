@@ -15,10 +15,31 @@ STUDY = {"id": 1, "state": "paused", "paused_reason": None, "created_at": "2026-
          "top_failures": [["model down", 2]], "mean_replay_s": 150, "cutoff": None, "waiting": None}
 
 
-def run(body: str, study=STUDY, cutoff=None):
+def group(name, n, hit, rel, ret, vs, conf):
+    return {"name": name, "n": n, "hit_rate": hit, "hit_rate_vs_basket": rel, "mean_return": ret,
+            "mean_vs_basket": vs, "mean_confidence": conf}
+
+
+BLANK = [group(name, 0, None, None, None, None, None) for name in ("under 0.60", "0.60 to 0.80")]
+REPORT = {
+    "study_id": 1, "total": 6, "to_run": 3, "failed": 1, "no_verdict": 0, "verdicts": 2,
+    "mix": {"buy": 2, "hold": 0, "sell": 0, "buy_share": 1.0, "mean_confidence": 0.85},
+    "horizons": [
+        {"horizon": "1m", "months": 1, "scored": 2, "pending": 0, "unpriced": 0, "hit_rate": 0.5,
+         "hit_rate_vs_basket": 1.0, "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
+         "by_band": [*BLANK, group("0.80 and up", 2, 0.5, 1.0, 0.012, 0.03, 0.85)]},
+        {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
+         "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
+    "unpriced_listings": ["7203.T"],
+    "limits": ["The listings and their fundamentals are today's (survivorship)."],
+}
+
+
+def run(body: str, study=STUDY, cutoff=None, report=None):
     script = f"""
         {PRELUDE}
-        ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }} }};
+        ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }},
+                     "GET /api/replay/report": {{ report: {json.dumps(report)} }} }};
         const sent = [];
         const plain = globalThis.fetch;
         globalThis.fetch = async (url, options) => {{
@@ -97,3 +118,38 @@ def test_a_refusal_shows_on_the_card():
         console.log(JSON.stringify(node.textContent));
     """)
     assert "no replay study yet" in text
+
+
+def test_the_score_shows_headline_numbers_a_table_and_the_limits():
+    text = run("console.log(JSON.stringify(node.textContent));", report=REPORT)
+    assert "2 verdicts, 0 without a verdict, 1 failed, 3 still to run, of 6 replays." in text
+    assert "Verdict mix: 2 buy, 0 hold, 0 sell (100% buys), mean confidence 0.85." in text
+    assert "1 month: 2 scored, 0 pending, 0 without prices; hit rate 50%, 100% against the basket." in text
+    assert "3 months: 0 scored, 2 pending" in text
+    assert "buy250%100%+1.20%+3.00%0.85" in text and "0.80 and up2" in text
+    assert "No stored prices cover 7203.T" in text and "(survivorship)" in text
+
+
+def test_the_report_is_fetched_again_only_when_the_status_score_moves():
+    shown = run("""
+        button(node, "Start").fire("click"); await settle();
+        const once = asked.filter((a) => a.startsWith("GET /api/replay/report")).length;
+        ANSWERS["GET /api/replay"].study = { ...ANSWERS["GET /api/replay"].study, score: { verdicts: 3 } };
+        button(node, "Start").fire("click"); await settle();
+        console.log(JSON.stringify([once, asked.filter((a) => a.startsWith("GET /api/replay/report")).length]));
+    """, report=REPORT)
+    assert shown == [1, 2]
+
+
+def test_update_prices_runs_the_job_and_reloads_the_score():
+    shown = run("""
+        ANSWERS["POST /api/replay/prices"] = { id: 3, state: "done", result: { listings: [
+          { symbol: "7203.T", added: 40, source: "yahoo", error: null },
+          { symbol: "AAPL", added: 0, source: null, error: "no price data" }] } };
+        asked.length = 0;
+        button(node, "Update prices").fire("click"); await settle(); await settle();
+        console.log(JSON.stringify([asked, node.textContent]));
+    """, report=REPORT)
+    asked, text = shown
+    assert asked[:3] == ["POST /api/replay/prices", "GET /api/replay", "GET /api/replay/report"]
+    assert "Prices fetched for 1 of 2 listings; failed: AAPL (no price data)." in text

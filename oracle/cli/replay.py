@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import sys
 
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
+from oracle.services.replay_score import Group, HorizonScore, Score, replay_report, update_study_prices
 from oracle.services.replay_service import (
     StudyStatus, create_study, pause_study, retry_failed, start_study, study_status,
 )
@@ -26,6 +29,10 @@ def register(parser: argparse.ArgumentParser) -> None:
     retry = sub.add_parser("retry", help="put failed cells back in the queue")
     retry.add_argument("cell", type=int, nargs="?", default=None, help="one cell's id (default: every failed cell)")
     retry.set_defaults(handler=_retry)
+    report = sub.add_parser("report", help="score the verdicts against what prices did next, fetching missing bars "
+                                           "first")
+    report.add_argument("--json", action="store_true", help="print the report as JSON")
+    report.set_defaults(handler=_report)
 
 
 def _create(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -86,3 +93,56 @@ def print_status(s: StudyStatus) -> None:
         print(f"  failed cell {c.id}: {c.symbol} as of {c.as_of.isoformat()}: {c.error}")
     if s.complete:
         print("  complete: every replay has run")
+
+
+def _report(ctx: AppContext, args: argparse.Namespace) -> int:
+    if replay_report(ctx) is None:
+        print("null" if args.json else "No replay study yet: `oracle replay create --from YYYY-MM-DD`.")
+        return 0
+    for o in asyncio.run(update_study_prices(ctx)):
+        line = f"Prices for {o.symbol}: " + (f"failed ({o.error})" if o.error else f"{o.added} new bars ({o.source})")
+        print(line, file=sys.stderr if args.json else sys.stdout)
+    score = replay_report(ctx)
+    assert score is not None
+    if args.json:
+        print(json.dumps(score.to_json(), indent=2))
+    else:
+        print_report(score)
+    return 0
+
+
+def _pct(v: float | None, signed: bool = False) -> str:
+    return "n/a" if v is None else f"{v:+.2%}" if signed else f"{v:.0%}"
+
+
+def print_report(s: Score) -> None:
+    print(f"Replay study {s.study_id} score, {s.first_day.isoformat()} to {s.last_day.isoformat()} "
+          f"(as of {s.today.isoformat()})")
+    print(f"  {s.verdicts} verdicts, {s.no_verdict} without a verdict, {s.failed} failed, {s.to_run} still to run, "
+          f"of {s.total} replays")
+    m = s.mix
+    confidence = "n/a" if m.mean_confidence is None else f"{m.mean_confidence:.2f}"
+    print(f"  Verdict mix: {m.buy} buy, {m.hold} hold, {m.sell} sell ({_pct(m.buy_share)} buys), "
+          f"mean confidence {confidence}")
+    for h in s.horizons:
+        print_horizon(h)
+    if s.unpriced_listings:
+        print(f"  No stored prices cover: {', '.join(s.unpriced_listings)}")
+    print("Limits:")
+    for line in s.limits:
+        print(f"  - {line}")
+
+
+def print_horizon(h: HorizonScore) -> None:
+    print(f"  {h.months} month{'' if h.months == 1 else 's'}: {h.scored} scored, {h.pending} pending, {h.unpriced} "
+          f"without prices; hit rate {_pct(h.hit_rate)}, {_pct(h.hit_rate_vs_basket)} against the basket")
+    print(f"    {'':<14}{'n':>4}{'hit':>7}{'hit rel':>11}{'mean':>10}{'mean rel':>11}{'confidence':>12}")
+    for g in (*h.by_verdict, *h.by_band):
+        print_group(g)
+    print("    (rel: against the basket; bands: buys and sells only, as called, a sell's sign flipped)")
+
+
+def print_group(g: Group) -> None:
+    confidence = "n/a" if g.mean_confidence is None else f"{g.mean_confidence:.2f}"
+    print(f"    {g.name:<14}{g.n:>4}{_pct(g.hit_rate):>7}{_pct(g.hit_rate_vs_basket):>11}"
+          f"{_pct(g.mean_return, True):>10}{_pct(g.mean_vs_basket, True):>11}{confidence:>12}")
