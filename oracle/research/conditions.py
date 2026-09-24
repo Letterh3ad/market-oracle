@@ -20,7 +20,7 @@ _MARKERS = re.compile(r"\b(?:" + "|".join((
     r"if", r"when", r"whenever", r"unless", r"once", r"should", r"until", r"before", r"within", r"next",
     r"will", r"would", r"is not", r"isn't", r"does not", r"doesn't", r"do not", r"don't", r"no longer", r"never",
     r"below", r"under", r"above", r"beneath", r"less", r"fewer", r"lower", r"higher", r"short of", r"past",
-    r"fails?", r"failure", r"falls?", r"drops?", r"declines?", r"miss(?:es)?", r"cuts?", r"slows?", r"slowdown",
+    r"fails?", r"failure", r"falls?", r"drops?", r"declines?", r"miss(?:es|ed)?", r"cuts?", r"slows?", r"slowdown",
     r"stalls?", r"reverses?", r"reversal", r"weakens?", r"weaker", r"worse(?:ns)?", r"strengthens?", r"loses?",
     r"loss", r"downgrades?", r"rises?", r"sinks?", r"slips?", r"slides?", r"shrinks?", r"narrows?", r"widens?",
     r"fades?", r"softens?", r"turns?", r"breaks?", r"breach(?:es)?", r"rejects?", r"rejection", r"recalls?",
@@ -34,9 +34,10 @@ _MARKERS = re.compile(r"\b(?:" + "|".join((
     r"recovers?", r"recovery", r"rebounds?", r"accelerates?", r"surges?", r"jumps?", r"expands?", r"wins?",
     r"flat", r"unchanged", r"stays?", r"remains?", r"disappoints?", r"disappointing", r"launch(?:es)?",
     r"longer", r"shorter", r"slower", r"faster", r"stronger", r"sooner", r"later", r"more than", r"at least",
-    r"at most", r"stall", r"reverse", r"slow", r"accelerate", r"worsen", r"improve", r"lags?", r"trails?",
+    r"at most", r"worsen", r"lags?", r"trails?",
     r"underperforms?", r"outperforms?", r"erodes?", r"erosion", r"compress(?:es)?", r"contraction",
-    r"takes", r"comes in", r"reaches", r"hits", r"tops", r"approaches?", r"doubles?", r"halves?",
+    r"stalling", r"slowing", r"falling", r"declining", r"shrinking", r"weakening", r"worsening", r"dropping",
+    r"takes", r"comes in", r"reach(?:es)?", r"hits", r"tops", r"approaches?", r"doubles?", r"halves?",
 )) + r")\b", re.IGNORECASE)
 # A standalone number (not "Q3" or a citation id), with its thousands commas.
 _NUMBER = re.compile(r"(?<![\w.])\d[\d,]*(?:\.\d+)?")

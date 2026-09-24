@@ -61,6 +61,7 @@ def test_a_condition_that_restates_the_evidence_is_rejected(symbol):
     "Market share stays flat", "China demand disappoints", "A new competitor product launch",
     "Regulatory approval takes longer than expected", "Margins remain unchanged", "Growth is slower than 5%",
     "Deliveries come in at 400,000", "Headcount of 70 thousand", "A P/E of 40x", "Net debt at EUR 3 billion",
+    "a missed earnings date", "a missed dividend payment", "Margins reach a new high", "Growth stalling", "Margins worsen",
 ])
 def test_a_genuine_condition_passes_in_any_phrasing(condition):
     assert condition_problem(condition, "Beat and momentum [a1], revenue of $50B.") is None
