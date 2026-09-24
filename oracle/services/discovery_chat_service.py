@@ -67,8 +67,8 @@ MAX_PRICE_CHECKS = 8
 MAX_EXCLUDE = 5
 MAX_INDUSTRIES = 3
 MAX_REGIONS = 5
-# Companies the universe screen adds to one answer, and the price checks it may spend on them
-# (a screened company without recent prices is passed over for the next one).
+# Companies the universe screen adds to one answer, and the price checks it adds to the answer's
+# (named companies are checked first; a screened one without recent prices is passed over for the next).
 MAX_SCREENED = 15
 MAX_SCREEN_CHECKS = 20
 # About how long one answer takes with a local model; a question is not started with less left.
@@ -208,7 +208,7 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
         note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
             items = await _answer(ctx, repo, answer_id, asked, resolved, searcher or DdgsSearcher(), notes,
-                                  note_key)
+                                  note_key, deadline)
             if q.auto:
                 await auto_add(ctx, q.id, asked, model, note_key, items, lambda text: repo.set_stage(answer_id, text),
                                notes, deadline)
@@ -314,7 +314,8 @@ def sweep_interrupted_answers(ctx: AppContext) -> None:
 
 
 async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: str, resolved: RunModel,
-                  searcher: WebSearcher, notes: list[str], note_key: str) -> list[ShortlistItem]:
+                  searcher: WebSearcher, notes: list[str], note_key: str,
+                  deadline: datetime | None = None) -> list[ShortlistItem]:
     model = resolved.model
 
     def stage(text: str) -> None:
@@ -372,7 +373,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         # More items behind a name first; the model's own order among equals.
         ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    shortlist = _Shortlist(ctx, plan, exclusions, filters)
+    shortlist = _Shortlist(ctx, plan, exclusions, filters, deadline)
     items = await shortlist.screen(ranked, evidence, asked_for_fit, screen_universe(ctx, filters))
     notes.extend(shortlist.screen_notes)
     if kept := record_links(ctx, _links(shortlist, ranked, evidence, asked_for_fit), SOURCE_CHAT):
@@ -465,8 +466,11 @@ class _Shortlist(Screen):
     removed companies are left off; watched and discovered ones stay on, marked, with no price
     check."""
 
-    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Classes], filters: Filters) -> None:
-        super().__init__(ctx, MAX_PRICE_CHECKS)
+    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Classes], filters: Filters,
+                 deadline: datetime | None = None) -> None:
+        super().__init__(ctx, MAX_PRICE_CHECKS + (MAX_SCREEN_CHECKS if filters.usable else 0))
+        self._deadline = deadline
+        self._out_of_time = False
         self._plan = plan
         self._exclusions = exclusions
         self._filters = filters
@@ -497,6 +501,7 @@ class _Shortlist(Screen):
         if screening.matched:
             shown = sum(1 for i in ranked if i.universe and i.skipped is None)
             passed = f", {passed_over} passed over without recent prices" if passed_over else ""
+            passed += "; the rest not checked: the time ran out" if self._out_of_time else ""
             self.screen_notes.append(f"universe screen: {screening.matched} compan"
                                      f"{'y' if screening.matched == 1 else 'ies'} matched "
                                      f"({self._filters.describe()}), {shown} shown{passed}")
@@ -508,11 +513,13 @@ class _Shortlist(Screen):
         them)."""
         where = f" in {', '.join(self._filters.places)}" if self._filters.places else ""
         why = f"in the universe's {', '.join(c.text for c in self._filters.industries)}{where}; no news found names it"
-        self.allow(MAX_SCREEN_CHECKS)
         out: list[ShortlistItem] = []
         passed_over = 0
         for s in companies:
             if len(out) == MAX_SCREENED or not self.checks_left:
+                break
+            if self._deadline and self._ctx.clock.utcnow() >= self._deadline:
+                self._out_of_time = True
                 break
             profile, _ = self.identify(s.profile.name, symbol=s.line)
             if profile is None or self.removed(profile) or self._filtered(profile):

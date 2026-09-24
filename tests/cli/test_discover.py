@@ -40,7 +40,9 @@ def run(tmp_path, capsys, monkeypatch, news, chat):
              "STLA": "Stellantis N.V.", "RIVN": "Rivian Automotive, Inc.", "HMC": "Honda Motor Co., Ltd."}
     for s in names:
         yahoo.add(s, "USD", "America/New_York", [bar("2026-09-21", 10.0), bar("2026-09-22", 11.0)])
-    web = FakeWeb(FakeFinanceDatabase([equity(s, n, **CARS) for s, n in names.items()]), yahoo, news)
+    home = {"HMC": ("Japan", "NYQ"), "STLA": ("Netherlands", "NYQ")}
+    web = FakeWeb(FakeFinanceDatabase([equity(s, n, *home.get(s, ()), **CARS) for s, n in names.items()]), yahoo,
+                  news)
     monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
     monkeypatch.setattr(discovery_service, "model_for", lambda c, p: ScriptedModel())
     monkeypatch.setattr(candidate_screen, "is_stale", lambda last, today: False)
@@ -102,10 +104,10 @@ def test_ask_prints_what_the_universe_screen_found_each_company_by(run, news, ch
     code, out, _ = run("discover", "ask", "which US carmakers gain from electric trucks?")
     assert code == 0
     assert " 1. RIVN  Rivian Automotive, Inc." in out
-    assert out.count("universe: Automobiles & Components, United States, Large Cap") == 5, "RIVN, F, GM, HMC, STLA"
+    assert out.count("universe: Automobiles & Components, United States, Large Cap") == 3, "RIVN, F, GM"
     assert "in the universe's carmakers in US; no news found names it" in out
     assert "Tesla" not in out
-    assert "note: universe screen: 5 companies matched (carmakers; US), 5 shown" in out
+    assert "note: universe screen: 3 companies matched (carmakers; US), 3 shown" in out
 
 
 def test_a_follow_up_a_rerun_listing_showing_and_adding(run, news, chat):

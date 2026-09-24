@@ -107,11 +107,11 @@ class Validator:
     def _line(self, item: ShortlistItem, p: ListingProfile) -> Check:
         if item.symbol.upper() in {p.primary_symbol.upper(), (self._screen.live_line(p) or "").upper()}:
             return Check(LINE, True, f"{item.symbol} is its primary or most liquid live line")
-        # The universe screen lists a company on its home line in the region asked (a main board
-        # in the country's own currency), which may not be its primary: Paris for STMicro, not New York.
+        # The universe screen lists a company on a home line (a main board in that country's own
+        # currency), which may not be its primary: Paris for STMicro, not New York.
         if item.universe and self._screen.is_home_line(p, item.symbol):
-            return Check(LINE, True, f"{item.symbol} is its line on a main board in the region asked, "
-                                     "in the home currency")
+            return Check(LINE, True, f"{item.symbol} is its line on a main board, in that country's "
+                                     "own currency")
         return Check(LINE, False, f"{item.symbol} is not its primary or most liquid live line")
 
     def _prices(self, item: ShortlistItem) -> Check:

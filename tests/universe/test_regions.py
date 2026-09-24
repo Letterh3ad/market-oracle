@@ -16,6 +16,21 @@ from oracle.universe.regions import REGIONS, countries_of, home_country, home_li
     ("USA", {"United States"}, {"Canada"}),
     ("North America", {"United States", "Canada"}, {"Mexico"}),
     ("Asia", {"Japan", "South Korea", "Taiwan"}, {"Germany"}),
+    ("U.S.", {"United States"}, {"Canada"}),
+    ("United States of America", {"United States"}, {"Canada"}),
+    ("EU", {"Germany", "France", "Ireland"}, {"United Kingdom", "Switzerland", "Norway"}),
+    ("Eurozone", {"Germany", "Finland"}, {"Sweden", "United Kingdom"}),
+    ("Western Europe", {"France", "United Kingdom", "Netherlands"}, {"Poland", "Hungary"}),
+    ("Southeast Asia", {"Singapore", "Vietnam", "Indonesia"}, {"Japan", "China"}),
+    ("Asia-Pacific", {"Japan", "Australia", "Singapore"}, {"United States"}),
+    ("APAC", {"Japan", "Australia"}, {"Germany"}),
+    ("South Korean", {"South Korea"}, {"Japan"}),
+    ("Singaporean", {"Singapore"}, {"Malaysia"}),
+    ("Mexican", {"Mexico"}, {"Brazil"}),
+    ("England", {"United Kingdom"}, {"Ireland"}),
+    ("Scotland", {"United Kingdom"}, {"Ireland"}),
+    ("Africa", {"South Africa", "Egypt"}, {"Spain"}),
+    ("emerging markets", {"India", "Brazil", "China"}, {"United States", "Germany", "Japan"}),
 ])
 def test_a_region_country_or_nationality_names_its_countries(text, holds, lacks):
     countries = countries_of(text)
@@ -31,6 +46,11 @@ def test_a_nationality_word_gives_the_place_news_means():
     assert place_of("dutch") == "Netherlands" and place_of("europe's") == "Europe" and place_of("uk-based") == \
         "United Kingdom"
     assert place_of("uk") is None, "bare UK is left out: 'wins UK subsidy'"
+
+
+def test_every_country_with_a_market_in_a_region_has_a_currency():
+    from oracle.universe.regions import CURRENCY
+    assert {"Colombia", "Peru", "Philippines", "Vietnam", "United Arab Emirates"} <= set(CURRENCY)
 
 
 def test_europe_is_one_table():
@@ -61,6 +81,7 @@ def test_the_home_line_is_the_best_ranked_one_in_the_countries_asked():
     assert home_line(stm, REGIONS["Europe"]).symbol == "STM.PA"
     assert home_line(stm, frozenset({"Italy"})).symbol == "STM.MI"
     assert home_line(stm, None).symbol == "STM", "anywhere: the best-ranked main-board line"
+    assert home_line([line("PETR34.SA", "SAO", "BRL")], None) is not None, "receipts are the caller's to drop"
     assert home_line(stm, REGIONS["Europe"], dead={"STM.PA"}).symbol == "STM.MI"
     assert home_line(stm, frozenset({"Japan"})) is None
     assert home_line([line("STMEF", "PNK", "USD")], None) is None

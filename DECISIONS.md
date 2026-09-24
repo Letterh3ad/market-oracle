@@ -2289,3 +2289,22 @@ NXP's Europe line is Xetra (VNX.DE), as it has none in Amsterdam; a company spli
 universe with its home line carrying no currency (Prysmian: PRY.MI apart from AEU.F) has no home line.
 **Alternatives:** A sector override table (hand upkeep); a company-level country vote across lines
 (every Rheinmetall line says United States).
+
+## 2026-09-24 - Universe screen gate round 1 fixes
+**Context:** The gate found that a screen with no region picked ADRs, BDRs and foreign secondaries
+(NIO, TSM, TMCO34.SA), that an unrecognised region ("EU") widened the screen to the world, and that
+named companies and screened ones had separate price-check budgets and screened checks ignored the
+auto deadline.
+**Decision:** With no region asked, a company's home line must be in its own country, unless its
+primary is a US OTC line (the universe's country is then not trusted and any home line counts); a
+company with no country, or no such line, is dropped. Receipt lines are never chosen, and "DRN" (Sao
+Paulo's BDR suffix) counts as a receipt. Regions asked of which none is recognised skip the screen with
+a note. `countries_of` ignores dots and hyphens and knows the EU, Eurozone, Western Europe, Southeast
+Asia, Asia-Pacific/APAC, Africa, emerging markets (roughly MSCI's), England/Scotland/Wales and more
+nationalities. One price-check budget per answer (8, plus 20 when the screen runs): named companies
+take from it first. Screened companies are not price-checked past the auto deadline, and the note says
+so. A plan industry phrase naming nothing whole is tried a word at a time ("defence contractors",
+"oil majors"); aliases ev, homebuilder and miner.
+**Alternatives:** The best main-board line anywhere (brought back NIO and TSM); screening the world
+for an unknown region (answers a different question); a separate screen budget (named companies could
+go unchecked while the screen spent its own).

@@ -32,10 +32,11 @@ QUESTION = "European semiconductor companies, mid cap and up"
 
 
 def company(key, name, country, cap, lines, sector=IT, group=CHIPS, industry=CHIPS, isin=None):
-    """Lines are (symbol, exchange, currency); the first is the primary."""
-    return [Listing(symbol, name, "equity", country, exchange, isin=isin, currency=currency, sector=sector,
-                    industry_group=group, industry=industry, market_cap=cap, company_key=key, is_primary=n == 0)
-            for n, (symbol, exchange, currency) in enumerate(lines)]
+    """Lines are (symbol, exchange, currency[, the line's own name]); the first is the primary."""
+    return [Listing(symbol, (own or [name])[0], "equity", country, exchange, isin=isin, currency=currency,
+                    sector=sector, industry_group=group, industry=industry, market_cap=cap, company_key=key,
+                    is_primary=n == 0)
+            for n, (symbol, exchange, currency, *own) in enumerate(lines)]
 
 
 DEFENCE = dict(sector="Industrials", group="Capital Goods", industry="Aerospace & Defense")
@@ -63,6 +64,15 @@ UNIVERSE = [
     *company("vow", "Volkswagen AG", "Germany", "Large Cap", [("VOW3.DE", "GER", "EUR")], **CARS),
     *company("tsla", "Tesla, Inc.", "United States", "Mega Cap", [("TSLA", "NMS", "USD"),
                                                                   ("TSLA.MI", "MIL", "EUR")], **CARS),
+    # Home in Tokyo, with a New York line; the universe keeps its Sao Paulo receipt as a company of its own.
+    *company("toyota", "Toyota Motor Corporation", "Japan", "Mega Cap", [("7203.T", "JPX", "JPY"),
+                                                                         ("TM", "NYQ", "USD")], **CARS),
+    *company("tmco", "TOYOTA MOTOR  DRN", "Japan", "Mega Cap", [("TMCO34.SA", "SAO", "BRL")], **CARS),
+    # Listed only in New York: no line at home.
+    *company("nio", "NIO Inc.", "China", "Large Cap", [("NIO", "NYQ", "USD")], **CARS),
+    # Its only line at home is a receipt.
+    *company("abrs", "Autobras S.A.", "Brazil", "Large Cap", [("ABRS", "NYQ", "USD"),
+                                                              ("ABRS34.SA", "SAO", "BRL", "AUTOBRAS  DRN")], **CARS),
     *company("olix", "OliX Pharmaceuticals,Inc", "South Korea", "Micro Cap", [("226950.KQ", "KOE", "KRW")],
              sector="Health Care", group="Pharmaceuticals, Biotechnology & Life Sciences",
              industry="Pharmaceuticals"),
@@ -129,9 +139,25 @@ def test_a_company_whose_universe_country_is_wrong_is_found_by_its_home_line(ctx
     assert found.companies[0].evidence == "universe: Aerospace & Defense, Germany, Large Cap"
 
 
-def test_with_no_region_each_company_is_on_its_best_main_board_line_and_never_tesla(ctx):
-    assert lines(screen_universe(ctx, filters(ctx, ["carmakers"]))) == ["VOW3.DE"]
+def test_with_no_region_each_company_is_on_its_line_at_home_and_never_tesla(ctx):
+    assert lines(screen_universe(ctx, filters(ctx, ["carmakers"]))) == ["7203.T", "VOW3.DE"],         "no New York line for NIO or Autobras, no receipt"
     assert lines(screen_universe(ctx, filters(ctx, ["semiconductors"], caps=["Mega Cap"]))) == ["ASML.AS", "NVDA"]
+    assert lines(screen_universe(ctx, filters(ctx, ["defence"]))) == ["RHM.DE"],         "a US OTC primary: the universe's country is not trusted"
+
+
+def test_regions_asked_that_name_nothing_skip_the_screen_instead_of_widening_it(ctx):
+    got, notes = plan_filters(ctx, ["carmakers"], ["Atlantis"], ())
+    assert not got.usable and screen_universe(ctx, got).matched == 0
+    assert "no region asked for was recognised, so the universe was not screened" in notes
+
+
+@pytest.mark.parametrize("words, found", [
+    (["defence contractors"], ["RHM.DE"]),
+    (["EV makers"], ["7203.T", "VOW3.DE"]),
+])
+def test_a_phrase_naming_nothing_is_tried_word_by_word(ctx, words, found):
+    got, notes = plan_filters(ctx, words, [], ())
+    assert lines(screen_universe(ctx, got)) == found and not notes
 
 
 def test_plan_words_are_mapped_onto_the_universe_and_unknown_ones_dropped_with_a_note(ctx):
@@ -190,6 +216,22 @@ async def test_the_screen_shows_up_to_its_cap_and_says_how_many_matched(ctx, mon
     assert [line.item.symbol for line in view.shortlist] == ["ASML.AS", "IFX.DE"]
     assert any(n.startswith("universe screen: 6 companies matched") and n.endswith("2 shown")
                for n in view.answer.notes)
+
+
+async def test_named_companies_are_price_checked_first_from_one_budget(ctx, monkeypatch):
+    monkeypatch.setattr(discovery_chat_service, "MAX_PRICE_CHECKS", 1)
+    monkeypatch.setattr(discovery_chat_service, "MAX_SCREEN_CHECKS", 2)
+    view = await ask(ctx, QUESTION, model=model(INFINEON, ("STMicroelectronics", "Chips", [3])),
+                     searcher=FakeSearcher())
+    assert [line.item.symbol for line in view.shortlist] == ["IFX.DE", "STM.PA", "ASML.AS"]
+    assert view.skipped == ()
+
+
+async def test_the_screen_stops_at_the_deadline(ctx):
+    q = discovery_chat_service.new_question(ctx, QUESTION)
+    view = await discovery_chat_service.answer(ctx, q.id, model(INFINEON), FakeSearcher(), deadline=NOW)
+    assert [line.item.symbol for line in view.shortlist] == ["IFX.DE"]
+    assert any("the time ran out" in n for n in view.answer.notes)
 
 
 async def test_a_screened_company_without_recent_prices_is_passed_over_and_counted(ctx, yahoo):

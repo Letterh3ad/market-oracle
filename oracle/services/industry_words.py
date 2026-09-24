@@ -16,7 +16,8 @@ ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotech
            "automaker": "automobile", "car": "automobile", "cars": "automobile", "auto": "automobile",
            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication",
            "drug": "pharmaceutical", "drugmaker": "pharmaceutical", "carmaker": "automobile",
-           "defence": "defense", "semiconducter": "semiconductor"}
+           "defence": "defense", "semiconducter": "semiconductor", "ev": "automobile",
+           "homebuilder": "household durable", "miner": "mining"}
 _WORDS = re.compile(r"[a-z0-9]+")
 # "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
 _WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}

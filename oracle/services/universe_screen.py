@@ -4,7 +4,7 @@ favour famous names and startups)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from oracle.services.context import AppContext
 from oracle.services.industry_words import Classes, classes
@@ -27,11 +27,13 @@ class Filters:
     countries: frozenset[str] | None = None
     """None for anywhere."""
     market_caps: tuple[str, ...] = ()
+    unplaced: bool = False
+    """Regions were asked for and none was recognised: screening anywhere would widen the question."""
 
     @property
     def usable(self) -> bool:
         """A region or a size alone would list any big company there, whatever the question."""
-        return bool(self.industries)
+        return bool(self.industries) and not self.unplaced
 
     def describe(self) -> str:
         caps = ", ".join(c.lower() + "s" for c in self.market_caps)
@@ -61,12 +63,13 @@ class Screening:
 def plan_filters(ctx: AppContext, industries: list[str], regions: list[str],
                  market_caps: tuple[str, ...]) -> tuple[Filters, list[str]]:
     """The plan's words as the universe's classifications and countries, with a note for each
-    word that names nothing the universe holds (it is dropped)."""
+    word that names nothing the universe holds (it is dropped). A phrase naming nothing whole is
+    tried a word at a time ("defence contractors", "oil majors")."""
     known = UniverseRepo(ctx.conn).classifications()
     matched, places, countries, notes = [], [], set(), []
     for word in industries:
-        if found := classes(word, known):
-            matched.append(found)
+        if found := classes(word, known) or next((c for w in word.split() if (c := classes(w, known))), None):
+            matched.append(replace(found, text=word))
         else:
             notes.append(f'"{word}" was not recognised as a sector or industry, so the universe was not screened '
                          "for it")
@@ -77,12 +80,18 @@ def plan_filters(ctx: AppContext, industries: list[str], regions: list[str],
         else:
             notes.append(f'"{word}" was not recognised as a country or region, so the universe was not screened '
                          "for it")
-    return Filters(tuple(matched), tuple(places), frozenset(countries) if places else None, market_caps), notes
+    unplaced = bool(regions) and not places
+    if unplaced and matched:
+        notes.append("no region asked for was recognised, so the universe was not screened")
+    return Filters(tuple(matched), tuple(places), frozenset(countries) if places else None, market_caps,
+                   unplaced), notes
 
 
 def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
     """The companies that fit, largest band first, then the most widely listed: equity, not on
-    the never list, not a depositary receipt, with a live home line in the countries asked."""
+    the never list, not a depositary receipt, with a live home line in the countries asked, or
+    with none asked, in the company's own country (never an ADR, a receipt or a foreign
+    secondary line; only a US OTC primary, whose country the universe gets wrong, may be anywhere)."""
     if not filters.usable:
         return Screening()
     universe = UniverseRepo(ctx.conn)
@@ -96,7 +105,12 @@ def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
         lines = listings[p.company_key]
         if is_receipt(p.name) or any(is_never(x.name, never) for x in (p, *lines)):
             continue
-        if (line := home_line(lines, filters.countries, dead)) is None:
+        countries = filters.countries
+        if countries is None and p.exchange not in _UNTRUSTED:
+            if not p.country:
+                continue
+            countries = {p.country}
+        if (line := home_line([x for x in lines if not is_receipt(x.name)], countries, dead)) is None:
             continue
         out.append(Screened(p, line.symbol, _evidence(p, home_country(line), filters)))
     return Screening(tuple(out))

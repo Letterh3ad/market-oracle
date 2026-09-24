@@ -53,7 +53,8 @@ def normalise_name(name: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
 
 
-_RECEIPT = re.compile(r"\b(?:[ABCG]DRS?|CEDEARS?)\b", re.IGNORECASE)
+# "DRN" is how Sao Paulo names a BDR line ("TOYOTA MOTOR  DRN").
+_RECEIPT = re.compile(r"\b(?:[ABCG]DRS?|CEDEARS?|DRN)\b", re.IGNORECASE)
 
 
 def is_receipt(name: str) -> bool:

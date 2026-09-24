@@ -4,7 +4,7 @@ from oracle.universe.listings import is_receipt
 
 
 @pytest.mark.parametrize("name", ["Samsung Electronics GDR", "Infosys ADR", "Apple Inc. BDR", "Apple CDR (CAD Hedged)",
-                                  "Tesla Inc CEDEAR", "Vale ADRs"])
+                                  "Tesla Inc CEDEAR", "Vale ADRs", "TOYOTA MOTOR  DRN"])
 def test_depositary_receipts_are_told_apart(name):
     assert is_receipt(name)
 

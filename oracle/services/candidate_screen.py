@@ -59,10 +59,6 @@ class Screen:
     def checks_left(self) -> bool:
         return self.checks < self._max_checks
 
-    def allow(self, more: int) -> None:
-        """`more` price fetches from now, whatever the first bound left."""
-        self._max_checks = self.checks + more
-
     def identify(self, name: str, symbol: str | None = None,
                  named_in: NamedIn | None = None) -> tuple[ListingProfile | None, str | None]:
         """The company's own shares the name (or `symbol`, when known) means, else why not.
