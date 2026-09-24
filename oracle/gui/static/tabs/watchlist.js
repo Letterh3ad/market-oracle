@@ -4,6 +4,7 @@ import { money, tone } from "../lib/fmt.js";
 import { tip } from "../lib/tip.js";
 import { busyButton, runJob, sendJson } from "../lib/ui.js";
 import { deadNote, swapSummary } from "../lib/siblings.js";
+import { repaint } from "../lib/repaint.js";
 import { fillPicker } from "../lib/watchlists.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
@@ -23,7 +24,7 @@ async function load(pane) {
   // A newer load (another list picked) answered already, or another tab owns the pane.
   if (mine !== seq || !pane.querySelector("#w-table")) return;
   fillPicker(pane.querySelector("#w-list"), lists, list);
-  pane.querySelector("#w-table").replaceChildren(table(body, pane));
+  repaint(pane.querySelector("#w-table"), [table(body, pane)]);
   pane.querySelector("#w-credits").replaceChildren(...body.credits.map((c) => el("p", { class: "dim small" }, c)));
 }
 

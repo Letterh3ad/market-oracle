@@ -1396,3 +1396,25 @@ already researches stale listings.
 read time from the current due list (would also flag buys behind a price move, which the
 reason does not say); queueing one batch job for all listings (one cancel for all, and a
 listing already queued by its own button would run twice).
+
+## 2026-09-24 - Repaint in place after actions; research buttons follow live jobs
+**Context:** After an action the Ledgers tab (and the Company page) blanked to "Loading..." and
+rebuilt, so the page height collapsed and the view jumped to the top; research buttons gave no
+sign a listing was already queued or running, inviting repeat presses.
+**Decision:** One helper, `lib/repaint.js` `repaint(box, nodes, after)`: the caller fetches
+first, then the helper swaps the new nodes in one step, holds the box's old height until
+`after` (charts, parts that load later) settles, puts the window scroll back and refocuses the
+control with the same id or aria-label. Only a tab's first load shows "Loading...". Used by
+Ledgers, Company, and the Universe results and Watchlist table (for focus). Each tab keeps
+its late-answer guard (Ledgers gained a load counter beside its root check). The Ledgers
+research buttons come from `researchLive()`, which polls `/api/activity` every 3 seconds while
+the tab is on screen and repaints only those buttons: Queued, Researching... with progress,
+then "Researched" once the listing is no longer due (one `/api/ledgers/ai/stale` call when a
+job ends). A press flips its button at once, and a poll sent before the press cannot undo it.
+The Company page's Research and Replay buttons show Queueing.../Queued/Researching... and
+stay disabled until the job ends.
+**Alternatives:** Saving and restoring scroll in each tab (duplicated, easy to miss one);
+diffing the DOM (a library or a lot of code for a page this size); keeping the old
+"Loading..." rebuild but restoring scroll afterwards (still flashes, and scroll restores
+before charts are drawn land short); a server push channel for job state (more moving parts
+than a 3-second poll of a small endpoint).

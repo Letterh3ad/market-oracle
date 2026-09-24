@@ -101,6 +101,8 @@ function view(r, failed) {
 }
 
 const ACTIVE = ["queued", "running"];
+let followMs = 2000;
+const followEvery = (ms) => { followMs = ms; }; // tests follow faster
 
 function jobLine(job) {
   if (job.state === "queued") return "Queued behind other research (see Activity).";
@@ -142,13 +144,29 @@ function researchSection(symbol) {
     api(`/api/companies/${sym}/research/history`).then((rows) => { if (box.isConnected) earlier.replaceChildren(historyList(rows, open) ?? ""); })
       .catch(() => {});
   };
-  const buttons = [];
+  const day = el("input", { type: "date", max: today(), "aria-label": "Replay as of" });
+  const run = el("button", { type: "button", onclick: () => start({}, run) }, "Research");
+  const replay = el("button", { type: "button", onclick: () => {
+    if (!day.value) return showError("pick the day to replay");
+    start({ as_of: day.value }, replay);
+  } }, "Replay as of");
+  const labels = new Map([[run, ["Research", "Queued", "Researching..."]],
+    [replay, ["Replay as of", "Replay queued", "Replaying..."]]]);
+  // Both stay disabled while either runs: one listing's research runs one at a time.
+  const showState = (pressed, state) => {
+    for (const [b, [idle, queued, running]] of labels) {
+      b.disabled = state !== null;
+      b.textContent = b !== pressed || state === null ? idle
+        : state === "running" ? running : state === "queued" ? queued : "Queueing...";
+    }
+  };
   // Follows the job until it ends, however the page came to it (a click, or a run already going).
   const follow = async (job) => {
-    buttons.forEach((b) => { b.disabled = true; });
+    const which = job.subject?.includes("@") ? replay : run; // a replay's subject is SYMBOL@day
     while (box.isConnected && ACTIVE.includes(job.state)) {
+      showState(which, job.state);
       status.textContent = jobLine(job);
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, followMs));
       try {
         job = await api(`/api/activity/${job.id}`);
       } catch (err) {
@@ -157,27 +175,21 @@ function researchSection(symbol) {
       }
     }
     if (!box.isConnected) return;
-    buttons.forEach((b) => { b.disabled = false; });
+    showState(null, null);
     status.textContent = job.state === "failed" || job.state === "interrupted" ? `Failed: ${job.error}`
       : job.state === "cancelled" ? "Cancelled." : "";
     reload();
   };
-  const start = async (params) => {
+  const start = async (params, pressed) => {
+    showState(pressed, "pressed");
     try {
       clearError();
       await follow(await api(`/api/jobs/research?${new URLSearchParams({ symbol, ...params })}`, { method: "POST" }));
     } catch (err) {
       showError(err.message);
-      buttons.forEach((b) => { b.disabled = false; });
+      showState(null, null);
     }
   };
-  const day = el("input", { type: "date", max: today(), "aria-label": "Replay as of" });
-  const run = el("button", { type: "button", onclick: () => start({}) }, "Research");
-  const replay = el("button", { type: "button", onclick: () => {
-    if (!day.value) return showError("pick the day to replay");
-    start({ as_of: day.value });
-  } }, "Replay as of");
-  buttons.push(run, replay);
   box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, status,
     el("span", { class: "row" }, replay, day, tip("", "research_replay"))), body, earlier);
   reload();
@@ -190,4 +202,4 @@ function researchSection(symbol) {
   return box;
 }
 
-export { researchSection, unvalidatedBadge };
+export { followEvery, researchSection, unvalidatedBadge };
