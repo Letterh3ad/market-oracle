@@ -31,7 +31,7 @@ from oracle.store.job_history import NOT_RUN, JobHistoryRepo
 from oracle.store.replay import DONE, FAILED, PAUSED, PENDING, RUNNING, CellRow, ReplayRepo, StudyRow
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import UniverseRepo
-from oracle.universe.listings import Listing, is_receipt
+from oracle.universe.listings import SIZES, Listing, is_receipt
 from oracle.universe.regions import home_country, home_line
 
 __all__ = ["Picked", "ReplayPacer", "StudyStatus", "create_study", "pause_study", "pick_listings",
@@ -60,7 +60,8 @@ SLOTS: tuple[tuple[str, str], ...] = (
     ("Emerging", _ENERGY),
 )
 """One listing per slot and half: about 20 each, every region and sector the study needs."""
-LARGE, MID_SMALL, MIX = "large", "mid-small", "mix"
+LARGE, MID_SMALL = SIZES
+MIX = "mix"
 HALVES: dict[str, tuple[tuple[str, ...], ...]] = {
     LARGE: (("Mega Cap", "Large Cap", "Mid Cap"),),
     # A band at a time, so a slot's Small Caps are tried only when none of its Mid Caps fits.

@@ -235,3 +235,26 @@ def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_
     assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
             "Measured cutoff: 2026-06-30.") in text
     assert "2 replays excluded: on or before the current cutoff." in text
+
+
+def sized(size, label, listings, hit, mean, ret):
+    one = {**REPORT["horizons"][0], "hit_rate": hit, "mean_as_called": mean,
+           "by_band": [group("0.80 and up", 1, hit, hit, mean, mean, 0.9)]}
+    lines = [{**line, "return": ret} for line in ACCOUNT["lines"]]
+    return {"size": size, "label": label, "listings": listings, "verdicts": 1, "mix": REPORT["mix"],
+            "horizons": [one, REPORT["horizons"][1]], "account": {**ACCOUNT, "listings": listings, "lines": lines}}
+
+
+def test_the_score_and_account_split_by_size():
+    report = {**REPORT, "account": ACCOUNT,
+              "by_size": [sized("large", "Large", ["AAPL"], 1.0, 0.05, 0.03),
+                          sized("mid-small", "Mid/small", ["7203.T"], 0.0, -0.02, -0.01)]}
+    text = run("console.log(JSON.stringify(node.textContent));", report=report)
+    assert "By size" in text and "Large: AAPL. Mid/small: 7203.T." in text
+    assert "Large1100%45%100%50%+5.00%" in text and "Mid/small10%45%100%50%-2.00%" in text
+    assert "All2" in text and "Account return" in text
+    assert "Large+3.00%+3.00%+3.00%" in text and "Mid/small-1.00%-1.00%-1.00%" in text
+
+
+def test_a_study_of_one_size_shows_no_split():
+    assert "By size" not in run("console.log(JSON.stringify(node.textContent));", report={**REPORT, "by_size": []})

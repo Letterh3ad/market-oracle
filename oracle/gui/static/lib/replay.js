@@ -1,7 +1,7 @@
 // The Ledgers tab's Replay study card: research replayed at past dates over a fixed spread of
 // listings, one replay at a time in the PC's free time. It never starts by itself.
 import { api } from "./api.js";
-import { compareLines, table } from "./compare.js";
+import { compareLines, lineInfos, table } from "./compare.js";
 import { cutoffSection } from "./cutoff_probe.js";
 import { el } from "./dom.js";
 import { money, pct } from "./fmt.js";
@@ -162,6 +162,31 @@ function replaySection() {
     ];
   }
 
+  // The study's headline numbers beside each size's: the comparison the size mix is for.
+  function sizes(r) {
+    if (!r.by_size?.length) return [];
+    const rows = [{ label: "All", horizons: r.horizons, account: r.account }, ...r.by_size];
+    const calls = (h) => String(h.by_band.reduce((n, g) => n + g.n, 0));
+    const num = (text) => el("td", { class: "num" }, text);
+    const account = (row) => Object.fromEntries((row.account?.lines ?? []).map((line) => [line.name, line.return]));
+    return [
+      el("h3", null, "By size"),
+      el("p", { class: "dim small" }, `${r.by_size.map((z) => `${z.label}: ${z.listings.join(", ")}.`).join(" ")} `
+        + "Each size is scored against the whole study's basket, and traded as an account of its own."),
+      ...r.horizons.map((h, i) => table([[HORIZON_NAMES[h.horizon] ?? h.horizon], ["Calls", null, true],
+        ["Hit", null, true], ["No skill", null, true], ["Hit vs basket", null, true],
+        ["No skill vs basket", null, true], ["Mean as called", null, true]], rows.map((row) => {
+        const x = row.horizons[i];
+        return el("tr", null, el("td", null, row.label), num(calls(x)), num(share(x.hit_rate)),
+          num(share(x.expected_hit_rate)), num(share(x.hit_rate_vs_basket)),
+          num(share(x.expected_hit_rate_vs_basket)), num(pct(x.mean_as_called)));
+      }), "")),
+      ...(r.account ? [table([["Account return"], ...Object.values(lineInfos(r.account.lines))
+        .map((info) => [info.label, null, true])], rows.map((row) => el("tr", null, el("td", null, row.label),
+        ...r.account.lines.map((line) => num(pct(account(row)[line.name]))))), "")] : []),
+    ];
+  }
+
   const updatePrices = busyButton("Update prices", async (onState) => {
     try {
       const r = await runJob("/api/replay/prices", onState);
@@ -198,6 +223,7 @@ function replaySection() {
       el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
         + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "
         + "listing's own currency, so \"vs basket\" compares against a basket that mixes currencies."),
+      ...sizes(r),
       el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, `${missing} ${updated}`)),
       accountNode,
       el("h3", null, "Limits"),

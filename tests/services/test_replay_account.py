@@ -345,3 +345,16 @@ def test_fills_pay_slippage_by_the_size_band_the_study_picked_the_listing_in(ctx
     held = lines(account)["buy_and_hold"]
     assert held.costs == pytest.approx(sum(t.costs for t in account.trades), rel=0.05)
     assert any("slippage by size" in n and "0.50% for Small Cap" in n for n in account.notes)
+
+
+def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
+    make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
+    s = replay_report(ctx)
+    assert s.account.listings == SYMBOLS
+    large, small = s.by_size
+    assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
+    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold"]
+    # BBB only rose, AAA fell after July: the smaller half did better.
+    assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
+    shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
+    assert shaped["return"] == lines(small.account)["ai"].return_

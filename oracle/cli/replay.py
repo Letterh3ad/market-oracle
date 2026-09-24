@@ -8,6 +8,7 @@ import sys
 from oracle.cli import cutoff
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
+from oracle.services.paper_service import Line
 from oracle.services.replay_score import (
     Account, Group, HorizonScore, Score, has_study, replay_report, update_study_prices,
 )
@@ -176,6 +177,8 @@ def print_report(s: Score) -> None:
     checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
     failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
     print(f"  Study prices last checked: {checked}{failed}")
+    if s.by_size:
+        print_sizes(s)
     if s.account:
         print_account(s.account)
     print("Limits:")
@@ -193,7 +196,7 @@ def print_account(a: Account) -> None:
           f"{n} listing{'' if n == 1 else 's'}")
     print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
     for line in a.lines:
-        print(f"  {LINE_LABELS.get(line.name, line.label or line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
+        print(f"  {_line_label(line):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
               f"{line.trades:>8}{line.costs:>14,.2f}")
     for line in a.lines:
         print(f"  - {line.caption}")
@@ -201,6 +204,33 @@ def print_account(a: Account) -> None:
         print(f"  Left out: {'; '.join(a.left_out)}")
     for note in a.notes:
         print(f"  - {note}")
+
+
+def print_sizes(s: Score) -> None:
+    """The study's headline numbers beside each size's, the comparison the size mix is for."""
+    rows = [("All", s.horizons, s.account), *((z.label, z.horizons, z.account) for z in s.by_size)]
+    print("By size, against the whole study's basket: "
+          + "; ".join(f"{z.label} {', '.join(z.listings)}" for z in s.by_size))
+    for n, h in enumerate(s.horizons):
+        name = f"{h.months} month{'' if h.months == 1 else 's'}"
+        print(f"  {name:<16}{'calls':>8}{'hit':>8}{'no-skill':>10}{'hit rel':>10}{'no-skill rel':>14}"
+              f"{'mean as called':>16}")
+        for label, horizons, _ in rows:
+            x = horizons[n]
+            calls = sum(g.n for g in x.by_band)
+            print(f"    {label:<14}{calls:>8}{_pct(x.hit_rate):>8}{_pct(x.expected_hit_rate):>10}"
+                  f"{_pct(x.hit_rate_vs_basket):>10}{_pct(x.expected_hit_rate_vs_basket):>14}"
+                  f"{_pct(x.mean_as_called, True):>16}")
+    if s.account:
+        columns = [(line.name, _line_label(line), max(len(_line_label(line)), 8) + 2) for line in s.account.lines]
+        print(f"  {'Account return':<16}" + "".join(f"{label:>{width}}" for _, label, width in columns))
+        for label, _, account in rows:
+            returns = {line.name: line.return_ for line in account.lines} if account else {}
+            print(f"    {label:<14}" + "".join(f"{_pct(returns.get(name), True):>{width}}" for name, _, width in columns))
+
+
+def _line_label(line: Line) -> str:
+    return LINE_LABELS.get(line.name, line.label or line.name)
 
 
 def print_horizon(h: HorizonScore) -> None:

@@ -111,13 +111,14 @@ def test_retry_all_or_one_failed_cell(cfg, capsys, tmp_path):
     assert "2 failed cells back" in capsys.readouterr().out
 
 
-def scored_study(tmp_path, fetched=("AAA", "BBB")):
+def scored_study(tmp_path, fetched=("AAA", "BBB"), bands=None):
     """A study whose windows all closed in 2025 and were fetched whole after, so the report
     needs no fetch whatever today is."""
     days = (date(2025, 6, 2), date(2025, 7, 1))
     with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
         repo = ReplayRepo(c.conn)
-        sid = repo.create(datetime(2025, 8, 1, tzinfo=timezone.utc), *days, json.dumps(LISTINGS[:2]),
+        listings = [{**p, "market_cap": (bands or {}).get(p["symbol"], p["market_cap"])} for p in LISTINGS[:2]]
+        sid = repo.create(datetime(2025, 8, 1, tzinfo=timezone.utc), *days, json.dumps(listings),
                           [(p["symbol"], d) for d in days for p in LISTINGS[:2]], allowed=1)
         # Entries are the first closes after each as-of day: Jun 3 and Jul 2.
         closes = {"AAA": [100, 100, 110, 110, 121, 121, 121, 121], "BBB": [100, 100, 100, 100, 90, 90, 90, 90]}
@@ -189,3 +190,21 @@ def test_report_fetches_missing_bars_first_and_says_how_it_went(cfg, capsys, tmp
 def test_report_without_a_study(cfg, capsys, no_fetch):
     replay(cfg, "report")
     assert "No replay study yet" in capsys.readouterr().out
+
+
+def test_report_splits_the_headline_numbers_by_size(cfg, capsys, tmp_path, no_fetch):
+    scored_study(tmp_path, bands={"BBB": "Small Cap"})
+    replay(cfg, "report")
+    out = capsys.readouterr().out
+    assert "By size, against the whole study's basket: Large AAA; Mid/small BBB" in out
+    # Large: AAA's two buys rose 10% each. Mid/small: BBB's sell stayed flat.
+    assert "  1 month            calls     hit  no-skill   hit rel  no-skill rel  mean as called" in out
+    assert "    All                  3     67%       56%      100%           56%          +6.67%" in out
+    assert "    Large                2    100%      100%      100%          100%         +10.00%" in out
+    assert "    Mid/small            1      0%      100%      100%          100%" in out
+    assert "  Account return          AI  Every verdict a buy  Buy and hold" in out
+    assert "    Large             +0.00%               +0.00%       +20.52%" in out
+    replay(cfg, "report", "--json")
+    body = json.loads(capsys.readouterr().out)
+    assert [z["size"] for z in body["by_size"]] == ["large", "mid-small"]
+    assert body["by_size"][0]["account"]["listings"] == ["AAA"]

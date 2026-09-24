@@ -171,13 +171,13 @@ def test_the_wilson_interval_and_none_under_ten():
 def test_the_status_carries_a_small_interim_score(ctx, study):
     score = study_status(ctx).to_json()["score"]
     assert set(score) == {"verdicts", "no_verdict", "buy_share", "mean_confidence", "prices_checked_at",
-                          "price_failures", "horizons", "excluded", "note"}
+                          "price_failures", "horizons", "excluded", "note", "by_size"}
     assert (score["verdicts"], score["no_verdict"], score["buy_share"]) == (4, 1, 0.5)
     assert (score["prices_checked_at"], score["price_failures"]) == (None, []) and "limits" in score["note"]
     one = score["horizons"]["1m"]
     assert set(one) == {"scored", "pending", "unpriced", "hit_rate", "hit_rate_ci", "hit_rate_vs_basket",
                         "hit_rate_vs_basket_ci", "base_rate_up", "base_rate_beat_basket", "expected_hit_rate",
-                        "expected_hit_rate_vs_basket", "by_verdict"}
+                        "expected_hit_rate_vs_basket", "by_verdict", "mean_as_called"}
     assert (one["scored"], one["pending"], one["hit_rate_ci"]) == (4, 0, None)  # 3 calls: too few for an interval
     assert one["by_verdict"]["sell"] == {"n": 1, "mean_return": 0.0, "mean_as_called": 0.0}
     hold = one["by_verdict"]["hold"]
@@ -329,3 +329,41 @@ def test_an_exit_exactly_a_week_before_its_target_is_a_price(ctx, dense):
     ctx.conn.execute("DELETE FROM bars WHERE symbol = 'DDD' AND date BETWEEN '2025-02-22' AND '2025-02-28'")
     assert dense(date(2025, 1, 31))[0].ret == pytest.approx(ret("2025-02-03", "2025-02-21"))
 
+
+
+@pytest.fixture
+def sized(ctx, study):
+    """AAA a Mega Cap, BBB a Small Cap and CCC a Mid Cap."""
+    bands = {"AAA": "Mega Cap", "BBB": "Small Cap", "CCC": "Mid Cap"}
+    listings = [{**p, "market_cap": bands[p["symbol"]]} for p in LISTINGS]
+    ctx.conn.execute("UPDATE replay_studies SET listings = ? WHERE id = ?", (json.dumps(listings), study))
+    return study
+
+
+def test_every_headline_number_is_split_by_size(ctx, sized):
+    s = replay_report(ctx)
+    large, small = s.by_size
+    assert (large.size, large.label, large.listings) == ("large", "Large", ("AAA",))
+    assert (small.size, small.label, small.listings) == ("mid-small", "Mid/small", ("BBB", "CCC"))
+    assert (large.verdicts, large.mix.buy_share, small.verdicts, small.mix.sell) == (2, 1.0, 2, 1)
+    one_large, one_small = horizon(large, "1m"), horizon(small, "1m")
+    # Large: AAA's June buy rose, its July buy fell. Mid/small: BBB's June sell stayed flat.
+    assert (one_large.scored, one_large.hit_rate, one_large.base_rate_up) == (2, 0.5, 0.5)
+    assert one_large.mean_as_called == pytest.approx(0.0)
+    assert (one_small.scored, one_small.hit_rate, one_small.base_rate_up) == (2, 0.0, 0.0)
+    assert one_small.mean_as_called == pytest.approx(0.0)
+    assert horizon(s, "1m").mean_as_called == pytest.approx(0.0)
+    assert horizon(large, "3m").mean_as_called == pytest.approx(0.20)
+
+
+def test_a_study_of_one_size_is_not_split(ctx, study):
+    assert replay_report(ctx).by_size == ()
+
+
+def test_the_status_score_splits_by_size_too(ctx, sized):
+    shaped = study_status(ctx).to_json()["score"]["by_size"]
+    assert list(shaped) == ["large", "mid-small"]
+    small = shaped["mid-small"]
+    assert (small["label"], small["listings"], small["verdicts"], small["buy_share"]) == ("Mid/small", 2, 2, 0.0)
+    assert small["horizons"]["1m"]["hit_rate"] == 0.0 and small["horizons"]["1m"]["by_verdict"]["sell"]["n"] == 1
+    assert shaped["large"]["horizons"]["1m"]["mean_as_called"] == pytest.approx(0.0)

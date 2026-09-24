@@ -11,7 +11,7 @@ import json
 import math
 from bisect import bisect_right
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from oracle.market.bars import Bar
@@ -26,8 +26,10 @@ from oracle.store.db import to_utc_iso
 from oracle.store.meta import MetaRepo
 from oracle.store.replay import DONE, FAILED, CellRow, ReplayRepo, StudyRow
 from oracle.store.research import ResearchRepo
+from oracle.universe.listings import SIZES, size_of
 
-__all__ = ["LIMITS", "Account", "Score", "has_study", "replay_report", "score_study", "update_study_prices", "wilson"]
+__all__ = ["LIMITS", "Account", "Score", "SizeScore", "has_study", "replay_report", "score_study",
+           "update_study_prices", "wilson"]
 
 HORIZONS: tuple[tuple[str, int], ...] = (("1m", 1), ("3m", 3))
 """Label and months ahead."""
@@ -45,6 +47,8 @@ Z95 = 1.96
 SCORED, PENDING, UNPRICED = "scored", "pending", "unpriced"
 PRICES_KEY = "replay_prices"
 _SIGN = {"buy": 1, "hold": 0, "sell": -1}
+UNKNOWN_SIZE = "unknown"
+SIZE_LABELS = {"large": "Large", "mid-small": "Mid/small", UNKNOWN_SIZE: "Size unknown"}
 
 LIMITS = (
     "Replays read filings and dated headlines only; GDELT covers about 3 months, so older dates lean on "
@@ -122,6 +126,8 @@ class HorizonScore:
     by_verdict: tuple[Group, ...]
     by_band: tuple[Group, ...]
     """Buys and sells only."""
+    mean_as_called: float | None = None
+    """The mean return of the buys and sells, a sell's sign flipped, so positive is right."""
 
 
 @dataclass(frozen=True)
@@ -156,6 +162,16 @@ class InterimHorizon:
     expected_hit_rate: float | None
     expected_hit_rate_vs_basket: float | None
     by_verdict: dict[str, InterimVerdict]
+    mean_as_called: float | None = None
+
+
+@dataclass(frozen=True)
+class InterimSize:
+    label: str
+    listings: int
+    verdicts: int
+    buy_share: float | None
+    horizons: dict[str, InterimHorizon]
 
 
 @dataclass(frozen=True)
@@ -171,6 +187,22 @@ class Interim:
     excluded: int = 0
     """Replays left out: on or before the current cutoff."""
     note: str = NOTE
+    by_size: dict[str, InterimSize] = field(default_factory=dict)
+    """The same by size (SIZES), when the study holds more than one."""
+
+
+@dataclass(frozen=True)
+class SizeScore:
+    """The study's headline numbers over the listings of one size."""
+    size: str
+    """A SIZES key, or UNKNOWN_SIZE for listings of no known band."""
+    label: str
+    listings: tuple[str, ...]
+    verdicts: int
+    mix: Mix
+    horizons: tuple[HorizonScore, ...]
+    account: Account | None = None
+    """Only in the full report, as the study's own."""
 
 
 @dataclass(frozen=True)
@@ -203,28 +235,34 @@ class Score:
     account: Account | None = None
     """The verdicts traded as an account; only in the full report (`replay_report`), None
     before any listing is priced."""
+    by_size: tuple[SizeScore, ...] = ()
+    """The headline numbers by size, when the study holds more than one."""
 
     def interim(self) -> Interim:
-        def verdict(g: Group) -> InterimVerdict:
-            sign = _SIGN[g.name]
-            return InterimVerdict(g.n, g.mean_return, sign * g.mean_return if sign and g.mean_return is not None
-                                  else None)
-
         return Interim(self.verdicts, self.no_verdict, self.mix.buy_share, self.mix.mean_confidence,
-                       self.prices_checked_at, self.price_failures, {
-                           h.horizon: InterimHorizon(h.scored, h.pending, h.unpriced, h.hit_rate, h.hit_ci,
-                                                     h.hit_rate_vs_basket, h.hit_vs_basket_ci, h.base_rate_up,
-                                                     h.base_rate_beat_basket, h.expected_hit_rate,
-                                                     h.expected_hit_rate_vs_basket,
-                                                     {g.name: verdict(g) for g in h.by_verdict})
-                           for h in self.horizons}, self.excluded)
+                       self.prices_checked_at, self.price_failures, _interim_horizons(self.horizons), self.excluded,
+                       by_size={z.size: InterimSize(z.label, len(z.listings), z.verdicts, z.mix.buy_share,
+                                                    _interim_horizons(z.horizons)) for z in self.by_size})
 
     def to_json(self) -> dict:
         out = json.loads(json.dumps(asdict(self), default=_iso))
-        if self.account:
-            for shaped, line in zip(out["account"]["lines"], self.account.lines):
-                shaped["return"] = line.return_
+        for shaped, scored in ((out, self), *zip(out["by_size"], self.by_size)):
+            if scored.account:
+                for line_json, line in zip(shaped["account"]["lines"], scored.account.lines):
+                    line_json["return"] = line.return_
         return out
+
+
+def _interim_horizons(horizons: Sequence[HorizonScore]) -> dict[str, InterimHorizon]:
+    def verdict(g: Group) -> InterimVerdict:
+        sign = _SIGN[g.name]
+        return InterimVerdict(g.n, g.mean_return, sign * g.mean_return if sign and g.mean_return is not None else None)
+
+    return {h.horizon: InterimHorizon(h.scored, h.pending, h.unpriced, h.hit_rate, h.hit_ci, h.hit_rate_vs_basket,
+                                      h.hit_vs_basket_ci, h.base_rate_up, h.base_rate_beat_basket, h.expected_hit_rate,
+                                      h.expected_hit_rate_vs_basket, {g.name: verdict(g) for g in h.by_verdict},
+                                      h.mean_as_called)
+            for h in horizons}
 
 
 def _iso(value: date | datetime) -> str:
@@ -251,13 +289,17 @@ def replay_report(ctx: AppContext) -> Score | None:
     if study is None:
         return None
     score = score_study(ctx, study)
-    return replace(score, account=_account(ctx, study, score.cells))
+    return replace(score, account=_account(ctx, study, score.cells),
+                   by_size=tuple(replace(z, account=_account(ctx, study, score.cells, set(z.listings)))
+                                 for z in score.by_size))
 
 
-def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Account | None:
+def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
+             only: set[str] | None = None) -> Account | None:
+    """The study's account, or over `only` those listings."""
     # Days the model may know the outcome of are left out whole, so neither line starts there.
     cutoff = replay_cutoff(ctx).cutoff
-    cells = [c for c in cells if not (cutoff and c.as_of <= cutoff)]
+    cells = [c for c in cells if not (cutoff and c.as_of <= cutoff) and (only is None or c.symbol in only)]
     first: dict[str, date] = {}
     for c in cells:
         first[c.symbol] = min(first.get(c.symbol, c.as_of), c.as_of)
@@ -356,7 +398,8 @@ def _save_price_state(ctx: AppContext, study_id: int, state: dict) -> None:
 def score_study(ctx: AppContext, study: StudyRow) -> Score:
     today = ctx.clock.utcnow().date()
     cells = ReplayRepo(ctx.conn).cells(study.id)
-    symbols = [p["symbol"] for p in json.loads(study.listings)]
+    listings = json.loads(study.listings)
+    symbols = [p["symbol"] for p in listings]
     days = sorted({c.as_of for c in cells})
     prices = _Prices(ctx, symbols, days[0] - STALE if days else study.first_day)
     moves = {(s, d, h): prices.forward(s, d, months, today) for s in symbols for d in days for h, months in HORIZONS}
@@ -387,7 +430,21 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
         tuple(s for s in symbols if due(s)),
         datetime.fromisoformat(state["checked_at"]) if "checked_at" in state else None,
         tuple(state.get("failures", ())), scored,
-        sum(1 for c in cells if c.state == DONE) - len(counted))
+        sum(1 for c in cells if c.state == DONE) - len(counted), by_size=_by_size(listings, judged))
+
+
+def _by_size(listings: Sequence[dict], judged: Sequence[CellScore]) -> tuple[SizeScore, ...]:
+    """Each size's headline numbers, against the whole study's basket; none for a study of one size."""
+    sizes = {p["symbol"]: size_of(p.get("market_cap")) or UNKNOWN_SIZE for p in listings}
+    present = [z for z in (*SIZES, UNKNOWN_SIZE) if z in sizes.values()]
+    if len(present) < 2:
+        return ()
+    out = []
+    for size in present:
+        part = [c for c in judged if sizes.get(c.symbol) == size]
+        out.append(SizeScore(size, SIZE_LABELS[size], tuple(s for s, z in sizes.items() if z == size), len(part),
+                             _mix(part), tuple(_horizon(part, n, h, months) for n, (h, months) in enumerate(HORIZONS))))
+    return tuple(out)
 
 
 @dataclass(frozen=True)
@@ -467,7 +524,8 @@ def _horizon(judged: Sequence[CellScore], n: int, name: str, months: int) -> Hor
         name, months, len(done), states.count(PENDING), states.count(UNPRICED), overall.hit_rate, overall.hit_ci,
         overall.hit_rate_vs_basket, overall.hit_vs_basket_ci, up, beat, expected, expected_vs,
         tuple(_group(v, [c for c in done if c.verdict == v], n, called=False) for v in VERDICTS),
-        tuple(_group(band, [c for c in calls if _band(c.confidence) == band], n, called=True) for band in BANDS))
+        tuple(_group(band, [c for c in calls if _band(c.confidence) == band], n, called=True) for band in BANDS),
+        overall.mean_return)
 
 
 def _base(calls: Sequence[CellScore], n: int, pick) -> tuple[float | None, float | None]:

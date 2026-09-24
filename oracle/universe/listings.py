@@ -20,6 +20,13 @@ LEGAL_FORMS = frozenset({
 
 # FinanceDatabase's bands, largest first.
 MARKET_CAP_BANDS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap")
+SIZES: dict[str, tuple[str, ...]] = {"large": MARKET_CAP_BANDS[:2], "mid-small": MARKET_CAP_BANDS[2:]}
+"""The two sizes a comparison splits companies into, by band."""
+
+
+def size_of(band: str | None) -> str | None:
+    """The SIZES key a band falls in; None for no known band."""
+    return next((size for size, bands in SIZES.items() if band in bands), None)
 
 
 @dataclass(frozen=True)

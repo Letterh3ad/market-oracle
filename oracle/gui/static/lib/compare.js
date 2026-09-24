@@ -68,4 +68,4 @@ function compareLines(lines, base, emptyChart) {
   return { node, draw };
 }
 
-export { compareLines, table };
+export { compareLines, lineInfos, table };
