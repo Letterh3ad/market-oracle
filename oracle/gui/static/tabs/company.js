@@ -1,5 +1,6 @@
 import { api } from "../lib/api.js";
 import { lineChart } from "../lib/chart.js";
+import { chartRangeCaption, chartRangeKey, chartRangeOptions } from "../lib/chart-range.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
 import { showLinks } from "../lib/links.js";
@@ -16,6 +17,8 @@ const LABELS = {
 let current = null; // the symbol shown last, reopened when the tab is picked without one
 let chart = null;
 let seq = 0;
+const MAX_CHART_DAYS = 5000; // matches the /prices route's cap
+let chartDays = 365; // the chart's picked range, kept while browsing
 
 function figure(value, kind, currency) {
   if (value == null) return "n/a";
@@ -135,14 +138,23 @@ async function peers(pane, symbol, message = "") {
       el("span", { class: "chip" }, companyLink(r.symbol), ` ${r.name}`))));
 }
 
+function rangePicker(pane, symbol, base) {
+  return el("select", { "aria-label": "Chart range", onchange: (e) => {
+    chartDays = Number(e.target.value);
+    drawChart(pane, symbol, base);
+  } }, ...chartRangeOptions(MAX_CHART_DAYS).map(([, days, label]) =>
+    el("option", { value: String(days), selected: days === chartDays ? "" : null }, label)));
+}
+
 async function drawChart(pane, symbol, base) {
   const box = pane.querySelector("#c-chart");
   if (chart) { chart.remove(); chart = null; }
+  const picker = rangePicker(pane, symbol, base);
   let body;
   try {
-    body = await api(`/api/companies/${encodeURIComponent(symbol)}/prices?days=365`);
+    body = await api(`/api/companies/${encodeURIComponent(symbol)}/prices?days=${chartDays}`);
   } catch (err) {
-    box.replaceChildren(el("p", { class: "dim" }, err.message));
+    box.replaceChildren(el("div", { class: "row" }, picker), el("p", { class: "dim" }, err.message));
     return;
   }
   if (!pane.contains(box)) return;
@@ -150,10 +162,12 @@ async function drawChart(pane, symbol, base) {
   // Plotted in the base currency only when every day has a rate; otherwise in the listing's own.
   const useBase = rows.length > 0 && rows.every((r) => r.close_base != null);
   const points = rows.map((r) => ({ time: r.date, value: useBase ? r.close_base : r.close }));
-  const caption = !rows.length ? "Last year's closes"
-    : useBase ? `Last year's closes in ${base}`
-    : `Last year's closes in ${body.currency} (some days have no ${base} rate yet)`;
-  box.replaceChildren(el("div", { class: "dim small" }, caption),
+  const prefix = chartRangeCaption(chartRangeKey(chartDays, MAX_CHART_DAYS));
+  const caption = !rows.length ? `${prefix} closes`
+    : useBase ? `${prefix} closes in ${base}`
+    : `${prefix} closes in ${body.currency} (some days have no ${base} rate yet)`;
+  box.replaceChildren(el("div", { class: "row" }, picker),
+    el("div", { class: "dim small" }, caption),
     ...(useBase ? body.credits : []).map((c) => el("div", { class: "dim small" }, c)));
   if (points.length < 2) {
     box.append(el("p", { class: "dim" }, "Not enough prices to chart yet."));

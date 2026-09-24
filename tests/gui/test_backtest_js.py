@@ -91,6 +91,18 @@ def test_the_form_starts_on_the_stored_days_leaving_a_year_to_warm_up():
     start, end, latest, text = shown
     assert (start, end, latest) == ("2024-03-01", "2026-09-22", "2026-09-22")
     assert "Prices are stored for the main list from 2023-03-01 to 2026-09-22" in text
+    assert "defaults to the last 5 years at most" in text
+
+
+def test_the_default_window_is_capped_at_five_years_on_a_long_lived_list():
+    shown = run("""
+        ANSWERS["GET /api/backtests/span"] = { watchlist: "main", first: "2015-01-01", last: "2026-09-22",
+          base_currency: "GBP" };
+        section.start(); await settle();
+        console.log(JSON.stringify([labelled(node, "Backtest from").value, labelled(node, "Backtest to").value]));
+    """)
+    start, end = shown
+    assert (start, end) == ("2021-09-22", "2026-09-22")
 
 
 def test_the_newest_kept_run_shows_with_its_table_notes_and_trades():
