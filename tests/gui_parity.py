@@ -104,6 +104,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "replay create": "POST /api/replay",
     "replay create --from": "POST /api/replay",
     "replay create --symbols": "POST /api/replay",
+    "replay create --bands": "POST /api/replay",  # the card's size mix picker
     "replay replace": "POST /api/replay/replace",  # each listing's Replace, before the first replay
     "replay start": "POST /api/replay/start",
     "replay pause": "POST /api/replay/pause",

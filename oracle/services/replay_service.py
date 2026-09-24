@@ -59,8 +59,16 @@ SLOTS: tuple[tuple[str, str], ...] = (
     ("Asia", _IT), ("Asia", _FIN),
     ("Emerging", _ENERGY),
 )
-"""One listing per slot: about 20, every region and sector the study needs."""
-BANDS = ("Mega Cap", "Large Cap", "Mid Cap")
+"""One listing per slot and half: about 20 each, every region and sector the study needs."""
+LARGE, MID_SMALL, MIX = "large", "mid-small", "mix"
+HALVES: dict[str, tuple[tuple[str, ...], ...]] = {
+    LARGE: (("Mega Cap", "Large Cap", "Mid Cap"),),
+    # A band at a time, so a slot's Small Caps are tried only when none of its Mid Caps fits.
+    MID_SMALL: (("Mid Cap",), ("Small Cap",)),
+}
+"""Each half of the pick and the bands it tries in turn; Micro and Nano Caps never."""
+PICKS: dict[str, tuple[str, ...]] = {LARGE: (LARGE,), MID_SMALL: (MID_SMALL,), MIX: (LARGE, MID_SMALL)}
+"""What `bands` asks for: the halves picked."""
 TRIES_PER_SLOT = 4
 """Candidates a slot fetches prices for before it is left out."""
 RECENT = timedelta(days=10)
@@ -226,38 +234,53 @@ async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | Non
     return None
 
 
-async def pick_listings(ctx: AppContext, first: date,
-                        say: Callable[[str], None] = lambda _: None) -> tuple[list[Picked], list[str]]:
-    """One listing per slot: the biggest band, then the most widely listed company, on its
-    region's main board in its currency, that is not on the never list, a receipt or dead, and
-    whose prices run from `first` to now (fetched here). Also the slots nothing filled."""
+async def pick_listings(ctx: AppContext, first: date, say: Callable[[str], None] = lambda _: None,
+                        bands: str = LARGE, large: list[Picked] | None = None) -> tuple[list[Picked], list[str]]:
+    """One listing per slot for each half `bands` asks for (`large` stands in for the large
+    half when given): in the half's first band that has one, the biggest band, then the most
+    widely listed company, on its region's main board in its currency, that is not on the never
+    list, a receipt or dead, and whose prices run from `first` to now (fetched here). Also the
+    slots nothing filled."""
+    _check_bands(bands, None)
     universe = UniverseRepo(ctx.conn)
     dead = {s.upper() for s in HealthRepo(ctx.conn).dead_symbols()}
     picked: list[Picked] = []
     left_out: list[str] = []
-    for region, sector in SLOTS:
-        tries = 0
-        filled = False
-        for company in universe.largest_in(STUDY_REGIONS[region], sector, BANDS):
-            if tries == TRIES_PER_SLOT:
-                break
-            line = home_line(universe.company_listings(company.company_key), STUDY_REGIONS[region], dead)
-            if (line is None or any(p.symbol == line.symbol for p in picked) or is_receipt(line.name)
-                    or never_company(ctx, line.symbol, user=True)):
-                continue
-            tries += 1
-            say(f"{region} {sector}: checking {line.symbol}")
-            if problem := await _price_problem(ctx, line.symbol, first):
-                say(f"  passed over: {problem}")
-                continue
-            profile = universe.profile(line.symbol)
-            picked.append(Picked(line.symbol, company.name, region, sector, profile.market_cap if profile else None))
-            filled = True
-            break
-        if not filled:
-            left_out.append(f"{region} {sector}")
-            say(f"{region} {sector}: nothing fits, left out")
+    for half in PICKS[bands]:
+        if half == LARGE and large is not None:
+            picked += large
+            continue
+        tag = "" if half == LARGE else " (mid/small)"
+        for region, sector in SLOTS:
+            for group in HALVES[half]:
+                if chosen := await _pick_slot(ctx, first, universe, dead, region, sector, group, picked, say):
+                    picked.append(chosen)
+                    break
+            else:
+                left_out.append(f"{region} {sector}{tag}")
+                say(f"{region} {sector}{tag}: nothing fits, left out")
     return picked, left_out
+
+
+async def _pick_slot(ctx: AppContext, first: date, universe: UniverseRepo, dead: set[str], region: str,
+                     sector: str, group: tuple[str, ...], picked: list[Picked],
+                     say: Callable[[str], None]) -> Picked | None:
+    tries = 0
+    for company in universe.largest_in(STUDY_REGIONS[region], sector, group):
+        if tries == TRIES_PER_SLOT:
+            return None
+        line = home_line(universe.company_listings(company.company_key), STUDY_REGIONS[region], dead)
+        if (line is None or any(p.symbol == line.symbol for p in picked) or is_receipt(line.name)
+                or never_company(ctx, line.symbol, user=True)):
+            continue
+        tries += 1
+        say(f"{region} {sector}: checking {line.symbol}")
+        if problem := await _price_problem(ctx, line.symbol, first):
+            say(f"  passed over: {problem}")
+            continue
+        profile = universe.profile(line.symbol)
+        return Picked(line.symbol, company.name, region, sector, profile.market_cap if profile else None)
+    return None
 
 
 async def check_symbol(ctx: AppContext, symbol: str, first: date) -> Picked:
@@ -294,15 +317,13 @@ def _window(ctx: AppContext, first: date | None) -> tuple[date, date]:
 
 
 async def create_study(ctx: AppContext, first: date | None = None, symbols: list[str] | None = None,
-                       say: Callable[[str], None] = lambda _: None) -> StudyStatus:
-    """A new study, paused: its listings (picked, or `symbols`) checked and saved, one cell
-    per listing and month."""
+                       say: Callable[[str], None] = lambda _: None, bands: str = MIX) -> StudyStatus:
+    """A new study, paused: its listings (the halves `bands` asks for, `symbols` standing in
+    for the large one) checked and saved, one cell per listing and month."""
     first, last = _window(ctx, first)
-    left_out: list[str] = []
-    if symbols:
-        picked = [await check_symbol(ctx, s, first) for s in dict.fromkeys(symbols)]
-    else:
-        picked, left_out = await pick_listings(ctx, first, say)
+    _check_bands(bands, symbols)
+    large = [await check_symbol(ctx, s, first) for s in dict.fromkeys(symbols)] if symbols else None
+    picked, left_out = await pick_listings(ctx, first, say, bands, large)
     if not picked:
         raise InvalidQuery("no listing in the universe fits the spread: refresh the universe first")
     _window(ctx, first)  # a replay may have started while prices were fetched
@@ -342,19 +363,27 @@ def _untouched(ctx: AppContext) -> StudyRow:
     return study
 
 
+def _check_bands(bands: str, symbols: list[str] | None) -> None:
+    if bands not in PICKS:
+        raise InvalidQuery(f"bands must be large, mid-small or mix, not {bands!r}")
+    if symbols and LARGE not in PICKS[bands]:
+        raise InvalidQuery("listings named for a study stand in for its large half: ask for large or mix with them")
+
+
 def _listings_json(picked: list[Picked]) -> str:
     return json.dumps([asdict(p) for p in picked])
 
 
 def submit_create(ctx: AppContext, runner: JobRunner, first: date | None = None,
-                  symbols: list[str] | None = None) -> Job:
+                  symbols: list[str] | None = None, bands: str = MIX) -> Job:
     """Create a study as a job: checking prices takes a minute or two. What can be refused
     without them is refused now."""
     _window(ctx, first)
+    _check_bands(bands, symbols)
     lines: list[str] = []
 
     async def work(c: AppContext) -> StudyStatus:
-        return await create_study(c, first, symbols, lines.append)
+        return await create_study(c, first, symbols, lines.append, bands)
 
     return runner.submit("replay", "Create replay study", work, subject="create", link="#ledgers",
                          progress=lambda: lines[-1] if lines else None)

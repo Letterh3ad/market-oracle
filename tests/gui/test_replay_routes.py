@@ -45,6 +45,15 @@ async def test_create_is_a_job_then_paused_until_start_then_pause(listed):
     assert (await listed.post("/api/replay/pause")).json()["state"] == "paused"
 
 
+async def test_create_takes_the_size_mix(listed):
+    job = await create(listed, first="2026-06-01", symbols=["AAPL"], bands="large")
+    assert [p["symbol"] for p in job["result"]["listings"]] == ["AAPL"] and job["result"]["left_out"] == []
+    r = await listed.post("/api/replay", json={"first": "2026-06-01", "symbols": ["AAPL"], "bands": "mid-small"})
+    assert r.status_code == 400 and "large half" in r.json()["error"]
+    r = await listed.post("/api/replay", json={"bands": "tiny"})
+    assert r.status_code == 400 and "large, mid-small or mix" in r.json()["error"]
+
+
 async def test_a_listing_is_replaced_before_the_first_replay(listed):
     await create(listed, first="2026-06-01", symbols=["AAPL", "7203.T"])
     r = await listed.post("/api/replay/replace", json={"old": "7203.T", "new": "KO"})

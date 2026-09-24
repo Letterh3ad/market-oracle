@@ -15,6 +15,7 @@ const share = (v) => (v == null ? "n/a" : `${Math.round(v * 100)}%`);
 const rate = (v, ci) => share(v) + (ci ? ` (95% ${share(ci[0])} to ${share(ci[1])})` : "");
 const HORIZON_NAMES = { "1m": "1 month", "3m": "3 months" };
 const clock = (iso) => String(iso).slice(0, 16).replace("T", " ");
+const SIZE_MIXES = { mix: "Large and mid/small", large: "Large only", "mid-small": "Mid/small only" };
 
 function replaySection() {
   let started = false;
@@ -55,18 +56,20 @@ function replaySection() {
     if (r.replay_from) first.setAttribute("min", r.replay_from);
     const symbols = el("input", { size: "36", placeholder: "blank: a spread picked for you",
       "aria-label": "Replay listings" });
+    const bands = el("select", { "aria-label": "Study size mix" },
+      ...Object.entries(SIZE_MIXES).map(([value, text]) => el("option", { value }, text)));
     const create = job(label, "/api/replay", () => ({ first: first.value || null,
-      symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean) }),
+      symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean), bands: bands.value }),
     (r) => "Created, paused: press Start when you want it to run."
       + (r.left_out?.length ? ` Left out, nothing fits: ${r.left_out.join("; ")}.` : ""));
     const where = r.cutoff_note ? `Creating is refused for now: ${r.cutoff_note}`
       : `The measured cutoff is ${r.cutoff}: the first replay day must be after it, from ${r.replay_from}.`;
     return el("div", null,
-      el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", create),
+      el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", bands, " ", create),
       el("p", { class: "dim small" }, "One replay per listing on its first trading day of each month, up to a month "
-        + "ago so each has an outcome. About 20 listings spread over regions and sectors, each on its home market "
-        + "with prices from the first day to now (fetched while creating, a minute or two), picked once and kept. "
-        + where));
+        + "ago so each has an outcome. About 20 listings per size spread over regions and sectors, each on its home "
+        + "market with prices from the first day to now (fetched while creating, a minute or two), picked once and "
+        + "kept. Listings you name stand in for the large half. " + where));
   }
 
   function progress(s) {
@@ -91,15 +94,16 @@ function replaySection() {
   }
 
   function listings(s) {
-    const text = s.listings.map((p) => `${p.symbol} (${p.region}, ${p.sector})`).join(", ");
+    const text = s.listings.map((p) => `${p.symbol} (${[p.region, p.sector, p.market_cap].filter(Boolean).join(", ")})`)
+      .join(", ");
     if (!s.untouched) return [el("p", { class: "small" }, `Listings: ${text}.`)];
     return [
       el("p", { class: "dim small" }, "Before the first replay, any listing can be swapped for another: it is held to "
         + "the same checks."),
-      table([["Symbol"], ["Region"], ["Sector"], ["Replace with"]], s.listings.map((p) => {
+      table([["Symbol"], ["Region"], ["Sector"], ["Size"], ["Replace with"]], s.listings.map((p) => {
         const other = el("input", { size: "10", placeholder: "symbol", "aria-label": `Replace ${p.symbol} with` });
         return el("tr", null, el("td", { class: "mono" }, p.symbol), el("td", null, p.region),
-          el("td", null, p.sector), el("td", null, other, " ",
+          el("td", null, p.sector), el("td", null, p.market_cap ?? ""), el("td", null, other, " ",
             job("Replace", "/api/replay/replace", () => ({ old: p.symbol, new: other.value.trim() }),
               () => `Replaced ${p.symbol}.`)));
       }), ""),

@@ -67,6 +67,16 @@ def test_create_start_pause_and_status(cfg, capsys):
     assert "stage models: queries on default, research on default" in out and "measured cutoff: 2025-05-31" in out
 
 
+def test_create_picks_a_mid_small_half_too_unless_bands_says_large(cfg, capsys):
+    assert replay(cfg, "create", "--from", "2026-06-01") == 0
+    assert "US Health Care (mid/small)" in capsys.readouterr().out
+    assert replay(cfg, "create", "--from", "2026-06-01", "--bands", "large") == 0
+    out = capsys.readouterr().out
+    assert "Created replay study 2: 7 listings" in out and "(mid/small)" not in out
+    assert replay(cfg, "create", "--from", "2026-06-01", "--symbols", "AAPL", "--bands", "mid-small") == 1
+    assert "large half" in capsys.readouterr().err
+
+
 def test_create_with_symbols_then_replace_one(cfg, capsys):
     assert replay(cfg, "create", "--from", "2026-06-01", "--symbols", "AAPL,JPM") == 0
     assert "2 listings" in capsys.readouterr().out

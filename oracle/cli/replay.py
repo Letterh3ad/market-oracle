@@ -12,7 +12,7 @@ from oracle.services.replay_score import (
     Account, Group, HorizonScore, Score, has_study, replay_report, update_study_prices,
 )
 from oracle.services.replay_service import (
-    StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
+    MIX, PICKS, StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
 )
 
 
@@ -24,7 +24,10 @@ def register(parser: argparse.ArgumentParser) -> None:
     create.add_argument("--from", dest="first", type=iso_day, default=None, metavar="YYYY-MM-DD",
                         help="the first replay day (default: the day after the measured cutoff)")
     create.add_argument("--symbols", type=_symbols, default=None, metavar="A,B,...",
-                        help="these listings instead of the picked spread")
+                        help="these listings instead of the picked large half")
+    create.add_argument("--bands", choices=tuple(PICKS), default=MIX,
+                        help="large: one Mega or Large Cap per slot; mid-small: one Mid Cap, else Small Cap; "
+                             "mix (default): both, about half each")
     create.set_defaults(handler=_create)
     replace = sub.add_parser("replace", help="swap one listing before the study's first replay")
     replace.add_argument("old", help="the listing to drop")
@@ -51,7 +54,7 @@ def _symbols(text: str) -> list[str]:
 
 def _create(ctx: AppContext, args: argparse.Namespace) -> int:
     print("Checking each listing's prices (fetching what is missing); this takes a minute or two.")
-    s = asyncio.run(create_study(ctx, args.first, args.symbols, print))
+    s = asyncio.run(create_study(ctx, args.first, args.symbols, print, args.bands))
     print(f"Created replay study {s.id}: {len(s.listings)} listings, {s.total} replays from "
           f"{s.first_day.isoformat()} to {s.last_day.isoformat()}. It is paused: `oracle replay start` runs it.")
     print_listings(s)

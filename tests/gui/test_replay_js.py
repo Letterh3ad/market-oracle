@@ -81,13 +81,14 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
         button(node, "Create study").fire("click"); await settle();
         labelled(node, "First replay day").value = "2026-06-01";  // the card reloaded after the job
         labelled(node, "Replay listings").value = " AAPL, 7203.T ,";
+        labelled(node, "Study size mix").value = "large";
         button(node, "Create study").fire("click"); await settle();
         console.log(JSON.stringify([asked, sent, node.textContent]));
     """, study=None)
     asked, sent, text = shown
     assert asked[0] == "POST /api/replay"
-    assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
-                    ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
+    assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": [], "bands": "mix"}],
+                    ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"], "bands": "large"}]]
     assert "Creating is refused for now: replays run on default: probe default first" in text
     assert "Model cutoff" in text and "Probe cutoff" in text and "press Start" in text
     assert "Left out, nothing fits: UK Energy." in text
@@ -105,7 +106,8 @@ def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():
 def test_a_paused_study_shows_progress_listings_and_failures_with_start():
     text = run("console.log(JSON.stringify(node.textContent));")
     assert "2 done, 3 queued, 1 failed of 6 (2026-06-01 to 2026-08-03); 3 min per replay on average." in text
-    assert "Listings: AAPL (US, Information Technology), 7203.T (Japan, Consumer Discretionary)." in text
+    assert ("Listings: AAPL (US, Information Technology, Mega Cap), 7203.T (Japan, Consumer Discretionary, "
+            "Large Cap).") in text
     assert "Nothing runs until you press Start" in text and "2 x model down" in text
     assert "1 cell waiting for its one automatic retry" in text and "Last checked 2026-09-24 12:00 UTC." in text
 
