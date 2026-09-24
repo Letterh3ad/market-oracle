@@ -6,6 +6,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
+import { replaySection } from "../lib/replay.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
@@ -16,6 +17,7 @@ let root = null; // this tab's container: a late answer repaints only while it i
 let loads = 0; // only the newest load paints
 let live = null; // this render's research buttons and their poll
 let backtest = null; // this render's Backtest section: one node kept across repaints, so its form keeps what was typed
+let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
 let resultBox = null;
@@ -268,11 +270,13 @@ async function load(mine) {
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
       new Set(stale.due)),
     backtest.node,
+    replay.node,
   ], () => {
     drawCharts(body.accounts);
     const chart = compared.draw();
     if (chart) charts.push(chart);
     backtest.start();
+    replay.start();
   });
 }
 
@@ -283,6 +287,7 @@ function render(target) {
   pane.replaceChildren(root);
   live = researchLive();
   backtest = backtestSection();
+  replay = replaySection();
   clearInterval(timer);
   timer = live.start(root);
   return load(root);

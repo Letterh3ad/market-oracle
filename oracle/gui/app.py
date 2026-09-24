@@ -11,14 +11,15 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import (
-    activity, backtests, companies, discovery, fx, jobs, ledgers, models, questions, schedule as tick_schedule, settings,
-    status, universe, watchlists,
+    activity, backtests, companies, discovery, fx, jobs, ledgers, models, questions, replay, schedule as tick_schedule,
+    settings, status, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
 from oracle.services.context import AppContext
 from oracle.services.job_executor import ThreadExecutor
+from oracle.services.replay_service import ReplayPacer
 from oracle.services.schedule_service import Scheduler
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -35,21 +36,23 @@ class _Static(StaticFiles):
 
 
 def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | None = None) -> FastAPI:
-    """With `schedule`, the scheduler polls for as long as the server does (tests leave it
-    off, though its postpone and skip still answer). Jobs still running when the server stops are interrupted. `control` restarts the
-    server; by default it starts this server's own command."""
+    """With `schedule`, the scheduler and the replay pacer poll for as long as the server does
+    (tests leave them off, though postpone, skip and the replay card still answer). Jobs still
+    running when the server stops are interrupted. `control` restarts the server; by default
+    it starts this server's own command."""
     runner = JobRunner(ctx, ThreadExecutor(ctx))
     scheduler = Scheduler(ctx, runner=runner)
+    pacer = ReplayPacer(ctx, runner, scheduler)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         sweep_leftovers(ctx)
-        task = asyncio.create_task(scheduler.run()) if schedule else None
-        app.state.scheduler_task = task
+        tasks = [asyncio.create_task(scheduler.run()), asyncio.create_task(pacer.run())] if schedule else []
+        app.state.scheduler_task = tasks[0] if tasks else None
         try:
             yield
         finally:
-            if task:
+            for task in tasks:
                 task.cancel()
                 with suppress(asyncio.CancelledError):
                     await task
@@ -59,6 +62,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.state.ctx = ctx
     app.state.runner = runner
     app.state.scheduler = scheduler
+    app.state.pacer = pacer
     app.state.control = control or AppControl(server_launch(ctx))
     install_error_handlers(app)
     app.include_router(status.router)
@@ -76,6 +80,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(tick_schedule.router)
     app.include_router(ledgers.router)
     app.include_router(backtests.router)
+    app.include_router(replay.router)
     # Under a prefix, not a catch-all at "/", which would shadow the API.
     app.mount("/static", _Static(directory=STATIC_DIR), name="static")
 

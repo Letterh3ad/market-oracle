@@ -251,10 +251,10 @@ def sweep_leftovers(ctx: AppContext) -> None:
 
 
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date | None = None,
-                    profile: str | None = None) -> Job:
+                    profile: str | None = None, automatic: bool = False) -> Job:
     """Queue one research run, or with `as_of` a replay of that day, on the slots or every stage
     on `profile`; an unknown symbol, a future day or an unknown profile is refused now, not when
-    its turn comes."""
+    its turn comes. `automatic`: started by the replay pacer, not a button."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     check_model_profile(ctx, profile)
@@ -271,7 +271,7 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date
     else:
         subject, label = listing, f"Research {listing}"
     return runner.submit("research", label + _on(profile), work, subject=subject, link=f"#company/{listing}",
-                         progress=lambda: research_progress(ctx, listing), profile=profile)
+                         progress=lambda: research_progress(ctx, listing), profile=profile, automatic=automatic)
 
 
 def _on(profile: str | None) -> str:

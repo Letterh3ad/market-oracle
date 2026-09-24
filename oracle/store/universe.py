@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Set
+from collections.abc import Iterable, Sequence, Set
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
@@ -184,6 +184,21 @@ class UniverseRepo:
                 ORDER BY p.market_cap IS NULL, {_CAP_ORDER}, n DESC, name COLLATE NOCASE
                 LIMIT :limit""",
             {"v": value, "k": company_key, "limit": limit},
+        )
+        return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
+
+    def largest_in(self, countries: Sequence[str], sector: str, bands: Sequence[str]) -> list[PeerRow]:
+        """Active equity companies of `sector` based in `countries` within `bands`, by primary
+        listing: biggest band first, then the most widely listed, as peers are ranked."""
+        rows = self._conn.execute(
+            f"""SELECT p.symbol, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.market_cap, p.currency,
+                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
+                FROM listings p
+                WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0 AND p.sector = ?
+                  AND p.country IN ({", ".join("?" * len(countries))})
+                  AND p.market_cap IN ({", ".join("?" * len(bands))})
+                ORDER BY {_CAP_ORDER}, n DESC, p.symbol""",
+            (sector, *countries, *bands),
         )
         return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
