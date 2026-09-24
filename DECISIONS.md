@@ -2433,3 +2433,23 @@ universe says "listed as ...", a ".PVT" line says private; startup words must be
 "round" only with seed, funding, venture or a Series.
 **Alternatives:** Sharing the `yahoo` source with a lower rate (prices still paused by a search
 burst); a cap per name instead of per pass (a tick with many names still floods).
+
+## 2026-09-25 - Holiday watch: a stdlib-only Python package, thin PowerShell launchers
+**Context:** The holiday watchdog must keep running when the app itself is broken, and the user
+wants its decisions (triggers, fix-run limits, which claude processes die) tested before leaving.
+**Decision:** `holiday_watch/` at the repo root, stdlib only, never importing `oracle` (a test
+checks), so an app import bug or a broken dependency cannot stop the watch, and every decision is
+a pure function tested with fakes. Side effects (HTTP, process list, spawn, kill, claude runs) sit
+behind one `System` and one `Http` seam; `--dry-run` swaps spawn, kill and run for log lines and
+keeps its own state file. Task Scheduler calls one thin `run.ps1`. Fix runs run under a detached
+supervisor (`fix-run`) holding a lock, so a pass never waits; the pass kills a run the supervisor
+failed to stop. Fix runs act only through `python -m holiday_watch api` (GET anything, POST an
+allowlist: replay retry/pause/start, activity cancel/retry, app restart), `restart-app`,
+`start-ollama` and a read-only `sql`, with a `dontAsk` settings file that allows edits only in the
+`holiday-fix` worktree. The reaper spares the Claude desktop app and Claude Code's daemon (both
+`claude.exe` on this PC) and the process chain that started the watch; the app's own `claude -p`
+children get no exception. A missing Remote Control PID file adopts a running session before
+launching a second one.
+**Alternatives:** Plain PowerShell scripts (the HANDOFF plan; untestable without real processes);
+reusing `oracle` code for API shapes (couples the watch to the app it guards); psutil for the
+process list (a dependency; PowerShell CIM gives CPU time and command lines).
