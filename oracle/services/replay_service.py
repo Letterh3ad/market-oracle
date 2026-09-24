@@ -87,9 +87,9 @@ ALLOWED = 2
 OUTAGE_AFTER = 3
 """Failures in a row with the same error that mean an outage (the model or the network), not bad cells."""
 ANY_OUTAGE_AFTER = 5
+"""Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 MAX_REFUNDS = 2
 """Outages a cell's failure may be put down to; after that it counts, so a bad cell still ends failed."""
-"""Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 BACKOFF = timedelta(minutes=45)
 MAX_BACKOFFS = 4
 """Back-offs of BACKOFF before they lengthen to LONG_BACKOFF; an outage never pauses the study."""
@@ -602,15 +602,17 @@ class ReplayPacer:
         model work is waiting for (its cell goes back to pending at the next poll, costing
         nothing)."""
         replays = {c.job_id for c in running}
-        cap = max(3 * self._expected(repo, study), HARD_CAP)
+        longest = 3 * self._expected(repo, study)
+        cap = max(longest, HARD_CAP)
+        why = "3 times the longest recent replay" if longest >= HARD_CAP else "the least any replay is given"
         now = self._ctx.clock.utcnow()
         for cell in running:
             job = self._runner.get(cell.job_id) if cell.job_id is not None else None
             if job is None or job.work is None or job.state not in ("queued", "running"):
                 continue
-            if cell.started_at and now - cell.started_at > cap:
-                self._timed_out[job.id] = (f"stopped after running over {cap // timedelta(minutes=1)} minutes "
-                                           "(3 times the longest recent replay)")
+            # From the job's own start: an adopted Activity retry may wait in the queue first.
+            if job.state == "running" and job.started_at and now - job.started_at > cap:
+                self._timed_out[job.id] = f"stopped after running over {cap // timedelta(minutes=1)} minutes ({why})"
                 self._runner.cancel(job.id)
             elif why := self._in_the_way(replays):
                 self._preempted.add(job.id)
@@ -639,7 +641,7 @@ class ReplayPacer:
         elif job.state == "done":
             run_id = getattr(job.result, "id", None) or ResearchRepo(self._ctx.conn).replay_run_id(cell.symbol,
                                                                                                   cell.as_of)
-            repo.mark_done(cell.id, run_id, job.finished_at or self._ctx.clock.utcnow())
+            repo.mark_done(cell.id, run_id, job.finished_at or self._ctx.clock.utcnow(), job.started_at)
             self._run, self._outage_since, self._backoffs, self._resume_at = [], None, 0, None
         elif job.state == "failed":
             self._failed(repo, study, cell, job.error or "failed")

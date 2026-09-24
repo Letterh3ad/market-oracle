@@ -633,7 +633,48 @@ async def test_a_hung_replay_is_stopped_and_counted_as_a_failure(ctx, runner, re
     pacer.check()
     aapl = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "AAPL", date(2026, 6, 1))
     assert (aapl.state, aapl.attempts) == ("pending", 1) and "over 45 minutes" in aapl.error
+    assert "the least any replay is given" in aapl.error
     assert study_status(ctx).state == "running"
+
+
+async def test_a_hung_replay_past_three_times_the_longest_recent_one_says_so(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(20 * 60)
+    research.finish("AAPL", date(2026, 6, 1))
+    await runner.wait(job.id)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(61 * 60)
+    pacer.check()
+    await settle()
+    pacer.check()
+    jpm = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "JPM", date(2026, 6, 1))
+    assert jpm.error == "stopped after running over 60 minutes (3 times the longest recent replay)"
+
+
+async def test_an_adopted_retry_is_timed_from_when_it_runs_not_when_it_was_queued(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 8, 3)
+    await run_one(pacer, runner, research, "AAPL", day, "model down")
+    job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
+    pacer.check()
+    [cell] = cells(ctx, "failed")
+    again = retry(ctx, runner, job.id)
+    await settle()
+    # As if adopted while another replay held the queue for 50 minutes.
+    ReplayRepo(ctx.conn).adopt(cell.id, again.id, ctx.clock.utcnow() - timedelta(minutes=50))
+    ctx.clock.advance(30 * 60)
+    pacer.check()
+    await settle()
+    assert again.state == "running"
+    research.finish("AAPL", day)
+    await runner.wait(again.id)
+    pacer.check()
+    assert study_status(ctx).mean_replay_s == 30 * 60
 
 
 async def test_a_retry_on_a_picked_profile_is_not_taken_for_the_cell(ctx):

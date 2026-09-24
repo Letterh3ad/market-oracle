@@ -161,9 +161,11 @@ class ReplayRepo:
         self._set(cell_id, "state = ?, job_id = ?, started_at = ?, finished_at = NULL, "
                   "allowed = MAX(allowed, attempts + 1), refunds = 0", RUNNING, job_id, to_utc_iso(at))
 
-    def mark_done(self, cell_id: int, run_id: int | None, at: datetime) -> None:
-        self._set(cell_id, "state = ?, run_id = ?, error = NULL, attempts = attempts + 1, finished_at = ?",
-                  DONE, run_id, to_utc_iso(at))
+    def mark_done(self, cell_id: int, run_id: int | None, at: datetime, started_at: datetime | None = None) -> None:
+        """`started_at`, when known, is when the job began running, so time queued is not replay time."""
+        self._set(cell_id, "state = ?, run_id = ?, error = NULL, attempts = attempts + 1, finished_at = ?, "
+                  "started_at = COALESCE(?, started_at)", DONE, run_id, to_utc_iso(at),
+                  to_utc_iso(started_at) if started_at else None)
 
     def mark_failed(self, cell_id: int, error: str, at: datetime) -> None:
         """Counts an attempt and keeps the error; with attempts left, back to pending at the
