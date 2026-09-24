@@ -22,6 +22,7 @@ from oracle.services.backtest_service import check_backtest, keep_backtest, run_
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
+from oracle.services.cutoff_service import probe_cutoff, probe_profile
 from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
@@ -39,7 +40,7 @@ from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_discover", "submit_prices", "submit_midday", "submit_rerun", "submit_research",
+           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_midday", "submit_rerun", "submit_research",
            "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -439,6 +440,16 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
                          subject=subject, link="#ledgers")
 
 
+def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
+    """Ask the research slot's model (or `profile`'s) the dated questions and keep its measured
+    cutoff; an unknown profile is refused now."""
+    probe_profile(ctx, profile)
+    stage: list[str] = []
+    return runner.submit("probe", "Probe model cutoff" + _on(profile),
+                         lambda c: probe_cutoff(c, profile, on_progress=stage.append), subject="cutoff",
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, profile=profile)
+
+
 # One resubmit per kind, rebuilding the call from what a finished job (live or from history,
 # both `Job` and `JobRow` carry kind/subject/label) stored about itself. A kind missing here
 # cannot be retried: nothing kept enough to rebuild its call.
@@ -491,10 +502,14 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
                            float(commission))
 
 
+def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_cutoff_probe(ctx, runner, job.profile)
+
+
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
-    "backtest": _retry_backtest, "ask": _retry_ask,
+    "backtest": _retry_backtest, "ask": _retry_ask, "probe": _retry_probe,
 }
 
 

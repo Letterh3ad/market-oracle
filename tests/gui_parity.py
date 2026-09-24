@@ -100,6 +100,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission")},
+    # Ledgers tab, Replay study card: the model picker and "Probe cutoff", and the readout under them.
+    "replay probe": "POST /api/jobs/cutoff-probe",
+    "replay probe --model": "POST /api/jobs/cutoff-probe",
+    "replay cutoff": "GET /api/replay/cutoff",
+    "replay cutoff --model": "GET /api/replay/cutoff",
     "tick": "POST /api/jobs/tick",
     "tick --last": "GET /api/status",
     "schedule": "GET /api/status",
