@@ -12,3 +12,7 @@ models/
 /CLAUDE.md
 /.scratch/
 /docs/
+
+# Holiday watch: real settings and its logs and reports stay local.
+/holiday_watch/config.toml
+/holiday-reports/

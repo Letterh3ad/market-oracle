@@ -1,0 +1,53 @@
+# Holiday watch settings. Copy to holiday_watch/config.toml (gitignored) and edit.
+# Every key below is optional; these are the defaults. Strings may use {repo}, {live},
+# {reports}, {python}, {oracle_config} and {db}.
+
+[paths]
+repo = "C:/Users/lette/Desktop/programming_Shit/market-oracle"   # default: the folder holding this package
+live = "{repo}/../market-oracle-live"      # the live worktree the app runs from (never edited)
+reports = "{repo}/holiday-reports"         # watchdog.log, state, fix-run output, morning reports
+python = "{repo}/.venv/Scripts/python.exe"
+oracle_config = "{repo}/oracle.toml"
+db = "{repo}/oracle.db"                     # opened read-only by `python -m holiday_watch sql`
+
+[app]
+url = "http://127.0.0.1:8740"
+start = ["{python}", "-m", "oracle", "--config", "{oracle_config}", "gui"]   # run in {live}
+
+[ollama]
+url = "http://127.0.0.1:11434"
+start = ["ollama", "serve"]
+
+[remote_control]
+launch = ["claude", "--remote-control", "holiday"]   # the one allowed interactive session
+marker = "--remote-control"                          # its command line must hold this
+pid_file = "{reports}/remote-control.pid"            # written at launch; the reaper spares this PID
+
+[claude]
+command = "claude"
+fix_model = "opus"
+report_model = "sonnet"
+
+[fix]
+timeout_min = 30      # a fix run's process tree is killed after this
+max_per_day = 3
+same_trigger_h = 4    # the same kind of trigger never starts two fix runs within this
+
+[triggers]
+app_restarts = 2      # still down after this many restarts: fix run
+failure_rate = 0.2    # failed / (done + failed) over this: fix run
+failure_min = 5       # ...once done + failed reaches this
+same_error = 3        # one error on this many failed cells: fix run
+job_max_h = 2         # a job running longer: fix run
+tick_time = ""        # "HH:MM" local; "" uses the app's schedule time
+tick_grace_min = 45   # a weekday tick not seen this long after its time: fix run
+stall_h = 6           # a running study with no replay done this long while idle: fix run
+
+[reaper]
+match = ["claude.exe", "@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"]   # name or command line, any case
+idle_min = 30         # kill a claude process using under idle_cpu_s of CPU over this long
+idle_cpu_s = 2.0
+max_age_h = 3         # kill any claude process older than this
+
+[report]
+timeout_min = 10      # the morning report's claude summary; the plain report is written anyway
