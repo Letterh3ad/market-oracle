@@ -15,7 +15,7 @@ from oracle.services.net_service import source_statuses
 from oracle.services.prices_service import price_sources
 from oracle.services.schedule_service import Scheduler, schedule_status
 from oracle.services.status_service import status
-from oracle.services.tick_service import last_tick
+from oracle.services.tick_service import last_midday, last_tick
 from oracle.services.universe_service import universe_brief
 
 router = APIRouter(prefix="/api")
@@ -46,6 +46,7 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
         },
         "automation": {"enabled": ctx.config.automation.enabled},
         "tick": shapes.tick(last_tick(ctx)),
+        "midday": shapes.tick(last_midday(ctx)),
         "schedule": shapes.schedule(schedule_status(ctx)),
         "warning": shapes.upcoming(scheduler.warning()),
         "running_tick": shapes.running_tick(next(iter(runner.active("tick")), None)),

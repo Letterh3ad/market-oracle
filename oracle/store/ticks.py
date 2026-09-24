@@ -9,6 +9,11 @@ from oracle.store.db import to_utc_iso, transaction
 
 
 INTERRUPTED = "interrupted"
+TICK = "tick"
+MIDDAY = "midday"
+"""The midday pass: discovery and research only, stored beside ticks but never counted as one."""
+KIND_SEP = "/"
+# No column for the kind: a midday run's trigger is stored as "midday/<trigger>", a tick's bare.
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,7 @@ class TickRun:
     stages: tuple[Stage, ...]
     note: str | None = None
     id: int | None = None
+    kind: str = TICK
 
     @property
     def outcome(self) -> str:
@@ -50,29 +56,40 @@ class TickRepo:
         self._conn = conn
 
     def save(self, run: TickRun) -> int:
+        trigger = run.trigger if run.kind == TICK else f"{run.kind}{KIND_SEP}{run.trigger}"
         with transaction(self._conn):
             cur = self._conn.execute(
                 "INSERT INTO tick_runs (trigger, started_at, finished_at, stages, note) VALUES (?, ?, ?, ?, ?)",
-                (run.trigger, to_utc_iso(run.started_at), to_utc_iso(run.finished_at),
+                (trigger, to_utc_iso(run.started_at), to_utc_iso(run.finished_at),
                  json.dumps([asdict(s) for s in run.stages]), run.note),
             )
         return int(cur.lastrowid)
 
-    def recent(self, limit: int = 20) -> list[TickRun]:
-        """Newest finish first: a tick skipped while a longer one ran never hides it."""
+    def recent(self, limit: int = 20, kind: str | None = None) -> list[TickRun]:
+        """Newest finish first: a tick skipped while a longer one ran never hides it. Every
+        kind unless one is named."""
+        where, args = _of_kind(kind) if kind else ("1", ())
         rows = self._conn.execute(
-            "SELECT * FROM tick_runs ORDER BY finished_at DESC, id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM tick_runs WHERE {where} ORDER BY finished_at DESC, id DESC LIMIT ?", (*args, limit)
         ).fetchall()
         return [_run(r) for r in rows]
 
-    def finished_since(self, at: datetime) -> bool:
+    def finished_since(self, at: datetime, kind: str = TICK) -> bool:
+        where, args = _of_kind(kind)
         return self._conn.execute(
-            "SELECT 1 FROM tick_runs WHERE finished_at >= ? LIMIT 1", (to_utc_iso(at),)
+            f"SELECT 1 FROM tick_runs WHERE finished_at >= ? AND {where} LIMIT 1", (to_utc_iso(at), *args)
         ).fetchone() is not None
 
 
+def _of_kind(kind: str) -> tuple[str, tuple]:
+    if kind == TICK:
+        return f"instr(trigger, '{KIND_SEP}') = 0", ()
+    return "trigger LIKE ?", (f"{kind}{KIND_SEP}%",)
+
+
 def _run(r) -> TickRun:
+    kind, _, trigger = r["trigger"].rpartition(KIND_SEP)
     return TickRun(
-        r["trigger"], datetime.fromisoformat(r["started_at"]), datetime.fromisoformat(r["finished_at"]),
-        tuple(Stage(**s) for s in json.loads(r["stages"])), r["note"], r["id"],
+        trigger, datetime.fromisoformat(r["started_at"]), datetime.fromisoformat(r["finished_at"]),
+        tuple(Stage(**s) for s in json.loads(r["stages"])), r["note"], r["id"], kind or TICK,
     )

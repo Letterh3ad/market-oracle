@@ -153,18 +153,20 @@ class Refresh:
 
 
 async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = lambda _: None,
-                           run: Callable[[AppContext, str], Awaitable[object]] | None = None) -> Refresh:
+                           run: Callable[[AppContext, str], Awaitable[object]] | None = None,
+                           budget_min: float | None = None) -> Refresh:
     """Research the watched listings whose report is missing, too old or behind a price move
-    (`[ai_account]`), most stale first, starting runs only while the time budget lasts.
-    `progress` hears each listing as it starts; `run` defaults to `research`."""
+    (`[ai_account]`), most stale first, starting runs only while the time budget (`budget_min`,
+    else the tick's) lasts. `progress` hears each listing as it starts; `run` defaults to `research`."""
     run = run or research
+    budget = timedelta(minutes=ctx.config.ai_account.research_budget_min if budget_min is None else budget_min)
     started = ctx.clock.utcnow()
     due = stale_research(ctx)
     done = Refresh(len(due))
     if due and pc_in_use(ctx):
         return _defer(done, due, "PC in use")
     for i, symbol in enumerate(due):
-        if ctx.clock.utcnow() - started >= timedelta(minutes=ctx.config.ai_account.research_budget_min):
+        if ctx.clock.utcnow() - started >= budget:
             return _defer(done, due[i:], "time budget spent")
         progress(f"research {i + 1} of {len(due)}: {symbol}")
         try:

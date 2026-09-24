@@ -20,7 +20,7 @@ async function refresh() {
     tip("Universe", "universe"),
     u.loaded ? ` ${u.listings.toLocaleString()} listings` : ` not loaded (${u.next})`,
   );
-  tick.show(status.tick, status.schedule);
+  tick.show(status.tick, status.schedule, status.midday);
   tick.showBanner(status.warning, status.running_tick);
   control.show(status);
   const paused = status.sources.filter((s) => s.state === "paused");

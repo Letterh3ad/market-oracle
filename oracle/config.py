@@ -121,10 +121,15 @@ class ScheduleConfig:
     research_when_idle: bool = False
     """Research in a tick only once the PC has been idle `idle_minutes`; otherwise it waits."""
     idle_minutes: int = 15
+    midday_time: str = "12:30"
+    """A second weekday slot, local time, for discovery and research only; "" off."""
+    midday_budget_min: int = 60
+    """How long the midday pass may take, discovery included."""
 
 
 WARN_RANGE = (0, 120)
 IDLE_RANGE = (1, 240)
+MIDDAY_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
@@ -617,17 +622,21 @@ def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
             *WARN_RANGE)),
         "idle_minutes": (_whole(s.idle_minutes, *IDLE_RANGE), "a whole number of minutes from {} to {}".format(
             *IDLE_RANGE)),
+        "midday_budget_min": (_whole(s.midday_budget_min, *MIDDAY_BUDGET_RANGE),
+                              "a whole number of minutes from {} to {}".format(*MIDDAY_BUDGET_RANGE)),
     }
     for key, (ok, wanted) in checks.items():
         if not ok:
             raise ConfigError(f"schedule.{key} must be {wanted}, got {getattr(s, key)!r}")
     check_schedule_time(s.time)
+    if s.midday_time != "":
+        check_schedule_time(s.midday_time, "midday_time", ' or "" (off)')
     return s
 
 
-def check_schedule_time(value: object) -> str:
+def check_schedule_time(value: object, key: str = "time", also: str = "") -> str:
     if not (isinstance(value, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value)):
-        raise ConfigError(f'schedule.time must be a 24-hour time like "22:30", got {value!r}')
+        raise ConfigError(f'schedule.{key} must be a 24-hour time like "22:30"{also}, got {value!r}')
     return value
 
 

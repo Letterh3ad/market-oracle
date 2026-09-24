@@ -1,6 +1,6 @@
 """The daily routine as one run: prices, FX, fills, analysis, discovery, AI research, strategy
 step, AI step. Each stage runs even when an earlier one failed, since each works from
-whatever is stored."""
+whatever is stored. The midday pass reuses the discovery and research stages alone."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from oracle.broker.rules import Decision
 from oracle.services.analysis_service import analyse_watched
@@ -21,12 +21,12 @@ from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
 from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
-from oracle.store.ticks import INTERRUPTED, Stage, TickRepo, TickRun
+from oracle.store.ticks import INTERRUPTED, MIDDAY, TICK, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
-    "STAGES", "Stage", "TickRun", "discover_cap_min", "discovery_line", "last_tick", "record_skipped", "run_tick",
-    "ticked_since",
+    "KIND_LABELS", "MIDDAY", "MIDDAY_STAGES", "STAGES", "Stage", "TICK", "TickRun", "discover_cap_min",
+    "discovery_line", "last_midday", "last_tick", "record_skipped", "run_midday", "run_tick", "ticked_since",
 ]
 
 log = logging.getLogger(__name__)
@@ -76,13 +76,13 @@ async def _step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     return _decided(ctx, "strategy", strategy_step(ctx)), None
 
 
-def discover_cap_min(ctx: AppContext) -> float:
+def discover_cap_min(ctx: AppContext, budget_min: float | None = None) -> float:
     """How long the discover stage may run: it delays research, so at most 10 minutes and
-    never more than a third of the research budget."""
-    return min(DISCOVER_CAP_MIN, ctx.config.ai_account.research_budget_min / 3)
+    never more than a third of the research budget (the tick's unless another is given)."""
+    return min(DISCOVER_CAP_MIN, (budget_min or ctx.config.ai_account.research_budget_min) / 3)
 
 
-async def _discover(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None) -> tuple[str, str | None]:
     if not ctx.config.discovery.enabled:
         return "discovery is off in Settings: nothing discovered", None
     if not ctx.config.automation.enabled:
@@ -91,7 +91,7 @@ async def _discover(ctx: AppContext, _: Say) -> tuple[str, str | None]:
         return "PC in use: discovery waits for the next tick", None
     before = {d.symbol for d in discovered(ctx)}
     try:
-        async with asyncio.timeout(discover_cap_min(ctx) * 60):
+        async with asyncio.timeout((cap_min or discover_cap_min(ctx)) * 60):
             run = await discover(ctx)
     except TimeoutError:
         added = [f"{d.symbol} {d.name} ({d.why})" for d in discovered(ctx) if d.symbol not in before]
@@ -113,10 +113,10 @@ def _discovered_summary(run: DiscoveryRun) -> str:
     return f"{where}: {len(run.skipped)} passed over ({', '.join(f'{n} {why}' for why, n in reasons)})"
 
 
-async def _research(ctx: AppContext, say: Say) -> tuple[str, str | None]:
+async def _research(ctx: AppContext, say: Say, budget_min: float | None = None) -> tuple[str, str | None]:
     if not ctx.config.ai_account.enabled:
         return f"{OFF}: nothing researched", None
-    done = await refresh_research(ctx, say)
+    done = await refresh_research(ctx, say, budget_min=budget_min)
     if not done.due:
         return "nothing due", None
     researched = f"{len(done.researched)} of {done.due} due researched"
@@ -147,10 +147,40 @@ STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "ana
 OFF = "AI account off"
 
 
+def _midday_stages(started: datetime) -> dict[str, StageRun]:
+    """Discovery and research only, sharing one budget from `started`: no prices, fills,
+    analysis or steps, so it never trades."""
+    def budget(ctx: AppContext) -> float:
+        return ctx.config.schedule.midday_budget_min
+
+    async def discover_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
+        return await _discover(ctx, say, discover_cap_min(ctx, budget(ctx)))
+
+    async def research_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
+        return await _research(ctx, say, budget(ctx) - (ctx.clock.utcnow() - started) / timedelta(minutes=1))
+
+    return {"discover": discover_stage, "research": research_stage}
+
+
+MIDDAY_STAGES = tuple(_midday_stages(datetime.min))
+KIND_LABELS = {TICK: "Tick", MIDDAY: "Midday pass"}
+
+
 async def run_tick(ctx: AppContext, trigger: str = "manual",
                    on_stage: Callable[[str], None] | None = None) -> TickRun:
     """Run every stage once, in one process at a time, and store the outcome. `on_stage` is
     told each stage's name as it starts, then any progress the stage reports."""
+    return await _run(ctx, TICK, trigger, STAGES, on_stage)
+
+
+async def run_midday(ctx: AppContext, trigger: str = "manual",
+                     on_stage: Callable[[str], None] | None = None) -> TickRun:
+    """Discovery, then research on stale listings, under the tick's lock so the two never overlap."""
+    return await _run(ctx, MIDDAY, trigger, _midday_stages(ctx.clock.utcnow()), on_stage)
+
+
+async def _run(ctx: AppContext, kind: str, trigger: str, run_stages: dict[str, StageRun],
+               on_stage: Callable[[str], None] | None) -> TickRun:
     started = ctx.clock.utcnow()
     stages: list[Stage] = []
     with single_flight(ctx, JOB, LEASE_S) as held:
@@ -162,15 +192,15 @@ async def run_tick(ctx: AppContext, trigger: str = "manual",
                 on_stage(text)
 
         try:
-            for name, stage in STAGES.items():
+            for name, stage in run_stages.items():
                 say(name)
                 stages.append(await _run_stage(ctx, name, stage, say))
         except BaseException as exc:
             # Stopped part way (server shutdown, lock taken over): still leave a record.
             _save(ctx, TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages),
-                               f"{INTERRUPTED}: {exc or type(exc).__name__}"))
+                               f"{INTERRUPTED}: {exc or type(exc).__name__}", kind=kind))
             raise
-    return _save(ctx, TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages)))
+    return _save(ctx, TickRun(trigger, started, ctx.clock.utcnow(), tuple(stages), kind=kind))
 
 
 def _save(ctx: AppContext, run: TickRun) -> TickRun:
@@ -187,16 +217,17 @@ async def _run_stage(ctx: AppContext, name: str, stage: StageRun, say: Say) -> S
     return Stage(name, "partial" if error else "ok", summary, error)
 
 
-def record_skipped(ctx: AppContext, trigger: str, note: str, at: datetime | None = None) -> TickRun:
+def record_skipped(ctx: AppContext, trigger: str, note: str, at: datetime | None = None,
+                   kind: str = TICK) -> TickRun:
     """A tick that never started, stored so the user can see why; dated `at` (a due time
     skipped ahead of time), or now."""
     at = at or ctx.clock.utcnow()
-    return _save(ctx, TickRun(trigger, at, at, (), note))
+    return _save(ctx, TickRun(trigger, at, at, (), note, kind=kind))
 
 
-def ticked_since(ctx: AppContext, at: datetime) -> bool:
-    """Whether any tick (skipped ones too) finished at or after `at`."""
-    return TickRepo(ctx.conn).finished_since(at)
+def ticked_since(ctx: AppContext, at: datetime, kind: str = TICK) -> bool:
+    """Whether any run of `kind` (skipped ones too) finished at or after `at`."""
+    return TickRepo(ctx.conn).finished_since(at, kind)
 
 
 def discovery_line(ctx: AppContext) -> str:
@@ -209,10 +240,14 @@ def discovery_line(ctx: AppContext) -> str:
             "and hold keep to your own picks.")
     if not d.enabled:
         line += " Ticks do not discover: it is off in Settings."
-    last = next((s for run in TickRepo(ctx.conn).recent() for s in run.stages if s.name == "discover"), None)
-    return line + (f" Last tick: {last.summary}." if last else "")
+    last = next(((r, s) for r in TickRepo(ctx.conn).recent() for s in r.stages if s.name == "discover"), None)
+    return line + (f" Last {KIND_LABELS[last[0].kind].lower()}: {last[1].summary}." if last else "")
 
 
-def last_tick(ctx: AppContext) -> TickRun | None:
-    found = TickRepo(ctx.conn).recent(1)
+def last_tick(ctx: AppContext, kind: str = TICK) -> TickRun | None:
+    found = TickRepo(ctx.conn).recent(1, kind)
     return found[0] if found else None
+
+
+def last_midday(ctx: AppContext) -> TickRun | None:
+    return last_tick(ctx, MIDDAY)

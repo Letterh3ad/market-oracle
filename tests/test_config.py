@@ -326,3 +326,17 @@ def test_suffix_blind_grouping_is_off_by_default_and_checked(tmp_path):
         path.write_text(f"[universe]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="universe"):
             load_config(path, cwd=tmp_path)
+
+
+def test_the_midday_pass_is_at_half_past_twelve_for_an_hour_and_empty_turns_it_off(tmp_path):
+    s = load_config(None, cwd=tmp_path)[0].schedule
+    assert (s.midday_time, s.midday_budget_min) == ("12:30", 60)
+    path = tmp_path / "oracle.toml"
+    path.write_text('[schedule]\nmidday_time = ""\nmidday_budget_min = 5\n', encoding="utf-8")
+    s = load_config(path, cwd=tmp_path)[0].schedule
+    assert (s.midday_time, s.midday_budget_min) == ("", 5)
+    for line in ('midday_time = "25:00"', "midday_time = 1230", "midday_budget_min = 0",
+                 "midday_budget_min = 481", "midday_budget_min = true"):
+        path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="schedule.midday"):
+            load_config(path, cwd=tmp_path)

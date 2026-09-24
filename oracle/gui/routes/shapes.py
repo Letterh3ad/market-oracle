@@ -12,7 +12,7 @@ from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
-from oracle.services.tick_service import TickRun
+from oracle.services.tick_service import KIND_LABELS, TickRun
 
 
 def lean(lean, stale: bool) -> dict | None:
@@ -33,7 +33,7 @@ def next_step(has_price: bool, lean, stale: bool) -> str | None:
 
 def tick(run: TickRun | None) -> dict | None:
     return None if run is None else {
-        "trigger": run.trigger, "started_at": run.started_at, "finished_at": run.finished_at,
+        "kind": run.kind, "label": KIND_LABELS[run.kind], "trigger": run.trigger, "started_at": run.started_at, "finished_at": run.finished_at,
         "outcome": run.outcome, "first_error": run.first_error, "note": run.note,
         "stages": [asdict(s) for s in run.stages],
     }
@@ -108,11 +108,12 @@ def schedule(view: ScheduleView) -> dict:
 
 
 def upcoming(up: Upcoming | None) -> dict | None:
-    return None if up is None else {"due": up.due, "at": up.at, "postponed": up.postponed}
+    return None if up is None else {"due": up.due, "at": up.at, "postponed": up.postponed, "kind": up.kind,
+                                    "label": KIND_LABELS[up.kind]}
 
 
 def running_tick(j: Job | None) -> dict | None:
-    """A tick queued or running here, for the banner whose Stop is Activity's cancel."""
+    """A tick or midday pass queued or running here, for the banner whose Stop is Activity's cancel."""
     return None if j is None else {"id": j.id, "label": j.label, "state": j.state, "stage": j.progress()}
 
 
