@@ -84,6 +84,8 @@ class ListingProfile:
     """Active listings of the company."""
     website: str | None
     summary: str | None
+    market_cap: str | None = None
+    """The company's band (MARKET_CAP_BANDS), when FinanceDatabase gives one."""
 
 
 @dataclass(frozen=True)
@@ -159,7 +161,7 @@ class UniverseRepo:
                       p.industry_group, p.industry, p.category, p.family, l.exchange,
                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key AND x.delisted = 0)
                         AS listings,
-                      p.website, p.summary
+                      p.website, p.summary, p.market_cap
                FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
                WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
             {"s": symbol.strip()},
@@ -319,6 +321,13 @@ class UniverseRepo:
             return f"l.symbol COLLATE NOCASE{way}, {tail}"
         column = _column(sort)
         return f"{column} IS NULL, {column} COLLATE NOCASE{way}, {tail}"
+
+    def classifications(self) -> set[str]:
+        """Every sector, industry group and industry an active company has."""
+        rows = self._conn.execute(
+            "SELECT sector, industry_group, industry FROM listings WHERE is_primary AND delisted = 0 "
+            "GROUP BY sector, industry_group, industry")
+        return {v for row in rows for v in row if v}
 
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""

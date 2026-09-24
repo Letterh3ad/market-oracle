@@ -5,44 +5,42 @@ is decided here in code."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from oracle.market.bars import is_stale
 from oracle.net.client import RateLimitedClient
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.mentions import (
-    MENTIONS_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, same_company, topic_prompt,
+    MENTIONS_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, topic_prompt,
 )
 from oracle.research.news import (
     GDELT_DOC, GOOGLE_NEWS, Article, FeedUnreadable, gdelt_params, google_news_params, parse_gdelt,
     parse_google_news,
 )
 from oracle.research.tools import ToolError
+from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
-from oracle.services.errors import ServiceError
+from oracle.services.errors import InvalidQuery, NeverListed, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
-from oracle.services.never_list import is_never, never_company, never_names
+from oracle.services.never_list import never_company
 from oracle.services.peers_service import choose_peers
-from oracle.services.prices_service import update_listing
 from oracle.services.research_service import configured_model
 from oracle.services.research_tools.shelf import fetch
-from oracle.services.universe_service import live_siblings, search_universe
+from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import DEFAULT_LIST, Watched, unwatch, watch
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.discoveries import DISCOVERED_LIST, Discovery, DiscoveryEvidence, DiscoveryRepo
-from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
-from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
+from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
-from oracle.universe.listings import MARKET_CAP_BANDS, blind_name, is_receipt
+from oracle.universe.listings import blind_name
 
 __all__ = [
     "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
-    "Skipped", "discover", "discovered", "gdelt_query", "move_discovered", "mover_query", "mover_searches",
+    "SOURCE_QUESTION", "Skipped", "add_by_hand", "discover", "discovered", "gdelt_query", "move_discovered", "mover_query", "mover_searches",
     "news_query", "remove_discovered", "searched_sources", "theme_query",
 ]
 
@@ -51,6 +49,7 @@ LEASE_S = 1800.0
 SOURCE_RELATED = "related"
 SOURCE_THEME = "theme"
 SOURCE_MOVER = "mover"
+SOURCE_QUESTION = "question"
 SOURCES = ("related", "themes", "movers")
 """In the order they take turns; each is switched by `[discovery] search_<name>`."""
 # Bounds on one run's network and model use: seeds, themes and mover searches tried (one model
@@ -61,13 +60,6 @@ MAX_MOVER_SEARCHES = 2
 MAX_PRICE_CHECKS = 6
 MAX_PEERS = 10
 MAX_HEADLINES = 20
-# Shorter names ("US", "GE") start too many companies' names to be matched by their start.
-MIN_LEADING_NAME = 4
-_CAP_INDEX = {band: i for i, band in enumerate(MARKET_CAP_BANDS)}
-# Adjacent bands can nearly touch (a small Large Cap barely tops a big Mid Cap), but
-# FinanceDatabase's own band floors are roughly 5x to 20x apart, so a two-band gap is
-# always at least 5x: enough to pick the bigger company instead of staying ambiguous.
-CLEARLY_BIGGER_BANDS = 2
 _LAST_SEED = "discovery_last_seed"
 _LAST_SOURCE = "discovery_last_source"
 _LAST_THEME = "discovery_last_theme"
@@ -191,8 +183,7 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         on_list = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST))
         room = min(cfg.per_tick, cfg.max_total - on_list)
         if room <= 0:
-            return DiscoveryRun(note=f"the discovered list is full ({on_list} of {cfg.max_total}): remove some, "
-                                     "or raise the limit in Settings")
+            return DiscoveryRun(note=_full(on_list, cfg.max_total))
         seeds = _seeds(ctx)
         # Related and mover searches both start from what is watched; themes need nothing watched.
         usable = [s for s in searched_sources(ctx) if s == "themes" or seeds]
@@ -234,8 +225,58 @@ def move_discovered(ctx: AppContext, symbol: str) -> Watched:
     return moved
 
 
+async def add_by_hand(ctx: AppContext, symbol: str, source: str, seed: str, relation: str,
+                      evidence: tuple[int, ...]) -> Added:
+    """A suggestion the user picked, onto the discovered list with why, under the rules a run
+    keeps: never list, removals, not already watched or discovered, room on the list, and prices
+    checked again now (a suggestion can be days old)."""
+    listing = resolve_symbol(ctx, symbol).symbol
+    screen = Screen(ctx, 1)
+    profile = screen.profile(listing)
+    if company := never_company(ctx, listing, user=True):
+        raise NeverListed(f"{company} is on the never list: it is never put on the discovered list")
+    if why := _cannot_add(screen, profile, ctx.config.discovery.max_total):
+        raise InvalidQuery(f"{profile.name}: {why}")
+    line, why = await screen.priced_line(profile)
+    if line is None:
+        raise InvalidQuery(f"{profile.name}: {why}")
+    if why := _add_checked(ctx, profile, line, source, seed, relation, evidence):
+        raise InvalidQuery(f"{profile.name}: {why}")
+    return Added(line, profile.name, seed, relation, _why(source, relation, seed), evidence, source)
+
+
+def _cannot_add(screen: Screen, profile: ListingProfile, cap: int) -> str | None:
+    if screen.watched(profile):
+        return "already watched"
+    if screen.listed(profile):
+        return "already discovered"
+    if screen.removed(profile):
+        return REMOVED
+    if screen.on_list >= cap:
+        return _full(screen.on_list, cap)
+    return None
+
+
+def _add_checked(ctx: AppContext, profile: ListingProfile, listing: str, source: str, seed: str, relation: str,
+                 evidence: tuple[int, ...]) -> str | None:
+    """Add, the rules read afresh in the same write transaction, so a tick and a button pressed
+    at once cannot both add the company or both take the list's last place; else why not."""
+    with transaction(ctx.conn):
+        if why := _cannot_add(Screen(ctx, 0), profile, ctx.config.discovery.max_total):
+            return why
+        DiscoveryRepo(ctx.conn).add(listing, profile.company_key, profile.name, source, seed, relation, evidence,
+                                    _now(ctx))
+    return None
+
+
+def _full(on_list: int, cap: int) -> str:
+    return f"the discovered list is full ({on_list} of {cap}): remove some, or raise the limit in Settings"
+
+
 def _why(source: str, relation: str, seed: str) -> str:
     """Why a company was discovered, in words."""
+    if source == SOURCE_QUESTION:
+        return f'an answer to your question "{seed}"'
     if source == SOURCE_THEME:
         return f'named in the news on your theme "{seed}"'
     if source == SOURCE_MOVER:
@@ -388,120 +429,42 @@ class _Run:
         return [(m, tuple(ids[i] for i in m.headlines)) for m in parse_mentions(reply, titles, seed)]
 
 
-class _Screen:
+class _Screen(Screen):
     """Checks candidates in turn and adds those that pass, until `room` are added or the
     price checks run out."""
 
     def __init__(self, ctx: AppContext, room: int) -> None:
-        self._ctx = ctx
+        super().__init__(ctx, MAX_PRICE_CHECKS)
         self._room = room
-        self._checks = 0
-        self._universe = UniverseRepo(ctx.conn)
-        self._repo = DiscoveryRepo(ctx.conn)
-        self._never = never_names(ctx, user=True)
-        self._removed_symbols, self._removed_keys = self._repo.removed()
-        lists = WatchlistRepo(ctx.conn)
-        self._watched = self._keys(s for w in lists.summaries() if w.name.casefold() != DISCOVERED_LIST
-                                   for s in (i.symbol for i in lists.items(w.name)))
-        self._listed = self._keys(i.symbol for i in lists.items(DISCOVERED_LIST))
-        self._seen: set[str] = set()
         self.added: list[Added] = []
         self.skipped: list[Skipped] = []
 
     @property
     def done(self) -> bool:
-        return len(self.added) >= self._room or self._checks >= MAX_PRICE_CHECKS
+        return len(self.added) >= self._room or not self.checks_left
 
     async def check(self, c: _Candidate) -> None:
-        if is_never(c.name, self._never):
-            return self._skip(c, "on the never list")
-        profile, why_not = (self._universe.profile(c.symbol), None) if c.symbol else self._lookup(c.name)
+        profile, why_not = self.identify(c.name, c.symbol)
         if profile is None:
-            return self._skip(c, why_not or "not in the universe under that name")
-        if profile.company_key in self._seen:
-            return None
-        self._seen.add(profile.company_key)
-        if profile.type != "equity" or is_receipt(profile.name):
-            return self._skip(c, "not a company's own shares")
-        if never_company(self._ctx, profile.symbol, user=True):
-            return self._skip(c, "on the never list")
-        if profile.company_key in self._watched:
+            return self._skip(c, why_not) if why_not else None
+        if self.watched(profile):
             return self._skip(c, "already watched")
-        if profile.company_key in self._listed:
+        if self.listed(profile):
             return self._skip(c, "already discovered")
-        symbols = {s.upper() for s in self._universe.company_symbols(profile.company_key)}
-        if profile.company_key in self._removed_keys or symbols & self._removed_symbols:
-            return self._skip(c, "you removed it before")
-        listing = self._live_line(profile)
+        if self.removed(profile):
+            return self._skip(c, REMOVED)
+        listing, why_not = await self.priced_line(profile)
         if listing is None:
-            return self._skip(c, "no listing with live prices")
-        self._checks += 1
-        try:
-            update = await update_listing(self._ctx, listing)
-        except ServiceError as exc:
-            return self._skip(c, f"no price data ({exc})")
-        today = self._ctx.clock.utcnow().date()
-        if update.last_date is None or is_stale(update.last_date, today):
-            return self._skip(c, f"its prices are out of date (last {update.last_date})")
-        self._repo.add(listing, profile.company_key, profile.name, c.source, c.seed, c.relation, c.evidence,
-                       _now(self._ctx))
-        self._listed.add(profile.company_key)
+            return self._skip(c, why_not)
+        if why_not := _add_checked(self._ctx, profile, listing, c.source, c.seed, c.relation, c.evidence):
+            return self._skip(c, why_not)
+        self.now_listed(profile, listing)
         self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
                                 c.evidence, c.source))
         return None
 
-    def _lookup(self, name: str) -> tuple[ListingProfile | None, str | None]:
-        """The company the name means, or why none: one of its listings named exactly that
-        (legal forms aside, biggest first as the search ranks them), else the one company
-        whose name starts with it, else (when several do) the one clearly biggest by market
-        cap, else a listing with that symbol exactly as written (never a guess from case, so
-        "On" or "Open" never mean ON or OPEN). A short, shared or too-close-to-call leading
-        name is never guessed at."""
-        want = blind_name(name)
-        hits = search_universe(self._ctx, want, filters={"type": ["equity"]}, limit=10)
-        names = {h.symbol: {blind_name(h.name)} | {blind_name(x.name) for x in
-                                                   self._universe.company_listings(h.company_key)} for h in hits}
-        exact = [h for h in hits if want in names[h.symbol]]
-        leading = {h.company_key: h for h in hits if any(same_company(n, want) for n in names[h.symbol])}
-        if exact:
-            return self._universe.profile(exact[0].symbol), None
-        if len(want) >= MIN_LEADING_NAME and len(leading) == 1:
-            return self._universe.profile(next(iter(leading.values())).symbol), None
-        if len(want) >= MIN_LEADING_NAME and len(leading) > 1 and (biggest := _clearly_biggest(leading.values())):
-            return self._universe.profile(biggest.symbol), None
-        symbol_as_written = name.strip()
-        if symbol_as_written.isupper() and (by_symbol := self._universe.profile(symbol_as_written)) is not None:
-            return by_symbol, None
-        if not leading:
-            return None, None
-        return None, "too short a name to tell which company" if len(want) < MIN_LEADING_NAME else "ambiguous name"
-
-    def _live_line(self, profile: ListingProfile) -> str | None:
-        """The primary line (home or most liquid), else its best live sibling."""
-        primary = profile.primary_symbol
-        if not HealthRepo(self._ctx.conn).get(primary).dead:
-            return primary
-        siblings = live_siblings(self._ctx, primary)
-        return siblings[0].symbol if siblings else None
-
-    def _keys(self, symbols) -> set[str]:
-        return {r.company_key for s in symbols if (r := self._universe.resolve(s))}
-
     def _skip(self, c: _Candidate, reason: str) -> None:
         self.skipped.append(Skipped(c.name, reason))
-
-
-def _clearly_biggest(hits: Iterable[SearchHit]) -> SearchHit | None:
-    """The hit whose company is at least `CLEARLY_BIGGER_BANDS` market-cap bands over the
-    next biggest of the group, or None to stay ambiguous (either band unknown, or the two
-    are close enough that which is really bigger cannot be told from bands alone)."""
-    ranked = sorted(hits, key=lambda h: _CAP_INDEX.get(h.market_cap, len(MARKET_CAP_BANDS)))
-    best, next_best = ranked[0], ranked[1]
-    if best.market_cap is None or next_best.market_cap is None:
-        return None
-    if _CAP_INDEX[next_best.market_cap] - _CAP_INDEX[best.market_cap] < CLEARLY_BIGGER_BANDS:
-        return None
-    return best
 
 
 def _now(ctx: AppContext) -> str:

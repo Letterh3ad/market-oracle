@@ -55,6 +55,14 @@ class UnknownBacktest(ServiceError):
     pass
 
 
+class UnknownQuestion(ServiceError):
+    pass
+
+
+class SearchFailed(ServiceError):
+    pass
+
+
 class InvalidWatchlistName(ServiceError):
     pass
 

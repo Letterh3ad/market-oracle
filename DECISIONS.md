@@ -1888,3 +1888,90 @@ Research still needs the AI account on, as in a tick; research_when_idle holds b
 job kind and lock (a midday pass and a tick could then run at once and fight over research);
 firing a missed pass whenever the PC wakes (the user wants midday work at midday, not in
 the evening).
+## 2026-09-24 - Discovery chat: a Discover tab, follow-ups as linked questions, whole answers kept
+**Context:** Ticket 04 asks for a question box that answers with a shortlist, follow-ups that
+refine it, and reruns that show what changed.
+**Decision:** A Discover tab of its own (the Watchlist tab's Discovery section is already long).
+m0034 keeps `discovery_questions` (a follow-up is a question with `refines`, so each keeps its
+own answers), `discovery_answers` (status, stage for progress, searches, notes) and
+`discovery_answer_items` (the whole shortlist, skipped names with why included, evidence ids as
+JSON). The model reads the whole chain ("X Follow-up: Y"). "New" and "gone" compare an answer
+with the question's previous done answer, or for a follow-up's first, its question's newest.
+Watched and discovered marks are the live state when the answer is shown, not stored. Asking is
+an Activity job of kind `ask` (subject = question id, so Retry reruns it); the question is saved
+at submit, so a bad one is refused before a job starts.
+**Alternatives:** Follow-ups as runs of one question (loses which text each answered); storing
+only the shortlist (a rerun could not say why a company dropped off).
+
+## 2026-09-24 - Discovery chat pipeline: plan, research tools, reading, one naming call, code screen
+**Context:** The ticket asks for model-planned searches, the deep-research reading stage, and
+code-side resolution with the never and removed lists.
+**Decision:** One bounded-JSON plan call gives up to 4 English queries (each run on Google News
+and GDELT through the research tools and their gates), up to 2 local-edition queries with a
+country from `EDITION`, the first 2 queries on the web, and filters: market-cap bands and
+excluded sectors (matched in code against sector, industry group and industry, singular or
+plural). A plan with no usable query searches the question itself. Items are taken a search at a
+time (at most 24); the reading stage reads 4 of them, keeping notes under `<model>#question` so a
+question's "not about" never marks an article for a company's research. One naming call returns
+companies with a why line and item numbers; a name no cited item holds is dropped (as in 01).
+The screen is 01's, moved into `candidate_screen.Screen` and shared: never list and removed
+companies are left off with the reason, filters next, watched and discovered companies stay on
+(marked, not re-priced), others are price-checked (at most 8 an answer). Rank: most items behind
+a name first, the model's order among equals. The model failing to plan or name fails the
+answer (saved with the error): unlike a discovery run, a question has nothing to fall back on.
+**Alternatives:** Running the full ReAct loop per question (slow on a 4B model, and its findings
+are prose, not a list); ranking in the model's order alone (small models list in headline order).
+
+## 2026-09-24 - Add to discovered from a shortlist keeps the discovered list's rules
+**Context:** A shortlist button puts a company on the list the AI account trades.
+**Decision:** `discovery_service.add_by_hand` refuses a never-listed company, one the user
+removed, one already watched or discovered, and a full list (`max_total`), with the reason. It
+records source `question`, relation `answer`, the question text as seed and the item's evidence,
+so the Discovery section says 'an answer to your question "..."'. Watch and Research reuse
+`/api/watchlists/main/items` and `/api/jobs/research`.
+**Alternatives:** Letting a click go past `max_total` (the cap bounds what the AI trades, whoever
+adds); refusing watched companies from the shortlist (they are still answers; they are marked).
+
+## 2026-09-24 - Discovery chat follow-ups left open
+**Context:** Found while building ticket 04.
+**Decision:** Recorded, not fixed: the name lookup misses hyphenated names written without the
+leading "The" ("Coca-Cola" does not find "The Coca-Cola Company"), shared with 01; the plan's
+region is only searched, never enforced in code (a "European" question can list a US company if
+the news names it); questions cannot be deleted; the naming call sees at most 24 items.
+**Alternatives:** A country filter from the plan (needs a region-to-country map).
+
+## 2026-09-24 - Discovery chat gate round 1 fixes
+**Context:** The ticket 04 gate found sector excludes that missed ("oil and gas") or overreached
+("tech" in Biotechnology), notes shared across questions, outages saved as answers, and a
+discovered-list add that could race a tick.
+**Decision:** An exclude now matches whole words of the sector, industry group or industry, with
+filler words ("and", "sector", "companies") dropped and plurals folded only on words over 4
+letters. Notes are keyed per root question (`<model>#q<root id>`), so a follow-up reuses its
+root's notes and no other question does. An answer where every search failed fails with "no
+search could run" (`SearchFailed`, 502) and is never compared against. Adding to the discovered
+list (a button or a tick) re-reads watched, listed, removed and room inside the insert's write
+transaction; a button add also re-checks prices first and quotes the whole question, follow-ups
+included. A discovered company on a shortlist offers Move instead of Watch. Names are checked
+against an item's title and facts, never its outlet. Only bracketed numbers that are item
+numbers are stripped from a why line. The shortlist is numbered 1..n with left-off names after it.
+**Alternatives:** An enum of the universe's sectors in the plan schema (exact, but a question
+naming an industry below the group level, "gas", would have nothing to pick); notes under a
+question-neutral prompt (more reuse, but "not about" would lose its meaning).
+
+## 2026-09-24 - Question answers and tick research share the local model
+**Context:** Gate item 4: a question answered while a tick researches runs two Ollama loads at once.
+**Decision:** Left as a follow-up: they hold different job locks, so both proceed, only slower.
+**Alternatives:** Making questions take the research lock (a question would then wait up to the
+research budget, or defer the tick's research as manual research does).
+
+## 2026-09-24 - Discovery chat excludes need every word, with everyday aliases
+**Context:** Gate round 2: one shared word excluded unrelated fields ("consumer staples" dropped
+Consumer Discretionary), and everyday words ("tech", "chipmakers") matched nothing while the
+note still claimed to leave them out.
+**Decision:** Every remaining word of an exclude must be among a field's words (after filler
+words and plural folding), with a small alias map first: tech, pharma, biotech, insurer,
+chip/chipmaker to the universe's words. The answer says "leaving out X" only for an exclude that
+matches some sector, industry group or industry the universe holds, and says an unmatched one was
+not recognised.
+**Alternatives:** Any shared word (too loose); a model-chosen enum of the universe's names (loses
+industries below the group level).

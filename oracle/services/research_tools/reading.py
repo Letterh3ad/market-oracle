@@ -58,8 +58,10 @@ _REPORT = re.compile(
 class Reader:
     def __init__(self, conn: sqlite3.Connection, clock: Clock, client: RateLimitedClient,
                  searcher: WebSearcher | None, gate: SourceGate, contact: str | None, model: ChatModel,
-                 company: str, context_tokens: int) -> None:
-        """`searcher` None: Google News links are left unresolved (a replay has no web search)."""
+                 company: str, context_tokens: int, note_key: str | None = None) -> None:
+        """`searcher` None: Google News links are left unresolved (a replay has no web search).
+        `note_key` keeps notes apart from the model's research notes, for reading asked about
+        something other than one company."""
         self._articles = ArticleRepo(conn)
         self._clock = clock
         self._client = client
@@ -67,7 +69,7 @@ class Reader:
         self._gate = gate
         self._contact = contact
         self._model = model
-        self._key = note_model(model.name, model.model)
+        self._key = note_key or note_model(model.name, model.model)
         self._company = company
         self._context = context_tokens
 

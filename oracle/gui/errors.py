@@ -8,8 +8,9 @@ from fastapi.responses import JSONResponse
 
 from oracle.services.errors import (
     CannotRestart, ConfigInUse, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
-    ServiceError,
-    UniverseNotLoaded, UniverseUnavailable, UnknownBacktest, UnknownFilterValue, UnknownJob, UnknownResearchRun, UnknownSymbol,
+    SearchFailed, ServiceError,
+    UniverseNotLoaded, UniverseUnavailable, UnknownBacktest, UnknownFilterValue, UnknownJob, UnknownQuestion, UnknownResearchRun,
+    UnknownSymbol,
     UnknownWatchlist,
 )
 
@@ -17,10 +18,10 @@ log = logging.getLogger(__name__)
 
 # Most specific first: the first matching class wins. Anything else a service raises is 400.
 STATUS = (
-    ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun, UnknownBacktest), 404),
+    ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun, UnknownBacktest, UnknownQuestion), 404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
     ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart, ConfigInUse), 409),
-    ((PriceUnavailable, UniverseUnavailable), 502),
+    ((PriceUnavailable, UniverseUnavailable, SearchFailed), 502),
     # The local model is a service of this machine, not an upstream: unavailable, not a bad gateway.
     ((ModelUnavailable,), 503),
 )
