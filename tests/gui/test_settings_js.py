@@ -45,3 +45,7 @@ def test_a_number_box_the_browser_cannot_parse_refuses_rather_than_sending_the_d
 
 def test_a_number_is_sent_as_a_number():
     assert read({"kind": "float"}, box("2.5")) == {"value": 2.5}
+
+
+def test_an_empty_box_for_a_key_blank_turns_off_sends_blank():
+    assert read({"kind": "str", "blank_off": True}, box()) == {"value": ""}

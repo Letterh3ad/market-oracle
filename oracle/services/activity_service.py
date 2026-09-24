@@ -26,14 +26,16 @@ from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
 from oracle.services.routine_service import update_listing_prices, update_prices
-from oracle.services.tick_service import record_skipped, run_tick
+from oracle.services.tick_service import (
+    KIND_LABELS, MIDDAY, TICK, last_tick, record_skipped, run_midday, run_tick, ticked_since,
+)
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse",
-           "submit_backtest", "submit_discover", "submit_prices", "submit_research", "submit_tick", "submit_fx",
-           "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+           "submit_backtest", "submit_discover", "submit_prices", "submit_midday", "submit_research", "submit_tick",
+           "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +46,7 @@ PAGE_SIZE = 20
 
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
 """Finished states worth another try; `done` needs no retry."""
+MISSED_LATE = "missed: started too late"
 
 
 @dataclass(eq=False)
@@ -321,21 +324,34 @@ def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None
     return runner.submit("analyse", f"Analyse {listing}", one, subject=listing, link=f"#company/{listing}")
 
 
-def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
-    """One tick as a job; its progress is the stage it is on. With `skip_if_busy` (scheduled
-    ticks), a tick held by another process is recorded as skipped instead of failing."""
+def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False,
+                kind: str = TICK, due: datetime | None = None, deadline: datetime | None = None) -> Job:
+    """One tick (or midday pass) as a job; its progress is the stage it is on. With
+    `skip_if_busy` (scheduled runs), one held by another process is recorded as skipped
+    instead of failing. Both kinds share the tick queue, so they run one after the other.
+    A scheduled run passes its `due` time: one run or skipped since it was queued is not
+    run again. Past `deadline` as it starts, it is recorded as missed instead."""
     stage: list[str] = []
+    run = run_midday if kind == MIDDAY else run_tick
 
     async def work(c: AppContext):
+        if due is not None and ticked_since(c, due, kind):
+            return last_tick(c, kind)
+        if deadline is not None and c.clock.utcnow() > deadline:
+            return record_skipped(c, trigger, MISSED_LATE, kind=kind)
         try:
-            return await run_tick(c, trigger, on_stage=lambda name: stage.append(name))
+            return await run(c, trigger, on_stage=lambda name: stage.append(name))
         except JobAlreadyRunning as exc:
             if not skip_if_busy:
                 raise
-            return record_skipped(c, trigger, f"skipped: {exc}")
+            return record_skipped(c, trigger, f"skipped: {exc}", kind=kind)
 
-    return runner.submit("tick", f"Tick ({trigger})", work, subject="tick", link="#watchlist",
+    return runner.submit("tick", f"{KIND_LABELS[kind]} ({trigger})", work, subject=kind, link="#watchlist",
                          progress=lambda: stage[-1] if stage else None, automatic=trigger != "manual")
+
+
+def submit_midday(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
+    return submit_tick(ctx, runner, trigger, skip_if_busy, MIDDAY)
 
 
 def submit_universe_refresh(runner: JobRunner) -> Job:
@@ -408,8 +424,8 @@ def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_tick(ctx: AppContext, runner: JobRunner, job) -> Job:
-    """Whatever started it before (scheduled or manual), a retry is asked for: a manual tick."""
-    return submit_tick(ctx, runner)
+    """Whatever started it before (scheduled or manual), a retry is asked for: a manual run of the same kind."""
+    return submit_tick(ctx, runner, kind=MIDDAY if job.subject == MIDDAY else TICK)
 
 
 def _retry_universe(ctx: AppContext, runner: JobRunner, job) -> Job:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tomllib
@@ -9,6 +10,8 @@ from pathlib import Path
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
+
+log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_NAME = "oracle.toml"
 
@@ -121,10 +124,18 @@ class ScheduleConfig:
     research_when_idle: bool = False
     """Research in a tick only once the PC has been idle `idle_minutes`; otherwise it waits."""
     idle_minutes: int = 15
+    midday_time: str = "12:30"
+    """A second weekday slot, local time, for discovery and research only; "" off."""
+    midday_budget_min: int = 60
+    """How long the midday pass may start work, discovery included; a research run started
+    near the end finishes past it."""
 
 
 WARN_RANGE = (0, 120)
 IDLE_RANGE = (1, 240)
+MIDDAY_BUDGET_RANGE = (1, 480)
+BLANK_OFF = {("schedule", "midday_time")}
+"""Keys an empty value turns off, rather than resetting to the default."""
 
 
 @dataclass(frozen=True)
@@ -606,8 +617,10 @@ def _whole(value: object, low: int, high: int) -> bool:
     return not isinstance(value, bool) and isinstance(value, int) and low <= value <= high
 
 
-def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
-    """`[schedule]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
+def check_schedule(raw: Mapping[str, object], strict: bool = False) -> ScheduleConfig:
+    """`[schedule]` from its keys, defaults for the rest; raises ConfigError naming the bad one.
+    A midday time equal to the tick's is refused when `strict` (a write); on load it turns
+    the midday pass off, since a file written before it existed may set `time = "12:30"`."""
     _reject_unknown(raw, ScheduleConfig, "[schedule]")
     s = replace(ScheduleConfig(), **raw)
     checks = {
@@ -617,17 +630,27 @@ def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
             *WARN_RANGE)),
         "idle_minutes": (_whole(s.idle_minutes, *IDLE_RANGE), "a whole number of minutes from {} to {}".format(
             *IDLE_RANGE)),
+        "midday_budget_min": (_whole(s.midday_budget_min, *MIDDAY_BUDGET_RANGE),
+                              "a whole number of minutes from {} to {}".format(*MIDDAY_BUDGET_RANGE)),
     }
     for key, (ok, wanted) in checks.items():
         if not ok:
             raise ConfigError(f"schedule.{key} must be {wanted}, got {getattr(s, key)!r}")
     check_schedule_time(s.time)
+    if s.midday_time != "":
+        check_schedule_time(s.midday_time, "midday_time", ' or "" (off)')
+        if s.midday_time == s.time:
+            clash = f"schedule.midday_time must differ from schedule.time ({s.time}): both would be due at once"
+            if strict:
+                raise ConfigError(clash)
+            log.warning("%s; the midday pass is off until one of them changes", clash)
+            return replace(s, midday_time="")
     return s
 
 
-def check_schedule_time(value: object) -> str:
+def check_schedule_time(value: object, key: str = "time", also: str = "") -> str:
     if not (isinstance(value, str) and re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", value)):
-        raise ConfigError(f'schedule.time must be a 24-hour time like "22:30", got {value!r}')
+        raise ConfigError(f'schedule.{key} must be a 24-hour time like "22:30"{also}, got {value!r}')
     return value
 
 

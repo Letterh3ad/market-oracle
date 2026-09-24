@@ -46,7 +46,8 @@ MONDAY_EVENING = utc(2026, 9, 21, 20, 0)  # 21:00 BST, before the 22:30 run
 def ctx(tmp_path):
     path = tmp_path / "oracle.toml"
     path.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"  # mine\n', encoding="utf-8")
-    config = Config(db_path=tmp_path / "o.db", schedule=ScheduleConfig(enabled=True))
+    # The midday pass is off here: tests/services/test_schedule_midday.py covers it.
+    config = Config(db_path=tmp_path / "o.db", schedule=ScheduleConfig(enabled=True, midday_time=""))
     with open_context(config, path, FakeClock(MONDAY_EVENING)) as c:
         yield c
 
@@ -292,8 +293,12 @@ def test_nothing_to_postpone_or_skip_while_scheduling_is_off(ctx):
 def test_changing_the_warning_keeps_the_schedule_and_is_saved(ctx):
     from oracle.services.settings_service import set_tick_warning
 
+    from dataclasses import replace
+
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, midday_time="11:45", midday_budget_min=7))
     set_tick_warning(ctx, 5, True, 20)
     s = ctx.config.schedule
+    assert (s.midday_time, s.midday_budget_min) == ("11:45", 7)
     assert (s.enabled, s.time, s.warn_minutes, s.research_when_idle, s.idle_minutes) == (True, "22:30", 5, True, 20)
     set_schedule(ctx, True, "21:00")
     assert ctx.config.schedule.warn_minutes == 5

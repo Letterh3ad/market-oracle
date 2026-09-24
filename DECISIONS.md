@@ -1861,3 +1861,30 @@ can never apply to it, because none is looked up. This is left as is (a listing 
 universe has nothing left to research a verdict against).
 **Alternatives:** Having `ai_step` fall back to the baseline lean for a delisted symbol
 (would trade the AI account on baseline in a rule it otherwise never uses).
+
+## 2026-09-24 - The midday pass: a second schedule slot for discovery and research only
+**Context:** Discovery 06 wants a daily slot (`[schedule] midday_time`, "12:30", "" off,
+`midday_budget_min` 60) that runs discovery, then research on stale listings, and never
+prices, steps or trades, without a migration.
+**Decision:** The pass reuses the tick's `discover` and `research` stage functions with a
+shared budget: discovery gets `discover_cap_min` over the midday budget (at most 10 min, a
+third of it), research gets what is left from the pass's start. It runs under the tick's
+lock and job queue (kind `tick`, subject `midday`, label "Midday pass (...)"), so it never
+overlaps a tick and a tick due during it waits behind it. Runs are stored in `tick_runs`
+with the trigger written as `midday/<trigger>`; `TickRun.kind` reads it back, and "last
+tick", catch-up and "ticked since" count ticks only, so a midday pass never hides a missed
+tick. The slot needs scheduling (`[schedule] enabled`) and automation on, shares the
+warning, postpone and skip (on whichever run is soonest), and never catches up: a pass not
+started within 30 minutes of its time (or its postponed time) is missed, not fired late.
+The grace is checked again as the queued job starts, and a restart inside the grace still
+runs it. A pass missed while the app was running is stored as skipped ("missed: ...") so the
+Ticks panel says why; one missed while the app was closed leaves no record. Each slot keeps
+its own floor, so changing one never drops the other's postponed run. A midday time equal
+to the tick's is refused when saved, but on load it only turns the midday pass off (with a
+logged warning), so a file already set to time = "12:30" still starts. A pass already queued
+or running is not offered for postpone or skip; the banner moves on to the next run.
+Research still needs the AI account on, as in a tick; research_when_idle holds both stages.
+**Alternatives:** A `kind` column (needs a migration, which the ticket rules out); a separate
+job kind and lock (a midday pass and a tick could then run at once and fight over research);
+firing a missed pass whenever the PC wakes (the user wants midday work at midday, not in
+the evening).

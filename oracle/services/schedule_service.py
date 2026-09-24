@@ -1,6 +1,6 @@
-"""Ticks on a timer inside the GUI server: weekdays at one local time. The scheduler polls
-rather than sleeping until the due time, so a changed setting or a woken laptop is noticed
-within a poll."""
+"""Ticks on a timer inside the GUI server: weekdays at one local time, plus the midday pass
+at a second. The scheduler polls rather than sleeping until the due time, so a changed
+setting or a woken laptop is noticed within a poll."""
 
 from __future__ import annotations
 
@@ -14,15 +14,20 @@ from oracle.services.context import AppContext
 from oracle.services.activity_service import JobRunner, submit_tick
 from oracle.services.errors import InvalidQuery
 from oracle.services.settings_service import reload_live_settings
-from oracle.services.tick_service import TickRun, last_tick, record_skipped, ticked_since
+from oracle.services.tick_service import (
+    KIND_LABELS, MIDDAY, TICK, TickRun, last_tick, record_skipped, ticked_since,
+)
 from oracle.store.watchlists import WatchlistRepo
 
-__all__ = ["POSTPONE", "ScheduleView", "Scheduler", "Upcoming", "last_due", "next_due", "schedule_status"]
+__all__ = ["MIDDAY_GRACE", "POSTPONE", "ScheduleView", "Scheduler", "Upcoming", "last_due", "next_due",
+           "schedule_status"]
 
 log = logging.getLogger(__name__)
 
 POLL_S = 30.0
 POSTPONE = timedelta(hours=1)
+MIDDAY_GRACE = timedelta(minutes=30)
+"""A midday pass not started this soon after its time is missed, not fired late."""
 SKIPPED_BY_USER = "skipped: skipped by the user"
 
 
@@ -61,13 +66,20 @@ class ScheduleView:
     warn_minutes: int
     research_when_idle: bool
     idle_minutes: int
+    midday_time: str
+    """"" when the midday pass is off."""
+    midday_budget_min: int
+    midday_next: datetime | None
+    """None when scheduling or the midday pass is off."""
 
 
 def schedule_status(ctx: AppContext, tz: tzinfo | None = None) -> ScheduleView:
     s = ctx.config.schedule
-    next_run = next_due(ctx.clock.utcnow(), s.time, tz) if s.enabled else None
+    now = ctx.clock.utcnow()
+    next_run = next_due(now, s.time, tz) if s.enabled else None
+    midday_next = next_due(now, s.midday_time, tz) if s.enabled and s.midday_time else None
     return ScheduleView(s.enabled, s.time, next_run, len(WatchlistRepo(ctx.conn).all_symbols()), s.warn_minutes,
-                        s.research_when_idle, s.idle_minutes)
+                        s.research_when_idle, s.idle_minutes, s.midday_time, s.midday_budget_min, midday_next)
 
 
 @dataclass(frozen=True)
@@ -76,6 +88,7 @@ class Upcoming:
     """The scheduled time, which identifies the tick."""
     at: datetime
     """When it will fire: `due`, or an hour later once postponed."""
+    kind: str = TICK
 
     @property
     def postponed(self) -> bool:
@@ -88,63 +101,114 @@ class Scheduler:
         self._ctx = ctx
         self._tz = tz
         self._runner = runner
-        self._setting = self._live_setting()
+        self._settings = self._live_settings()
         self._started = self._polled = ctx.clock.utcnow()
         self._file_stamp = self._stamp()
-        # Due times before the floor never fire, so turning scheduling on or moving its time
-        # never runs at once for a time already passed. At start there is none: the run
-        # missed while the app was closed (only the latest) runs once, as a catch-up.
-        self._floor = datetime.min.replace(tzinfo=timezone.utc)
+        # Due times before a kind's floor never fire, so turning scheduling on or moving its
+        # time never runs at once for a time already passed. At start there is none: the tick
+        # missed while the app was closed (only the latest) runs once, as a catch-up. One
+        # floor per kind, so changing the midday pass never drops a postponed tick.
+        self._floors = dict.fromkeys(KIND_LABELS, datetime.min.replace(tzinfo=timezone.utc))
         # Held here only: a restart forgets a postponement (the tick then fires as a catch-up).
-        self._postponed: set[datetime] = set()
+        self._postponed: set[tuple[str, datetime]] = set()
 
     async def check(self) -> TickRun | None:
-        """One poll: run a tick if one is due and none has run since."""
+        """One poll: run the first slot (tick, then midday pass) that is due and has not run since."""
         if (stamp := self._stamp()) != self._file_stamp:
             self._file_stamp = stamp
             reload_live_settings(self._ctx)
         ctx, s = self._ctx, self._ctx.config.schedule
         now = ctx.clock.utcnow()
-        if (setting := self._live_setting()) != self._setting:
-            # Changed some time after the last poll: a run due since then still counts.
-            self._setting, self._floor = setting, self._polled
-        self._polled = now
+        settings = self._live_settings()
+        for kind, setting in settings.items():
+            if setting != self._settings[kind]:
+                # Changed some time after the last poll: a run due since then still counts.
+                self._floors[kind] = self._polled
+        self._settings, self._polled = settings, now
         if not (s.enabled and ctx.config.automation.enabled):
             return None
-        due = last_due(now, s.time, self._tz)
-        # A tick finishing after the due time covers it, even one started just before.
-        if due < self._floor or ticked_since(ctx, due):
+        for kind, hhmm in self._slots():
+            if (run := await self._fire(kind, hhmm, now)) is not None:
+                return run
+        return None
+
+    async def _fire(self, kind: str, hhmm: str, now: datetime) -> TickRun | None:
+        ctx = self._ctx
+        due = last_due(now, hhmm, self._tz)
+        # A run finishing after the due time covers it, even one started just before.
+        if due < self._floors[kind] or ticked_since(ctx, due, kind):
             return None
-        if due in self._postponed and now < due + POSTPONE:
+        fire_at = self._fire_at(kind, due)
+        if now < fire_at:
             return None
         trigger = "catch-up" if due < self._started else "scheduled"
-        if trigger == "catch-up" and last_tick(ctx) is None:
+        if kind == MIDDAY:
+            if self._missed(fire_at, now):
+                if due < self._started:
+                    return None  # the app was closed at its time: nothing to say
+                # Never fired late, but recorded, so the Ticks panel says why there was none.
+                grace = MIDDAY_GRACE // timedelta(minutes=1)
+                return record_skipped(ctx, trigger, f"missed: not started within {grace} minutes of its time",
+                                      kind=MIDDAY)
+        elif trigger == "catch-up" and last_tick(ctx) is None:
             return None  # never ticked, so nothing was missed
-        if self._runner.active("tick"):
-            return record_skipped(ctx, trigger, "skipped: a tick is already queued or running here")
-        job = await self._runner.wait(submit_tick(ctx, self._runner, trigger, skip_if_busy=True).id)
+        label = KIND_LABELS[kind].lower()
+        # Only the same kind: a tick due while a midday pass is queued waits behind it.
+        if self._in_flight(kind):
+            return record_skipped(ctx, trigger, f"skipped: a {label} is already queued or running here", kind=kind)
+        # A midday pass queued behind a long manual tick checks its grace again as it starts.
+        deadline = fire_at + MIDDAY_GRACE if kind == MIDDAY else None
+        job = await self._runner.wait(
+            submit_tick(ctx, self._runner, trigger, skip_if_busy=True, kind=kind, due=due, deadline=deadline).id)
         if job.state == "done":
             return job.result
-        # A tick cut off part way stored its own record. One cancelled before it started did
+        # A run cut off part way stored its own record. One cancelled before it started did
         # not, and without one this due time would be submitted again on the next poll.
-        return last_tick(ctx) if ticked_since(ctx, due) else record_skipped(ctx, trigger, f"skipped: {job.error}")
+        if ticked_since(ctx, due, kind):
+            return last_tick(ctx, kind)
+        return record_skipped(ctx, trigger, f"skipped: {job.error}", kind=kind)
+
+    @staticmethod
+    def _missed(fire_at: datetime, now: datetime) -> bool:
+        return now - fire_at > MIDDAY_GRACE
+
+    def _in_flight(self, kind: str) -> bool:
+        """A run of `kind` queued or running here, which has no stored record until it ends."""
+        return any(j.subject == kind for j in self._runner.active("tick"))
+
+    def _fire_at(self, kind: str, due: datetime) -> datetime:
+        return due + POSTPONE if (kind, due) in self._postponed else due
+
+    def _slots(self) -> list[tuple[str, str]]:
+        s = self._ctx.config.schedule
+        return [(TICK, s.time)] + ([(MIDDAY, s.midday_time)] if s.midday_time else [])
 
     def upcoming(self) -> Upcoming | None:
-        """The next scheduled tick not yet run or skipped; None while scheduling or automation is off."""
+        """The next scheduled run (tick or midday pass) not yet run or skipped; None while
+        scheduling or automation is off."""
         ctx, s = self._ctx, self._ctx.config.schedule
         if not (s.enabled and ctx.config.automation.enabled):
             return None
         now = ctx.clock.utcnow()
-        last = last_due(now, s.time, self._tz)
-        if last in self._postponed and not ticked_since(ctx, last):
-            return Upcoming(last, last + POSTPONE)
-        due = next_due(now, s.time, self._tz)
-        while ticked_since(ctx, due):  # skipped ahead of time
-            due = next_due(due, s.time, self._tz)
-        return Upcoming(due, due + POSTPONE if due in self._postponed else due)
+        return min((self._upcoming(kind, hhmm, now) for kind, hhmm in self._slots()), key=lambda u: u.at)
+
+    def _upcoming(self, kind: str, hhmm: str, now: datetime) -> Upcoming:
+        ctx = self._ctx
+        last = last_due(now, hhmm, self._tz)
+        fire_at = self._fire_at(kind, last)
+        if last >= self._floors[kind] and not ticked_since(ctx, last, kind) and not self._in_flight(kind):
+            # Still to run: a postponed tick, or a midday pass due but not yet submitted
+            # (between polls) inside its grace, so the banner acts on it. Once submitted it is
+            # past postponing: the banner moves on to the next run.
+            if fire_at != last if kind == TICK else not self._missed(fire_at, now):
+                return Upcoming(last, fire_at, kind)
+        due = next_due(now, hhmm, self._tz)
+        while ticked_since(ctx, due, kind):  # skipped ahead of time
+            due = next_due(due, hhmm, self._tz)
+        return Upcoming(due, due + POSTPONE if (kind, due) in self._postponed else due, kind)
 
     def warning(self) -> Upcoming | None:
-        """The upcoming tick once it is within `warn_minutes` of firing."""
+        """The upcoming tick or midday pass once it is within `warn_minutes` of firing."""
         minutes = self._ctx.config.schedule.warn_minutes
         up = self.upcoming()
         if not (minutes and up) or up.at - self._ctx.clock.utcnow() > timedelta(minutes=minutes):
@@ -152,25 +216,26 @@ class Scheduler:
         return up
 
     def postpone(self) -> Upcoming:
-        """Move the upcoming tick an hour later, once per due time."""
+        """Move the upcoming run an hour later, once per due time."""
         up = self._pending()
         if up.postponed:
-            raise InvalidQuery("this tick was already postponed once; skip it instead")
-        self._postponed.add(up.due)
-        return Upcoming(up.due, up.due + POSTPONE)
+            raise InvalidQuery(f"this {KIND_LABELS[up.kind].lower()} was already postponed once; skip it instead")
+        self._postponed.add((up.kind, up.due))
+        return Upcoming(up.due, up.due + POSTPONE, up.kind)
 
     def skip(self) -> TickRun:
-        """Skip the upcoming tick, stored as a skipped tick at its due time, so a restart honours it too."""
-        return record_skipped(self._ctx, "scheduled", SKIPPED_BY_USER, at=self._pending().due)
+        """Skip the upcoming run, stored as skipped at its due time, so a restart honours it too."""
+        up = self._pending()
+        return record_skipped(self._ctx, "scheduled", SKIPPED_BY_USER, at=up.due, kind=up.kind)
 
     def _pending(self) -> Upcoming:
         if (up := self.upcoming()) is None:
-            raise InvalidQuery("no scheduled tick: scheduling or automation is off")
+            raise InvalidQuery("no scheduled tick or midday pass: scheduling or automation is off")
         return up
 
-    def _live_setting(self) -> tuple[bool, str, AutomationConfig]:
-        s = self._ctx.config.schedule
-        return s.enabled, s.time, self._ctx.config.automation
+    def _live_settings(self) -> dict[str, tuple[bool, str, AutomationConfig]]:
+        s, automation = self._ctx.config.schedule, self._ctx.config.automation
+        return {TICK: (s.enabled, s.time, automation), MIDDAY: (s.enabled, s.midday_time, automation)}
 
     def _stamp(self) -> int | None:
         path = self._ctx.config_source

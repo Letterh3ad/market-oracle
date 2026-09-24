@@ -1,3 +1,29 @@
+from dataclasses import replace
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def midday_off(request, ctx):
+    """These are about the tick (tests/gui/test_midday_routes.py covers the midday pass), bar
+    the one named for running with the default midday pass on."""
+    if "default_midday" not in request.node.name:
+        ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, midday_time=""))
+
+
+async def test_with_the_default_midday_pass_on_the_banner_names_and_skips_the_run_it_shows(ctx, client, tmp_path,
+                                                                                         monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    await client.put("/api/settings/schedule", json={"enabled": True, "time": local_time(ctx, 20)})
+    schedule = (await client.get("/api/status")).json()["schedule"]
+    assert schedule["midday_time"] == "12:30" and schedule["midday_next"]
+    ctx.clock.advance(12 * 60)
+    warning = (await client.get("/api/status")).json()["warning"]
+    assert warning["kind"] in ("tick", "midday")
+    skipped = (await client.post("/api/schedule/skip")).json()
+    assert skipped["kind"] == warning["kind"] and skipped["note"] == "skipped: skipped by the user"
+
+
 async def test_scheduling_is_off_until_turned_on_and_then_shows_the_next_run(ctx, client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     schedule = (await client.get("/api/status")).json()["schedule"]
