@@ -92,7 +92,7 @@ class Screen:
         if name not in self._found:
             self._found[name] = self._lookup(name)
         found = self._found[name]
-        if found.profile and found.by_start and named_in and (why := self._fit.misfit(found.profile, named_in)):
+        if found.profile and found.by_start and named_in and (why := self._fit.misfit(found.profile, name, named_in)):
             return None, why
         return found.profile, found.why_not
 

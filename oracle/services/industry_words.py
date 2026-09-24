@@ -12,7 +12,8 @@ ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotech
            "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
            "automaker": "automobile", "car": "automobile", "cars": "automobile", "auto": "automobile",
            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication",
-           "drug": "pharmaceutical", "drugmaker": "pharmaceutical", "carmaker": "automobile"}
+           "drug": "pharmaceutical", "drugmaker": "pharmaceutical", "carmaker": "automobile",
+           "defence": "defense", "semiconducter": "semiconductor"}
 _WORDS = re.compile(r"[a-z0-9]+")
 
 

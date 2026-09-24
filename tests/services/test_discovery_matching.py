@@ -10,7 +10,7 @@ import pytest
 from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.discovery_chat_service import ask
-from oracle.services.discovery_service import discover
+from oracle.services.discovery_service import discover, theme_query
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from tests.fakes.clock import FakeClock
@@ -37,6 +37,46 @@ UNIVERSE = [
     equity("QTXS", "Quantix Systems Inc.", currency="USD", market_cap="Small Cap"),
     equity("7203.T", TOYOTA, "Japan", "JPX", currency="JPY", market_cap="Mega Cap",
            sector="Consumer Discretionary", industry_group="Automobiles & Components"),
+    equity("VLTA", "Velta Pharmaceuticals Inc.", currency="USD", market_cap="Large Cap", sector="Health Care",
+           industry_group="Pharmaceuticals, Biotechnology & Life Sciences"),
+    # Cross-industry true matches seen refused on the live universe.
+    equity("PLTR", "Palantir Technologies Inc.", currency="USD", market_cap="Mega Cap",
+           sector="Information Technology", industry_group="Software & Services"),
+    equity("MU", "Micron Technology, Inc.", currency="USD", market_cap="Mega Cap", **CHIPS),
+    equity("ROK", "Rockwell Automation, Inc.", currency="USD", market_cap="Large Cap", sector="Industrials",
+           industry_group="Capital Goods", industry="Electrical Equipment"),
+    equity("ALFA.ST", "Alfa Laval AB", "Sweden", "STO", currency="SEK", market_cap="Large Cap",
+           sector="Industrials", industry_group="Capital Goods", industry="Machinery"),
+    equity("GFS", "GlobalFoundries Inc.", currency="USD", market_cap="Large Cap", **CHIPS),
+    equity("GM", "General Motors Company", currency="USD", market_cap="Large Cap",
+           sector="Consumer Discretionary", industry_group="Automobiles & Components"),
+    equity("ROG.SW", "Roche Holding AG", "Switzerland", "EBS", currency="CHF", market_cap="Mega Cap",
+           sector="Health Care", industry_group="Pharmaceuticals, Biotechnology & Life Sciences"),
+    equity("NOC", "Northrop Grumman Corporation", currency="USD", market_cap="Large Cap", sector="Industrials",
+           industry_group="Capital Goods", industry="Aerospace & Defense"),
+    equity("LOGN.SW", "Logitech International S.A.", "Switzerland", "EBS", currency="CHF",
+           market_cap="Large Cap", sector="Information Technology",
+           industry_group="Technology Hardware & Equipment"),
+    equity("QQ.L", "QinetiQ Group plc", "United Kingdom", "LSE", currency="GBP", market_cap="Mid Cap",
+           sector="Industrials", industry_group="Capital Goods", industry="Aerospace & Defense"),
+    # The universe's own data is wrong here: a German group as a US OTC consumer company.
+    equity("RNMBY", "Rheinmetall Group AG", exchange="PNK", currency="USD", market_cap="Large Cap",
+           sector="Consumer Discretionary"),
+]
+CROSS_INDUSTRY = [
+    ("Palantir", "Palantir wins $10bn US Army defense contract"),
+    ("Micron", "Micron stock rises after bank upgrade"),
+    ("Rockwell", "Toyota picks Rockwell for car plant automation"),
+    ("Alfa Laval", "Alfa Laval sees data centre cooling demand from chip makers"),
+    ("GlobalFoundries", "GM signs deal with GlobalFoundries for car parts"),
+    ("Roche", "Roche buys chip startup for diagnostics"),
+    ("Northrop", "Northrop to supply Korean air force; oil price weighs"),
+]
+NATIONALITY_NOT_HOME = [
+    ("Micron", "Micron wins UK subsidy"),
+    ("Micron", "Micron cuts prices amid Chinese competition"),
+    ("Logitech", "Logitech sees weaker demand from American consumers"),
+    ("QinetiQ", "QinetiQ wins American contract"),
 ]
 # The live answer's three items, then one naming a true match.
 HEADLINES = [
@@ -94,8 +134,8 @@ async def test_olix_the_chip_startup_is_not_matched_to_a_drug_maker(ctx, news):
     view = await asked(ctx, ("Olix", [2, 3]), ("Infineon", [4]), ("Mistral AI", [1]))
     assert [line.item.symbol for line in view.shortlist] == ["IFX.DE"], "a true match still passes"
     why = left_off(view)["Olix"]
-    assert why == (f"a different business: {OLIX} is in Pharmaceuticals, Biotechnology & Life Sciences, "
-                   'but the question and its news are about "chip"')
+    assert why == (f"a different business: {OLIX} is a Micro Cap in Pharmaceuticals, Biotechnology & Life "
+                   'Sciences, but the question is about "semiconducter"')
     assert left_off(view)["Mistral AI"] == "not in the universe under that name"
 
 
@@ -117,9 +157,12 @@ async def test_a_leading_name_in_the_right_business_passes(ctx, news):
     assert [line.item.symbol for line in view.shortlist] == ["ASML"]
 
 
-async def test_the_question_s_own_industry_words_count(ctx, news):
+@pytest.mark.parametrize("question", ["which European semiconductor firms are growing?",
+                                      "which chipmakers are growing?", "which chip makers are growing?",
+                                      "which defence firms are growing?", QUESTION])
+async def test_the_question_s_own_industry_words_count(ctx, news, question):
     found(news, "Olix raises a record round")
-    view = await asked(ctx, ("Olix", [1]), question="which European semiconductor firms are growing?")
+    view = await asked(ctx, ("Olix", [1]), question=question)
     assert "a different business" in left_off(view)["Olix"]
 
 
@@ -133,6 +176,7 @@ async def test_with_no_industry_words_a_leading_name_passes(ctx, news):
     ("German startup Quantix raises a record round", "Germany"),
     ("Europe's Quantix raises a record round", "Europe"),
     ("UK-based Quantix raises a record round", "United Kingdom"),
+    ("Quantix, the German chip startup, raises a record round", "Germany"),
 ])
 async def test_when_the_business_cannot_tell_the_home_the_news_names_can(ctx, news, title, home):
     found(news, title)
@@ -160,13 +204,75 @@ async def test_one_gdelt_search_per_answer_the_rest_on_the_web(ctx, news):
     assert searcher.queries == [QUERY, "Big European chip firms", "Major chip makers"]
 
 
-async def test_tick_discovery_refuses_a_mismatched_leading_name_too(ctx, news):
+async def test_tick_themes_refuse_a_mismatched_leading_name_too(ctx, news):
+    settings(ctx, per_tick=2, themes=("semiconductors",), search_related=False, search_movers=False)
+    news.results[theme_query("semiconductors")] = [
+        (f"https://news.test/{i}", t, "Wire", datetime(2026, 9, 23, 8, tzinfo=timezone.utc))
+        for i, t in enumerate([HEADLINES[1], "Micron stock rises after bank upgrade"])]
+    run = await discover(ctx, ScriptedModel({"companies": [{"name": "Olix", "headlines": [1]},
+                                                           {"name": "Micron", "headlines": [2]}]}))
+    assert [a.symbol for a in run.added] == ["MU"]
+    assert reasons(run)["Olix"].startswith(f"a different business: {OLIX}")
+
+
+async def test_tick_related_partners_from_other_industries_are_added(ctx, news):
     watch(ctx, "7203.T")
-    settings(ctx, per_tick=1, search_themes=False, search_movers=False)
-    headlines(news, TOYOTA, "Olix and Toyota team up on chips")
-    run = await discover(ctx, ScriptedModel({"companies": [{"name": "Olix", "relation": "partner",
-                                                            "headlines": [1]}]}))
-    assert run.added == () and reasons(run)["Olix"].startswith(f"a different business: {OLIX}")
+    settings(ctx, per_tick=2, search_themes=False, search_movers=False)
+    headlines(news, TOYOTA, "Toyota picks Rockwell for car plant automation", "Olix and Toyota team up on chips")
+    run = await discover(ctx, ScriptedModel({"companies": [
+        {"name": "Rockwell", "relation": "supplier", "headlines": [1]},
+        {"name": "Olix", "relation": "partner", "headlines": [2]}]}))
+    assert [a.symbol for a in run.added] == ["ROK", "226950.KQ"], "no question: the sector is not checked"
+
+
+@pytest.mark.parametrize(("name", "title"), CROSS_INDUSTRY)
+@pytest.mark.parametrize("question", ["who won big deals this week?", "which chip companies matter now?"])
+async def test_headlines_naming_other_industries_never_refuse_a_true_match(ctx, news, name, title, question):
+    found(news, title)
+    view = await asked(ctx, (name, [1]), question=question)
+    assert len(view.shortlist) == 1, left_off(view)
+
+
+@pytest.mark.parametrize(("name", "title"), NATIONALITY_NOT_HOME)
+async def test_a_nationality_that_is_not_the_company_s_home_passes(ctx, news, name, title):
+    found(news, title)
+    view = await asked(ctx, (name, [1]), question="who won big deals this week?")
+    assert len(view.shortlist) == 1, left_off(view)
+
+
+async def test_the_sector_alone_never_refuses_a_big_company(ctx, news):
+    found(news, "Velta enters pharmaceutical chips")
+    view = await asked(ctx, ("Velta", [1]), question="which chip companies matter now?")
+    assert [line.item.symbol for line in view.shortlist] == ["VLTA"]
+
+
+async def test_technology_in_a_name_says_nothing_of_its_trade(ctx, news):
+    found(news, "Micron stock rises after bank upgrade")
+    view = await asked(ctx, ("Micron", [1]), question="which defence companies grow?")
+    assert [line.item.symbol for line in view.shortlist] == ["MU"]
+
+
+async def test_a_name_whose_rest_is_another_industry_is_refused(ctx, news):
+    found(news, "Velta raises a record round")
+    view = await asked(ctx, ("Velta", [1]), question="which chip companies matter now?")
+    assert left_off(view)["Velta"].startswith("a different business: Velta Pharmaceuticals Inc. is in")
+
+
+async def test_a_us_otc_line_of_a_foreign_company_is_not_refused_on_its_home(ctx, news):
+    found(news, "German defence group Rheinmetall wins a tank order")
+    view = await asked(ctx, ("Rheinmetall", [1]), question="which defence companies win orders?")
+    assert [line.item.symbol for line in view.shortlist] == ["RNMBY"]
+
+
+async def test_a_link_between_companies_of_other_industries_is_kept(ctx, news):
+    from oracle.services.links_service import company_links
+
+    found(news, "Toyota picks Rockwell for car plant automation")
+    m = model()
+    m.replies = [{"companies": [{"name": "Rockwell", "why": "Automation", "headlines": [1], "related_to": "Toyota",
+                                 "relation": "supplier", "link_items": [1]}]}]
+    await ask(ctx, "which chip companies matter now?", model=m, searcher=FakeSearcher())
+    assert [link.symbol for link in company_links(ctx, "ROK")] == ["7203.T"]
 
 
 async def test_a_full_plan_still_asks_gdelt_once(ctx, news):

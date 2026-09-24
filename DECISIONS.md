@@ -2201,25 +2201,33 @@ releases as independent when on two wires (every wire copy is the same company s
 **Context:** Merging the openai_compatible provider with claude_code (06) and task slots (04).
 **Decision:** `Provider` carries `url` beside `keyed` and `base_url_required`; `URLLESS_PROVIDERS` is derived from it, so a provider is still one entry. An unusable profile behaves like an off one: `resolve_model` refuses it even when a test model is supplied, and its reason fills the row's `unavailable`, so a slot naming it falls back to the research profile under the slot rules and it is never built. Profiles load leniently even on a strict (write) load, so one old profile never blocks saving anything else; the profile being saved is still checked strictly. Each stage's budget reads the reply room of the model that stage runs on (roles for the digest, notes for reading, verdict for the verdict).
 **Alternatives:** A separate unusable flag beside `unavailable` (two ways to say "cannot run").
-## 2026-09-24 - A name matched by its start must fit the news; one GDELT search per answer
+
+## 2026-09-24 - A name matched by its start must fit the question; one GDELT search per answer
 **Context:** Discovery 03. "Olix" (a UK chip startup) matched OliX Pharmaceuticals (Korea) by the
-start of its name, and 3 of an answer's 4 GDELT searches failed on 429 and the open circuit.
+start of its name, and 3 of an answer's 4 GDELT searches failed on 429 and the open circuit. Gate
+round 1: judging the sector by headline words refused many true matches ("Micron stock rises after
+bank upgrade", "Toyota picks Rockwell for car plant automation"), and any nationality word was
+taken as a home ("Micron wins UK subsidy").
 **Decision:** `candidate_screen` records how a name matched. Exact names and symbols are kept as
-they are; a match by the start of the name (one company, or the clearly biggest) is checked by
-`business_fit` against what it was named in: the question (or theme, or mover search) and the
-items citing it. Words of the universe's own classifications (plurals folded, the chat's aliases,
-"chip" is semiconductor, "drug" pharmaceutical) give sectors; words news uses for anything
-("financial", "capital", "energy", "infrastructure", "it") are left out. The match is refused when
-those words name sectors and the company's is none of them: "a different business: OliX
-Pharmaceuticals,Inc is in Pharmaceuticals, Biotechnology & Life Sciences, but the question and its
-news are about "chip"". Only when the words cannot tell (none found, or no sector on the company),
-the home the items give a company ("German startup", "UK-based", "Europe's") must hold its country,
-else "a different company: ... is from United States, but the news names Germany". A place merely
-named ("a plant in Mexico") counts for nothing. Refused names show under "left off" (GUI, `oracle
-discover show`) and in a run's skipped list; links go through the same check. Applies to the
-discovery chat, tick discovery (related, themes, movers) and so auto questions. The chat plan
-searches GDELT for its first query only; every query goes to Google News and the web.
-**Alternatives:** A model call per fuzzy match (slow on a 4B model, and cheap signals caught the
-case); refusing on country whenever it differs (a Korean company in a story on "Europe's top AI
-firm" would be refused); moving the extra GDELT searches to Google News (each query is there
-already); spacing GDELT calls out (an answer would wait minutes for a source that locks out anyway).
+they are; a match by the start of the name (one company, or the clearly biggest) goes through
+`business_fit`, given the question (or theme, or mover search) and the items citing the name.
+Home: a nationality counts only when it qualifies the name itself ("German startup Olix", "UK-based
+Olix", "Europe's Olix", "Olix, the German ..."), with only describing words between; bare "UK" and
+"US" never count. A home that does not hold the company's country refuses the match, except for a
+US line on an OTC venue or carrying a foreign legal form (the universe often calls those US).
+Sector: only the question's own words count, never the headlines' (they name partners' and
+customers' trades); a watched company's related news asks nothing, so it gets no sector check.
+Words of the universe's classifications give sectors (plurals folded, aliases: chip, chipmaker,
+drug, defence, "semiconducter"); words news uses for anything ("financial", "capital", "energy",
+"it") are left out. A sector the question does not ask about never refuses alone: it also takes a
+Small, Micro or Nano Cap, or an industry word in the rest of the listing's name that the question
+and news never use ("Pharmaceuticals" against chips; "Technology", "Electronic" and "Media" say
+nothing). Reason: "a different business: OliX Pharmaceuticals,Inc is a Micro Cap in
+Pharmaceuticals, Biotechnology & Life Sciences, but the question is about "semiconducter"".
+Refused names show under "left off" (GUI, `oracle discover show`) and in a run's skipped list;
+links go through the same check. The chat plan searches GDELT for its first query only; every
+query goes to Google News and the web.
+**Alternatives:** Headline words as a sector signal (refused cross-industry partners, worst in
+related discovery); the sector alone (the universe's sectors are sometimes wrong: Rheinmetall as
+Consumer Discretionary, Arista as Financials); a model call per fuzzy match (slow on a 4B model);
+moving the extra GDELT searches to Google News (each query is there already).
