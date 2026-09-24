@@ -1,0 +1,115 @@
+{
+ "quoteSummary": {
+  "result": [
+   {
+    "assetProfile": {
+     "address1": "Parc1,108 Yeoui-daero",
+     "address2": "Yeongdeungpo-Gu",
+     "city": "Seoul",
+     "zip": "07335",
+     "country": "South Korea",
+     "phone": "82 2 3777 1114",
+     "website": "https://www.lgensol.com",
+     "industry": "Electrical Equipment & Parts",
+     "industryKey": "electrical-equipment-parts",
+     "industryDisp": "Electrical Equipment & Parts",
+     "sector": "Industrials",
+     "sectorKey": "industrials",
+     "sectorDisp": "Industrials",
+     "longBusinessSummary": "LG Energy Solution, Ltd. provides energy solutions worldwide. The company offers automotive batteries, which include pouch-type battery cells, modules/packs, and battery management system products for use in electric vehicle batteries; mobility and IT batteries for various applications in IT devices, such as smartphones and laptops, as well as light electric vehicles, electric bicycles, power tools, and wireless earphones; and energy storage systems that are used in power grids, UPS, and commercial and residential applications. It operates in South Korea, China, and the United States. LG Energy Solution, Ltd. was founded in 2020 and is headquartered in Seoul, South Korea. LG Energy Solution, Ltd. is a subsidiary of LG Chem, Ltd.",
+     "fullTimeEmployees": 12612,
+     "compensationAsOfEpochDate": 1735603200,
+     "executiveTeam": [],
+     "maxAge": 86400
+    },
+    "price": {
+     "maxAge": 1,
+     "preMarketChange": {},
+     "preMarketPrice": {},
+     "postMarketChange": {},
+     "postMarketPrice": {},
+     "regularMarketChangePercent": {
+      "raw": 0.0028530671,
+      "fmt": "0.29%"
+     },
+     "regularMarketChange": {
+      "raw": 1000.0,
+      "fmt": "1,000.00"
+     },
+     "regularMarketTime": 1790145018,
+     "priceHint": {
+      "raw": 2,
+      "fmt": "2",
+      "longFmt": "2"
+     },
+     "regularMarketPrice": {
+      "raw": 351500.0,
+      "fmt": "351,500.00"
+     },
+     "regularMarketDayHigh": {
+      "raw": 359000.0,
+      "fmt": "359,000.00"
+     },
+     "regularMarketDayLow": {
+      "raw": 349500.0,
+      "fmt": "349,500.00"
+     },
+     "regularMarketVolume": {
+      "raw": 222728,
+      "fmt": "222.73k",
+      "longFmt": "222,728.00"
+     },
+     "averageDailyVolume10Day": {},
+     "averageDailyVolume3Month": {},
+     "regularMarketPreviousClose": {
+      "raw": 350500.0,
+      "fmt": "350,500.00"
+     },
+     "regularMarketSource": "DELAYED",
+     "regularMarketOpen": {
+      "raw": 353500.0,
+      "fmt": "353,500.00"
+     },
+     "strikePrice": {},
+     "openInterest": {},
+     "fulldayChangePercent": {
+      "raw": 0.0028530671,
+      "fmt": "0.29%"
+     },
+     "fulldayChange": {
+      "raw": 1000.0,
+      "fmt": "1,000.00"
+     },
+     "fulldayPrice": {
+      "raw": 351500.0,
+      "fmt": "351,500.00"
+     },
+     "exchange": "KSC",
+     "exchangeName": "KSE",
+     "exchangeDataDelayedBy": 20,
+     "marketState": "CLOSED",
+     "quoteType": "EQUITY",
+     "symbol": "373220.KS",
+     "underlyingSymbol": null,
+     "shortName": "LG Energy Solution",
+     "longName": "LG Energy Solution, Ltd.",
+     "currency": "KRW",
+     "quoteSourceName": "Delayed Quote",
+     "currencySymbol": "₩",
+     "fromCurrency": null,
+     "toCurrency": null,
+     "lastMarket": null,
+     "volume24Hr": {},
+     "volumeAllCurrencies": {},
+     "circulatingSupply": {},
+     "marketCap": {
+      "raw": 82250997694464,
+      "fmt": "82.25T",
+      "longFmt": "82,250,997,694,464.00"
+     }
+    }
+   }
+  ],
+  "error": null
+ }
+}

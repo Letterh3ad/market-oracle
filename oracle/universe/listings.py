@@ -20,6 +20,15 @@ LEGAL_FORMS = frozenset({
 
 # FinanceDatabase's bands, largest first.
 MARKET_CAP_BANDS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap")
+_BAND_FLOORS_USD = (200e9, 10e9, 2e9, 300e6, 50e6, 0.0)
+"""Where each band starts, as FinanceDatabase cuts them."""
+
+
+def band_of_usd(market_cap: float) -> str:
+    """The band a market cap in US dollars falls in."""
+    return next(band for band, floor in zip(MARKET_CAP_BANDS, _BAND_FLOORS_USD) if market_cap >= floor)
+
+
 SIZES: dict[str, tuple[str, ...]] = {"large": MARKET_CAP_BANDS[:2], "mid-small": MARKET_CAP_BANDS[2:]}
 """The two sizes a comparison splits companies into, by band."""
 

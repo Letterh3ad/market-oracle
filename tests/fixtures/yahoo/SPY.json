@@ -1,0 +1,120 @@
+{
+ "quoteSummary": {
+  "result": [
+   {
+    "assetProfile": {
+     "longBusinessSummary": "The trust seeks to achieve its investment objective by holding a portfolio of the common stocks that are included in the index (the “Portfolio”), with the weight of each stock in the Portfolio substantially corresponding to the weight of such stock in the index.",
+     "executiveTeam": [],
+     "maxAge": 86400
+    },
+    "price": {
+     "maxAge": 1,
+     "preMarketChangePercent": {
+      "raw": -0.004870857,
+      "fmt": "-0.49%"
+     },
+     "preMarketChange": {
+      "raw": -3.7399902,
+      "fmt": "-3.74"
+     },
+     "preMarketTime": 1790256598,
+     "preMarketPrice": {
+      "raw": 764.09,
+      "fmt": "764.09"
+     },
+     "preMarketSource": "FREE_REALTIME",
+     "postMarketChangePercent": {
+      "raw": -0.00073789863,
+      "fmt": "-0.07%"
+     },
+     "postMarketChange": {
+      "raw": -0.5661011,
+      "fmt": "-0.57"
+     },
+     "postMarketTime": 1790286349,
+     "postMarketPrice": {
+      "raw": 766.6139,
+      "fmt": "766.61"
+     },
+     "postMarketSource": "FREE_REALTIME",
+     "regularMarketChangePercent": {
+      "raw": -0.000820522,
+      "fmt": "-0.08%"
+     },
+     "regularMarketChange": {
+      "raw": -0.630005,
+      "fmt": "-0.63"
+     },
+     "regularMarketTime": 1790280000,
+     "priceHint": {
+      "raw": 2,
+      "fmt": "2",
+      "longFmt": "2"
+     },
+     "regularMarketPrice": {
+      "raw": 767.18,
+      "fmt": "767.18"
+     },
+     "regularMarketDayHigh": {
+      "raw": 768.95,
+      "fmt": "768.95"
+     },
+     "regularMarketDayLow": {
+      "raw": 763.245,
+      "fmt": "763.24"
+     },
+     "regularMarketVolume": {
+      "raw": 42694185,
+      "fmt": "42.69M",
+      "longFmt": "42,694,185.00"
+     },
+     "averageDailyVolume10Day": {},
+     "averageDailyVolume3Month": {},
+     "regularMarketPreviousClose": {
+      "raw": 767.81,
+      "fmt": "767.81"
+     },
+     "regularMarketSource": "FREE_REALTIME",
+     "regularMarketOpen": {
+      "raw": 764.065,
+      "fmt": "764.07"
+     },
+     "strikePrice": {},
+     "openInterest": {},
+     "fulldayChangePercent": {
+      "raw": -0.0015578151,
+      "fmt": "-0.16%"
+     },
+     "fulldayChange": {
+      "raw": -1.196106,
+      "fmt": "-1.20"
+     },
+     "fulldayPrice": {
+      "raw": 766.6139,
+      "fmt": "766.61"
+     },
+     "exchange": "PCX",
+     "exchangeName": "NYSEArca",
+     "exchangeDataDelayedBy": 0,
+     "marketState": "POST",
+     "quoteType": "ETF",
+     "symbol": "SPY",
+     "underlyingSymbol": null,
+     "shortName": "State Street SPDR S&P 500 ETF T",
+     "longName": "State Street SPDR S&P 500 ETF Trust",
+     "currency": "USD",
+     "quoteSourceName": "Nasdaq Real Time Price",
+     "currencySymbol": "$",
+     "fromCurrency": null,
+     "toCurrency": null,
+     "lastMarket": null,
+     "volume24Hr": {},
+     "volumeAllCurrencies": {},
+     "circulatingSupply": {},
+     "marketCap": {}
+    }
+   }
+  ],
+  "error": null
+ }
+}
