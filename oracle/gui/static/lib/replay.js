@@ -111,8 +111,10 @@ function replaySection() {
     return [
       el("p", null, `${HORIZON_NAMES[h.horizon] ?? h.horizon}: ${h.scored} scored, ${h.pending} pending, `
         + `${h.unpriced} without prices; hit rate ${rate(h.hit_rate, h.hit_ci)}, `
-        + `${rate(h.hit_rate_vs_basket, h.hit_vs_basket_ci)} against the basket. Base rates: `
-        + `${share(h.base_rate_up)} of all the study's windows rose, ${share(h.base_rate_beat_basket)} beat the basket.`),
+        + `${rate(h.hit_rate_vs_basket, h.hit_vs_basket_ci)} against the basket. No skill: of the called windows `
+        + `${share(h.base_rate_up)} rose and ${share(h.base_rate_beat_basket)} beat the basket, so this mix of calls `
+        + `would hit ${share(h.expected_hit_rate)} (${share(h.expected_hit_rate_vs_basket)} against the basket) `
+        + `by chance.`),
       table([["Verdict or band"], ["Count", null, true], ["Hit", null, true], ["Hit vs basket", null, true],
         ["Mean return", null, true], ["Mean vs basket", null, true], ["Confidence", null, true]],
       [...h.by_verdict, ...h.by_band].map(group), ""),
@@ -136,12 +138,13 @@ function replaySection() {
   function score(r) {
     if (!r) return [];
     const m = r.mix;
-    const missing = r.unpriced_listings.length
-      ? `No stored prices cover ${r.unpriced_listings.join(", ")} for a window that has closed: press Update prices.`
-      : "Every closed window has its prices.";
-    const updated = r.prices_updated_at
-      ? `Study prices last updated ${r.prices_updated_at.slice(0, 16).replace("T", " ")} UTC.`
-      : "Study prices not updated yet.";
+    const missing = r.refetch_listings.length
+      ? `A window closed since ${r.refetch_listings.join(", ")} last had prices fetched: press Update prices.`
+      : "Every closed window has its prices fetched.";
+    const failures = r.price_failures.length ? ` Failed then: ${r.price_failures.join(", ")}.` : "";
+    const updated = r.prices_checked_at
+      ? `Study prices last checked ${r.prices_checked_at.slice(0, 16).replace("T", " ")} UTC.${failures}`
+      : "Study prices not checked yet.";
     return [
       el("h3", null, "Score"),
       el("p", null, `${r.verdicts} verdicts, ${r.no_verdict} without a verdict, ${r.failed} failed, `

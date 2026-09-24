@@ -27,11 +27,11 @@ REPORT = {
     "horizons": [
         {"horizon": "1m", "months": 1, "scored": 2, "pending": 0, "unpriced": 0, "hit_rate": 0.5,
          "hit_ci": [0.24, 0.76], "hit_rate_vs_basket": 1.0, "hit_vs_basket_ci": None, "base_rate_up": 0.4,
-         "base_rate_beat_basket": 0.5, "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
+         "base_rate_beat_basket": 0.5, "expected_hit_rate": 0.45, "expected_hit_rate_vs_basket": 0.5, "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
          "by_band": [*BLANK, group("0.80 and up", 2, 0.5, 1.0, 0.012, 0.03, 0.85)]},
         {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
          "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
-    "unpriced_listings": ["7203.T"], "prices_updated_at": "2026-09-24T06:00:00+00:00",
+    "refetch_listings": ["7203.T"], "prices_checked_at": "2026-09-24T06:00:00+00:00", "price_failures": ["AAPL"],
     "limits": ["The listings and their fundamentals are today's (survivorship)."],
 }
 
@@ -126,11 +126,12 @@ def test_the_score_shows_headline_numbers_a_table_and_the_limits():
     assert "2 verdicts, 0 without a verdict, 1 failed, 3 still to run, of 6 replays." in text
     assert "Verdict mix: 2 buy, 0 hold, 0 sell (100% buys), mean confidence 0.85." in text
     assert ("1 month: 2 scored, 0 pending, 0 without prices; hit rate 50% (95% 24% to 76%), 100% against the "
-            "basket. Base rates: 40% of all the study's windows rose, 50% beat the basket.") in text
-    assert "Study prices last updated 2026-09-24 06:00 UTC." in text and "mixes currencies" in text
+            "basket. No skill: of the called windows 40% rose and 50% beat the basket, so this mix of calls would hit "
+            "45% (50% against the basket) by chance.") in text
+    assert "Study prices last checked 2026-09-24 06:00 UTC. Failed then: AAPL." in text and "mixes currencies" in text
     assert "3 months: 0 scored, 2 pending" in text
     assert "buy250%100%+1.20%+3.00%0.85" in text and "0.80 and up2" in text
-    assert "No stored prices cover 7203.T" in text and "(survivorship)" in text
+    assert "A window closed since 7203.T last had prices fetched" in text and "(survivorship)" in text
 
 
 def test_the_report_is_fetched_again_only_when_the_status_score_moves():

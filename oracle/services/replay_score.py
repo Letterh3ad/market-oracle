@@ -38,7 +38,7 @@ MIN_N = 10
 """Fewer hits and misses than this get no interval: it would span most of 0 to 1."""
 Z95 = 1.96
 SCORED, PENDING, UNPRICED = "scored", "pending", "unpriced"
-PRICES_AT = "replay_prices_at"
+PRICES_KEY = "replay_prices"
 _SIGN = {"buy": 1, "hold": 0, "sell": -1}
 
 LIMITS = (
@@ -109,8 +109,11 @@ class HorizonScore:
     hit_rate_vs_basket: float | None
     hit_vs_basket_ci: tuple[float, float] | None
     base_rate_up: float | None
-    """The share of every priced (listing, day) window of the study that rose, verdict or not."""
+    """The share of the called windows (the buys and sells scored) that rose, whatever the call."""
     base_rate_beat_basket: float | None
+    expected_hit_rate: float | None
+    """What calls with no skill would hit, given the base rate and this mix of buys and sells."""
+    expected_hit_rate_vs_basket: float | None
     by_verdict: tuple[Group, ...]
     by_band: tuple[Group, ...]
     """Buys and sells only."""
@@ -145,6 +148,8 @@ class InterimHorizon:
     hit_rate_vs_basket_ci: tuple[float, float] | None
     base_rate_up: float | None
     base_rate_beat_basket: float | None
+    expected_hit_rate: float | None
+    expected_hit_rate_vs_basket: float | None
     by_verdict: dict[str, InterimVerdict]
 
 
@@ -155,7 +160,8 @@ class Interim:
     no_verdict: int
     buy_share: float | None
     mean_confidence: float | None
-    prices_updated_at: datetime | None
+    prices_checked_at: datetime | None
+    price_failures: tuple[str, ...]
     horizons: dict[str, InterimHorizon]
     note: str = NOTE
 
@@ -175,9 +181,13 @@ class Score:
     verdicts: int
     mix: Mix
     horizons: tuple[HorizonScore, ...]
-    unpriced_listings: tuple[str, ...]
-    """Listings with a closed window their stored bars do not reach: Update prices refetches them."""
-    prices_updated_at: datetime | None
+    refetch_listings: tuple[str, ...]
+    """Listings with a window closed on or after their last whole-window fetch: the next price
+    update refetches them."""
+    prices_checked_at: datetime | None
+    """When study prices were last updated or found current."""
+    price_failures: tuple[str, ...]
+    """Listings that update could not fetch."""
     cells: tuple[CellScore, ...]
     limits: tuple[str, ...] = LIMITS
 
@@ -188,10 +198,11 @@ class Score:
                                   else None)
 
         return Interim(self.verdicts, self.no_verdict, self.mix.buy_share, self.mix.mean_confidence,
-                       self.prices_updated_at, {
+                       self.prices_checked_at, self.price_failures, {
                            h.horizon: InterimHorizon(h.scored, h.pending, h.unpriced, h.hit_rate, h.hit_ci,
                                                      h.hit_rate_vs_basket, h.hit_vs_basket_ci, h.base_rate_up,
-                                                     h.base_rate_beat_basket,
+                                                     h.base_rate_beat_basket, h.expected_hit_rate,
+                                                     h.expected_hit_rate_vs_basket,
                                                      {g.name: verdict(g) for g in h.by_verdict})
                            for h in self.horizons})
 
@@ -220,16 +231,30 @@ def replay_report(ctx: AppContext) -> Score | None:
 
 
 async def update_study_prices(ctx: AppContext) -> tuple[ListingOutcome, ...]:
-    """Refetch, through the normal price update, the whole study window of each listing whose
-    bars stop short of a closed window, so its closes share one split and dividend basis."""
+    """Refetch, through the normal price update, the whole study window of each listing due
+    one (see `Score.refetch_listings`), so its closes share one split and dividend basis."""
     study = ReplayRepo(ctx.conn).current()
     if study is None:
         raise InvalidQuery("no replay study yet: create one first")
     score = score_study(ctx, study)
     since = min((c.as_of for c in score.cells), default=study.first_day) - STALE
-    out = await update_listings(ctx, score.unpriced_listings, since) if score.unpriced_listings else []
-    MetaRepo(ctx.conn).set(PRICES_AT, to_utc_iso(ctx.clock.utcnow()))
+    out = await update_listings(ctx, score.refetch_listings, since) if score.refetch_listings else []
+    state = _price_state(ctx, study.id)
+    today = ctx.clock.utcnow().date().isoformat()
+    _save_price_state(ctx, study.id, {
+        "checked_at": to_utc_iso(ctx.clock.utcnow()), "failures": [o.symbol for o in out if o.error],
+        "fetched": {**state.get("fetched", {}), **{o.symbol: today for o in out if not o.error and not o.skipped}}})
     return tuple(out)
+
+
+def _price_state(ctx: AppContext, study_id: int) -> dict:
+    """When each listing's whole window was last fetched, and the last check's time and failures."""
+    raw = MetaRepo(ctx.conn).get(f"{PRICES_KEY}:{study_id}")
+    return json.loads(raw) if raw else {}
+
+
+def _save_price_state(ctx: AppContext, study_id: int, state: dict) -> None:
+    MetaRepo(ctx.conn).set(f"{PRICES_KEY}:{study_id}", json.dumps(state))
 
 
 def score_study(ctx: AppContext, study: StudyRow) -> Score:
@@ -246,23 +271,38 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
     calls = ResearchRepo(ctx.conn).verdicts([c.run_id for c in cells if c.state == DONE and c.run_id is not None])
     scored = tuple(_cell(c, calls.get(c.run_id) if c.state == DONE else None, windows) for c in cells)
     judged = [c for c in scored if c.verdict]
-    at = MetaRepo(ctx.conn).get(PRICES_AT)
+    state = _price_state(ctx, study.id)
+    fetched = {s: date.fromisoformat(d) for s, d in state.get("fetched", {}).items()}
+    targets = sorted({_target(d, months) for d in days for _, months in HORIZONS})
+
+    def due(symbol: str) -> bool:
+        # A window that closed on or after the last whole-window fetch day reads bars that
+        # incremental updates added, possibly on a newer basis: only a new whole-window fetch settles it.
+        last = fetched.get(symbol)
+        return any(t < today and (last is None or t >= last) for t in targets)
+
     return Score(
         study.id, study.first_day, study.last_day, today, len(cells),
         sum(1 for c in cells if c.state not in (DONE, FAILED)), sum(1 for c in cells if c.state == FAILED),
         sum(1 for c in cells if c.state == DONE) - len(judged), len(judged), _mix(judged),
-        tuple(_horizon(judged, [o for (_, _, hh), o in windows.items() if hh == h], n, h, months)
-              for n, (h, months) in enumerate(HORIZONS)),
-        tuple(s for s in symbols if any(moves[(s, d, h)].fetch for d in days for h, _ in HORIZONS)),
-        datetime.fromisoformat(at) if at else None, scored)
+        tuple(_horizon(judged, n, h, months) for n, (h, months) in enumerate(HORIZONS)),
+        tuple(s for s in symbols if due(s)),
+        datetime.fromisoformat(state["checked_at"]) if "checked_at" in state else None,
+        tuple(state.get("failures", ())), scored)
 
 
 @dataclass(frozen=True)
 class _Move:
     state: str
     ret: float | None = None
-    fetch: bool = False
-    """Unpriced because the bars stop short of the window's end: a refetch can price it."""
+
+
+def _target(as_of: date, months: int) -> date:
+    return _weekday_on_or_after(_months_after(as_of, months))
+
+
+def _price(close: float | None) -> bool:
+    return close is not None and close > 0
 
 
 class _Prices:
@@ -275,20 +315,22 @@ class _Prices:
         """From the first close after the as-of day to the last close on or before the day
         `months` later: a replay reads that day's news to its end, often after the close."""
         bars, days = self._bars[symbol], self._days[symbol]
-        target = _weekday_on_or_after(_months_after(as_of, months))
+        target = _target(as_of, months)
         if target >= today:
             return _Move(PENDING)
         if not days or days[-1] < target:
-            return _Move(UNPRICED, fetch=True)
+            return _Move(UNPRICED)
         i, j = bisect_right(days, as_of), bisect_right(days, target) - 1
         if i > j or days[i] - as_of > STALE or target - days[j] > STALE:
+            return _Move(UNPRICED)
+        if not all(_price(bars[k].close) for k in range(i, j + 1)):
             return _Move(UNPRICED)
         low, high = SPLIT_RATIOS
         if any(not low <= bars[k + 1].close / bars[k].close <= high for k in range(i, j)):
             return _Move(UNPRICED)
         entry, exit_ = bars[i], bars[j]
         # Adjusted closes only as a pair: one end adjusted and the other not would be a made-up move.
-        if entry.adj_close is not None and exit_.adj_close is not None:
+        if _price(entry.adj_close) and _price(exit_.adj_close):
             return _Move(SCORED, exit_.adj_close / entry.adj_close - 1)
         return _Move(SCORED, exit_.close / entry.close - 1)
 
@@ -315,19 +357,28 @@ def _mix(judged: Sequence[CellScore]) -> Mix:
                _mean([c.confidence for c in judged]))
 
 
-def _horizon(judged: Sequence[CellScore], windows: Sequence[Outcome], n: int, name: str,
-             months: int) -> HorizonScore:
+def _horizon(judged: Sequence[CellScore], n: int, name: str, months: int) -> HorizonScore:
     states = [c.outcomes[n].state for c in judged]
     done = [c for c in judged if c.outcomes[n].state == SCORED]
     calls = [c for c in done if _SIGN[c.verdict]]
     overall = _group("", calls, n, called=True)
-    rets = [o.ret for o in windows if o.ret is not None]
-    rels = [o.vs_basket for o in windows if o.vs_basket is not None]
+    up, expected = _base(calls, n, lambda o: o.ret)
+    beat, expected_vs = _base(calls, n, lambda o: o.vs_basket)
     return HorizonScore(
         name, months, len(done), states.count(PENDING), states.count(UNPRICED), overall.hit_rate, overall.hit_ci,
-        overall.hit_rate_vs_basket, overall.hit_vs_basket_ci, _share(rets), _share(rels),
+        overall.hit_rate_vs_basket, overall.hit_vs_basket_ci, up, beat, expected, expected_vs,
         tuple(_group(v, [c for c in done if c.verdict == v], n, called=False) for v in VERDICTS),
         tuple(_group(band, [c for c in calls if _band(c.confidence) == band], n, called=True) for band in BANDS))
+
+
+def _base(calls: Sequence[CellScore], n: int, pick) -> tuple[float | None, float | None]:
+    """How often the called windows went up, and the hit rate a caller with no skill would
+    expect from that and this mix of buys and sells."""
+    pairs = [(_SIGN[c.verdict], v) for c in calls if (v := pick(c.outcomes[n])) is not None]
+    p = _share([v for _, v in pairs])
+    if p is None:
+        return None, None
+    return p, _mean([p if sign > 0 else 1 - p for sign, _ in pairs])
 
 
 def _group(name: str, cells: Sequence[CellScore], n: int, called: bool) -> Group:

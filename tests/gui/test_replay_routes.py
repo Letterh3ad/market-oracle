@@ -51,7 +51,7 @@ async def test_report_scores_from_stored_bars_and_the_status_carries_the_interim
     await loaded.post("/api/replay", json={"first": "2026-06-01"})
     report = (await loaded.get("/api/replay/report")).json()["report"]
     assert report["verdicts"] == 0 and [h["horizon"] for h in report["horizons"]] == ["1m", "3m"]
-    assert report["unpriced_listings"] == ["AAPL", "7203.T", "005930.KS"] and report["limits"]
+    assert report["refetch_listings"] == ["AAPL", "7203.T", "005930.KS"] and report["limits"]
     score = (await loaded.get("/api/replay")).json()["study"]["score"]
     assert score["verdicts"] == 0 and score["horizons"]["1m"]["scored"] == 0
 
@@ -65,7 +65,8 @@ async def test_update_prices_is_a_job_fetching_only_what_the_score_lacks(loaded,
     in_window = [d for d in DAYS if d >= date(2026, 5, 25)]  # the study window, from a week before its first day
     assert fetched["AAPL"]["added"] == len(in_window) and fetched["7203.T"]["error"]
     report = (await loaded.get("/api/replay/report")).json()["report"]
-    assert report["unpriced_listings"] == ["7203.T", "005930.KS"]
+    assert report["refetch_listings"] == ["7203.T", "005930.KS"]
+    assert report["price_failures"] == ["7203.T", "005930.KS"] and report["prices_checked_at"]
 
 
 async def test_report_without_a_study(loaded):

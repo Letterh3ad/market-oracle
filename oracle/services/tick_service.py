@@ -66,7 +66,11 @@ async def _study_prices(ctx: AppContext) -> str:
     rarely watched, and a failure here is the study's, never the tick's."""
     if ReplayRepo(ctx.conn).current() is None:
         return ""
-    out = await update_study_prices(ctx)
+    try:
+        out = await update_study_prices(ctx)
+    except Exception as exc:  # the tick's watched prices must still count, whatever broke here
+        log.exception("replay study prices failed")
+        return f"; replay study prices failed: {exc}"
     failed = sum(1 for o in out if o.error)
     return (f"; replay study: {len(out) - failed} of {len(out)} listings refetched"
             + (f", {failed} failed" if failed else "")) if out else "; replay study prices current"

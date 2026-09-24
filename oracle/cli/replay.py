@@ -131,10 +131,11 @@ def print_report(s: Score) -> None:
           f"mean confidence {confidence}")
     for h in s.horizons:
         print_horizon(h)
-    if s.unpriced_listings:
-        print(f"  No stored prices cover: {', '.join(s.unpriced_listings)}")
-    updated = f"{s.prices_updated_at:%Y-%m-%d %H:%M} UTC" if s.prices_updated_at else "never"
-    print(f"  Study prices last updated: {updated}")
+    if s.refetch_listings:
+        print(f"  Due a whole-window refetch: {', '.join(s.refetch_listings)}")
+    checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
+    failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
+    print(f"  Study prices last checked: {checked}{failed}")
     print("Limits:")
     for line in s.limits:
         print(f"  - {line}")
@@ -143,8 +144,10 @@ def print_report(s: Score) -> None:
 def print_horizon(h: HorizonScore) -> None:
     print(f"  {h.months} month{'' if h.months == 1 else 's'}: {h.scored} scored, {h.pending} pending, {h.unpriced} "
           f"without prices; hit rate {_rate(h.hit_rate, h.hit_ci)}, {_rate(h.hit_rate_vs_basket, h.hit_vs_basket_ci)} "
-          f"against the basket; base rates: {_pct(h.base_rate_up)} of all windows rose, "
-          f"{_pct(h.base_rate_beat_basket)} beat the basket")
+          f"against the basket")
+    print(f"    no-skill baseline on the called windows: {_pct(h.base_rate_up)} rose and "
+          f"{_pct(h.base_rate_beat_basket)} beat the basket, so this call mix would hit {_pct(h.expected_hit_rate)} "
+          f"({_pct(h.expected_hit_rate_vs_basket)} against the basket) by chance")
     print(f"    {'':<14}{'n':>4}{'hit':>7}{'hit rel':>11}{'mean':>10}{'mean rel':>11}{'confidence':>12}")
     for g in (*h.by_verdict, *h.by_band):
         print_group(g)

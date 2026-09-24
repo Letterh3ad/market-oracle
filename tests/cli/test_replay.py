@@ -9,6 +9,7 @@ from oracle.services import replay_score
 from oracle.services.context import open_context
 from oracle.services.prices_service import ListingOutcome
 from oracle.store.bars import BarRepo
+from oracle.store.meta import MetaRepo
 from oracle.store.replay import ReplayRepo
 from oracle.store.universe import UniverseRepo
 from tests.services.test_replay import SPREAD
@@ -70,8 +71,9 @@ def test_retry_all_or_one_failed_cell(cfg, capsys, tmp_path):
     assert "2 failed cells back" in capsys.readouterr().out
 
 
-def scored_study(tmp_path):
-    """A study whose windows all closed in 2025, so the report needs no fetch whatever today is."""
+def scored_study(tmp_path, fetched=("AAA", "BBB")):
+    """A study whose windows all closed in 2025 and were fetched whole after, so the report
+    needs no fetch whatever today is."""
     days = (date(2025, 6, 2), date(2025, 7, 1))
     with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
         repo = ReplayRepo(c.conn)
@@ -86,6 +88,8 @@ def scored_study(tmp_path):
         at = datetime(2025, 8, 1, tzinfo=timezone.utc)
         for cell, call in zip(repo.cells(sid), [("buy", 0.9), ("sell", 0.7), ("buy", 0.8), None]):
             repo.mark_done(cell.id, replay_run(c, cell.symbol, cell.as_of, *(call or ())), at)
+        MetaRepo(c.conn).set(f"{replay_score.PRICES_KEY}:{sid}", json.dumps({"fetched": dict.fromkeys(fetched,
+                                                                                                    "2026-01-01")}))
 
 
 @pytest.fixture
@@ -103,8 +107,10 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
     assert "3 verdicts, 1 without a verdict, 0 failed, 0 still to run, of 4 replays" in out
     assert "Verdict mix: 2 buy, 0 hold, 1 sell (67% buys), mean confidence 0.80" in out
     assert "1 month: 3 scored, 0 pending, 0 without prices; hit rate 67%, 100% against the basket" in out
-    assert "base rates: 50% of all windows rose, 50% beat the basket" in out
-    assert "Study prices last updated: 20" in out  # the report's own check just ran
+    # Called windows: 2 of 3 rose and 2 of 3 beat the basket; two buys and a sell: (2/3 + 2/3 + 1/3) / 3.
+    assert ("no-skill baseline on the called windows: 67% rose and 67% beat the basket, so this call mix would "
+            "hit 56% (56% against the basket) by chance") in out
+    assert "Study prices last checked: 20" in out  # the report's own check just ran
     assert "survivorship" in out and "GDELT" in out
     replay(cfg, "report", "--json")
     body = json.loads(capsys.readouterr().out)
@@ -116,16 +122,15 @@ def test_report_fetches_missing_bars_first_and_says_how_it_went(cfg, capsys, tmp
         return [ListingOutcome(s, 0, None, f"no price data for {s}") for s in symbols]
 
     monkeypatch.setattr(replay_score, "update_listings", fetch)
-    scored_study(tmp_path)
-    with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
-        c.conn.execute("DELETE FROM bars WHERE symbol = 'BBB'")
-        c.conn.commit()
+    scored_study(tmp_path, fetched=("AAA",))
     assert replay(cfg, "report") == 0
     out = capsys.readouterr().out
-    assert "Prices for BBB: failed (no price data for BBB)" in out and "No stored prices cover: BBB" in out
+    assert "Prices for BBB: failed (no price data for BBB)" in out
+    assert "Due a whole-window refetch: BBB" in out and "; failed: BBB" in out
     replay(cfg, "report", "--json")
     captured = capsys.readouterr()
-    assert json.loads(captured.out)["unpriced_listings"] == ["BBB"] and "BBB" in captured.err
+    body = json.loads(captured.out)
+    assert body["refetch_listings"] == ["BBB"] and body["price_failures"] == ["BBB"] and "BBB" in captured.err
 
 
 def test_report_without_a_study(cfg, capsys, no_fetch):

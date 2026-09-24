@@ -133,7 +133,7 @@ def test_a_window_that_closed_without_bars_is_unpriced_and_names_the_listing(ctx
     s = replay_report(ctx)
     three = horizon(s, "3m")
     assert (three.scored, three.unpriced) == (1, 1)
-    assert s.unpriced_listings == ("AAA", "CCC")
+    assert s.refetch_listings == ("AAA", "BBB", "CCC")  # never fetched whole, with windows closed
 
 
 def test_adjusted_closes_are_used_when_both_ends_have_one(ctx, study):
@@ -143,12 +143,14 @@ def test_adjusted_closes_are_used_when_both_ends_have_one(ctx, study):
     assert aaa.outcomes[0].ret == pytest.approx(110 / 95 - 1)
 
 
-def test_base_rates_beside_the_hit_rates(ctx, study):
+def test_base_rates_and_the_expected_hit_rate_over_the_called_windows(ctx, study):
     s = replay_report(ctx)
     one, three = horizon(s, "1m"), horizon(s, "3m")
-    # 1m windows of AAA and BBB: up in Jun (AAA) and Jul (BBB); beat the basket Jun AAA, Jul BBB, Aug BBB.
-    assert one.base_rate_up == pytest.approx(2 / 6) and one.base_rate_beat_basket == pytest.approx(3 / 6)
-    assert (three.base_rate_up, three.base_rate_beat_basket) == (0.5, 0.5)
+    # 1m calls: AAA Jun buy (+10%, beat), BBB Jun sell (0, lagged), AAA Jul buy (-10%, lagged): 1 of 3 rose.
+    assert one.base_rate_up == pytest.approx(1 / 3) and one.base_rate_beat_basket == pytest.approx(1 / 3)
+    # Two buys hit a third of the time and a sell two thirds: (1/3 + 1/3 + 2/3) / 3.
+    assert one.expected_hit_rate == pytest.approx(4 / 9) and one.expected_hit_rate_vs_basket == pytest.approx(4 / 9)
+    assert (three.base_rate_up, three.base_rate_beat_basket, three.expected_hit_rate) == (0.5, 0.5, 0.5)
 
 
 def test_a_basket_under_half_the_listings_leaves_relative_results_unpriced(ctx, study):
@@ -168,13 +170,14 @@ def test_the_wilson_interval_and_none_under_ten():
 
 def test_the_status_carries_a_small_interim_score(ctx, study):
     score = study_status(ctx).to_json()["score"]
-    assert set(score) == {"verdicts", "no_verdict", "buy_share", "mean_confidence", "prices_updated_at", "horizons",
-                          "note"}
+    assert set(score) == {"verdicts", "no_verdict", "buy_share", "mean_confidence", "prices_checked_at",
+                          "price_failures", "horizons", "note"}
     assert (score["verdicts"], score["no_verdict"], score["buy_share"]) == (4, 1, 0.5)
-    assert score["prices_updated_at"] is None and "limits" in score["note"]
+    assert (score["prices_checked_at"], score["price_failures"]) == (None, []) and "limits" in score["note"]
     one = score["horizons"]["1m"]
     assert set(one) == {"scored", "pending", "unpriced", "hit_rate", "hit_rate_ci", "hit_rate_vs_basket",
-                        "hit_rate_vs_basket_ci", "base_rate_up", "base_rate_beat_basket", "by_verdict"}
+                        "hit_rate_vs_basket_ci", "base_rate_up", "base_rate_beat_basket", "expected_hit_rate",
+                        "expected_hit_rate_vs_basket", "by_verdict"}
     assert (one["scored"], one["pending"], one["hit_rate_ci"]) == (4, 0, None)  # 3 calls: too few for an interval
     assert one["by_verdict"]["sell"] == {"n": 1, "mean_return": 0.0, "mean_as_called": 0.0}
     hold = one["by_verdict"]["hold"]
@@ -191,22 +194,30 @@ def test_scoring_never_fetches(ctx, study, monkeypatch):
     study_status(ctx)
 
 
-async def test_update_refetches_whole_windows_of_listings_whose_bars_stop_short(ctx, study, monkeypatch):
+async def test_update_refetches_whole_windows_until_each_listing_has_one_after_its_windows_closed(
+        ctx, study, monkeypatch):
     asked = []
 
     async def update(c, symbols, since):
         asked.append((list(symbols), since))
         BarRepo(c.conn).upsert(bars("CCC", {"2026-06-02": 10, "2026-07-01": 11, "2026-07-02": 11, "2026-08-03": 12,
                                             "2026-08-04": 12, "2026-09-03": 12}), "2026-09-24T12:00:00Z")
-        return [ListingOutcome("AAA", 0, None, "no price data for AAA"), ListingOutcome("CCC", 6, "yahoo", None)]
+        first = len(asked) == 1
+        return [ListingOutcome(s, 0, None, "no price data for AAA") if first and s == "AAA"
+                else ListingOutcome(s, 6, "yahoo", None) for s in symbols]
 
     monkeypatch.setattr(replay_score, "update_listings", update)
-    ctx.conn.execute("DELETE FROM bars WHERE symbol = 'AAA' AND date >= '2026-09-01'")
     outcomes = await update_study_prices(ctx)
-    assert asked == [(["AAA", "CCC"], date(2026, 5, 25))]  # the first as-of day less a week
-    assert [(o.symbol, o.error) for o in outcomes] == [("AAA", "no price data for AAA"), ("CCC", None)]
+    assert asked == [(["AAA", "BBB", "CCC"], date(2026, 5, 25))]  # every listing, from the first day less a week
+    assert [(o.symbol, o.error) for o in outcomes][0] == ("AAA", "no price data for AAA")
     s = replay_report(ctx)
-    assert s.unpriced_listings == ("AAA",) and s.prices_updated_at == NOW
+    assert s.refetch_listings == ("AAA",) and s.price_failures == ("AAA",) and s.prices_checked_at == NOW
+    await update_study_prices(ctx)
+    assert asked[-1][0] == ["AAA"] and replay_report(ctx).price_failures == ()
+    # A window closing after the last whole fetch (Jul + 3m on Oct 1) makes every listing due again.
+    ctx.clock.advance(8 * 86400)
+    assert replay_report(ctx).refetch_listings == ("AAA", "BBB", "CCC")
+    s = replay_report(ctx)
     # CCC now joins the June basket: (+10% + 0 + 10%) / 3.
     aaa = next(c for c in s.cells if (c.symbol, c.as_of) == ("AAA", JUN))
     assert aaa.outcomes[0].basket == pytest.approx(0.2 / 3) and aaa.outcomes[0].basket_n == 3
@@ -278,12 +289,41 @@ def test_an_exit_close_over_a_week_before_its_target_is_not_a_price(ctx, dense):
 def test_an_entry_close_over_a_week_after_the_as_of_day_is_not_a_price(ctx, dense):
     ctx.conn.execute("DELETE FROM bars WHERE symbol = 'DDD' AND date BETWEEN '2026-06-02' AND '2026-06-10'")
     assert [o.state for o in dense(date(2026, 6, 1))] == ["unpriced", "unpriced"]
-    assert "DDD" not in replay_report(ctx).unpriced_listings  # a refetch would not fill a gap
 
 
 def test_a_move_like_an_unrebased_split_is_not_a_price(ctx, dense):
     ctx.conn.execute("UPDATE bars SET close = close / 10 WHERE symbol = 'DDD' AND date >= '2026-06-15'")
     one, three = dense(date(2026, 6, 1))
     assert (one.state, three.state) == ("unpriced", "unpriced")
-    assert "DDD" not in replay_report(ctx).unpriced_listings
+    assert "DDD" in replay_report(ctx).refetch_listings
+
+
+async def test_a_whole_window_refetch_recovers_a_split_guard_hit(ctx, dense, monkeypatch):
+    ctx.conn.execute("UPDATE bars SET close = close / 10 WHERE symbol = 'DDD' AND date >= '2026-06-15'")
+
+    async def update(c, symbols, since):
+        c.conn.execute("UPDATE bars SET close = close * 10 WHERE symbol = 'DDD' AND date >= '2026-06-15'")
+        return [ListingOutcome(s, 0, "yahoo", None) for s in symbols]
+
+    monkeypatch.setattr(replay_score, "update_listings", update)
+    await update_study_prices(ctx)
+    assert dense(date(2026, 6, 1))[0].ret == pytest.approx(ret("2026-06-02", "2026-07-01"))
+    assert replay_report(ctx).refetch_listings == ()
+
+
+def test_a_zero_or_missing_close_is_not_a_price(ctx, dense):
+    ctx.conn.execute("UPDATE bars SET close = 0 WHERE symbol = 'DDD' AND date = '2026-06-15'")
+    assert [o.state for o in dense(date(2026, 6, 1))] == ["unpriced", "unpriced"]
+    ctx.conn.execute("UPDATE bars SET close = 0 WHERE symbol = 'DDD' AND date = '2026-06-04'")
+    assert dense(date(2026, 6, 3))[0].state == "unpriced"
+
+
+def test_an_entry_exactly_a_week_after_the_as_of_day_is_a_price(ctx, dense):
+    ctx.conn.execute("DELETE FROM bars WHERE symbol = 'DDD' AND date BETWEEN '2026-06-02' AND '2026-06-05'")
+    assert dense(date(2026, 6, 1))[0].ret == pytest.approx(ret("2026-06-08", "2026-07-01"))
+
+
+def test_an_exit_exactly_a_week_before_its_target_is_a_price(ctx, dense):
+    ctx.conn.execute("DELETE FROM bars WHERE symbol = 'DDD' AND date BETWEEN '2025-02-22' AND '2025-02-28'")
+    assert dense(date(2025, 1, 31))[0].ret == pytest.approx(ret("2025-02-03", "2025-02-21"))
 

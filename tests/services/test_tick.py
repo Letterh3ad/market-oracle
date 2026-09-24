@@ -82,7 +82,23 @@ async def test_the_prices_stage_keeps_the_replay_study_priced_without_failing_fo
     run = await run_tick(ctx)
     prices = run.stages[0]
     assert prices.state == "ok" and prices.summary.endswith("; replay study: 0 of 1 listings refetched, 1 failed")
-    assert study_status(ctx).score.prices_updated_at.date() == NOW.date()
+    score = study_status(ctx).score
+    assert score.prices_checked_at.date() == NOW.date() and score.price_failures == ("NOBARS",)
+
+
+async def test_a_replay_study_price_error_never_fails_or_hides_the_prices_stage(ctx, monkeypatch):
+    from oracle.services import tick_service
+
+    async def broken(c):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(tick_service, "update_study_prices", broken)
+    listing = [{"symbol": "NOBARS", "name": "No Bars", "region": "US", "sector": "x", "market_cap": None}]
+    ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
+                                [("NOBARS", date(2026, 6, 1))])
+    prices = (await run_tick(ctx)).stages[0]
+    assert prices.state == "ok" and prices.summary.startswith("1 of 1 listings updated")
+    assert prices.summary.endswith("; replay study prices failed: boom")
 
 
 async def test_a_stage_that_cannot_run_is_recorded_and_later_stages_still_run(ctx):
