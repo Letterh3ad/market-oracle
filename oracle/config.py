@@ -171,6 +171,8 @@ class DiscoveryConfig:
     """Companies one run may add."""
     max_total: int = 10
     """The discovered list never holds more."""
+    per_question: int = 2
+    """Companies one auto question may have on the discovered list at once."""
     never: tuple[str, ...] = ("Tesla",)
     """Company names never discovered, put on the discovered list or bought from it, matched
     as whole words on every listing's name. Tesla is never watched or traded whatever this says."""
@@ -187,6 +189,7 @@ class DiscoveryConfig:
 
 PER_TICK_RANGE = (1, 20)
 MAX_TOTAL_RANGE = (1, 500)
+PER_QUESTION_RANGE = (1, 20)
 MAX_THEME = 60
 
 
@@ -595,6 +598,8 @@ def _discovery(raw: object) -> DiscoveryConfig:
             "enabled", "ai_trades", "search_related", "search_themes", "search_movers")},
         "per_tick": (_whole(d.per_tick, *PER_TICK_RANGE), "a whole number from {} to {}".format(*PER_TICK_RANGE)),
         "max_total": (_whole(d.max_total, *MAX_TOTAL_RANGE), "a whole number from {} to {}".format(*MAX_TOTAL_RANGE)),
+        "per_question": (_whole(d.per_question, *PER_QUESTION_RANGE),
+                         "a whole number from {} to {}".format(*PER_QUESTION_RANGE)),
         "never": (isinstance(never, (list, tuple)) and all(isinstance(n, str) and n.strip() for n in never),
                   'a list of company names like ["Tesla"]'),
         "themes": (isinstance(themes, (list, tuple))

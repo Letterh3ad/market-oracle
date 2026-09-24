@@ -12,10 +12,11 @@ from dataclasses import dataclass, field, replace
 
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
-from oracle.research.mentions import QUESTION_SCHEMA, Mention, parse_mentions, question_prompt
+from oracle.research.mentions import (
+    QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
+)
 from oracle.research.queries import EDITION, MAX_QUERY
 from oracle.research.tools import ToolError
-from oracle.research.trace import Evidence
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
@@ -285,9 +286,9 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
     stage("naming companies")
     evidence = evidence_of(ctx.conn, ids, note_key)
-    reply = await model.reply(question_prompt(asked, [_item_text(e) for e in evidence]), QUESTION_SCHEMA)
+    reply = await model.reply(question_prompt(asked, [item_text(e) for e in evidence]), QUESTION_SCHEMA)
     # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
-    mentions = parse_mentions(reply, [_item_words(e) for e in evidence])
+    mentions = parse_mentions(reply, [item_words(e) for e in evidence])
     if not mentions:
         notes.append("the model named no company the news shows")
     # More items behind a name first; the model's own order among equals.
@@ -363,15 +364,6 @@ def _interleave(found: list[list[int]]) -> list[int]:
             if rank < len(ids):
                 out.setdefault(ids[rank])
     return list(out)
-
-
-def _item_text(e: Evidence) -> str:
-    day = e.published.date().isoformat() if e.published else "undated"
-    return f"{day} {e.outlet or 'unknown outlet'}: {_item_words(e)}"
-
-
-def _item_words(e: Evidence) -> str:
-    return e.title + "".join(f"\n  - {f}" for f in e.facts)
 
 
 class _Shortlist(Screen):

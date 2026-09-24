@@ -104,7 +104,7 @@ class Screen:
 
     async def priced_line(self, profile: ListingProfile) -> tuple[str | None, str | None]:
         """The company's live line once its recent prices are fetched, else why not."""
-        listing = self._live_line(profile)
+        listing = self.live_line(profile)
         if listing is None:
             return None, "no listing with live prices"
         self.checks += 1
@@ -142,7 +142,7 @@ class Screen:
             return None, None
         return None, "too short a name to tell which company" if len(want) < MIN_LEADING_NAME else "ambiguous name"
 
-    def _live_line(self, profile: ListingProfile) -> str | None:
+    def live_line(self, profile: ListingProfile) -> str | None:
         """The primary line (home or most liquid), else its best live sibling."""
         primary = profile.primary_symbol
         if not HealthRepo(self._ctx.conn).get(primary).dead:
