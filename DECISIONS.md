@@ -2308,3 +2308,15 @@ so. A plan industry phrase naming nothing whole is tried a word at a time ("defe
 **Alternatives:** The best main-board line anywhere (brought back NIO and TSM); screening the world
 for an unknown region (answers a different question); a separate screen budget (named companies could
 go unchecked while the screen spent its own).
+
+## 2026-09-24 - Universe screen gate round 2 fixes
+**Context:** The word-by-word retry matched phrases by their first known word ("electric vehicles" as
+Electric Utilities, "private equity" as Equity REITs, "car parts" as Automobiles), and Brazilian BDRs
+kept as companies of their own passed a region screen (C1HI34.SA for Sinopec, "ECOPETROL SADRN").
+**Decision:** A plan phrase is matched whole, else once more without a trade noun at its end (makers,
+manufacturers, contractors, companies, firms, producers, suppliers, majors, players, stocks, groups,
+providers, operators, developers); anything else stays unrecognised with the note. A name ending in
+"DRN", glued or not, is a receipt, and so is a B3 ticker of four letters or digits and 32, 33, 34, 35
+or 39 (`is_receipt_symbol`); the screen checks both on the primary and on every line it may choose.
+**Alternatives:** Keeping the per-word retry with a stop list (every new phrase finds a new wrong
+word); dropping every Sao Paulo line of a foreign company (the ticker says which are receipts).

@@ -12,10 +12,15 @@ from oracle.services.never_list import is_never, never_names
 from oracle.store.health import HealthRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.exchanges import EXCHANGES
-from oracle.universe.listings import is_receipt
+from oracle.universe.listings import Listing, is_receipt, is_receipt_symbol
 from oracle.universe.regions import countries_of, home_country, home_line
 
 # The universe often calls a foreign company's US OTC line (and so the company) American.
+# Nouns a phrase may end in that name no trade of their own.
+_TRADE_NOUNS = frozenset({"maker", "makers", "manufacturer", "manufacturers", "contractor", "contractors",
+                          "company", "companies", "firm", "firms", "producer", "producers", "supplier",
+                          "suppliers", "major", "majors", "player", "players", "stock", "stocks", "group",
+                          "groups", "provider", "providers", "operator", "operators", "developer", "developers"})
 _UNTRUSTED = tuple(code for code, (country, tier) in EXCHANGES.items() if country == "United States" and tier == 3)
 
 
@@ -63,13 +68,12 @@ class Screening:
 def plan_filters(ctx: AppContext, industries: list[str], regions: list[str],
                  market_caps: tuple[str, ...]) -> tuple[Filters, list[str]]:
     """The plan's words as the universe's classifications and countries, with a note for each
-    word that names nothing the universe holds (it is dropped). A phrase naming nothing whole is
-    tried a word at a time ("defence contractors", "oil majors")."""
+    word that names nothing the universe holds (it is dropped)."""
     known = UniverseRepo(ctx.conn).classifications()
     matched, places, countries, notes = [], [], set(), []
     for word in industries:
-        if found := classes(word, known) or next((c for w in word.split() if (c := classes(w, known))), None):
-            matched.append(replace(found, text=word))
+        if found := industry(word, known):
+            matched.append(found)
         else:
             notes.append(f'"{word}" was not recognised as a sector or industry, so the universe was not screened '
                          "for it")
@@ -85,6 +89,16 @@ def plan_filters(ctx: AppContext, industries: list[str], regions: list[str],
         notes.append("no region asked for was recognised, so the universe was not screened")
     return Filters(tuple(matched), tuple(places), frozenset(countries) if places else None, market_caps,
                    unplaced), notes
+
+
+def industry(phrase: str, known: dict[str, frozenset[str]]) -> Classes | None:
+    """The classifications a plan's phrase names: the whole phrase, else the phrase without a
+    trade noun at its end ("defence contractors", "oil majors", "EV makers"). Never one word of
+    it alone: "electric vehicles" is not Electric Utilities, "private equity" not Equity REITs."""
+    words = phrase.split()
+    trimmed = words[:-1] if len(words) > 1 and words[-1].casefold() in _TRADE_NOUNS else None
+    found = classes(phrase, known) or (trimmed and classes(" ".join(trimmed), known))
+    return replace(found, text=phrase) if found else None
 
 
 def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
@@ -103,17 +117,21 @@ def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
     out = []
     for p in found:
         lines = listings[p.company_key]
-        if is_receipt(p.name) or any(is_never(x.name, never) for x in (p, *lines)):
+        if _receipt(p) or any(is_never(x.name, never) for x in (p, *lines)):
             continue
         countries = filters.countries
         if countries is None and p.exchange not in _UNTRUSTED:
             if not p.country:
                 continue
             countries = {p.country}
-        if (line := home_line([x for x in lines if not is_receipt(x.name)], countries, dead)) is None:
+        if (line := home_line([x for x in lines if not _receipt(x)], countries, dead)) is None:
             continue
         out.append(Screened(p, line.symbol, _evidence(p, home_country(line), filters)))
     return Screening(tuple(out))
+
+
+def _receipt(line: Listing | ListingProfile) -> bool:
+    return is_receipt(line.name) or is_receipt_symbol(line.symbol)
 
 
 def _evidence(p: ListingProfile, line_country: str, filters: Filters) -> str:

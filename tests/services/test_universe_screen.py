@@ -9,9 +9,10 @@ import pytest
 
 from oracle.config import Config
 from oracle.services import discovery_chat_service
+from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import open_context
 from oracle.services.discovery_chat_service import ask, set_auto
-from oracle.services.universe_screen import Filters, plan_filters, screen_universe
+from oracle.services.universe_screen import Filters, industry, plan_filters, screen_universe
 from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.universe import UniverseRepo
@@ -40,6 +41,7 @@ def company(key, name, country, cap, lines, sector=IT, group=CHIPS, industry=CHI
 
 
 DEFENCE = dict(sector="Industrials", group="Capital Goods", industry="Aerospace & Defense")
+OIL = dict(sector="Energy", group="Energy", industry="Oil, Gas & Consumable Fuels")
 CARS = dict(sector="Consumer Discretionary", group="Automobiles & Components", industry="Automobiles")
 UNIVERSE = [
     *company("asml", "ASML Holding N.V.", "Netherlands", "Mega Cap", [("ASML.AS", "AMS", "EUR"),
@@ -73,6 +75,11 @@ UNIVERSE = [
     # Its only line at home is a receipt.
     *company("abrs", "Autobras S.A.", "Brazil", "Large Cap", [("ABRS", "NYQ", "USD"),
                                                               ("ABRS34.SA", "SAO", "BRL", "AUTOBRAS  DRN")], **CARS),
+    # Emerging-market energy: a home line in Sao Paulo, and two BDRs the universe keeps as companies.
+    *company("petr", "Petroleo Brasileiro S.A.", "Brazil", "Mega Cap", [("PETR4.SA", "SAO", "BRL")], **OIL),
+    *company("c1hi", "China Petroleum & Chemical Corporation", "China", "Large Cap",
+             [("C1HI34.SA", "SAO", "BRL")], **OIL),
+    *company("e1co", "ECOPETROL SADRN", "Colombia", "Large Cap", [("E1CO34.SA", "SAO", "BRL")], **OIL),
     *company("olix", "OliX Pharmaceuticals,Inc", "South Korea", "Micro Cap", [("226950.KQ", "KOE", "KRW")],
              sector="Health Care", group="Pharmaceuticals, Biotechnology & Life Sciences",
              industry="Pharmaceuticals"),
@@ -155,9 +162,42 @@ def test_regions_asked_that_name_nothing_skip_the_screen_instead_of_widening_it(
     (["defence contractors"], ["RHM.DE"]),
     (["EV makers"], ["7203.T", "VOW3.DE"]),
 ])
-def test_a_phrase_naming_nothing_is_tried_word_by_word(ctx, words, found):
+def test_a_trade_noun_at_the_end_of_a_phrase_is_dropped_and_the_rest_tried(ctx, words, found):
     got, notes = plan_filters(ctx, words, [], ())
     assert lines(screen_universe(ctx, got)) == found and not notes
+
+
+LIVE_CLASSES = {
+    "sector": frozenset({"Utilities", "Energy", "Health Care", "Financials", "Consumer Discretionary",
+                         "Materials", "Industrials", "Real Estate"}),
+    "industry_group": frozenset({"Utilities", "Energy", "Health Care Equipment & Services", "Insurance",
+                                 "Automobiles & Components", "Materials", "Capital Goods", "Real Estate",
+                                 "Financial Services"}),
+    "industry": frozenset({"Electric Utilities", "Equity Real Estate Investment Trusts (REITs)",
+                           "Oil, Gas & Consumable Fuels", "Health Care Providers & Services", "Insurance",
+                           "Automobiles", "Auto Components", "Metals & Mining", "Machinery",
+                           "Independent Power and Renewable Electricity Producers", "Diversified Financial Services",
+                           "Aerospace & Defense"}),
+}
+
+
+@pytest.mark.parametrize("phrase", ["electric vehicles", "private equity", "green energy", "health insurers",
+                                    "car parts", "mining equipment", "power grid", "financial data"])
+def test_a_phrase_is_never_matched_by_one_of_its_words(phrase):
+    assert industry(phrase, LIVE_CLASSES) is None
+
+
+@pytest.mark.parametrize("phrase, found", [
+    ("defence contractors", "Aerospace & Defense"), ("oil majors", "Oil, Gas & Consumable Fuels"),
+    ("EV makers", "Automobiles"), ("insurers", "Insurance"),
+])
+def test_a_phrase_ending_in_a_trade_noun_is_its_industry(phrase, found):
+    got = industry(phrase, LIVE_CLASSES)
+    assert got.text == phrase and found in got.values
+
+
+def test_brazilian_receipts_never_stand_for_a_company_in_a_region(ctx):
+    assert lines(screen_universe(ctx, filters(ctx, ["oil and gas"], ["emerging markets"]))) == ["PETR4.SA"]
 
 
 def test_plan_words_are_mapped_onto_the_universe_and_unknown_ones_dropped_with_a_note(ctx):
@@ -207,7 +247,8 @@ async def test_the_plan_is_offered_the_universe_s_industry_names(ctx):
     m = model()
     await ask(ctx, QUESTION, model=m, searcher=FakeSearcher())
     system = m.calls[0][0][0]["content"]
-    assert "Aerospace & Defense; Automobiles; Pharmaceuticals; Semiconductors & Semiconductor Equipment" in system
+    assert ("Aerospace & Defense; Automobiles; Oil, Gas & Consumable Fuels; Pharmaceuticals; "
+            "Semiconductors & Semiconductor Equipment") in system
 
 
 async def test_the_screen_shows_up_to_its_cap_and_says_how_many_matched(ctx, monkeypatch):
@@ -287,3 +328,13 @@ async def test_a_named_company_on_its_home_line_passes_the_line_check(ctx):
     stm = next(line.item for line in view.shortlist if line.item.company_key == "stm")
     assert stm.symbol == "STM.PA"
     assert next(c for c in stm.validation.checks if c.name == "line").passed
+
+
+@pytest.mark.parametrize("item, refused", [
+    ("Singaporean startup Olix raises funds", True), ("Mexican firm Olix wins order", True),
+    ("Thai chipmaker Olix expands", True), ("South Korean startup Olix raises funds", False),
+])
+def test_the_new_nationality_words_give_a_name_its_home(ctx, item, refused):
+    olix = UniverseRepo(ctx.conn).profile("226950.KQ")
+    why = BusinessFit(UniverseRepo(ctx.conn)).misfit(olix, "Olix", NamedIn("", (item,)))
+    assert (why is not None and why.startswith("a different company")) is refused
