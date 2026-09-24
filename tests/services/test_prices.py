@@ -5,7 +5,8 @@ import pytest
 from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import PriceUnavailable, UnknownSymbol
-from oracle.services.prices_service import price_history, update_listing
+from oracle.services.prices_service import price_history, update_listing, update_listings
+from oracle.store.health import HealthRepo
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
@@ -71,6 +72,23 @@ async def test_a_second_update_asks_only_for_recent_bars_and_adds_new_ones(ctx, 
     # A week of overlap, so a partial last bar gets rewritten.
     assert int(second.url.params["period1"]) == int(datetime(2026, 9, 11, tzinfo=timezone.utc).timestamp())
     assert len(price_history(ctx, "AAPL")) == 4
+
+
+async def test_a_refetch_from_a_given_day_replaces_the_stored_window(ctx, web, yahoo):
+    await update_listing(ctx, "AAPL")
+    yahoo.series["AAPL"].bars[0] = bar("2026-09-16", 115.0)  # re-based, as after a 2:1 split
+    await update_listing(ctx, "AAPL", since=date(2026, 9, 1))
+    req = web.requests_to("query2.finance.yahoo.com")[-1]
+    assert int(req.url.params["period1"]) == int(datetime(2026, 9, 1, tzinfo=timezone.utc).timestamp())
+    assert closes(ctx, "AAPL")[0] == ("2026-09-16", 115.0)
+
+
+async def test_several_listings_refetched_skipping_dead_ones_and_reporting_failures(ctx, web):
+    HealthRepo(ctx.conn).note_no_data("BHP.AX", date(2026, 9, 1), dead_after=1)
+    out = await update_listings(ctx, ["AAPL", "BP.L", "BHP.AX"], date(2026, 9, 1))
+    assert [(o.symbol, o.added) for o in out] == [("AAPL", 3), ("BP.L", 0), ("BHP.AX", 0)]
+    assert out[1].error and out[2].skipped and out[2].error is None
+    assert not any("BHP" in str(r.url) for r in web.requests_to("query2.finance.yahoo.com"))
 
 
 async def test_a_partial_last_bar_is_overwritten_by_the_next_update(ctx, yahoo):

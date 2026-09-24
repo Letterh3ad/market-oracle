@@ -18,7 +18,7 @@ from oracle.services.models_service import RESEARCH_STAGES, resolve_model, slot_
 from oracle.store.cutoff import AnswerRow, CutoffRepo, ProbeRow
 
 __all__ = ["VERSION", "CutoffProbe", "ModelFacts", "ReplayCutoff", "Unprobed", "check_replay_from", "measured_cutoff",
-           "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "stored_probe"]
+           "month_back", "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "stored_probe"]
 
 TRIES = 2
 """Asks per question: a cold local model can fail its first reply while it loads."""
@@ -192,7 +192,7 @@ def replay_cutoff(ctx: AppContext, profile: str | None = None) -> ReplayCutoff:
     specs = model_profiles(ctx.config)
     return ReplayCutoff(stages, {name: stored_probe(ctx, name) for name in names},
                         {n: ModelFacts(specs[n].provider, specs[n].model, claimed_cutoff(specs[n])) for n in names},
-                        _month_back(ctx.clock.utcnow().date()))
+                        month_back(ctx.clock.utcnow().date()))
 
 
 def measured_cutoff(ctx: AppContext, profile: str | None = None) -> date | Unprobed:
@@ -216,7 +216,7 @@ def check_replay_from(ctx: AppContext, day: date, profile: str | None = None) ->
     return rc.cutoff
 
 
-def _month_back(day: date) -> date:
+def month_back(day: date) -> date:
     """The same day a month earlier, or that month's last day when it is shorter."""
     year, month = (day.year - 1, 12) if day.month == 1 else (day.year, day.month - 1)
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))

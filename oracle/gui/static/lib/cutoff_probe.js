@@ -55,7 +55,8 @@ function readout(b) {
   ].filter(Boolean);
 }
 
-function cutoffSection() {
+// `probed` is called after a probe ends, so what depends on the cutoff can reload.
+function cutoffSection(probed = () => {}) {
   let started = false;
   let loads = 0; // only the newest load paints
   const pick = modelPicker();
@@ -79,7 +80,7 @@ function cutoffSection() {
     } catch (err) {
       say(err.message);
     }
-    await load();
+    await Promise.all([load(), probed()]);
   });
 
   function running(job) {
@@ -117,7 +118,7 @@ function cutoffSection() {
     } catch (err) {
       say(err.message);
     }
-    await load();
+    await Promise.all([load(), probed()]);
   }
 
   async function start() {

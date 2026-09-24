@@ -7,7 +7,6 @@ again and says what changed."""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
@@ -18,7 +17,9 @@ from oracle.research.mentions import (
 )
 from oracle.research.queries import EDITION, MAX_QUERY
 from oracle.research.tools import ToolError
+from oracle.research.trace import Evidence
 from oracle.research.web import DdgsSearcher, WebSearcher
+from oracle.services.business_fit import NamedIn
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
 from oracle.services.auto_validation import auto_add
@@ -27,6 +28,8 @@ from oracle.services.errors import (
     InvalidQuery, JobAlreadyRunning, ModelUnavailable, SearchFailed, ServiceError, UnknownQuestion,
 )
 from oracle.services.http import open_client
+from oracle.services.industry_words import NOT_A_SECTOR, universe_words
+from oracle.services.industry_words import word_list as _word_list, words as _words
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
 from oracle.services.models_service import RunModel, check_model_profile, resolve_stages
@@ -50,11 +53,13 @@ __all__ = [
 JOB = "discovery_chat"
 LEASE_S = 1800.0
 MAX_QUESTION = 300
-# Bounds on one answer: planned news queries (each searched on Google News and GDELT), local
-# editions, web searches, items the naming call reads, articles read in full, price checks.
+# Bounds on one answer: planned news queries (each searched on Google News and the web, the
+# first on GDELT too), local editions, items the naming call reads, articles read in full,
+# price checks.
 MAX_QUERIES = 4
 MAX_LOCAL = 2
-MAX_WEB = 2
+# GDELT locks out quick repeats (429, then its circuit opens): a second search in one answer failed.
+MAX_GDELT = 1
 MAX_ITEMS = 24
 READ = 4
 MAX_PRICE_CHECKS = 8
@@ -65,15 +70,6 @@ TYPICAL_ANSWER_MIN = 5
 # other questions': "not about" means not about what that question asks. A follow-up reads
 # for its root question, so the two share notes.
 NOTE_KEY = "#q{root}"
-# Words that name no sector or industry in an exclude ("oil and gas sector").
-_NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "sectors", "industry", "industries",
-                           "companies", "company", "stocks", "shares", "firms", "no", "not", "any"})
-_WORDS = re.compile(r"[a-z0-9]+")
-# Everyday words for what the universe names otherwise, after plurals are folded.
-_ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
-            "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
-            "automaker": "automobile", "car": "automobile", "cars": "automobile", "auto": "automobile",
-            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication"}
 # "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
 _WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}
 
@@ -359,19 +355,28 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
     shortlist = _Shortlist(ctx, plan, exclusions)
-    items = await shortlist.screen(ranked, [e.id for e in evidence])
-    if kept := record_links(ctx, _links(shortlist, ranked, [e.id for e in evidence]), SOURCE_CHAT):
+    items = await shortlist.screen(ranked, evidence, asked)
+    if kept := record_links(ctx, _links(shortlist, ranked, evidence, asked), SOURCE_CHAT):
         notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
                      "(shown on their Company pages)")
     return items
 
 
-def _links(screen: Screen, mentions: list[Mention], item_ids: list[int]) -> list[LinkFound]:
+def _links(screen: Screen, mentions: list[Mention], evidence: list[Evidence], asked: str) -> list[LinkFound]:
     """The links the model says an item states, both companies resolved, with the items naming
     both in one line as evidence."""
-    return [LinkFound(other.primary_symbol, named.primary_symbol, m.relation, tuple(item_ids[i] for i in m.link_items))
-            for m in mentions if m.related_to
-            and (other := screen.resolve(m.related_to)) and (named := screen.resolve(m.name))]
+    links = []
+    for m in mentions:
+        named_in = _named_in(m, evidence, asked)
+        if m.related_to and (other := screen.resolve(m.related_to, named_in)) and (
+                named := screen.resolve(m.name, named_in)):
+            links.append(LinkFound(other.primary_symbol, named.primary_symbol, m.relation,
+                                   tuple(evidence[i].id for i in m.link_items)))
+    return links
+
+
+def _named_in(m: Mention, evidence: list[Evidence], asked: str) -> NamedIn:
+    return NamedIn(asked, tuple(item_words(evidence[i]) for i in dict.fromkeys((*m.headlines, *m.link_items))))
 
 
 async def _plan(model: ChatModel, asked: str) -> Plan:
@@ -388,8 +393,9 @@ async def _plan(model: ChatModel, asked: str) -> Plan:
             query = " ".join(entry["query"].split())
             if query and len(query) <= MAX_QUERY:
                 local.append(Search("local", query, entry["country"]))
-    searches = ([Search(tool, q) for q in queries for tool in ("news", "gdelt")] + local[:MAX_LOCAL]
-                + [Search("web", q) for q in queries[:MAX_WEB]])
+    searches = ([Search(tool, q) for n, q in enumerate(queries) for tool in ("news", "gdelt")
+                 if tool == "news" or n < MAX_GDELT]
+                + local[:MAX_LOCAL] + [Search("web", q) for q in queries])
     caps = tuple(c for c in MARKET_CAP_BANDS if c in _strings(reply.get("market_caps")))
     exclude = tuple(_unique(_strings(reply.get("exclude"))))[:MAX_EXCLUDE]
     return Plan(tuple(searches), caps, exclude)
@@ -440,19 +446,19 @@ class _Shortlist(Screen):
         self._plan = plan
         self._exclusions = exclusions
 
-    async def screen(self, mentions: list[Mention], item_ids: list[int]) -> list[ShortlistItem]:
+    async def screen(self, mentions: list[Mention], evidence: list[Evidence], asked: str) -> list[ShortlistItem]:
         """Shortlisted first, numbered from 1 in rank order, then those left off."""
         out: list[ShortlistItem] = []
         for m in mentions:
-            evidence = tuple(item_ids[i] for i in m.headlines)
+            cited = tuple(evidence[i].id for i in m.headlines)
             why = m.why or "named in the news found for the question"
-            profile, why_not = self.identify(m.name)
+            profile, why_not = self.identify(m.name, named_in=_named_in(m, evidence, asked))
             if profile is None:
                 if why_not:
-                    out.append(ShortlistItem(0, m.name, None, None, None, why, evidence, why_not))
+                    out.append(ShortlistItem(0, m.name, None, None, None, why, cited, why_not))
                 continue
             listing, why_not = await self._check(profile)
-            out.append(ShortlistItem(0, m.name, listing, profile.company_key, profile.name, why, evidence, why_not))
+            out.append(ShortlistItem(0, m.name, listing, profile.company_key, profile.name, why, cited, why_not))
         ranked = [i for i in out if i.skipped is None] + [i for i in out if i.skipped]
         return [replace(i, n=n) for n, i in enumerate(ranked, 1)]
 
@@ -501,7 +507,7 @@ def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusio
     or group whose name starts with the words ("consumer" is both Consumer sectors, "telecom"
     Telecommunication Services) comes before any name holding them somewhere. None when
     nothing matches."""
-    words = frozenset(w for word in _words(text) for w in _ALIASES.get(word, word).split()) - _NOT_A_SECTOR
+    words = frozenset(w for word in _words(text) for w in universe_words(word)) - NOT_A_SECTOR
     wanted = _WHOLE.get(words, words)
     if not wanted:
         return None
@@ -513,24 +519,6 @@ def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusio
         if found := frozenset(v for v in classifications.get(level, ()) if matches(v)):
             return Exclusion(text, level, found)
     return None
-
-
-def _words(text: str) -> set[str]:
-    return set(_word_list(text))
-
-
-def _word_list(text: str) -> list[str]:
-    """Words in order, singular, without the ones that name no sector."""
-    return [s for w in _WORDS.findall(text.casefold()) if (s := _singular(w)) not in _NOT_A_SECTOR]
-
-
-def _singular(word: str) -> str:
-    # Short words are left alone: "gas" is no plural.
-    if len(word) <= 4:
-        return word
-    if word.endswith("ies"):
-        return word[:-3] + "y"
-    return word[:-1] if word.endswith("s") and not word.endswith("ss") else word
 
 
 def _view(ctx: AppContext, repo: QuestionRepo, q: Question, a: Answer) -> AnswerView:

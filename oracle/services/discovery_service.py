@@ -19,6 +19,7 @@ from oracle.research.news import (
     parse_google_news,
 )
 from oracle.research.tools import ToolError
+from oracle.services.business_fit import NamedIn
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NeverListed, ServiceError
@@ -92,6 +93,8 @@ class Added:
     why: str
     evidence: tuple[int, ...]
     source: str = SOURCE_RELATED
+    named_in: NamedIn | None = None
+    """What the name was found in, to check a match by the start of the name against."""
 
 
 @dataclass(frozen=True)
@@ -138,6 +141,8 @@ class _Candidate:
     symbol: str | None = None
     """Known already (a peer); else the name is looked up."""
     source: str = SOURCE_RELATED
+    named_in: NamedIn | None = None
+    """What the name was found in, to check a match by the start of the name against."""
 
 
 def news_query(company: str) -> str:
@@ -359,10 +364,11 @@ async def _related(run: _Run, seeds: list[str]) -> None:
         profile = UniverseRepo(run.ctx.conn).profile(seed)
         named = await run.named(profile.symbol, _feeds(news_query(profile.name), gdelt_query(profile.name)),
                                 lambda titles: mentions_prompt(profile.name, titles), MENTIONS_SCHEMA, profile.name)
-        news = [_Candidate(m.name, m.relation, profile.symbol, ids) for m, ids in named]
+        news = [_Candidate(m.name, m.relation, profile.symbol, ids, named_in=NamedIn(items=titles))
+                for m, ids, titles in named]
         # Every company the news links to the seed is kept, not only the one added.
         record_links(run.ctx, [LinkFound(profile.symbol, found.primary_symbol, c.relation, c.evidence)
-                               for c in news if (found := run.screen.resolve(c.name))], SOURCE_DISCOVERY)
+                               for c in news if (found := run.screen.resolve(c.name, c.named_in))], SOURCE_DISCOVERY)
         if await run.screen_all(news + _peers(run.ctx, seed, run.errors)):
             return
 
@@ -374,7 +380,8 @@ async def _themes(run: _Run, _seeds: list[str]) -> None:
         meta.set(_LAST_THEME, theme)
         named = await run.named(f'the theme "{theme}"', _feeds(theme_query(theme), _phrase(theme)),
                                 lambda titles: topic_prompt(theme, titles), TOPIC_SCHEMA)
-        if await run.screen_all([_Candidate(m.name, "theme", theme, ids, source=SOURCE_THEME) for m, ids in named]):
+        if await run.screen_all([_Candidate(m.name, "theme", theme, ids, source=SOURCE_THEME,
+                                            named_in=NamedIn(theme, titles)) for m, ids, titles in named]):
             return
 
 
@@ -387,8 +394,8 @@ async def _movers(run: _Run, _seeds: list[str]) -> None:
         query = mover_query(search)
         named = await run.named(search.label, _feeds(query, query),
                                 lambda titles: topic_prompt(search.label, titles), TOPIC_SCHEMA)
-        if await run.screen_all([_Candidate(m.name, search.kind, search.label, ids, source=SOURCE_MOVER)
-                                 for m, ids in named]):
+        if await run.screen_all([_Candidate(m.name, search.kind, search.label, ids, source=SOURCE_MOVER,
+                                            named_in=NamedIn(search.label, titles)) for m, ids, titles in named]):
             return
 
 
@@ -418,8 +425,8 @@ class _Run:
         return self.screen.done
 
     async def named(self, what: str, feeds: tuple, messages: Callable[[list[str]], list[dict]], schema: dict,
-                    seed: str | None = None) -> list[tuple[Mention, tuple[int, ...]]]:
-        """Companies the feeds' newest headlines name, each with the article ids naming it.
+                    seed: str | None = None) -> list[tuple[Mention, tuple[int, ...], tuple[str, ...]]]:
+        """Companies the feeds' newest headlines name, each with the article ids and headlines naming it.
         None without a working model, or when no headlines came back."""
         if self.model is None:
             return []
@@ -446,7 +453,8 @@ class _Run:
             self.errors.append(f"the model, to read the news for {what}: {exc}")
             self.model = None
             return []
-        return [(m, tuple(ids[i] for i in m.headlines)) for m in parse_mentions(reply, titles, seed)]
+        return [(m, tuple(ids[i] for i in m.headlines), tuple(titles[i] for i in m.headlines))
+                for m in parse_mentions(reply, titles, seed)]
 
 
 class _Screen(Screen):
@@ -464,7 +472,7 @@ class _Screen(Screen):
         return len(self.added) >= self._room or not self.checks_left
 
     async def check(self, c: _Candidate) -> None:
-        profile, why_not = self.identify(c.name, c.symbol)
+        profile, why_not = self.identify(c.name, c.symbol, c.named_in)
         if profile is None:
             return self._skip(c, why_not) if why_not else None
         if self.watched(profile):

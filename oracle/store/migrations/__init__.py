@@ -58,6 +58,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0035_company_links,
     m0036_auto_questions,
     m0037_model_slots,
+    m0038_replay_study,
     m0039_cutoff_probes,
 )
 
@@ -99,5 +100,6 @@ MIGRATIONS = [
     m0035_company_links,
     m0036_auto_questions,
     m0037_model_slots,
+    m0038_replay_study,
     m0039_cutoff_probes,
 ]

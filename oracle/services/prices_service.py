@@ -27,7 +27,7 @@ from oracle.store.watchlists import WatchlistRepo
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
     "benchmark_history_in_base", "day_change", "held_unwatched", "listing_health", "price_history",
-    "price_history_in_base", "price_sources", "update_listing", "update_watched",
+    "price_history_in_base", "price_sources", "update_listing", "update_listings", "update_watched",
 ]
 
 JOB = "prices_update"
@@ -93,11 +93,31 @@ def held_unwatched(ctx: AppContext, watched: Sequence[str]) -> list[str]:
     return [s for s in PaperRepo(ctx.conn).held_symbols() if s not in watched]
 
 
-async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
+async def update_listing(ctx: AppContext, symbol: str, since: date | None = None) -> PriceUpdate:
     """Fetch new daily bars for one listing from the first configured source that has
-    them. Nothing is stored unless a source succeeds."""
+    them. Nothing is stored unless a source succeeds. `since` refetches from that day,
+    replacing what is stored, so the window's closes share one split and dividend basis."""
     async with open_client(ctx) as client:
-        return await _update(ctx, client, symbol)
+        return await _update(ctx, client, symbol, since)
+
+
+async def update_listings(ctx: AppContext, symbols: Sequence[str], since: date) -> list[ListingOutcome]:
+    """Each listing refetched from `since` over one client; a dead listing is skipped with a
+    note, a failure reported, and either way the rest carry on."""
+    health = HealthRepo(ctx.conn)
+    outcomes = []
+    async with open_client(ctx) as client:
+        for symbol in symbols:
+            if (h := health.get(symbol)).dead:
+                outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
+                continue
+            try:
+                r = await _update(ctx, client, symbol, since)
+            except (PriceUnavailable, UnknownSymbol) as exc:
+                outcomes.append(ListingOutcome(symbol, 0, None, str(exc)))
+            else:
+                outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
+    return outcomes
 
 
 async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
@@ -193,11 +213,11 @@ def price_sources(ctx: AppContext) -> list[SourceInfo]:
     return sorted(out, key=lambda s: (s.position is None, s.position or 0, s.name))
 
 
-async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> PriceUpdate:
+async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str, since: date | None = None) -> PriceUpdate:
     listing = resolve_symbol(ctx, symbol)
     repo = BarRepo(ctx.conn)
-    last = repo.last_date(listing.symbol)
-    since = None if last is None else last - REFETCH_OVERLAP
+    if since is None and (last := repo.last_date(listing.symbol)) is not None:
+        since = last - REFETCH_OVERLAP
     instrument = Instrument(listing.symbol, listing.currency)
     now = ctx.clock.utcnow()
     try:
@@ -211,7 +231,7 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str) -> Pr
     except AllFailed as exc:
         if exc.no_data:
             _note_no_data(ctx, listing, now.date())
-        raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})") from None
+        raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})", exc.no_data) from None
     health = HealthRepo(ctx.conn)
     if health.clear(listing.symbol):
         UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())

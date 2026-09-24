@@ -13,6 +13,7 @@ from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
+from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
 from oracle.services.tick_service import KIND_LABELS, TickRun
@@ -135,7 +136,8 @@ def _probes(probes: list[CutoffProbe]) -> dict:
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
-            "discover": asdict, "backtest": backtest_summary, "ask": answer, "probe": _probes}
+            "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
+            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes}
 
 
 def _result(j: Job) -> dict | None:

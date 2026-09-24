@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Set
+from collections.abc import Iterable, Sequence, Set
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
@@ -187,6 +187,21 @@ class UniverseRepo:
         )
         return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
+    def largest_in(self, countries: Sequence[str], sector: str, bands: Sequence[str]) -> list[Resolved]:
+        """Active equity companies of `sector` based in `countries` within `bands`, by primary
+        listing: biggest band first, then the most widely listed, as peers are ranked."""
+        rows = self._conn.execute(
+            f"""SELECT p.symbol, p.company_key, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.currency,
+                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
+                FROM listings p
+                WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0 AND p.sector = ?
+                  AND p.country IN ({", ".join("?" * len(countries))})
+                  AND p.market_cap IN ({", ".join("?" * len(bands))})
+                ORDER BY {_CAP_ORDER}, n DESC, p.symbol""",
+            (sector, *countries, *bands),
+        )
+        return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"]) for r in rows]
+
     def repick_primary(self, company_key: str, dead: Set[str]) -> None:
         """Choose the company's primary listing again, as a refresh would with `dead`."""
         rows = self.company_listings(company_key)
@@ -327,10 +342,15 @@ class UniverseRepo:
     def classifications(self) -> dict[str, frozenset[str]]:
         """Every industry, industry group and sector an active company has, by level
         (`CLASSIFICATION_LEVELS`, the most specific first)."""
-        rows = self._conn.execute(
-            "SELECT industry, industry_group, sector FROM listings WHERE is_primary AND delisted = 0 "
-            "GROUP BY sector, industry_group, industry").fetchall()
-        return {level: frozenset(r[n] for r in rows if r[n]) for n, level in enumerate(CLASSIFICATION_LEVELS)}
+        rows = self.classification_rows()
+        return {level: frozenset(r[n] for r in rows if r[n]) for n, level in
+                zip((2, 1, 0), CLASSIFICATION_LEVELS)}
+
+    def classification_rows(self) -> list[tuple[str | None, str | None, str | None]]:
+        """Each (sector, industry group, industry) an active company has."""
+        return [tuple(r) for r in self._conn.execute(
+            "SELECT sector, industry_group, industry FROM listings WHERE is_primary AND delisted = 0 "
+            "GROUP BY sector, industry_group, industry")]
 
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""

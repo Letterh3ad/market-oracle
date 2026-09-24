@@ -100,6 +100,20 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission")},
+    # Ledgers tab, Replay study card.
+    "replay create": "POST /api/replay",
+    "replay create --from": "POST /api/replay",
+    "replay create --symbols": "POST /api/replay",
+    "replay replace": "POST /api/replay/replace",  # each listing's Replace, before the first replay
+    "replay start": "POST /api/replay/start",
+    "replay pause": "POST /api/replay/pause",
+    "replay status": "GET /api/replay",
+    "replay status --json": "GET /api/replay",
+    "replay retry": "POST /api/replay/retry",  # the card's "Retry failed" and each failed cell's Retry
+    # The card's Score, read from stored bars; its "Update prices" (POST /api/replay/prices) is
+    # the fetch the command does first.
+    "replay report": "GET /api/replay/report",
+    "replay report --json": "GET /api/replay/report",
     # Ledgers tab, Replay study card: the model picker and "Probe cutoff", and the readout under them.
     "replay probe": "POST /api/jobs/cutoff-probe",
     "replay probe --model": "POST /api/jobs/cutoff-probe",

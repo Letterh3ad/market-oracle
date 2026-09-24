@@ -28,6 +28,7 @@ from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
 from oracle.services.models_service import check_model_profile
+from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
@@ -37,12 +38,13 @@ from oracle.services.tick_service import (
 )
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
+from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_midday",
-           "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh",
-           "sweep_leftovers"]
+           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
+           "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -253,10 +255,10 @@ def sweep_leftovers(ctx: AppContext) -> None:
 
 
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date | None = None,
-                    profile: str | None = None) -> Job:
+                    profile: str | None = None, automatic: bool = False) -> Job:
     """Queue one research run, or with `as_of` a replay of that day, on the slots or every stage
     on `profile`; an unknown symbol, a future day or an unknown profile is refused now, not when
-    its turn comes."""
+    its turn comes. `automatic`: started by the replay pacer, not a button."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     check_model_profile(ctx, profile)
@@ -273,7 +275,7 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date
     else:
         subject, label = listing, f"Research {listing}"
     return runner.submit("research", label + _on(profile), work, subject=subject, link=f"#company/{listing}",
-                         progress=lambda: research_progress(ctx, listing), profile=profile)
+                         progress=lambda: research_progress(ctx, listing), profile=profile, automatic=automatic)
 
 
 def _on(profile: str | None) -> str:
@@ -328,6 +330,14 @@ def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None)
     listing = resolve_symbol(ctx, symbol).symbol
     return runner.submit("prices", f"Update prices {listing}", lambda c: update_listing_prices(c, listing),
                          subject=listing, link=f"#company/{listing}")
+
+
+def submit_replay_prices(ctx: AppContext, runner: JobRunner) -> Job:
+    """Bars the replay study's score lacks, fetched for the listings that need them."""
+    if ReplayRepo(ctx.conn).current() is None:
+        raise InvalidQuery("no replay study yet: create one first")
+    return runner.submit("replay_prices", "Update prices (replay study)", update_study_prices, subject="*",
+                         link="#ledgers")
 
 
 def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
@@ -458,12 +468,30 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if "@" in subject:
         symbol, day = subject.split("@", 1)
-        return submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
+        again = submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
+        _adopt_replay_cell(ctx, again, symbol, date.fromisoformat(day))
+        return again
     return submit_research(ctx, runner, subject, profile=job.profile)
+
+
+def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
+    """A retried replay of a study cell that failed or waits for its retry counts for that
+    cell, so the study never runs it a second time."""
+    if job.profile is not None:
+        return  # the study replays on the slots; a run on a picked profile is another experiment
+    repo = ReplayRepo(ctx.conn)
+    study = repo.current()
+    cell = repo.cell_at(study.id, symbol, day) if study else None
+    if cell and cell.state in (PENDING, FAILED):
+        repo.adopt(cell.id, job.id, ctx.clock.utcnow())
 
 
 def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_prices(ctx, runner, None if job.subject == "*" else job.subject)
+
+
+def _retry_replay_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_replay_prices(ctx, runner)
 
 
 def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -510,7 +538,7 @@ def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
-    "backtest": _retry_backtest, "ask": _retry_ask, "probe": _retry_probe,
+    "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
 }
 
 

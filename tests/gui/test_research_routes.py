@@ -239,7 +239,7 @@ async def test_the_verdict_comes_with_the_report_or_why_there_is_none(ready, oll
 
 async def test_history_lists_every_report_newest_first_with_replays_marked(ready, ollama, clock):
     ollama.roles["verdict"] = {"verdict": "hold", "confidence": 0.5, "reason": "Priced in", "cites": ["a1"],
-                               "invalidated_if": "x"}
+                               "invalidated_if": "Guidance is cut"}
     first = await researched(ready)
     clock.advance(60)
     ollama.contents = [step("final", "Replayed.")]

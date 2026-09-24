@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import asdict
-from collections.abc import Set
+from collections.abc import Sequence, Set
 from datetime import date, datetime
 
 from oracle.research.edgar import is_sec
@@ -127,6 +127,22 @@ class ResearchRepo:
             f"SELECT {_RUN} FROM research_runs WHERE symbol = ? ORDER BY started_at DESC, id DESC LIMIT 1", (symbol,),
         ).fetchone()
         return self._run(row) if row else None
+
+    def replay_run_id(self, symbol: str, as_of: date) -> int | None:
+        """The newest replay of the listing at that day."""
+        row = self._conn.execute("SELECT id FROM research_runs WHERE symbol = ? AND as_of = ? ORDER BY id DESC LIMIT 1",
+                                 (symbol, as_of.isoformat())).fetchone()
+        return row[0] if row else None
+
+    def verdicts(self, run_ids: Sequence[int]) -> dict[int, tuple[str, float]]:
+        """Each run's verdict label and confidence; runs without one are left out. Read from
+        the report body in SQL, so scoring hundreds of runs never loads their evidence."""
+        if not run_ids:
+            return {}
+        rows = self._conn.execute(
+            "SELECT run_id, json_extract(body, '$.verdict.label'), json_extract(body, '$.verdict.confidence') "
+            f"FROM research_reports WHERE run_id IN ({','.join('?' * len(run_ids))})", tuple(run_ids))
+        return {r[0]: (r[1], float(r[2])) for r in rows if r[1] is not None}
 
     def _run(self, row) -> ResearchRun:
         stages = tuple(StageModel(**{**s, "fell_back_to": tuple(s.get("fell_back_to", ()))})

@@ -47,6 +47,12 @@ class BarRepo:
         ).fetchone()
         return (date.fromisoformat(row[0]), date.fromisoformat(row[1])) if row[0] else None
 
+    def first_between(self, symbol: str, start: date, end: date) -> date | None:
+        """The first stored trading day from `start` to `end`, both included."""
+        row = self._conn.execute("SELECT MIN(date) FROM bars WHERE symbol = ? AND date BETWEEN ? AND ?",
+                                 (symbol, start.isoformat(), end.isoformat())).fetchone()
+        return date.fromisoformat(row[0]) if row[0] else None
+
     def close_on(self, symbol: str, day: date | None = None) -> float | None:
         """The last close on or before `day` (the latest close without one)."""
         row = self._conn.execute(
@@ -63,6 +69,15 @@ class BarRepo:
             (symbol, limit) if limit is not None else (symbol,),
         ).fetchall()
         return [Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}) for r in reversed(rows)]
+
+
+    def since(self, symbol: str, start: date) -> list[Bar]:
+        """Oldest first, from `start` on."""
+        rows = self._conn.execute(
+            f"SELECT {', '.join(_COLUMNS)} FROM bars WHERE symbol = ? AND date >= ? ORDER BY date",
+            (symbol, start.isoformat()),
+        ).fetchall()
+        return [Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}) for r in rows]
 
 
 def _value(bar: Bar, column: str):
