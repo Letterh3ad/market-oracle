@@ -19,10 +19,10 @@ from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
+from oracle.services.cutoff_service import probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
-from oracle.services.cutoff_service import probe_cutoff, probe_profile
 from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
@@ -40,8 +40,9 @@ from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_midday", "submit_rerun", "submit_research",
-           "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_midday",
+           "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh",
+           "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -441,12 +442,12 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
 
 
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
-    """Ask the research slot's model (or `profile`'s) the dated questions and keep its measured
-    cutoff; an unknown profile is refused now."""
-    probe_profile(ctx, profile)
+    """Ask `profile`'s model, or each unprobed model a replay runs on, the dated questions and keep
+    their measured cutoffs; an unknown profile is refused now."""
+    replay_cutoff(ctx, profile)
     stage: list[str] = []
     return runner.submit("probe", "Probe model cutoff" + _on(profile),
-                         lambda c: probe_cutoff(c, profile, on_progress=stage.append), subject="cutoff",
+                         lambda c: probe_replay_models(c, profile, on_progress=stage.append), subject="cutoff",
                          link="#ledgers", progress=lambda: stage[-1] if stage else None, profile=profile)
 
 

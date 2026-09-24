@@ -42,34 +42,48 @@ class MonthScore:
 
     @property
     def known(self) -> bool:
-        return self.right * 2 >= self.total
+        return self.right >= MIN_RIGHT
+
+
+MIN_RIGHT = 2
+"""Right answers that make a month known; every month has three or more questions, so one lucky
+guess is never enough."""
 
 
 def messages(e: Event) -> list[dict]:
     return [{"role": "system", "content": SYSTEM}, {"role": "user", "content": e.question}]
 
 
+_THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+
 def reply_text(reply: object) -> str:
+    """The reply's answer, without any reasoning a thinking model wrapped in <think> tags."""
     if isinstance(reply, dict) and isinstance(reply.get("answer"), str):
-        return reply["answer"]
-    return reply if isinstance(reply, str) else str(reply)
+        text = reply["answer"]
+    else:
+        text = reply if isinstance(reply, str) else str(reply)
+    return _THINKING.sub("", text).strip()
 
 
 _DASHES = re.compile("[\u2010\u2011\u2012\u2013\u2014\u2212]")
 _FRACTION = re.compile(r"(\d+)(?:-| )?([13])/([24])(?!\d)")
 _PERCENT = re.compile(r"%|\bper ?cent\b")
 _DECIMAL = re.compile(r"(\d+)\.(\d+)")
-_RANGE = re.compile(r"(\d)\s*(?:-|\bto\b|\band\b)\s*(\d)")
+_PUNCTUATION = re.compile(r"[^\w\s./-]")
+_PAIR = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)")
+_WHOLE_BEFORE = r"(?<![\w.])"
+_WHOLE_AFTER = r"(?![\w]|\.\d)"
 
 
 def normalize(text: str) -> str:
-    """Lower case without accents, fractions as decimals without trailing zeros, ranges as "a-b"."""
+    """Lower case without accents, fractions as decimals without trailing zeros, and every
+    punctuation mark but . - / as a space."""
     text = "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower()
     text = _PERCENT.sub(" ", _DASHES.sub("-", text.replace("\u2044", "/")))
     text = _FRACTION.sub(lambda m: str(int(m[1]) + int(m[2]) / int(m[3])), text)
     text = _DECIMAL.sub(lambda m: m[1] + ("." + m[2].rstrip("0") if m[2].rstrip("0") else ""), text)
-    text = " ".join(text.split())
-    return _RANGE.sub(r"\1-\2", text)
+    return " ".join(_PUNCTUATION.sub(" ", text).replace("_", " ").split())
 
 
 def answered(reply: str, expect: Iterable[str]) -> bool:
@@ -78,8 +92,17 @@ def answered(reply: str, expect: Iterable[str]) -> bool:
 
 
 def _found(keyword: str, said: str) -> bool:
-    # Whole words and whole numbers only: "leo" is not in "leopold", nor "4-4.25" in "3.75-4-4.25".
-    return bool(keyword) and re.search(rf"(?<![\w.])(?<!\d-){re.escape(keyword)}(?![\w]|\.\d|-\d)", said) is not None
+    """Whole words and numbers only: "leo" is not in "leopold", "58" not in "58.17". A pair "a-b"
+    (a range or a vote) is also found as "a to b" or "a and b", but never inside a longer chain
+    like "3.75-4-4.25"."""
+    if not keyword:
+        return False
+    if pair := _PAIR.fullmatch(keyword):
+        lo, hi = map(re.escape, pair.groups())
+        pattern = rf"(?<!\d-){lo}\s*(?:-|\bto\b|\band\b)\s*{hi}(?!-\d)"
+    else:
+        pattern = re.escape(keyword)
+    return re.search(_WHOLE_BEFORE + pattern + _WHOLE_AFTER, said) is not None
 
 
 def month_scores(marks: Iterable[tuple[date, bool]]) -> list[MonthScore]:
@@ -93,7 +116,7 @@ def month_scores(marks: Iterable[tuple[date, bool]]) -> list[MonthScore]:
 
 
 def cutoff_from(scores: Iterable[MonthScore], claimed: date) -> date:
-    """The end of the margin month after the last month answered at least half right, never
+    """The end of the margin month after the last known month (MIN_RIGHT right), never
     before `claimed`. The last such month anywhere, not the first miss: a later lucky month
     only moves the cutoff later, the safe way for replays."""
     known = [s.month for s in scores if s.known]

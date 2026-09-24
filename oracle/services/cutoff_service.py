@@ -1,5 +1,5 @@
-"""The cutoff probe: what the model in use actually knows, measured with dated public events,
-so replays never start on a day it may already know the outcome of."""
+"""The cutoff probe: what each model a replay runs on actually knows, measured with dated public
+events, so replays never start on a day any of them may already know the outcome of."""
 
 from __future__ import annotations
 
@@ -8,20 +8,20 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, fields
 from datetime import date, timedelta
 
-from oracle.config import model_profiles
+from oracle.config import claimed_cutoff, model_profiles
 from oracle.research.cutoff import SCHEMA, Event, MonthScore, answered, cutoff_from, messages, month_scores, reply_text
-from oracle.research.cutoff_questions import CLAIMED_CUTOFF, EVENTS, VERSION
+from oracle.research.cutoff_questions import EVENTS, VERSION
 from oracle.research.llm import ModelError
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, ModelUnavailable, UnknownModelProfile
-from oracle.services.models_service import resolve_model, slot_profile
+from oracle.services.models_service import RESEARCH_STAGES, resolve_model, slot_profile
 from oracle.store.cutoff import AnswerRow, CutoffRepo, ProbeRow
 
-__all__ = ["CLAIMED_CUTOFF", "VERSION", "CutoffProbe", "check_replay_from", "measured_cutoff", "no_replay_room",
-           "probe_cutoff", "probe_profile", "profile_model", "stored_probe"]
+__all__ = ["VERSION", "CutoffProbe", "ModelFacts", "ReplayCutoff", "Unprobed", "check_replay_from", "measured_cutoff",
+           "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "stored_probe"]
 
-SLOT = "research"
-"""Replays run research, so the research slot's model is the one whose cutoff matters."""
+TRIES = 2
+"""Asks per question: a cold local model can fail its first reply while it loads."""
 
 
 @dataclass(frozen=True)
@@ -31,91 +31,182 @@ class CutoffProbe(ProbeRow):
         return month_scores((a.day, a.right) for a in self.answers)
 
     @property
-    def replay_from(self) -> date:
-        """The first day a replay may use."""
-        return self.cutoff + timedelta(days=1)
-
-    @property
     def last_known(self) -> str | None:
-        """The last month answered at least half right."""
+        """The last month answered well enough to count as known."""
         return max((s.month for s in self.months if s.known), default=None)
 
 
-def probe_profile(ctx: AppContext, profile: str | None) -> str:
-    """The named profile, or the research slot's; an unknown one is refused."""
-    name = profile or slot_profile(ctx.config, SLOT)
-    if name not in model_profiles(ctx.config):
-        raise UnknownModelProfile(f"no model profile {name}")
-    return name
+@dataclass(frozen=True)
+class Unprobed:
+    """What `measured_cutoff` gives while some model a replay runs on has not been probed: falsy,
+    so no cutoff is taken from it, and naming the profiles to probe."""
+
+    profiles: tuple[str, ...]
+
+    def __bool__(self) -> bool:
+        return False
+
+    def __str__(self) -> str:
+        return f"unprobed: {', '.join(self.profiles)}"
 
 
-async def probe_cutoff(ctx: AppContext, profile: str | None = None, on_progress: Callable[[str], None] | None = None,
+@dataclass(frozen=True)
+class ModelFacts:
+    """What a profile names today: its probe is kept under provider and model."""
+
+    provider: str
+    model: str
+    claimed: date
+
+
+@dataclass(frozen=True)
+class ReplayCutoff:
+    """The models a replay runs on, stage by stage, and what their probes allow."""
+
+    stages: dict[str, str]
+    """Each research stage and the profile it runs on."""
+    probes: dict[str, CutoffProbe | None]
+    """Each distinct profile, in stage order, and its stored probe."""
+    facts: dict[str, ModelFacts]
+    """The same profiles and what they name."""
+    latest_day: date
+    """The last day a replay may use and still have a month of prices after it."""
+
+    @property
+    def unprobed(self) -> tuple[str, ...]:
+        return tuple(name for name, p in self.probes.items() if p is None)
+
+    @property
+    def set_by(self) -> str | None:
+        """The profile whose cutoff is latest, once every one is probed."""
+        if self.unprobed:
+            return None
+        return max(self.probes, key=lambda name: self.probes[name].cutoff)
+
+    @property
+    def cutoff(self) -> date | None:
+        return self.probes[self.set_by].cutoff if self.set_by else None
+
+    @property
+    def replay_from(self) -> date | None:
+        """The first day a replay may use: strictly after the cutoff."""
+        return self.cutoff + timedelta(days=1) if self.cutoff else None
+
+    @property
+    def note(self) -> str | None:
+        """Why no replay can start now, if none can."""
+        if missing := self.unprobed:
+            return (f"replays run on {', '.join(self.probes)}: probe {', '.join(missing)} first (Probe cutoff on "
+                    "the Ledgers tab, or oracle replay probe), since a model never probed may know what came next.")
+        if self.cutoff >= self.latest_day:
+            p = self.probes[self.set_by]
+            return (f"{p.provider} {p.model} ({p.profile}) knew events up to {p.last_known}, so the cutoff is "
+                    f"{p.cutoff}: no replay day after that has a month of prices to score it yet. Replays need "
+                    "models that know less of the recent past; point the slots at another profile and probe it.")
+        return None
+
+
+def probe_profile(ctx: AppContext, profile: str) -> str:
+    if profile not in model_profiles(ctx.config):
+        raise UnknownModelProfile(f"no model profile {profile}")
+    return profile
+
+
+def profile_model(ctx: AppContext, profile: str) -> tuple[str, str]:
+    """The provider and model id a probe of the profile is kept under."""
+    spec = model_profiles(ctx.config)[probe_profile(ctx, profile)]
+    return spec.provider, spec.model
+
+
+def replay_profiles(ctx: AppContext, profile: str | None = None) -> dict[str, str]:
+    """Each research stage and the profile a replay runs it on: the slots', or `profile` for all."""
+    stages = {stage: profile or slot_profile(ctx.config, stage) for stage in RESEARCH_STAGES}
+    for name in set(stages.values()):
+        probe_profile(ctx, name)
+    return stages
+
+
+async def probe_cutoff(ctx: AppContext, profile: str, on_progress: Callable[[str], None] | None = None,
                        events: Sequence[Event] = EVENTS) -> CutoffProbe:
-    """Ask every event up to today, one at a time, mark each reply by its keywords, and keep the
-    result for the profile's model, replacing any earlier probe of it. A model that stops
-    answering fails the probe and keeps nothing: a cutoff from half the questions would mislead."""
-    name = probe_profile(ctx, profile)
-    provider, model_id = profile_model(ctx, name)
-    model = resolve_model(ctx, name).model
+    """Ask the profile's model every event up to today, one at a time (twice if a reply fails),
+    mark each reply by its keywords, and keep the result for that model, replacing any earlier
+    probe of it. A model that stops answering fails the probe and keeps nothing: a cutoff from
+    half the questions would mislead."""
+    provider, model_id = profile_model(ctx, profile)
+    claimed = claimed_cutoff(model_profiles(ctx.config)[profile])
+    model = resolve_model(ctx, profile).model
     today = ctx.clock.utcnow().date()
     asked = [e for e in events if e.day <= today]
     answers = []
     for n, e in enumerate(asked, 1):
         if on_progress:
             on_progress(f"question {n} of {len(asked)} ({e.month})")
-        try:
-            reply = reply_text(await model.reply(messages(e), SCHEMA))
-        except ModelError as exc:
-            raise ModelUnavailable(f"the probe stopped at question {n} of {len(asked)}: {exc}") from exc
+        reply = reply_text(await _ask(model, e, f"question {n} of {len(asked)}"))
         answers.append(AnswerRow(e.id, e.day, e.question, e.answer, reply, answered(reply, e.expect)))
     scores = month_scores((a.day, a.right) for a in answers)
-    probe = CutoffProbe(provider, model_id, name, VERSION, CLAIMED_CUTOFF, cutoff_from(scores, CLAIMED_CUTOFF),
+    probe = CutoffProbe(provider, model_id, profile, VERSION, claimed, cutoff_from(scores, claimed),
                         ctx.clock.utcnow(), tuple(answers))
     CutoffRepo(ctx.conn).replace(probe)
     return probe
 
 
-def profile_model(ctx: AppContext, profile: str | None = None) -> tuple[str, str]:
-    """The provider and model id a probe of the profile (else the research slot) is kept under."""
-    spec = model_profiles(ctx.config)[probe_profile(ctx, profile)]
-    return spec.provider, spec.model
+async def _ask(model, e: Event, where: str) -> object:
+    for attempt in range(1, TRIES + 1):
+        try:
+            return await model.reply(messages(e), SCHEMA)
+        except ModelError as exc:
+            if attempt == TRIES:
+                raise ModelUnavailable(f"the probe stopped at {where}: {exc}") from exc
 
 
-def stored_probe(ctx: AppContext, profile: str | None = None) -> CutoffProbe | None:
-    """The latest probe of the model the profile (else the research slot) names, if any."""
+async def probe_replay_models(ctx: AppContext, profile: str | None = None,
+                              on_progress: Callable[[str], None] | None = None) -> list[CutoffProbe]:
+    """Probe `profile`, or with none each model a replay runs on that has no probe yet (all of
+    them again when every one has), one after the other."""
+    rc = replay_cutoff(ctx, profile)
+    names = [profile] if profile else list(rc.unprobed or rc.probes)
+    probes = []
+    for name in names:
+        say = (lambda line, name=name: on_progress(f"{name}: {line}")) if on_progress else None
+        probes.append(await probe_cutoff(ctx, name, on_progress=say))
+    return probes
+
+
+def stored_probe(ctx: AppContext, profile: str) -> CutoffProbe | None:
+    """The latest probe of the model the profile names, if any."""
     row = CutoffRepo(ctx.conn).get(*profile_model(ctx, profile))
     return None if row is None else CutoffProbe(**{f.name: getattr(row, f.name) for f in fields(row)})
 
 
-def measured_cutoff(ctx: AppContext, profile: str | None = None) -> date | None:
-    """The last day the model may know about, measured; None until it has been probed."""
-    probe = stored_probe(ctx, profile)
-    return probe.cutoff if probe else None
+def replay_cutoff(ctx: AppContext, profile: str | None = None) -> ReplayCutoff:
+    """What the probes allow a replay on the slots' models, or every stage on `profile`."""
+    stages = replay_profiles(ctx, profile)
+    names = list(dict.fromkeys(stages.values()))
+    specs = model_profiles(ctx.config)
+    return ReplayCutoff(stages, {name: stored_probe(ctx, name) for name in names},
+                        {n: ModelFacts(specs[n].provider, specs[n].model, claimed_cutoff(specs[n])) for n in names},
+                        _month_back(ctx.clock.utcnow().date()))
 
 
-def no_replay_room(ctx: AppContext, probe: CutoffProbe) -> str | None:
-    """Why no replay can start after the probe's cutoff, when none can: every day after it is
-    within a month of today, too recent to score."""
-    if probe.cutoff < _month_back(ctx.clock.utcnow().date()):
-        return None
-    return (f"{probe.provider} {probe.model} knew events up to {probe.last_known}, so its cutoff is {probe.cutoff}: "
-            "no replay day after that has a month of prices to score it yet. Replays need a model that knows "
-            "less of the recent past; probe another profile.")
+def measured_cutoff(ctx: AppContext, profile: str | None = None) -> date | Unprobed:
+    """The last day any model a replay runs on may know about: the latest of their measured
+    cutoffs, or Unprobed naming those not probed yet."""
+    rc = replay_cutoff(ctx, profile)
+    return Unprobed(rc.unprobed) if rc.unprobed else rc.cutoff
 
 
-def check_replay_from(ctx: AppContext, day: date, profile: str | None = None) -> date | None:
-    """Refuse a replay day on or before the model's measured cutoff, saying why; the cutoff, or
-    None when nothing has been probed (there is nothing to check against yet)."""
-    probe = stored_probe(ctx, profile)
-    if probe is None:
-        return None
-    if note := no_replay_room(ctx, probe):
+def check_replay_from(ctx: AppContext, day: date, profile: str | None = None) -> date:
+    """Refuse a replay day unless every model the replay runs on is probed and the day is
+    strictly after the latest cutoff, saying why; the cutoff when it passes."""
+    rc = replay_cutoff(ctx, profile)
+    if note := rc.note:
         raise InvalidQuery(note)
-    if day <= probe.cutoff:
-        raise InvalidQuery(f"{day} is on or before {probe.provider} {probe.model}'s measured cutoff {probe.cutoff} "
-                           f"(it knew events up to {probe.last_known or 'its claimed cutoff'}): a replay then could "
-                           f"see ahead. Pick a day after {probe.cutoff}.")
-    return probe.cutoff
+    if day <= rc.cutoff:
+        p = rc.probes[rc.set_by]
+        raise InvalidQuery(f"{day} is on or before the measured cutoff {rc.cutoff} ({p.provider} {p.model}, "
+                           f"{p.profile}, knew events up to {p.last_known or 'its claimed cutoff'}): a replay then "
+                           f"could see ahead. Pick {rc.replay_from} or later.")
+    return rc.cutoff
 
 
 def _month_back(day: date) -> date:
