@@ -2,7 +2,8 @@ from datetime import date
 
 import pytest
 
-from oracle.research.cutoff import MIN_RIGHT, answered, cutoff_from, month_scores, normalize, reply_text
+from oracle.config import DEFAULT_CLAIMED_CUTOFF
+from oracle.research.cutoff import KINDS, MIN_RIGHT, answered, cutoff_from, month_scores, normalize, reply_text
 from oracle.research.cutoff_questions import EVENTS, VERSION
 
 CLAIM = date(2025, 5, 20)
@@ -30,6 +31,15 @@ CLAIM = date(2025, 5, 20)
     ("The Eagles won 40-21.", ("40", "22"), False),
     ("58.17%", ("58",), False),
     ("58.17%", ("58|58.17",), True),
+    ("58.16%", ("58.x",), True),
+    ("about 58.3 percent", ("58.x",), True),
+    ("58%", ("58.x",), True),
+    ("57.9%", ("58.x",), False),
+    ("158.2", ("58.x",), False),
+    ("unknown, maybe Eagles or Chiefs", ("eagles",), False),
+    ("I'm not sure, perhaps the Eagles", ("eagles",), False),
+    ("I don't know. Eagles?", ("eagles",), False),
+    ("The Eagles; nobody knew they would", ("eagles",), True),
     ("1:59:30", ("1:59:30",), True),
     ("The Big, Beautiful Bill", ("big beautiful bill",), True),
     ("Pope Leo XIV", ("leo",), True),
@@ -105,8 +115,22 @@ def months(first: date, last: date) -> list[str]:
     return out
 
 
+def test_after_the_claim_each_month_asks_one_number_one_name_and_one_other_detail():
+    """Questions of one kind fail together (a favourite's name, a repeat score), so a month
+    whose questions share a kind can be passed by one kind of lucky guess."""
+    assert KINDS == ("number", "name", "other")
+    first = DEFAULT_CLAIMED_CUTOFF.strftime("%Y-%m")
+    by_month: dict[str, list[str]] = {}
+    for e in EVENTS:
+        assert e.kind in KINDS, e.id
+        if e.month >= first:
+            by_month.setdefault(e.month, []).append(e.kind)
+    for month, kinds in by_month.items():
+        assert len(kinds) == len(set(kinds)), (month, kinds)
+
+
 def test_the_question_set_covers_january_2025_to_september_2026_with_three_or_more_a_month():
-    assert VERSION == "2026-09-24.2"
+    assert VERSION == "2026-09-24.3"
     by_month: dict[str, int] = {}
     for e in EVENTS:
         by_month[e.month] = by_month.get(e.month, 0) + 1

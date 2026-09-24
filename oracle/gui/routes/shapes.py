@@ -121,7 +121,8 @@ def _probe(p: CutoffProbe) -> dict:
 def replay_cutoff(rc: ReplayCutoff) -> dict:
     """The stages a replay runs on, each distinct model with its probe, and the cutoff they allow together."""
     return {"stages": [{"stage": s, "profile": name} for s, name in rc.stages.items()],
-            "models": [{"profile": name, **asdict(rc.facts[name]), "probe": p and _probe(p)}
+            "models": [{"profile": name, **asdict(rc.facts[name]), "cutoff": rc.cutoff_of(name),
+                        "probe": p and _probe(p)}
                        for name, p in rc.probes.items()],
             "cutoff": rc.cutoff, "set_by": rc.set_by, "replay_from": rc.replay_from, "unprobed": list(rc.unprobed),
             "note": rc.note}

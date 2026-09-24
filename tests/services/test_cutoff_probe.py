@@ -114,6 +114,21 @@ async def test_the_cutoff_is_never_before_the_profiles_claimed_one(ctx, models):
     assert (probe.claimed, probe.cutoff) == (date(2025, 8, 15), date(2025, 8, 15))
 
 
+async def test_a_claim_raised_after_the_probe_raises_the_cutoff_and_can_decide_which_model_sets_it(ctx, models):
+    slots(ctx, verdict="big")
+    models["default"], models["big"] = Knows("2025-08"), Knows("2025-10")
+    await probe_replay_models(ctx)
+    assert (replay_cutoff(ctx).cutoff, replay_cutoff(ctx).set_by) == (date(2025, 11, 30), "big")
+    ctx.config = replace(ctx.config, models={**ctx.config.models,
+                                             "default": ModelProfile("ollama", ctx.config.llm.model,
+                                                                     claimed_cutoff="2026-01-15")})
+    rc = replay_cutoff(ctx)
+    assert (rc.cutoff_of("default"), rc.cutoff_of("big")) == (date(2026, 1, 15), date(2025, 11, 30))
+    assert (rc.cutoff, rc.set_by, rc.replay_from) == (date(2026, 1, 15), "default", date(2026, 1, 16))
+    with pytest.raises(InvalidQuery, match="2026-01-15"):
+        check_replay_from(ctx, date(2025, 12, 1))
+
+
 async def test_a_model_that_knows_everything_leaves_no_replay_day_and_says_so(ctx, models):
     models["default"] = Knows("2099-12")
     probe = await probe_cutoff(ctx, "default")

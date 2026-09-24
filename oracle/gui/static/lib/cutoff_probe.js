@@ -35,8 +35,10 @@ function model(m) {
   if (!p) return [el("h4", null, who), el("p", { class: "dim small" }, "Not probed yet.")];
   return [
     el("h4", null, who),
-    el("p", { class: "small" }, `Cutoff ${p.cutoff}: last month it knew ${p.last_known ?? "none"}. Probed `
-      + `${String(p.probed_at).slice(0, 10)} with question set ${p.question_set}.`),
+    el("p", { class: "small" }, `Cutoff ${m.cutoff}`
+      + (m.cutoff === p.cutoff ? "" : ` (its claimed cutoff; measured ${p.cutoff})`)
+      + `: last month it knew ${p.last_known ?? "none"}. Probed ${String(p.probed_at).slice(0, 10)} with question `
+      + `set ${p.question_set}.`),
     el("details", null, el("summary", null, "Month by month"), months(p)),
     el("details", null, el("summary", null, `Questions and replies (${p.answers.length})`), answers(p)),
   ];

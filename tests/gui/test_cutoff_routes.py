@@ -22,7 +22,7 @@ async def test_nothing_probed_yet_names_the_models_a_probe_would_ask(client, mod
     body = (await client.get("/api/replay/cutoff")).json()
     assert body["stages"][0] == {"stage": "queries", "profile": "default"} and len(body["stages"]) == 5
     assert body["models"] == [{"profile": "default", "provider": "ollama", "model": body["models"][0]["model"],
-                               "claimed": "2025-05-20", "probe": None}]
+                               "claimed": "2025-05-20", "cutoff": None, "probe": None}]
     assert (body["cutoff"], body["replay_from"], body["unprobed"]) == (None, None, ["default"])
     assert "probe default first" in body["note"] and body["question_set"] == VERSION
 
@@ -36,6 +36,7 @@ async def test_a_probe_runs_as_a_job_and_its_cutoff_scores_and_answers_are_kept(
     body = (await client.get("/api/replay/cutoff")).json()
     assert (body["cutoff"], body["set_by"], body["replay_from"], body["note"]) == (
         "2025-09-30", "default", "2025-10-01", None)
+    assert body["models"][0]["cutoff"] == "2025-09-30"
     probe = body["models"][0]["probe"]
     assert probe["last_known"] == "2025-08" and probe["probed_at"].startswith("2026-09-23")
     assert {"month": "2025-08", "right": 3, "total": 3, "known": True} in probe["months"]

@@ -16,12 +16,15 @@ PROBE = {"provider": "ollama", "model": "qwen3:4b", "profile": "default", "quest
                     {"month": "2025-09", "right": 0, "total": 3, "known": False}],
          "answers": [{"event_id": "kirk", "day": "2025-09-10", "question": "Who was shot?", "expected": "Charlie Kirk",
                       "reply": "unknown", "right": False}]}
-DEFAULT = {"profile": "default", "provider": "ollama", "model": "qwen3:4b", "claimed": "2025-05-20", "probe": PROBE}
-BIG = {"profile": "big", "provider": "ollama", "model": "big-model", "claimed": "2025-07-01", "probe": None}
+DEFAULT = {"profile": "default", "provider": "ollama", "model": "qwen3:4b", "claimed": "2025-05-20",
+           "cutoff": "2025-09-30", "probe": PROBE}
+BIG = {"profile": "big", "provider": "ollama", "model": "big-model", "claimed": "2025-07-01", "cutoff": None,
+       "probe": None}
 UNPROBED = {"stages": STAGES, "models": [DEFAULT, BIG], "cutoff": None, "set_by": None, "replay_from": None,
             "unprobed": ["big"], "question_set": "2026-09-24.2",
             "note": "replays run on default, big: probe big first (Probe cutoff on the Ledgers tab)."}
-PROBED = {**UNPROBED, "models": [DEFAULT, {**BIG, "probe": {**PROBE, "profile": "big", "cutoff": "2025-12-31"}}],
+PROBED = {**UNPROBED, "models": [DEFAULT, {**BIG, "cutoff": "2025-12-31",
+                                           "probe": {**PROBE, "profile": "big", "cutoff": "2025-12-31"}}],
           "cutoff": "2025-12-31", "set_by": "big", "replay_from": "2026-01-01", "unprobed": [], "note": None}
 
 
@@ -59,6 +62,11 @@ def test_every_probe_shows_its_cutoff_months_and_replies_and_the_latest_cutoff_w
     assert "default: ollama qwen3:4b, claimed cutoff 2025-05-20" in text and "Cutoff 2025-09-30" in text
     assert "Month by month" in text and "Questions and replies (1)" in text
     assert "Who was shot?" in text and "Charlie Kirk" in text and "wrong" in text
+
+
+def test_a_claim_above_the_measured_cutoff_is_shown_as_the_cutoff():
+    raised = {**PROBED, "models": [{**DEFAULT, "claimed": "2026-01-15", "cutoff": "2026-01-15"}, PROBED["models"][1]]}
+    assert "Cutoff 2026-01-15 (its claimed cutoff; measured 2025-09-30)" in run(SHOW, raised)
 
 
 def test_a_model_that_knows_too_much_shows_why_no_replay_can_start():

@@ -76,16 +76,22 @@ class ReplayCutoff:
     def unprobed(self) -> tuple[str, ...]:
         return tuple(name for name, p in self.probes.items() if p is None)
 
+    def cutoff_of(self, name: str) -> date | None:
+        """The profile's measured cutoff, raised to its claimed cutoff as it stands now: a claim
+        raised in Settings after the probe still counts."""
+        probe = self.probes[name]
+        return max(probe.cutoff, self.facts[name].claimed) if probe else None
+
     @property
     def set_by(self) -> str | None:
         """The profile whose cutoff is latest, once every one is probed."""
         if self.unprobed:
             return None
-        return max(self.probes, key=lambda name: self.probes[name].cutoff)
+        return max(self.probes, key=self.cutoff_of)
 
     @property
     def cutoff(self) -> date | None:
-        return self.probes[self.set_by].cutoff if self.set_by else None
+        return self.cutoff_of(self.set_by) if self.set_by else None
 
     @property
     def replay_from(self) -> date | None:
@@ -100,8 +106,9 @@ class ReplayCutoff:
                     "the Ledgers tab, or oracle replay probe), since a model never probed may know what came next.")
         if self.cutoff >= self.latest_day:
             p = self.probes[self.set_by]
-            return (f"{p.provider} {p.model} ({p.profile}) knew events up to {p.last_known}, so the cutoff is "
-                    f"{p.cutoff}: no replay day after that has a month of prices to score it yet. Replays need "
+            return (f"{p.provider} {p.model} ({p.profile}) knew events up to {p.last_known} and claims "
+                    f"{self.facts[self.set_by].claimed}, so the cutoff is {self.cutoff}: no replay day after that "
+                    "has a month of prices to score it yet. Replays need "
                     "models that know less of the recent past; point the slots at another profile and probe it.")
         return None
 
