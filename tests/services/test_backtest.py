@@ -1,12 +1,15 @@
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from oracle.config import Config, StrategyConfig
-from oracle.services.backtest_service import run_backtest
+from oracle.services.activity_service import JobRunner, retry, submit_backtest
+from oracle.services.backtest_service import (
+    KEEP, check_backtest, keep_backtest, kept_backtest, kept_backtests, run_backtest, stored_span,
+)
 from oracle.services.context import open_context
-from oracle.services.errors import InvalidQuery, NoPrices, UnknownWatchlist
+from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownWatchlist
 from oracle.services.paper_service import place_buy
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
@@ -91,7 +94,18 @@ def test_bad_requests_are_refused(make_ctx):
     with pytest.raises(UnknownWatchlist):
         run_backtest(ctx, "nope", START, END)
     with pytest.raises(NoPrices):
-        run_backtest(ctx, "tech", date(2020, 1, 1), date(2020, 6, 1))
+        run_backtest(make_ctx({"NEW": []}, "empty.db"), "tech", START, END)
+
+
+def test_days_outside_the_stored_prices_are_refused(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    first, last = BARS[0].date, BARS[-1].date
+    assert stored_span(ctx, "TECH") == ("tech", first, last)
+    for start, end in ((date(2000, 1, 3), END), (START, last + timedelta(days=1))):
+        with pytest.raises(InvalidQuery, match=f"stored from {first.isoformat()} to {last.isoformat()}"):
+            run_backtest(ctx, "tech", start, end)
+    with pytest.raises(InvalidQuery, match="before"):
+        check_backtest(ctx, "tech", END, START, 10, 0)
 
 
 def test_listings_without_prices_in_range_are_named(make_ctx):
@@ -115,3 +129,59 @@ def test_a_threshold_above_what_a_technicals_lean_can_reach_is_called_out(make_c
     r = run_backtest(ctx, "tech", START, END)
     assert r.trades == ()
     assert any("62.5%" in n and "cannot buy" in n for n in r.notes)
+
+
+def test_a_kept_run_reads_back_whole_with_its_currency(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    r = run_backtest(ctx, "tech", START, END, 5, 1)
+    saved = keep_backtest(ctx, r)
+    assert (saved.base_currency, saved.ran_at, saved.backtest) == ("USD", NOW, r)
+    assert kept_backtests(ctx) == [saved] and kept_backtest(ctx, saved.id) == saved
+    with pytest.raises(UnknownBacktest):
+        kept_backtest(ctx, saved.id + 1)
+
+
+def test_only_the_newest_runs_are_kept(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    r = run_backtest(ctx, "tech", START, END)
+    ids = [keep_backtest(ctx, r).id for _ in range(KEEP + 2)]
+    assert [s.id for s in kept_backtests(ctx)] == ids[::-1][:KEEP]
+
+
+@pytest.fixture
+async def runner(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    r = JobRunner(ctx)
+    yield ctx, r
+    await r.stop()
+
+
+async def test_a_backtest_job_runs_keeps_its_result_and_joins_the_same_request(runner):
+    ctx, r = runner
+    job = submit_backtest(ctx, r, "TECH", START, END, 5, 1)
+    assert submit_backtest(ctx, r, "tech", START, END, 5.0, 1.0) is job
+    assert (job.kind, job.link) == ("backtest", "#ledgers")
+    assert job.label == f"Backtest tech, {START.isoformat()} to {END.isoformat()}"
+    await r.wait(job.id)
+    assert job.state == "done", job.error
+    assert kept_backtests(ctx) == [job.result]
+    assert (job.result.backtest.slippage_bps, job.result.backtest.commission) == (5, 1)
+
+
+async def test_bad_days_are_refused_before_a_job_is_queued(runner):
+    ctx, r = runner
+    with pytest.raises(InvalidQuery, match="before"):
+        submit_backtest(ctx, r, "tech", END, START)
+    with pytest.raises(InvalidQuery, match="stored from"):
+        submit_backtest(ctx, r, "tech", date(2000, 1, 3), END)
+    assert r.current() == []
+
+
+async def test_a_cancelled_backtest_is_retried_with_the_same_request(runner):
+    ctx, r = runner
+    job = submit_backtest(ctx, r, "tech", START, END, 2.5, 0.75)
+    r.cancel(job.id)  # still queued: its worker has not had a turn yet
+    again = retry(ctx, r, job.id)
+    await r.wait(again.id)
+    assert again.subject == job.subject and again.state == "done", again.error
+    assert (again.result.backtest.slippage_bps, again.result.backtest.commission) == (2.5, 0.75)

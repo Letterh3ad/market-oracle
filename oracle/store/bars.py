@@ -37,6 +37,16 @@ class BarRepo:
         row = self._conn.execute("SELECT MAX(date) FROM bars WHERE symbol = ?", (symbol,)).fetchone()
         return date.fromisoformat(row[0]) if row[0] else None
 
+    def span(self, symbols: Sequence[str]) -> tuple[date, date] | None:
+        """The first and last stored day across `symbols`, None with no bars."""
+        if not symbols:
+            return None
+        row = self._conn.execute(
+            f"SELECT MIN(date), MAX(date) FROM bars WHERE symbol IN ({', '.join('?' for _ in symbols)})",
+            tuple(symbols),
+        ).fetchone()
+        return (date.fromisoformat(row[0]), date.fromisoformat(row[1])) if row[0] else None
+
     def close_on(self, symbol: str, day: date | None = None) -> float | None:
         """The last close on or before `day` (the latest close without one)."""
         row = self._conn.execute(

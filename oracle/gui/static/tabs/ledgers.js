@@ -1,5 +1,7 @@
 import { api } from "../lib/api.js";
-import { lineChart, linesChart } from "../lib/chart.js";
+import { backtestSection } from "../lib/backtest.js";
+import { lineChart } from "../lib/chart.js";
+import { compareLines, table } from "../lib/compare.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { researchLive } from "../lib/ledger_research.js";
@@ -13,6 +15,7 @@ let pane = null;
 let root = null; // this tab's container: a late answer repaints only while it is on screen
 let loads = 0; // only the newest load paints
 let live = null; // this render's research buttons and their poll
+let backtest = null; // this render's Backtest section: one node kept across repaints, so its form keeps what was typed
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
 let resultBox = null;
@@ -30,15 +33,6 @@ function metrics(a, base) {
     row("Unrealised", "unrealised", signed(a.unrealised), tone(a.unrealised)),
     row("Costs paid", "costs", money(a.costs)),
     row("Largest fall", "max_fall", pct(a.max_fall), a.max_fall < 0 ? "down" : "")));
-}
-
-// headers: [label, glossary key or null, numeric?]
-function table(headers, rows, empty) {
-  if (!rows.length) return el("p", { class: "dim small" }, empty);
-  return el("table", { class: "results" },
-    el("thead", null, el("tr", null, ...headers.map(([h, key, num]) =>
-      el("th", { class: num ? "num" : null }, key ? tip(h, key) : h)))),
-    el("tbody", null, ...rows));
 }
 
 function strategyRules(r) {
@@ -174,62 +168,16 @@ function column(a, base, rules, ai, stale, discovery) {
     el("h3", null, tip("Sells", "realised")), sold);
 }
 
-const LINES = {
-  strategy: { label: "Strategy", colour: "--accent" },
-  ai: { label: "AI", colour: "--warn" },
-  manual: { label: "Manual", colour: "--text" },
-  buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
-};
-const BENCH_COLOURS = ["--bench1", "--bench2"];
-
-// Every account and buy_and_hold has a fixed entry above; a benchmark's name is whichever
-// symbol is configured, so its label and colour come from the line itself and its order
-// among the other benchmarks, dashed like buy and hold (another line held, not traded).
-function lineInfos(lines) {
-  const out = {};
-  let bench = 0;
-  for (const l of lines) {
-    out[l.name] = LINES[l.name] ?? { label: l.label || l.name, colour: BENCH_COLOURS[bench++ % BENCH_COLOURS.length],
-      dashed: true };
-  }
-  return out;
-}
-
 // Every account, buy-and-hold and configured benchmark, each as its return since the AI
 // account started.
 function comparison(c, base) {
-  const info = lineInfos(c.lines);
-  const swatch = (name) => el("span", { class: info[name].dashed ? "swatch dashed" : "swatch",
-    style: `background: var(${info[name].colour}); color: var(${info[name].colour})` });
-  const rows = c.lines.map((l) => el("tr", null,
-    el("td", null, swatch(l.name), " ", info[l.name].label),
-    el("td", { class: `num ${tone(l.return)}` }, l.return == null ? "no history yet" : pct(l.return)),
-    el("td", { class: `num ${l.max_fall < 0 ? "down" : ""}` }, pct(l.max_fall)),
-    el("td", { class: "num" }, String(l.trades)),
-    el("td", { class: "num" }, money(l.costs))));
-  return el("div", { class: "card" },
+  const lines = compareLines(c.lines, base,
+    "The comparison chart starts once the AI account has equity on two different days (Update prices records it).");
+  const card = el("div", { class: "card" },
     el("h2", null, "Since the AI account started"),
     ...c.notes.map((n) => el("p", { class: "dim small" }, n)),
-    el("div", { class: "row compare" },
-      el("div", { class: "compare-chart" }),
-      el("div", null,
-        table([["Line"], ["Return", "return", 1], ["Largest fall", "max_fall", 1], ["Trades", null, 1],
-          [`Costs (${base})`, "costs", 1]], rows, ""),
-        el("ul", { class: "dim small" }, ...c.lines.map((l) => el("li", null, l.caption))))));
-}
-
-function drawComparison(c) {
-  const box = root.querySelector(".compare-chart");
-  const info = lineInfos(c.lines);
-  const drawn = c.lines.filter((l) => l.points.length);
-  if (!drawn.some((l) => l.points.length > 1)) {
-    box.replaceChildren(el("p", { class: "dim small" },
-      "The comparison chart starts once the AI account has equity on two different days (Update prices records it)."));
-    return;
-  }
-  const chart = linesChart(box, drawn.map((l) => ({ ...info[l.name], title: info[l.name].label, percent: true,
-    points: l.points.map(([day, r]) => ({ time: day, value: r * 100 })) })), 220);
-  if (chart) charts.push(chart);
+    lines.node);
+  return { card, draw: lines.draw };
 }
 
 function drawCharts(accounts) {
@@ -309,18 +257,22 @@ async function load(mine) {
   if (asked !== loads || !pane.contains(mine)) return; // another tab, or a newer load, owns the pane now
   mine.dataset.painted = "yes";
   const base = body.base_currency;
+  const compared = comparison(body.compare, base);
   repaint(mine, [
     jobs(base),
-    comparison(body.compare, base),
+    compared.card,
     el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale, body.discovery))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
       new Set(stale.due)),
+    backtest.node,
   ], () => {
     drawCharts(body.accounts);
-    drawComparison(body.compare);
+    const chart = compared.draw();
+    if (chart) charts.push(chart);
+    backtest.start();
   });
 }
 
@@ -330,6 +282,7 @@ function render(target) {
   root = el("div", null, el("p", { class: "dim" }, "Loading..."));
   pane.replaceChildren(root);
   live = researchLive();
+  backtest = backtestSection();
   clearInterval(timer);
   timer = live.start(root);
   return load(root);

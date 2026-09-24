@@ -11,9 +11,11 @@ from fastapi import APIRouter, Depends, Query
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_discover, submit_fx, submit_merges, submit_prices, submit_research, submit_tick, submit_universe_refresh,
+    JobRunner, submit_analyse, submit_backtest, submit_discover, submit_fx, submit_merges, submit_prices, submit_research, submit_tick,
+    submit_universe_refresh,
 )
 from oracle.services.context import AppContext
+from oracle.services.watch_service import DEFAULT_LIST
 
 router = APIRouter(prefix="/api/jobs")
 
@@ -69,3 +71,12 @@ async def fx(source: list[str] = Query(default=[]), runner: JobRunner = Depends(
 async def discover(runner: JobRunner = Depends(get_runner)) -> dict:
     """Companies related to the watched ones, checked and added to the discovered list."""
     return shapes.job(submit_discover(runner))
+
+
+@router.post("/backtest", status_code=202)
+async def backtest(start: date, end: date, watchlist: str = DEFAULT_LIST, slippage_bps: float = 10.0,
+                   commission: float = 0.0, ctx: AppContext = Depends(get_ctx),
+                   runner: JobRunner = Depends(get_runner)) -> dict:
+    """Replay the strategy's rules over the list's stored prices from `start` to `end`, against
+    buying and holding; the result is kept (`/api/backtests`). Bad days are refused now."""
+    return shapes.job(submit_backtest(ctx, runner, watchlist, start, end, slippage_bps, commission))

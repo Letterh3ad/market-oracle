@@ -1751,7 +1751,31 @@ for a subject instead of only the latest (redundant, and confusing when an older
 already fixed by a later success); a kind allow-list hard-coded in the route instead of the
 resubmit mapping doubling as the "can this be rebuilt" check (one source of truth instead of
 two lists to keep in sync).
-free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+
+## 2026-09-24 - Backtest in the GUI: a job, the last 10 results kept in meta, days inside the stored prices
+**Context:** Ticket backtest/02 puts the backtest on the Ledgers tab. A long run takes about
+30 s, so it cannot answer a request directly, and the user wants to compare runs later.
+Chosen overnight while the user slept.
+**Decision:** `POST /api/jobs/backtest` queues a `backtest` job (`submit_backtest`); the same
+request pressed twice joins the first, and a retry rebuilds it from the subject
+(`list|start|end|slippage|commission`, split from the right). The request is checked before
+queueing (`check_backtest`, shared with the CLI): the first day before the last, costs zero
+or more, and both days inside the first and last stored price of the list's listings
+(`stored_span`); the form starts on that span a year in, since each lean needs a year of
+earlier prices. The job keeps its result (`keep_backtest`), and only the newest 10 are kept,
+as JSON rows in the `meta` table under `backtest_run:<id>`, with the base currency of the run.
+The job's result is a summary; the page fetches the whole run from `/api/backtests/{id}`, so
+Activity never carries chart points. The section is its own module (`lib/backtest.js`): one
+node per tab render kept across the tab's repaints, so the form keeps what was typed; results
+repaint in place. The comparison chart and table moved to `lib/compare.js`, shared with the
+accounts' comparison. The replay never yields, so a Cancel lands after it, before the result
+is kept.
+**Alternatives:** A `backtest_runs` table in a new migration (m0034 was suggested to leave
+m0033 to discovery). Not taken: a migration's version is its place in `MIGRATIONS`, not its
+file number, so a database migrated with this branch first would skip discovery's m0033 and
+fail on re-running this one; `meta` needs no schema change. A proper table can follow once
+discovery has merged. Keeping results only in the in-memory job list (lost on restart);
+clamping out-of-range days instead of refusing them (hides the mistake).
 
 ## 2026-09-24 - Market index lines in the Ledgers comparison
 **Context:** The comparison only showed the three accounts and buy-and-hold of the

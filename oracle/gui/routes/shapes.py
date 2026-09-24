@@ -7,8 +7,9 @@ from urllib.parse import urlsplit
 
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
+from oracle.services.backtest_service import KeptBacktest
 from oracle.services.fx_service import FxUpdate, credits
-from oracle.services.paper_service import Order
+from oracle.services.paper_service import Line, Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
 from oracle.services.tick_service import TickRun
@@ -65,9 +66,30 @@ def _fx(updates: list[FxUpdate]) -> dict:
     return {"updates": [asdict(u) for u in updates], "credits": credits(u.source for u in updates)}
 
 
+def line(l: Line) -> dict:
+    """A comparison line with its return, which `asdict` leaves out (a property)."""
+    return {**asdict(l), "return": l.return_}
+
+
+def backtest_summary(k: KeptBacktest) -> dict:
+    """Enough to list and pick a kept run: its lines' figures without their points."""
+    b = k.backtest
+    return {"id": k.id, "ran_at": k.ran_at, "base_currency": k.base_currency, "watchlist": b.watchlist,
+            "start": b.start, "end": b.end, "slippage_bps": b.slippage_bps, "commission": b.commission,
+            "lines": [{"name": l.name, "return": l.return_, "max_fall": l.max_fall, "trades": l.trades,
+                       "costs": l.costs} for l in b.lines]}
+
+
+def backtest(k: KeptBacktest) -> dict:
+    b = k.backtest
+    return {**backtest_summary(k), "listings": list(b.listings), "lines": [line(l) for l in b.lines],
+            "trades": [asdict(t) for t in b.trades], "notes": list(b.notes)}
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
+# A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
-            "discover": asdict}
+            "discover": asdict, "backtest": backtest_summary}
 
 
 def _result(j: Job) -> dict | None:
