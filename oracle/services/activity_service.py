@@ -357,5 +357,5 @@ def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
 
 
 def submit_discover(runner: JobRunner) -> Job:
-    """One discovery run: companies related to the watched ones, onto the discovered list."""
+    """One discovery run: related companies, themes or market movers, onto the discovered list."""
     return runner.submit("discover", "Discover companies", discover, subject="discover", link="#watchlist")

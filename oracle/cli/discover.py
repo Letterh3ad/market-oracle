@@ -8,8 +8,8 @@ from oracle.services.discovery_service import DiscoveryRun, discover
 
 
 def register(parser: argparse.ArgumentParser) -> None:
-    parser.description = ("find companies related to the watched ones and add them to the "
-                          "\"discovered\" watchlist, up to [discovery] per_tick")
+    parser.description = ("find companies related to the watched ones, on your themes or in market-mover news, "
+                          "and add them to the \"discovered\" watchlist, up to [discovery] per_tick")
     parser.set_defaults(handler=run)
 
 

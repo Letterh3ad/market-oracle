@@ -26,7 +26,7 @@ async def test_discover_now_runs_as_a_job_and_says_what_it_did(seeded):
     assert job["state"] == "done" and job["kind"] == "discover" and job["link"] == "#watchlist"
     result = job["result"]
     assert set(result) >= {"added", "skipped", "seeds", "source_errors", "note"}
-    assert result["seeds"] == ["AAPL"]
+    assert result["seeds"][0] == "AAPL" and result["sources"] == ["related", "movers"], "nothing related: movers took over"
 
 
 async def test_the_list_shows_why_with_evidence_links_and_remove_and_move_work(seeded, ctx):
@@ -38,9 +38,10 @@ async def test_the_list_shows_why_with_evidence_links_and_remove_and_move_work(s
     repo.add("KO", "k2", "The Coca-Cola Company", "related", "AAPL", "peer", [], "2026-09-23T00:00:00Z")
     body = (await seeded.get("/api/discovery")).json()
     assert body["settings"] == {"enabled": True, "per_tick": 1, "max_total": 10, "never": ["Tesla"],
-                                "ai_trades": True}
+                                "ai_trades": True, "themes": [], "sources": ["related", "movers"]}
     first = body["items"][0]
-    assert (first["symbol"], first["why"]) == ("7203.T", "named as a partner of AAPL in the news")
+    assert (first["symbol"], first["why"], first["source"]) == ("7203.T", "named as a partner of AAPL in the news",
+                                                                "related")
     [e] = first["evidence"]
     assert (e["id"], e["title"], e["link"], e["outlet"]) == (a, "Toyota and Apple talk", "https://news.test/1", "Wire")
 

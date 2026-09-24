@@ -11,19 +11,22 @@ RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
 MAX_COMPANIES = 8
 MAX_NAME = 80
 
-MENTIONS_SCHEMA = {
-    "type": "object",
-    "properties": {"companies": {"type": "array", "maxItems": MAX_COMPANIES, "items": {
+def _schema(relation: bool) -> dict:
+    item = {"name": {"type": "string", "maxLength": MAX_NAME},
+            "headlines": {"type": "array", "maxItems": 5, "items": {"type": "integer"}}}
+    if relation:
+        item["relation"] = {"type": "string", "enum": list(RELATIONS)}
+    return {
         "type": "object",
-        "properties": {
-            "name": {"type": "string", "maxLength": MAX_NAME},
-            "relation": {"type": "string", "enum": list(RELATIONS)},
-            "headlines": {"type": "array", "maxItems": 5, "items": {"type": "integer"}},
-        },
-        "required": ["name", "relation", "headlines"],
-    }}},
-    "required": ["companies"],
-}
+        "properties": {"companies": {"type": "array", "maxItems": MAX_COMPANIES, "items": {
+            "type": "object", "properties": item, "required": list(item)}}},
+        "required": ["companies"],
+    }
+
+
+MENTIONS_SCHEMA = _schema(relation=True)
+TOPIC_SCHEMA = _schema(relation=False)
+"""For headlines about a topic, not a company: nothing to relate to."""
 
 
 @dataclass(frozen=True)
@@ -35,29 +38,41 @@ class Mention:
 
 
 def mentions_prompt(seed: str, headlines: list[str]) -> list[dict]:
-    numbered = "\n".join(f"[{i}] {h}" for i, h in enumerate(headlines, start=1))
     system = (f"You read news headlines about {seed}. List the other companies the headlines name, "
               f"at most {MAX_COMPANIES}: each company's usual name as written in the headline, how it relates "
               f"to {seed} (supplier, customer, competitor, partner, or other), and the numbers of the "
               "headlines that name it. Leave out people, places, regulators, funds, indexes and "
               f"{seed} itself. Name only companies that a headline names; an empty list is a fine answer.")
+    return _messages(system, headlines)
+
+
+def topic_prompt(topic: str, headlines: list[str]) -> list[dict]:
+    system = (f"You read news headlines found by searching for: {topic}. List the companies the headlines are "
+              f"about, at most {MAX_COMPANIES}: each company's usual name as written in the headline, and the "
+              "numbers of the headlines that name it. Leave out people, places, regulators, funds, indexes and "
+              "news outlets. Name only companies that a headline names; an empty list is a fine answer.")
+    return _messages(system, headlines)
+
+
+def _messages(system: str, headlines: list[str]) -> list[dict]:
+    numbered = "\n".join(f"[{i}] {h}" for i, h in enumerate(headlines, start=1))
     return [{"role": "system", "content": system}, {"role": "user", "content": f"Headlines:\n{numbered}"}]
 
 
-def parse_mentions(reply: object, headlines: list[str], seed: str) -> list[Mention]:
+def parse_mentions(reply: object, headlines: list[str], seed: str | None = None) -> list[Mention]:
     """Well-formed mentions only, each named in a headline it cites; anything else is dropped."""
     items = reply.get("companies") if isinstance(reply, dict) else None
     if not isinstance(items, list):
         return []
     texts = [f" {normalise_name(h)} " for h in headlines]
     out: dict[str, Mention] = {}
-    seed_key = blind_name(seed)
+    seed_key = blind_name(seed) if seed else None
     for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):
             continue
         name = " ".join(item["name"].split())[:MAX_NAME]
         key = blind_name(name)
-        if not key or key in out or same_company(key, seed_key):
+        if not key or key in out or (seed_key and same_company(key, seed_key)):
             continue
         cited = item.get("headlines") if isinstance(item.get("headlines"), list) else []
         # 1-based in the prompt; a small model's out-of-range numbers are dropped, not trusted.

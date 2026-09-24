@@ -1,6 +1,8 @@
 import pytest
 
-from oracle.research.mentions import MENTIONS_SCHEMA, Mention, mentions_prompt, parse_mentions
+from oracle.research.mentions import (
+    MENTIONS_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, topic_prompt,
+)
 
 HEADLINES = [
     "Toyota and Panasonic expand battery venture",
@@ -59,3 +61,11 @@ def test_the_seed_itself_duplicates_blank_names_and_odd_relations_are_handled():
         {"name": 7, "relation": "partner", "headlines": [1]},
     ]}
     assert parse_mentions(reply, HEADLINES, "Toyota Motor Corporation") == [Mention("Panasonic", "other", (0,))]
+
+
+def test_a_topic_prompt_asks_what_companies_the_headlines_are_about_without_a_relation():
+    [system, user] = topic_prompt("hybrid cars", HEADLINES)
+    assert "hybrid cars" in system["content"] and "[3] Honda and Toyota race" in user["content"]
+    assert "relation" not in TOPIC_SCHEMA["properties"]["companies"]["items"]["properties"]
+    reply = {"companies": [{"name": "Honda", "headlines": [3]}, {"name": "Toyota", "headlines": [1, 3]}]}
+    assert parse_mentions(reply, HEADLINES) == [Mention("Honda", "other", (2,)), Mention("Toyota", "other", (0, 2))]

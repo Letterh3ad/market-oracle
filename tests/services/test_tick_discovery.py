@@ -75,7 +75,7 @@ async def test_nothing_added_says_why(ctx, discovering):
     assert stage(await run_tick(ctx)).summary == ("nothing added from AAPL, IBM: 3 passed over "
                                                   "(2 already watched, 1 on the never list)")
     discovering.result[0] = DiscoveryRun(seeds=("AAPL",))
-    assert stage(await run_tick(ctx)).summary == "nothing added from AAPL: no related companies found"
+    assert stage(await run_tick(ctx)).summary == "nothing added from AAPL: no companies found"
 
 
 async def test_a_failed_source_is_partial_and_the_tick_goes_on(ctx, discovering):

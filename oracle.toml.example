@@ -80,7 +80,10 @@ move_threshold = 0.05      # research again after the price moved this share sin
 research_budget_min = 30   # minutes a tick may spend starting research; the rest waits (1 to 480)
 
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
-# them in the news), checks each is a real listing with recent prices, and adds it to the
+# them in the news), named in the news on your themes, or in news of market movers (big
+# risers and fallers, unusual volume, results surprises) in the countries you watch. The
+# three sources take turns, one a run; one that finds nothing hands the run to the next.
+# Each company found is checked to be a real listing with recent prices, and added to the
 # "discovered" watchlist with why it was found. The Watchlist tab's Discovery section runs
 # it (Discover now) and lets you remove a company for good or move it to your own list.
 # With automation on, each tick also runs it before research (up to 10 minutes, or a third
@@ -91,6 +94,10 @@ per_tick = 1       # companies one run may add (1 to 20)
 max_total = 10     # the discovered list never holds more (1 to 500)
 never = ["Tesla"]  # company names never added, on any of their listings (Tesla always counts)
 ai_trades = true   # the AI account trades discovered companies' verdicts (the strategy account never does)
+themes = []        # short topics to look for companies in the news, like ["AI chips", "defence"]; none skips themes
+search_related = true   # look beside your companies: same industry, or named with them in the news
+search_themes = true    # look in the news on your themes (needs some themes)
+search_movers = true    # look in news of big risers and fallers, unusual volume and results surprises where you watch
 
 # The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
 [llm]

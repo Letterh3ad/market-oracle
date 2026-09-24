@@ -1,16 +1,20 @@
-"""Discovery: companies related to the watched ones, checked and added to the `discovered`
-watchlist with why. The model only names companies seen in headlines; which listing a name
-means, and whether it may be added, is decided here in code."""
+"""Discovery: companies related to the watched ones, in the news on the user's themes, or in
+market-mover news, checked and added to the `discovered` watchlist with why. The model only
+names companies seen in headlines; which listing a name means, and whether it may be added,
+is decided here in code."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from oracle.market.bars import is_stale
 from oracle.net.client import RateLimitedClient
 from oracle.research.llm import ChatModel, ModelError
-from oracle.research.mentions import MENTIONS_SCHEMA, mentions_prompt, parse_mentions, same_company
+from oracle.research.mentions import (
+    MENTIONS_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, same_company, topic_prompt,
+)
 from oracle.research.news import (
     GDELT_DOC, GOOGLE_NEWS, Article, FeedUnreadable, gdelt_params, google_news_params, parse_gdelt,
     parse_google_news,
@@ -36,25 +40,45 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import blind_name, is_receipt, normalise_name
 
 __all__ = [
-    "DISCOVERED_LIST", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "Skipped", "discover",
-    "discovered", "gdelt_query", "move_discovered", "news_query", "remove_discovered",
+    "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
+    "Skipped", "discover", "discovered", "gdelt_query", "move_discovered", "mover_query", "mover_searches",
+    "news_query", "remove_discovered", "searched_sources", "theme_query",
 ]
 
 JOB = "discovery"
 LEASE_S = 1800.0
 SOURCE_RELATED = "related"
+SOURCE_THEME = "theme"
+SOURCE_MOVER = "mover"
+SOURCES = ("related", "themes", "movers")
+"""In the order they take turns; each is switched by `[discovery] search_<name>`."""
 # The user's rule, kept whatever `[discovery] never` says.
 ALWAYS_NEVER = ("Tesla",)
-# Bounds on one run's network and model use: seeds tried, price checks, peers per seed,
-# headlines per model call (one call per seed).
+# Bounds on one run's network and model use: seeds, themes and mover searches tried (one model
+# call each), price checks, peers per seed, headlines per model call.
 MAX_SEEDS = 3
+MAX_THEMES = 2
+MAX_MOVER_SEARCHES = 2
 MAX_PRICE_CHECKS = 6
 MAX_PEERS = 10
 MAX_HEADLINES = 20
 _LAST_SEED = "discovery_last_seed"
+_LAST_SOURCE = "discovery_last_source"
+_LAST_THEME = "discovery_last_theme"
+_LAST_MOVER = "discovery_last_mover"
 
 _WHY = {"supplier": "a supplier of", "customer": "a customer of", "competitor": "a competitor of",
         "partner": "a partner of"}
+
+# kind -> (words for the user, search terms). One OR group in brackets reads the same in
+# Google News and GDELT.
+_MOVER_KINDS = {
+    "movers": ("the biggest risers and fallers", '("biggest gainers" OR "biggest losers" OR "top gainers" '
+                                                 'OR "top losers" OR "shares soar" OR "shares plunge")'),
+    "volume": ("unusual trading volume", '("unusual volume" OR "heavy volume" OR "volume spike" OR "heavy trading")'),
+    "results": ("results surprises", '("beat estimates" OR "missed estimates" OR "profit warning" '
+                                     'OR "earnings surprise" OR "results beat")'),
+}
 
 
 @dataclass(frozen=True)
@@ -65,6 +89,7 @@ class Added:
     relation: str
     why: str
     evidence: tuple[int, ...]
+    source: str = SOURCE_RELATED
 
 
 @dataclass(frozen=True)
@@ -78,16 +103,28 @@ class DiscoveryRun:
     added: tuple[Added, ...] = ()
     skipped: tuple[Skipped, ...] = ()
     seeds: tuple[str, ...] = ()
-    """The watched listings it started from, in order."""
+    """What it searched from, in order: watched listings, themes, mover searches."""
     source_errors: tuple[str, ...] = ()
     """Searches or model calls that failed; the run went on without them."""
     note: str | None = None
     """Why nothing was tried at all."""
+    sources: tuple[str, ...] = ()
+    """The sources tried, in order: the first had the turn, the rest took it over."""
 
 
 @dataclass(frozen=True)
 class DiscoveredLine(Discovery):
     why: str = ""
+
+
+@dataclass(frozen=True)
+class MoverSearch:
+    kind: str
+    region: str
+
+    @property
+    def label(self) -> str:
+        return f"{_MOVER_KINDS[self.kind][0]} ({self.region})"
 
 
 @dataclass(frozen=True)
@@ -98,6 +135,7 @@ class _Candidate:
     evidence: tuple[int, ...] = ()
     symbol: str | None = None
     """Known already (a peer); else the name is looked up."""
+    source: str = SOURCE_RELATED
 
 
 def news_query(company: str) -> str:
@@ -108,10 +146,40 @@ def gdelt_query(company: str) -> str:
     return f'"{blind_name(company)}"'
 
 
+def theme_query(theme: str) -> str:
+    return f'{_phrase(theme)} shares OR stocks OR company'
+
+
+def _phrase(text: str) -> str:
+    return '"' + text.replace('"', " ").strip() + '"'
+
+
+def mover_query(search: MoverSearch) -> str:
+    return f'{_MOVER_KINDS[search.kind][1]} "{search.region}"'
+
+
+def searched_sources(ctx: AppContext) -> list[str]:
+    """The sources switched on; themes only with some themes named."""
+    cfg = ctx.config.discovery
+    return [s for s in SOURCES if getattr(cfg, f"search_{s}") and (s != "themes" or cfg.themes)]
+
+
+def mover_searches(ctx: AppContext) -> list[MoverSearch]:
+    """Each kind of mover news in each country the watched listings are in, most watched first."""
+    universe = UniverseRepo(ctx.conn)
+    counts: dict[str, int] = {}
+    for symbol in _watched_symbols(ctx):
+        profile = universe.profile(symbol)
+        if profile and profile.country:
+            counts[profile.country] = counts.get(profile.country, 0) + 1
+    regions = sorted(counts, key=lambda c: (-counts[c], c))
+    return [MoverSearch(kind, region) for kind in _MOVER_KINDS for region in regions]
+
+
 async def discover(ctx: AppContext, model: ChatModel | None = None) -> DiscoveryRun:
-    """One run: up to `[discovery] per_tick` companies related to the watched ones, while the
-    discovered list holds fewer than `max_total`. A failed search or model call is noted and
-    the run carries on with what else it has."""
+    """One run: up to `[discovery] per_tick` companies, while the discovered list holds fewer
+    than `max_total`. The sources take turns across runs; one that fails or finds nothing to
+    add hands the run to the next. A failed search or model call is noted, never fatal."""
     cfg = ctx.config.discovery
     with single_flight(ctx, JOB, LEASE_S) as held:
         on_list = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST))
@@ -120,39 +188,29 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
             return DiscoveryRun(note=f"the discovered list is full ({on_list} of {cfg.max_total}): remove some, "
                                      "or raise the limit in Settings")
         seeds = _seeds(ctx)
-        if not seeds:
-            return DiscoveryRun(note="nothing watched yet: discovery starts from the companies you watch")
-        model = model or configured_model(ctx)
-        screen = _Screen(ctx, room)
-        errors: list[str] = []
-        used: list[str] = []
+        # Related and mover searches both start from what is watched; themes need nothing watched.
+        usable = [s for s in searched_sources(ctx) if s == "themes" or seeds]
+        if not usable:
+            return DiscoveryRun(note=_nothing_to_search(ctx, seeds))
+        meta = MetaRepo(ctx.conn)
+        order = [s for s in _after(list(SOURCES), meta.get(_LAST_SOURCE)) if s in usable]
+        meta.set(_LAST_SOURCE, order[0])
+        run = _Run(ctx, held, model or configured_model(ctx), _Screen(ctx, room))
+        tried: list[str] = []
         async with open_client(ctx) as client:
-            for seed in seeds[:MAX_SEEDS]:
-                held.check()
-                used.append(seed)
-                MetaRepo(ctx.conn).set(_LAST_SEED, seed)
-                profile = UniverseRepo(ctx.conn).profile(seed)
-                news: list[_Candidate] = []
-                if model is not None:
-                    try:
-                        news = await _from_news(ctx, client, model, profile, errors)
-                    except ModelError as exc:
-                        # A model that is down stays down for this run; waiting out its timeout per seed helps no one.
-                        errors.append(f"the model, to read the news for {profile.symbol}: {exc}")
-                        model = None
-                candidates = news + _peers(ctx, seed, errors)
-                for c in candidates:
-                    if screen.done:
-                        break
-                    await screen.check(c)
-                if screen.done:
+            run.client = client
+            for source in order:
+                tried.append(source)
+                await {"related": _related, "themes": _themes, "movers": _movers}[source](run, seeds)
+                if run.screen.done:
                     break
-        return DiscoveryRun(tuple(screen.added), tuple(screen.skipped), tuple(used), tuple(errors))
+        return DiscoveryRun(tuple(run.screen.added), tuple(run.screen.skipped), tuple(run.used), tuple(run.errors),
+                            sources=tuple(tried))
 
 
 def discovered(ctx: AppContext) -> list[DiscoveredLine]:
     """What the discovered list holds, each with why it was found."""
-    return [DiscoveredLine(**vars(d), why=_why(d.relation, d.seed) if d.source else "put on this list by hand")
+    return [DiscoveredLine(**vars(d), why=_why(d.source, d.relation, d.seed) if d.source else "put on this list by hand")
             for d in DiscoveryRepo(ctx.conn).on_list()]
 
 
@@ -170,8 +228,12 @@ def move_discovered(ctx: AppContext, symbol: str) -> Watched:
     return moved
 
 
-def _why(relation: str, seed: str) -> str:
+def _why(source: str, relation: str, seed: str) -> str:
     """Why a company was discovered, in words."""
+    if source == SOURCE_THEME:
+        return f'named in the news on your theme "{seed}"'
+    if source == SOURCE_MOVER:
+        return f"named in news of {seed}"
     if relation == "peer":
         return f"same industry as {seed}"
     if relation in _WHY:
@@ -179,11 +241,34 @@ def _why(relation: str, seed: str) -> str:
     return f"named beside {seed} in the news"
 
 
+def _nothing_to_search(ctx: AppContext, seeds: list[str]) -> str:
+    cfg = ctx.config.discovery
+    if not any(getattr(cfg, f"search_{s}") for s in SOURCES):
+        return "every source is off in Settings"
+    if seeds:
+        return "only the theme source is on, and Settings names no themes"
+    return "nothing watched yet: discovery starts from the companies you watch (or themes named in Settings)"
+
+
+def _watched_symbols(ctx: AppContext) -> list[str]:
+    """Watched listings outside the discovered list."""
+    repo = WatchlistRepo(ctx.conn)
+    return sorted({i.symbol for s in repo.summaries() if s.name.casefold() != DISCOVERED_LIST
+                   for i in repo.items(s.name) if not i.missing})
+
+
+def _after(items: list, last: str | None, key: Callable = str) -> list:
+    """`items` starting with the one after `last` (by `key`), or from the top without it."""
+    keys = [key(i) for i in items]
+    if last not in keys:
+        return items
+    at = keys.index(last) + 1
+    return items[at:] + items[:at]
+
+
 def _seeds(ctx: AppContext) -> list[str]:
     """Watched listings outside the discovered list, starting after the last run's seed."""
-    repo = WatchlistRepo(ctx.conn)
-    symbols = sorted({i.symbol for s in repo.summaries() if s.name.casefold() != DISCOVERED_LIST
-                      for i in repo.items(s.name) if not i.missing})
+    symbols = _watched_symbols(ctx)
     last = MetaRepo(ctx.conn).get(_LAST_SEED)
     start = next((n for n, s in enumerate(symbols) if s > last), 0) if last else 0
     return symbols[start:] + symbols[:start]
@@ -198,31 +283,103 @@ def _peers(ctx: AppContext, seed: str, errors: list[str]) -> list[_Candidate]:
     return [_Candidate(r.name, "peer", seed, symbol=r.symbol) for r in rows[:MAX_PEERS]]
 
 
-async def _from_news(ctx: AppContext, client: RateLimitedClient, model: ChatModel, profile: ListingProfile,
-                     errors: list[str]) -> list[_Candidate]:
-    """Companies the seed's recent headlines name; raises ModelError when the model cannot answer."""
-    found: dict[str, tuple[Article, str, str]] = {}
-    for source, label, url, query, params, parse in (
-            ("google_news", "Google News", GOOGLE_NEWS, news_query(profile.name), google_news_params,
-             parse_google_news),
-            ("gdelt", "GDELT", GDELT_DOC, gdelt_query(profile.name), gdelt_params, parse_gdelt)):
+def _feeds(google_query: str, gdelt: str) -> tuple:
+    return (("google_news", "Google News", GOOGLE_NEWS, google_query, google_news_params, parse_google_news),
+            ("gdelt", "GDELT", GDELT_DOC, gdelt, gdelt_params, parse_gdelt))
+
+
+async def _related(run: _Run, seeds: list[str]) -> None:
+    for seed in seeds[:MAX_SEEDS]:
+        run.start(seed)
+        MetaRepo(run.ctx.conn).set(_LAST_SEED, seed)
+        profile = UniverseRepo(run.ctx.conn).profile(seed)
+        named = await run.named(profile.symbol, _feeds(news_query(profile.name), gdelt_query(profile.name)),
+                                lambda titles: mentions_prompt(profile.name, titles), MENTIONS_SCHEMA, profile.name)
+        news = [_Candidate(m.name, m.relation, profile.symbol, ids) for m, ids in named]
+        if await run.screen_all(news + _peers(run.ctx, seed, run.errors)):
+            return
+
+
+async def _themes(run: _Run, _seeds: list[str]) -> None:
+    meta = MetaRepo(run.ctx.conn)
+    for theme in _after(list(run.ctx.config.discovery.themes), meta.get(_LAST_THEME))[:MAX_THEMES]:
+        run.start(theme)
+        meta.set(_LAST_THEME, theme)
+        named = await run.named(f'the theme "{theme}"', _feeds(theme_query(theme), _phrase(theme)),
+                                lambda titles: topic_prompt(theme, titles), TOPIC_SCHEMA)
+        if await run.screen_all([_Candidate(m.name, "theme", theme, ids, source=SOURCE_THEME) for m, ids in named]):
+            return
+
+
+async def _movers(run: _Run, _seeds: list[str]) -> None:
+    meta = MetaRepo(run.ctx.conn)
+    searches = _after(mover_searches(run.ctx), meta.get(_LAST_MOVER), key=lambda s: s.label)
+    for search in searches[:MAX_MOVER_SEARCHES]:
+        run.start(search.label)
+        meta.set(_LAST_MOVER, search.label)
+        query = mover_query(search)
+        named = await run.named(search.label, _feeds(query, query),
+                                lambda titles: topic_prompt(search.label, titles), TOPIC_SCHEMA)
+        if await run.screen_all([_Candidate(m.name, search.kind, search.label, ids, source=SOURCE_MOVER)
+                                 for m, ids in named]):
+            return
+
+
+class _Run:
+    """What one run's sources share: the model (dropped once it fails), the screen, and what
+    was searched and what failed."""
+
+    def __init__(self, ctx: AppContext, held, model: ChatModel | None, screen: _Screen) -> None:
+        self.ctx = ctx
+        self.held = held
+        self.model = model
+        self.screen = screen
+        self.client: RateLimitedClient | None = None
+        self.errors: list[str] = []
+        self.used: list[str] = []
+
+    def start(self, seed: str) -> None:
+        self.held.check()
+        self.used.append(seed)
+
+    async def screen_all(self, candidates: list[_Candidate]) -> bool:
+        """Checks candidates until the run is done; says whether it is."""
+        for c in candidates:
+            if self.screen.done:
+                break
+            await self.screen.check(c)
+        return self.screen.done
+
+    async def named(self, what: str, feeds: tuple, messages: Callable[[list[str]], list[dict]], schema: dict,
+                    seed: str | None = None) -> list[tuple[Mention, tuple[int, ...]]]:
+        """Companies the feeds' newest headlines name, each with the article ids naming it.
+        None without a working model, or when no headlines came back."""
+        if self.model is None:
+            return []
+        found: dict[str, tuple[Article, str, str]] = {}
+        for source, label, url, query, params, parse in feeds:
+            try:
+                articles = parse((await fetch(self.client, source, label, url, params=params(query))).text)
+            except (ToolError, FeedUnreadable) as exc:
+                self.errors.append(f"news for {what} from {label}: {exc}")
+                continue
+            for a in articles:
+                found.setdefault(a.url, (a, source, query))
+        if not found:
+            return []
+        oldest = datetime.min.replace(tzinfo=timezone.utc)
+        newest = sorted(found.values(), key=lambda f: f[0].published or oldest, reverse=True)[:MAX_HEADLINES]
+        repo, now = ArticleRepo(self.ctx.conn), _now(self.ctx)
+        ids = [repo.save([a], source, now, query)[0] for a, source, query in newest]
+        titles = [a.title for a, _, _ in newest]
         try:
-            articles = parse((await fetch(client, source, label, url, params=params(query))).text)
-        except (ToolError, FeedUnreadable) as exc:
-            errors.append(f"news for {profile.symbol} from {label}: {exc}")
-            continue
-        for a in articles:
-            found.setdefault(a.url, (a, source, query))
-    if not found:
-        return []
-    oldest = datetime.min.replace(tzinfo=timezone.utc)
-    newest = sorted(found.values(), key=lambda f: f[0].published or oldest, reverse=True)[:MAX_HEADLINES]
-    repo, now = ArticleRepo(ctx.conn), _now(ctx)
-    ids = [repo.save([a], source, now, query)[0] for a, source, query in newest]
-    titles = [a.title for a, _, _ in newest]
-    reply = await model.reply(mentions_prompt(profile.name, titles), MENTIONS_SCHEMA)
-    return [_Candidate(m.name, m.relation, profile.symbol, tuple(ids[i] for i in m.headlines))
-            for m in parse_mentions(reply, titles, profile.name)]
+            reply = await self.model.reply(messages(titles), schema)
+        except ModelError as exc:
+            # A model that is down stays down for this run; waiting out its timeout per search helps no one.
+            self.errors.append(f"the model, to read the news for {what}: {exc}")
+            self.model = None
+            return []
+        return [(m, tuple(ids[i] for i in m.headlines)) for m in parse_mentions(reply, titles, seed)]
 
 
 class _Screen:
@@ -281,10 +438,11 @@ class _Screen:
         today = self._ctx.clock.utcnow().date()
         if update.last_date is None or is_stale(update.last_date, today):
             return self._skip(c, f"its prices are out of date (last {update.last_date})")
-        self._repo.add(listing, profile.company_key, profile.name, SOURCE_RELATED, c.seed, c.relation, c.evidence,
+        self._repo.add(listing, profile.company_key, profile.name, c.source, c.seed, c.relation, c.evidence,
                        _now(self._ctx))
         self._listed.add(profile.company_key)
-        self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.relation, c.seed), c.evidence))
+        self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
+                                c.evidence, c.source))
         return None
 
     def _lookup(self, name: str) -> ListingProfile | None:

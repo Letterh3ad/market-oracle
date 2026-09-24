@@ -108,7 +108,7 @@ def _discovered_summary(run: DiscoveryRun) -> str:
         return f"nothing added: {run.note}"
     where = f"nothing added from {', '.join(run.seeds)}"
     if not run.skipped:
-        return f"{where}: no related companies found"
+        return f"{where}: no companies found"
     reasons = Counter(s.reason for s in run.skipped).most_common()
     return f"{where}: {len(run.skipped)} passed over ({', '.join(f'{n} {why}' for why, n in reasons)})"
 

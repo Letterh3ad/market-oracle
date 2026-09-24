@@ -8,7 +8,8 @@ from tests.gui.test_ledger_research_js import NODE, PRELUDE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page's modules")
 
-SETTINGS = {"enabled": True, "per_tick": 1, "max_total": 10, "never": ["Tesla"]}
+SETTINGS = {"enabled": True, "per_tick": 1, "max_total": 10, "never": ["Tesla"], "ai_trades": True, "themes": [],
+            "sources": ["related", "movers"]}
 
 
 def run(body: str):
@@ -36,7 +37,7 @@ def test_the_summary_explains_an_empty_run():
         m.discoverySummary({ note: "the discovered list is full (10 of 10)" }),
         m.discoverySummary({ note: null, seeds: ["AAPL"], added: [], skipped: [], source_errors: [] })]));""")
     assert out == [["Nothing to do: the discovered list is full (10 of 10)."],
-                   ["Nothing new to add this time (looked around AAPL)."]]
+                   ["Nothing new to add this time (looked at AAPL)."]]
 
 
 def test_an_empty_list_says_what_discover_now_does():
@@ -65,3 +66,21 @@ def test_each_row_says_why_links_its_headlines_and_its_buttons_move_or_remove_it
     assert out["labels"] == ["Move to my watchlist", "Remove"]
     assert out["asked"] == ["POST /api/discovery/6752.T/move", "DELETE /api/discovery/6752.T"]
     assert out["changes"] == 2
+
+
+@pytest.mark.parametrize("ai_trades, says", [
+    (True, "The AI account trades these after research."),
+    (False, "The AI account researches these but does not trade them."),
+])
+def test_the_section_says_whether_the_ai_account_trades_discovered_companies(ai_trades, says):
+    settings = {**SETTINGS, "ai_trades": ai_trades}
+    out = run(f"console.log(JSON.stringify(m.discoverySettings({json.dumps(settings)}).textContent));")
+    assert says in out
+
+
+def test_the_section_says_which_sources_it_searches():
+    settings = {**SETTINGS, "themes": ["AI chips", "defence"], "sources": ["related", "themes", "movers"]}
+    out = run(f"console.log(JSON.stringify(m.discoverySettings({json.dumps(settings)}).textContent));")
+    assert 'companies related to yours, your themes ("AI chips", "defence"), market movers' in out
+    none = run(f"console.log(JSON.stringify(m.discoverySettings({json.dumps({**SETTINGS, 'sources': []})}).textContent));")
+    assert "Every source is off in Settings" in none

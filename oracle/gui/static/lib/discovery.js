@@ -1,5 +1,5 @@
-// The Watchlist tab's Discovery section: companies found beside the watched ones, why each
-// was found, and what to do with it.
+// The Watchlist tab's Discovery section: companies found beside the watched ones, on the
+// user's themes or in market-mover news, why each was found, and what to do with it.
 import { api } from "./api.js";
 import { el, showError, clearError, companyLink, safeUrl } from "./dom.js";
 import { busyButton, runJob, sendJson } from "./ui.js";
@@ -8,11 +8,27 @@ import { repaint } from "./repaint.js";
 function discoverySummary(r) {
   if (r.note) return [`Nothing to do: ${r.note}.`];
   return [
-    r.added.length ? null : `Nothing new to add this time (looked around ${r.seeds.join(", ")}).`,
+    r.added.length ? null : `Nothing new to add this time (looked at ${r.seeds.join(", ")}).`,
     ...r.added.map((a) => `Added ${a.symbol} (${a.name}): ${a.why}.`),
     ...r.skipped.map((s) => `Skipped ${s.name}: ${s.reason}.`),
     ...r.source_errors.map((e) => `Could not use ${e}.`),
   ].filter(Boolean);
+}
+
+const SOURCE_WORDS = {
+  related: () => "companies related to yours",
+  themes: (s) => `your themes (${s.themes.map((t) => `"${t}"`).join(", ")})`,
+  movers: () => "market movers where you watch",
+};
+
+// What discovery searches and whether the AI account trades what it finds, as Settings has it.
+function discoverySettings(s) {
+  const sources = s.sources.length
+    ? `It searches ${s.sources.map((k) => SOURCE_WORDS[k](s)).join(", ")}, taking turns across runs.`
+    : "Every source is off in Settings, so it finds nothing.";
+  const trades = s.ai_trades ? "The AI account trades these after research."
+    : "The AI account researches these but does not trade them.";
+  return el("p", { class: "small" }, `${sources} ${trades}`);
 }
 
 function evidence(items) {
@@ -28,8 +44,8 @@ function evidence(items) {
 function discoveryTable(body, changed) {
   const s = body.settings;
   if (!body.items.length) {
-    return el("p", { class: "dim" }, "Nothing discovered yet. Discover now looks for companies related to the ones "
-      + `you watch and adds up to ${s.per_tick} a run, ${s.max_total} in all.`);
+    return el("p", { class: "dim" }, "Nothing discovered yet. Discover now looks for companies and adds up to "
+      + `${s.per_tick} a run, ${s.max_total} in all.`);
   }
   const act = (label, hint, send) => el("button", { type: "button", class: "small-btn", title: hint, onclick: async () => {
     try {
@@ -58,7 +74,8 @@ function discoverySection(changed = () => {}) {
   const box = el("div", { id: "d-list" });
   const refresh = async () => {
     try {
-      repaint(box, [discoveryTable(await api("/api/discovery"), () => { refresh(); changed(); })]);
+      const body = await api("/api/discovery");
+      repaint(box, [discoverySettings(body.settings), discoveryTable(body, () => { refresh(); changed(); })]);
     } catch (err) { showError(err.message); }
   };
   const button = busyButton("Discover now", async (onState) => {
@@ -73,10 +90,12 @@ function discoverySection(changed = () => {}) {
   refresh();
   return el("section", { class: "discovery" },
     el("h3", null, "Discovery"),
-    el("p", { class: "dim small" }, "Companies related to the ones you watch: the same industry, or named beside "
-      + "them in the news. Each is checked to be a real listing with recent prices, then put on the \"discovered\" "
-      + "list, which is priced and researched like your own. Settings has how many and the never list."),
+    el("p", { class: "dim small" }, "Companies related to the ones you watch (the same industry, or named beside "
+      + "them in the news), named in the news on your themes, or in news of market movers (big risers and fallers, "
+      + "unusual volume, results surprises). Each is checked to be a real listing with recent prices, then put on "
+      + "the \"discovered\" list, which is priced and researched like your own. Settings has the sources, themes, "
+      + "how many and the never list."),
     el("div", { class: "row" }, button), result, box);
 }
 
-export { discoverySection, discoverySummary, discoveryTable };
+export { discoverySection, discoverySettings, discoverySummary, discoveryTable };

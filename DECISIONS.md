@@ -1515,3 +1515,34 @@ discovered ones it leaves out in a note.
 **Alternatives:** The strategy account trading discovered listings too (the comparison would
 then partly measure discovery, not research); buy-and-hold of everything watched (its
 benchmark would move whenever discovery adds a company).
+
+## 2026-09-24 - Discovery sources: related, themes and movers take turns, switched one by one
+**Context:** Ticket 02 adds themes the user names and market-mover news beside the related
+source, each with its own switch, and a failed source must not waste the run.
+**Decision:** `[discovery] themes` is a list of short topics (at most 60 characters each,
+trimmed, repeats dropped), edited in the Settings form like `never` (comma separated; a blank
+box leaves none, which skips the source). Switches are three booleans, `search_related`,
+`search_themes`, `search_movers` (default true), so the form shows checkboxes. The sources
+take turns in that order, the turn kept in meta: a run starts with the source whose turn it
+is, and when that source fails or adds nothing the next one gets the run, so one run may try
+all three. Themes need nothing watched; related and movers do. Movers search three kinds of
+news (biggest risers and fallers, unusual trading volume, results surprises) in each country
+the user's own watched listings are in, most watched first, two searches a run, rotating;
+themes likewise two a run. Themes and movers use one bounded-JSON call per search that names
+companies without a relation (`TOPIC_SCHEMA`), then the same resolution, never list, skips and
+price check as related. Provenance stores source `theme` or `mover`, the theme or the search
+("the biggest risers and fallers (Japan)") as seed, and the kind as relation; no migration.
+**Alternatives:** A `sources` list setting (a typed list is easier to get wrong than three
+checkboxes); a switch for themes beside a blank list (kept: a user can keep their themes and
+pause them); strict turns where a failed source ends the run (a holiday run would add nothing
+whenever a feed is down); movers from price data instead of news (needs prices for listings
+not yet watched, many requests per run).
+
+## 2026-09-24 - The Discovery section says what it searches and whether the AI account trades it
+**Context:** Ticket 03 left the Watchlist tab silent on `[discovery] ai_trades`.
+**Decision:** Above the discovered list a line names the sources on (with the themes) and
+says "The AI account trades these after research." or "The AI account researches these but
+does not trade them." from the setting. The tick's empty summary now reads "no companies
+found", since not every source is about related companies.
+**Alternatives:** A switch in the section itself (Settings already holds it, one place to
+change it).

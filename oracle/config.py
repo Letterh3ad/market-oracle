@@ -152,10 +152,18 @@ class DiscoveryConfig:
     """Company names never added, matched as whole words on every listing's name."""
     ai_trades: bool = True
     """The AI account trades discovered listings' verdicts; off, it leaves them alone."""
+    themes: tuple[str, ...] = ()
+    """Short topics searched in the news ("AI chips"); none, and the theme source is skipped."""
+    search_related: bool = True
+    """Look beside the watched companies: same industry, or named with them in the news."""
+    search_themes: bool = True
+    search_movers: bool = True
+    """Look in news of market movers across the watched listings' countries."""
 
 
 PER_TICK_RANGE = (1, 20)
 MAX_TOTAL_RANGE = (1, 500)
+MAX_THEME = 60
 
 
 @dataclass(frozen=True)
@@ -538,19 +546,22 @@ def _discovery(raw: object) -> DiscoveryConfig:
         raise ConfigError("discovery must be a [discovery] table")
     _reject_unknown(raw, DiscoveryConfig, "[discovery]")
     d = replace(DiscoveryConfig(), **raw)
-    never = d.never
+    never, themes = d.never, d.themes
     checks = {
-        "enabled": (isinstance(d.enabled, bool), "true or false"),
-        "ai_trades": (isinstance(d.ai_trades, bool), "true or false"),
+        **{key: (isinstance(getattr(d, key), bool), "true or false") for key in (
+            "enabled", "ai_trades", "search_related", "search_themes", "search_movers")},
         "per_tick": (_whole(d.per_tick, *PER_TICK_RANGE), "a whole number from {} to {}".format(*PER_TICK_RANGE)),
         "max_total": (_whole(d.max_total, *MAX_TOTAL_RANGE), "a whole number from {} to {}".format(*MAX_TOTAL_RANGE)),
         "never": (isinstance(never, (list, tuple)) and all(isinstance(n, str) and n.strip() for n in never),
                   'a list of company names like ["Tesla"]'),
+        "themes": (isinstance(themes, (list, tuple))
+                   and all(isinstance(t, str) and 0 < len(t.strip()) <= MAX_THEME for t in themes),
+                   f'a list of short topics like ["AI chips", "defence"], each at most {MAX_THEME} characters'),
     }
     for key, (ok, wanted) in checks.items():
         if not ok:
             raise ConfigError(f"discovery.{key} must be {wanted}, got {getattr(d, key)!r}")
-    return replace(d, never=tuple(n.strip() for n in never))
+    return replace(d, never=tuple(n.strip() for n in never), themes=tuple(dict.fromkeys(t.strip() for t in themes)))
 
 
 def _schedule(raw: object) -> ScheduleConfig:

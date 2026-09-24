@@ -249,6 +249,7 @@ async def test_gdelt_headlines_are_read_too(ctx, gdelt):
 
 
 async def test_seeds_take_turns_across_runs(ctx):
+    settings(ctx, search_movers=False)
     watch(ctx, "GM")
     first = await discover(ctx, silent())
     second = await discover(ctx, silent())
