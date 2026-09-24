@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 
+from oracle.research.conditions import FACTS
 from oracle.research.trace import Claim, Evidence, Report, Step, Verdict
 from oracle.research.verdict import Material, add_verdict, budget, check, fit
 from tests.fakes.llm import ScriptedModel
@@ -149,3 +150,54 @@ async def test_a_backend_that_cannot_write_the_verdict_leaves_the_report_with_wh
 
 def test_an_older_report_has_no_verdict_and_says_so():
     assert REPORT.verdict is None and REPORT.no_verdict == "written before reports had verdicts"
+
+
+BAD = {**GOOD, "invalidated_if": "Earnings beat estimates by 12%."}
+
+
+def _answers(*replies):
+    queue = list(replies)
+    return lambda messages: queue.pop(0)
+
+
+
+async def test_a_bad_condition_is_asked_again_once_with_why_and_a_good_second_answer_is_kept():
+    model = ScriptedModel()
+    model.roles = {"verdict": _answers(BAD, GOOD)}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict == Verdict("buy", 0.7, "Beat and momentum", (1,), "Guidance cut") and r.verdict_rejected is None
+    first, second = (m for m, _ in model.calls)
+    assert second[0] == first[0] and second[1]["content"].startswith(first[1]["content"])
+    assert FACTS in second[1]["content"] and "Earnings beat estimates by 12%." in second[1]["content"]
+
+
+async def test_a_second_bad_condition_rejects_the_verdict_as_before():
+    model = ScriptedModel()
+    model.roles = {"verdict": BAD}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict is None and r.verdict_rejected == FACTS and len(model.calls) == 2
+
+
+async def test_other_rejections_are_not_asked_again():
+    model = ScriptedModel()
+    model.roles = {"verdict": {**GOOD, "confidence": 7}}
+    r = await add_verdict(model, REPORT, material(), 8192)
+    assert r.verdict_rejected == "confidence 7 is not a number from 0 to 1" and len(model.calls) == 1
+
+
+async def test_the_second_ask_still_fits_the_budget_and_records_what_it_left_out():
+    from math import ceil
+
+    from oracle.research.roles import prompt
+    from oracle.research.verdict import ROLE, TASK, WHO
+
+    model = ScriptedModel()
+    model.roles = {"verdict": _answers({**BAD, "invalidated_if": "Earnings beat estimates. " * 100}, GOOD)}
+    m = material(uncited=40)
+    system = prompt(ROLE, WHO, TASK)
+    context = ceil((len(fit(m, 100_000).text) + len(system)) / 3) + 1024  # the first ask just fits
+    room = budget(context, system)
+    r = await add_verdict(model, REPORT, m, context)
+    first, second = (msgs[1]["content"] for msgs, _ in model.calls)
+    assert len(first) <= room and len(second) <= room
+    assert r.verdict is not None and r.unread and fit(m, room).unread == ()
