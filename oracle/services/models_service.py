@@ -6,11 +6,12 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 
 from oracle.config import (
-    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, URLLESS_PROVIDERS, ConfigError, LlmConfig,
-    ModelProfile, check_profile, check_profile_name, model_profiles, profile_tables, with_settings, without_section,
+    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, SLOTS, SLOTS_TABLE, URLLESS_PROVIDERS, Config,
+    ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name, model_profiles, profile_tables,
+    with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
 from oracle.research.claude_code import ClaudeCodeChat
@@ -22,8 +23,9 @@ from oracle.services.jobs_service import job_statuses
 from oracle.services.settings_service import edit_config, reload_live_settings
 
 __all__ = [
-    "DEFAULT_PROFILE", "ModelTest", "RunModel", "delete_model_profile", "model_for", "model_profile_rows",
-    "provider_defaults", "resolve_model", "save_model_profile", "try_model_profile",
+    "DEFAULT_PROFILE", "RESEARCH_STAGES", "SLOTS", "ModelTest", "RunModel", "check_model_profile", "delete_model_profile",
+    "model_for", "model_profile_rows", "provider_defaults", "resolve_model", "resolve_stages",
+    "save_model_profile", "slot_profile", "try_model_profile",
 ]
 
 Builder = Callable[[AppContext, str, ModelProfile], ChatModel]
@@ -64,12 +66,56 @@ class RunModel:
 
     model: ChatModel
     context: int
+    profile: str = DEFAULT_PROFILE
+    unavailable: str | None = None
+    """Set when this stands in for a slot's profile that could not be built, saying why."""
+
+
+RESEARCH_STAGES = ("queries", "research", "notes", "roles", "verdict")
+"""A research run's stages in the order they run, each named for the slot it runs on."""
 
 
 def resolve_model(ctx: AppContext, profile: str, model: ChatModel | None = None) -> RunModel:
     """The named profile's model (or `model`, which a test or caller supplies) and its context."""
     p = _profile(ctx, profile)
-    return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context)
+    if p.provider == "claude_code":
+        _allowed(ctx, profile, p)  # even with `model` given: an off profile never stands in for a stage
+    return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context, profile)
+
+
+def slot_profile(config: Config, slot: str) -> str:
+    """The profile a slot names; unset, `default`."""
+    return config.model_slots.get(slot, DEFAULT_PROFILE)
+
+
+def resolve_stages(ctx: AppContext, stages: tuple[str, ...], override: str | None = None,
+                   model: ChatModel | None = None, lead: str | None = None) -> dict[str, RunModel]:
+    """Each stage's model and context, from its slot or, with `override` (a run's picked
+    profile), that profile for every stage. One model per profile, so stages on the same
+    profile share it. `model` (a test's) answers every stage. With `lead` (one of `stages`),
+    another stage whose profile cannot be built (its key unset) runs on the lead's instead,
+    saying why, so one bad slot never stops unattended runs; the lead failing raises."""
+    names = {stage: override or slot_profile(ctx.config, stage) for stage in stages}
+    built: dict[str, RunModel] = {}
+    if lead:
+        built[names[lead]] = resolve_model(ctx, names[lead], model)
+    for name in dict.fromkeys(names.values()):
+        if name in built:
+            continue
+        try:
+            built[name] = resolve_model(ctx, name, model)
+        except ModelUnavailable as exc:
+            if not lead:
+                raise
+            built[name] = replace(built[names[lead]], unavailable=f"{name} unavailable: {exc}")
+    return {stage: built[name] for stage, name in names.items()}
+
+
+def check_model_profile(ctx: AppContext, name: str | None) -> str | None:
+    """`name` when it names a profile (None passes: no pick), refusing it otherwise."""
+    if name is not None:
+        _profile(ctx, name)
+    return name
 
 
 def model_for(ctx: AppContext, profile: str) -> ChatModel:
@@ -102,13 +148,42 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
     """Every profile, default first: its resolved values, the ones actually set (`set`,
     None where the provider's default applies), and its key only as a state."""
     tables = profile_tables(ctx.config)
-    return [{
+    rows = [{
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
         "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
+        "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
+        "unset_slots": _unset_slots(ctx.config) if name == DEFAULT_PROFILE else [],
+        "unavailable": _unavailable(ctx, p),
     } for name, p in model_profiles(ctx.config).items()]
+    for r in rows:
+        r["if_unset"] = [if_unavailable(slot) for slot in _served(ctx.config, r["name"])] if r["unavailable"] else []
+    return rows
+
+
+def _unavailable(ctx: AppContext, p: ModelProfile) -> str | None:
+    """Why the profile cannot be built now, if it cannot."""
+    if p.provider == "claude_code" and not ctx.config.allow_claude_code:
+        return f"claude_code is off ({ALLOW_CLAUDE_CODE} is not set)"
+    return f"{p.key_env} is not set" if _key_state(p) == "unset" else None
+
+
+def if_unavailable(slot: str) -> str:
+    """What happens to a slot's work when its profile cannot be built."""
+    return {"research": "research fails", "discovery": "discovery fails",
+            "ai_account": "tick research uses the other slots"}.get(slot, f"{slot} runs on the research slot's profile")
+
+
+def _served(config: Config, name: str) -> list[str]:
+    return [slot for slot in SLOTS if config.model_slots.get(slot) == name] + (
+        _unset_slots(config) if name == DEFAULT_PROFILE else [])
+
+
+def _unset_slots(config: Config) -> list[str]:
+    """The slots `default` serves by being unset; ai_account unset means the slots, not default."""
+    return [slot for slot in SLOTS if slot not in config.model_slots and slot != "ai_account"]
 
 
 def provider_defaults(ctx: AppContext) -> dict[str, dict]:
@@ -185,6 +260,9 @@ def delete_model_profile(ctx: AppContext, name: str) -> None:
         raise InvalidQuery("the default profile cannot be deleted")
     if name not in ctx.config.models:
         raise UnknownModelProfile(f"no model profile {name}")
+    if using := [slot for slot, profile in ctx.config.model_slots.items() if profile == name]:
+        raise InvalidQuery(f"{name} is in use by slot{'s' if len(using) > 1 else ''} {', '.join(using)} "
+                           f"([models.{SLOTS_TABLE}]): point {'them' if len(using) > 1 else 'it'} at another profile first")
     edit_config(ctx, lambda text: without_section(text, f"models.{name}"), f"remove [models.{name}]")
     reload_live_settings(ctx)
 

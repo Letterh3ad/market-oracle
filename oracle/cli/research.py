@@ -18,6 +18,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--as-of", type=iso_day, default=None, metavar="YYYY-MM-DD",
                         help="replay that day: only news and prices from by its end are used")
     parser.add_argument("--history", action="store_true", help="list past reports instead of researching")
+    parser.add_argument("--model", metavar="PROFILE", default=None,
+                        help="run every stage on this model profile instead of the [models.slots] ones")
     parser.set_defaults(handler=run)
 
 
@@ -25,7 +27,7 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.history:
         print_history(report_history(ctx, args.symbol), args.symbol)
         return 0
-    r = asyncio.run(research(ctx, args.symbol, as_of=args.as_of))
+    r = asyncio.run(research(ctx, args.symbol, as_of=args.as_of, profile=args.model))
     print_run(r, ctx.config.llm.max_steps)
     return 1 if r.status == RunStatus.FAILED else 0
 

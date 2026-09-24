@@ -90,3 +90,22 @@ def test_a_run_already_going_shows_on_the_button_when_the_page_opens():
         console.log(JSON.stringify(shown));
     """)
     assert out == {"label": "Queued", "disabled": True}
+
+
+def test_the_picker_lists_the_profiles_and_a_picked_one_goes_with_the_run():
+    out = run("""
+        ANSWERS["/api/models"] = { profiles: [{ name: "default" }, { name: "big" }] };
+        ANSWERS["/api/jobs/research"] = { id: 5, subject: "KO", state: "done" };
+        const box = m.researchSection("KO");
+        await settle();
+        const [pick] = box.all((n) => n.tag === "select");
+        const options = pick.children.map((o) => [o.attrs.value, o.textContent]);
+        button(box, "Research").fire("click");
+        await settle(10);
+        pick.value = "big";
+        button(box, "Research").fire("click");
+        await settle(10);
+        console.log(JSON.stringify({ options, posts: asked.filter((a) => a.startsWith("POST")) }));
+    """)
+    assert out["options"] == [["", "per slot"], ["default", "default"], ["big", "big"]]
+    assert out["posts"] == ["POST /api/jobs/research?symbol=KO", "POST /api/jobs/research?symbol=KO&model=big"]

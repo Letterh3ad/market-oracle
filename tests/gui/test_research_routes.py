@@ -139,6 +139,16 @@ async def test_queueing_answers_at_once_with_the_job(ready):
     assert response.status_code == 202 and response.json()["state"] == "queued"
 
 
+async def test_a_picked_model_runs_the_job_and_an_unknown_one_is_refused_before_it_queues(ready):
+    response = await ready.post("/api/jobs/research", params={"symbol": "AAPL", "model": "huge"})
+    assert response.status_code == 404 and (await ready.get("/api/activity")).json()["jobs"] == []
+    job = (await ready.post("/api/jobs/research", params={"symbol": "AAPL", "model": "default"})).json()
+    assert (job["profile"], job["label"]) == ("default", "Research AAPL on default")
+    await finish(ready, "AAPL", job)
+    run = (await ready.get("/api/companies/AAPL/research")).json()["run"]
+    assert [s["profile"] for s in run["stages"]] == ["default"] * 5 and run["mixed"] is False
+
+
 async def test_an_unknown_symbol_is_refused_before_it_queues(ready):
     response = await ready.post("/api/jobs/research", params={"symbol": "NOPE"})
     assert response.status_code == 404 and (await ready.get("/api/activity")).json()["jobs"] == []

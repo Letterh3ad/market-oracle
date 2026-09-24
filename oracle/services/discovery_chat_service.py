@@ -29,7 +29,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
-from oracle.services.models_service import DEFAULT_PROFILE, RunModel, resolve_model
+from oracle.services.models_service import RunModel, check_model_profile, resolve_stages
 from oracle.services.research_tools import GdeltSearch, LocalNewsSearch, NewsSearch, Reader, Shelf, WebSearch
 from oracle.services.research_tools.reading import TRY_ANOTHER
 from oracle.store.db import to_utc_iso
@@ -177,19 +177,22 @@ def new_question(ctx: AppContext, text: str, refines: int | None = None) -> Ques
 
 
 async def ask(ctx: AppContext, text: str, refines: int | None = None, model: ChatModel | None = None,
-              searcher: WebSearcher | None = None) -> AnswerView:
-    return await answer(ctx, new_question(ctx, text, refines).id, model, searcher)
+              searcher: WebSearcher | None = None, profile: str | None = None) -> AnswerView:
+    check_model_profile(ctx, profile)
+    return await answer(ctx, new_question(ctx, text, refines).id, model, searcher, profile=profile)
 
 
 async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = None,
-                 searcher: WebSearcher | None = None, deadline: datetime | None = None) -> AnswerView:
+                 searcher: WebSearcher | None = None, deadline: datetime | None = None,
+                 profile: str | None = None) -> AnswerView:
     """Answer a saved question (again): plan, search, read, name, screen, save, and for an auto
     question validate and add, no company validated after `deadline`. The model failing to answer
-    fails the answer, which stays saved with why and whatever shortlist it had."""
+    fails the answer, which stays saved with why and whatever shortlist it had. Every step runs on
+    the discovery slot's profile, or on `profile` (a run's picked model)."""
     repo = QuestionRepo(ctx.conn)
     q = _question(repo, question_id)
     asked = _asked(repo, q)
-    resolved = resolve_model(ctx, DEFAULT_PROFILE, model)
+    resolved = resolve_stages(ctx, ("discovery",), profile, model)["discovery"]
     model = resolved.model
     with single_flight(ctx, JOB, LEASE_S):
         answer_id = repo.start(q.id, _model_label(model), _now(ctx))

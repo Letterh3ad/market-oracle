@@ -31,18 +31,41 @@ def test_list_shows_each_profile_with_its_key_as_set_or_unset_only(run):
     assert code == 0 and "sk-secret" not in out
     lines = out.splitlines()
     assert lines[0].split() == ["name", "provider", "model", "context", "key"]
-    assert lines[1].split() == ["default", "ollama", "qwen3:4b-instruct-2507-q8_0", "16384", "-", "from", "[llm]"]
+    assert lines[1].split()[:7] == ["default", "ollama", "qwen3:4b-instruct-2507-q8_0", "16384", "-", "from", "[llm]"]
+    assert lines[1].endswith("slots: research (unset), notes (unset), roles (unset), queries (unset), verdict (unset), "
+                             "discovery (unset)")
     assert lines[2].split() == ["deep", "claude_api", "claude-opus-5", "200000", "set"]
     assert lines[3].split() == ["own", "claude_api", "claude-opus-5", "200000", "env", "/", "ant", "login"]
     assert lines[4].split() == ["gone", "claude_api", "m", "200000", "unset", "(NOT_SET_ANYWHERE)"]
 
 
+def test_list_warns_when_a_slots_profile_has_its_key_unset(run, tmp_path):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '[models.slots]\nverdict = "gone"\ndiscovery = "gone"\n'
+                   'ai_account = "gone"\n', encoding="utf-8")
+    code, out, _ = run("models", "list")
+    lines = out.splitlines()
+    assert code == 0 and lines[-2].endswith("slots: verdict, discovery, ai_account")
+    assert lines[-1] == ("  warning: NOT_SET_ANYWHERE is not set, so gone cannot run: verdict runs on the research "
+                         "slot's profile; discovery fails; tick research uses the other slots")
+    assert "verdict (unset)" not in lines[1]
 def test_list_marks_a_claude_code_profile_off_while_the_flag_is_unset(tmp_path, capsys):
     cfg = tmp_path / "oracle.toml"
     cfg.write_text('[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n', encoding="utf-8")
     assert cli_main.main(["--config", str(cfg), "models", "list"]) == 0
     assert capsys.readouterr().out.splitlines()[2].split() == [
         "sub", "claude_code", "sonnet", "200000", "-", "off", "(allow_claude_code", "is", "not", "set)"]
+
+
+def test_list_warns_when_a_slot_names_an_off_claude_code_profile(tmp_path, capsys):
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text('[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n[models.slots]\nverdict = "sub"\n',
+                   encoding="utf-8")
+    assert cli_main.main(["--config", str(cfg), "models", "list"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[2].endswith("off (allow_claude_code is not set)  slots: verdict")
+    assert lines[3] == ("  warning: claude_code is off (allow_claude_code is not set), so sub cannot run: "
+                        "verdict runs on the research slot's profile")
 
 
 def test_test_reports_ok_with_the_reply_time_or_the_error(run):

@@ -113,3 +113,31 @@ def test_a_midday_time_equal_to_the_tick_time_is_refused_on_write(ctx):
     with pytest.raises(InvalidQuery, match="midday_time must differ"):
         set_schedule(ctx, True, "12:30")
     assert ctx.config_source.read_bytes() == before
+
+
+def test_a_slot_is_a_row_choosing_a_profile_that_applies_at_once(ctx):
+    path = ctx.config_source
+    path.write_text(path.read_text(encoding="utf-8") + '\n[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n',
+                    encoding="utf-8")
+    notes = row(ctx, "models.slots", "notes")
+    assert (notes["value"], notes["choices"], notes["live"]) == (None, ["default", "big"], True)
+    assert set_setting(ctx, "models.slots", "notes", "big")["value"] == "big"
+    assert ctx.config.model_slots == {"notes": "big"}
+    with pytest.raises(InvalidQuery, match="names no profile 'huge'"):
+        set_setting(ctx, "models.slots", "verdict", "huge")
+    set_setting(ctx, "models.slots", "notes", None)
+    assert ctx.config.model_slots == {}
+
+
+def test_a_dangling_slot_edited_in_by_hand_is_dropped_on_reload_and_the_rest_still_applies(ctx, caplog):
+    from oracle.services.settings_service import reload_live_settings
+
+    set_setting(ctx, "models.slots", "notes", "default")
+    path = ctx.config_source
+    text = path.read_text(encoding="utf-8").replace('notes = "default"', 'notes = "huge"')
+    path.write_text(text + '\n[automation]\nenabled = false\n', encoding="utf-8")
+    reload_live_settings(ctx)
+    assert ctx.config.model_slots == {} and ctx.config.automation.enabled is False
+    assert "models.slots.notes names no profile 'huge'" in caplog.text
+    with pytest.raises(InvalidQuery, match="names no profile 'huge'"):
+        set_setting(ctx, "models.slots", "verdict", "huge")

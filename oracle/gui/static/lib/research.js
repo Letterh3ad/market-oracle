@@ -2,6 +2,7 @@
 import { api } from "./api.js";
 import { el, showError, clearError, safeUrl } from "./dom.js";
 import { tip } from "./tip.js";
+import { modelParams, modelPicker } from "./model_picker.js";
 
 const ROLES = { fundamental_analyst: "Fundamentals", technical_analyst: "Price action", news_analyst: "News" };
 
@@ -154,6 +155,7 @@ function researchSection(symbol) {
       .catch(() => {});
   };
   const day = el("input", { type: "date", max: today(), "aria-label": "Replay as of" });
+  const pick = modelPicker();
   const run = el("button", { type: "button", onclick: () => start({}, run) }, "Research");
   const replay = el("button", { type: "button", onclick: () => {
     if (!day.value) return showError("pick the day to replay");
@@ -193,13 +195,14 @@ function researchSection(symbol) {
     showState(pressed, "pressed");
     try {
       clearError();
-      await follow(await api(`/api/jobs/research?${new URLSearchParams({ symbol, ...params })}`, { method: "POST" }));
+      const query = new URLSearchParams({ symbol, ...params, ...modelParams(pick) });
+      await follow(await api(`/api/jobs/research?${query}`, { method: "POST" }));
     } catch (err) {
       showError(err.message);
       showState(null, null);
     }
   };
-  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, status,
+  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, pick, status,
     el("span", { class: "row" }, replay, day, tip("", "research_replay"))), body, earlier);
   reload();
   api("/api/activity").then(({ jobs }) => {

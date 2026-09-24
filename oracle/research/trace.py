@@ -189,9 +189,47 @@ class ResearchRun:
     """The searches the run was told to start from."""
     report: Report | None = None
     fell_back_to: tuple[str, ...] = ()
-    """Models that answered after `model` refused."""
+    """Models that answered after a stage's model refused, over the whole run."""
+    stages: tuple[StageModel, ...] = ()
+    """What each stage ran on, in stage order; empty for runs from before stages were kept.
+    `backend` and `model` are the research stage's."""
+
+    @property
+    def mixed(self) -> bool:
+        """Its stages ran on more than one model."""
+        return len({(s.backend, s.model) for s in self.stages}) > 1
 
     @property
     def model_label(self) -> str:
-        fell_back = f" ({', '.join(self.fell_back_to)} answered when it refused)" if self.fell_back_to else ""
-        return f"{self.backend} {self.model}{fell_back}"
+        if self.mixed:
+            groups: dict[tuple[str, str], list[StageModel]] = {}
+            for s in self.stages:
+                groups.setdefault((s.backend, s.model), []).append(s)
+            label = "; ".join(
+                f"{backend} {model} ({', '.join(s.stage for s in group)})"
+                f"{_fell_back(tuple(sorted({m for s in group for m in s.fell_back_to})))}"
+                for (backend, model), group in groups.items())
+        else:
+            label = f"{self.backend} {self.model}{_fell_back(self.fell_back_to)}"
+        instead: dict[tuple[str, str], list[str]] = {}
+        for s in self.stages:
+            if s.unavailable:
+                instead.setdefault((s.profile, s.unavailable), []).append(s.stage)
+        return label + "".join(f"; {', '.join(stages)} on {profile} ({why})"
+                               for (profile, why), stages in instead.items())
+
+
+@dataclass(frozen=True)
+class StageModel:
+    stage: str
+    """The slot it ran on: queries, research, notes, roles or verdict."""
+    profile: str
+    backend: str
+    model: str
+    fell_back_to: tuple[str, ...] = ()
+    unavailable: str | None = None
+    """Set when the profile meant for this stage could not be built: which, and why. `profile` is then the one it ran on."""
+
+
+def _fell_back(models: tuple[str, ...]) -> str:
+    return f" ({', '.join(models)} answered when it refused)" if models else ""

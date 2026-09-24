@@ -23,6 +23,8 @@ class JobRow:
     submitted_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    profile: str | None = None
+    """The model profile it was asked to run on, if one was picked."""
 
 
 class JobHistoryRepo:
@@ -30,11 +32,12 @@ class JobHistoryRepo:
         self._conn = conn
 
     def add(self, kind: str, label: str, subject: str | None, link: str | None, state: str,
-            submitted_at: datetime, pid: int) -> int:
+            submitted_at: datetime, pid: int, profile: str | None = None) -> int:
         with transaction(self._conn):
             cur = self._conn.execute(
-                "INSERT INTO jobs (kind, label, subject, link, state, submitted_at, pid) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (kind, label, subject, link, state, to_utc_iso(submitted_at), pid),
+                "INSERT INTO jobs (kind, label, subject, link, state, submitted_at, pid, profile) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (kind, label, subject, link, state, to_utc_iso(submitted_at), pid, profile),
             )
         return int(cur.lastrowid)
 
@@ -108,4 +111,5 @@ def _when(value: str | None) -> datetime | None:
 
 def _row(r) -> JobRow:
     return JobRow(r["id"], r["kind"], r["label"], r["subject"], r["link"], r["state"], r["error"],
-                  datetime.fromisoformat(r["submitted_at"]), _when(r["started_at"]), _when(r["finished_at"]))
+                  datetime.fromisoformat(r["submitted_at"]), _when(r["started_at"]), _when(r["finished_at"]),
+                  r["profile"])

@@ -7,10 +7,21 @@ from oracle.research.llm import ModelError
 
 def use_model(monkeypatch, module, model) -> None:
     """Make `module` run on `model` wherever it resolves a profile, keeping the profile's context."""
+    use_models(monkeypatch, lambda profile: model, module)
+
+
+def use_models(monkeypatch, pick, module=None) -> None:
+    """Run every profile on the model `pick(profile)` gives, keeping the profile's context."""
     from oracle.services import models_service
 
-    monkeypatch.setattr(module, "resolve_model",
-                        lambda ctx, profile, given=None: models_service.resolve_model(ctx, profile, given or model))
+    real = models_service.resolve_model
+
+    def resolve(ctx, profile, given=None):
+        return real(ctx, profile, given or pick(profile))
+
+    monkeypatch.setattr(models_service, "resolve_model", resolve)
+    if module is not None and hasattr(module, "resolve_model"):
+        monkeypatch.setattr(module, "resolve_model", resolve)
 
 
 class ScriptedModel:

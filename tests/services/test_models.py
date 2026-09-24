@@ -114,6 +114,37 @@ def test_a_profile_is_added_edited_and_deleted_in_the_file_and_applies_at_once(t
         assert "# mine" in ctx.config_source.read_text(encoding="utf-8")
 
 
+def test_a_profile_a_slot_names_is_not_deleted_and_the_slots_are_named(tmp_path):
+    slots = '[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n[models.slots]\nnotes = "big"\nverdict = "big"\n'
+    with _ctx(tmp_path, slots) as ctx:
+        rows = model_profile_rows(ctx)
+        assert [r["slots"] for r in rows] == [[], ["notes", "verdict"]]
+        assert rows[0]["unset_slots"] == ["research", "roles", "queries", "discovery"] and rows[1]["unset_slots"] == []
+        assert rows[1]["if_unset"] == [], "a warning only for a key that is unset"
+        with pytest.raises(InvalidQuery, match=r"big is in use by slots notes, verdict"):
+            delete_model_profile(ctx, "big")
+        assert "big" in load_config(ctx.config_source)[0].models
+
+
+def test_slots_is_no_profile_name_to_save(tmp_path):
+    with _ctx(tmp_path) as ctx, pytest.raises(InvalidQuery, match="reserved"):
+        save_model_profile(ctx, "slots", {"provider": "ollama", "model": "qwen3:8b"}, create=True)
+
+
+def test_each_stage_resolves_its_slots_profile_with_its_own_context(tmp_path):
+    from oracle.services.models_service import resolve_stages
+
+    slots = ('[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\ncontext = 8192\n'
+             '[models.slots]\nnotes = "big"\n')
+    with _ctx(tmp_path, slots) as ctx:
+        stages = resolve_stages(ctx, ("research", "notes", "verdict"))
+        assert {s: (r.profile, r.model.model, r.context) for s, r in stages.items()} == {
+            "research": ("default", ctx.config.llm.model, 16384), "notes": ("big", "qwen3:8b", 8192),
+            "verdict": ("default", ctx.config.llm.model, 16384)}
+        assert stages["research"].model is stages["verdict"].model, "one model per profile"
+        assert {r.profile for r in resolve_stages(ctx, ("research", "notes"), "big").values()} == {"big"}
+
+
 def test_a_literal_key_is_kept_when_an_edit_leaves_it_out_and_cleared_or_replaced_on_request(tmp_path):
     claude = {"provider": "claude_api", "model": "claude-opus-5"}
     with _ctx(tmp_path) as ctx:

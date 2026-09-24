@@ -44,7 +44,7 @@ def tick(run: TickRun | None) -> dict | None:
 def job(j: Job) -> dict:
     return {
         "id": j.id, "kind": j.kind, "label": j.label, "subject": j.subject, "link": j.link, "state": j.state,
-        "automatic": j.automatic,
+        "automatic": j.automatic, "profile": j.profile,
         "progress": j.progress(), "error": j.error, "submitted_at": j.submitted_at, "started_at": j.started_at,
         "finished_at": j.finished_at, "result": _result(j) if j.state == "done" else None,
     }
@@ -161,6 +161,7 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
                                   "started_at": failed.started_at}, "run": {
         "id": run.id, "symbol": run.symbol, "status": run.status, "backend": run.backend, "model": run.model,
         "fell_back_to": list(run.fell_back_to), "model_label": run.model_label,
+        "stages": [asdict(s) for s in run.stages], "mixed": run.mixed,
         "started_at": run.started_at, "finished_at": run.finished_at, "as_of": run.as_of, "error": run.error,
         "findings": run.findings, "queries": list(run.queries), "badge": UNVALIDATED,
         "report": None if report is None else {
