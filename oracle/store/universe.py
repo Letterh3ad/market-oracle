@@ -205,6 +205,16 @@ class UniverseRepo:
             )
         ]
 
+    def grouping_rows(self) -> list[Listing]:
+        """Every listing with what grouping reads, and its stored company and primary mark."""
+        return [
+            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], r["isin"],
+                    bool(r["delisted"]), company_key=r["company_key"], is_primary=bool(r["is_primary"]))
+            for r in self._conn.execute(
+                "SELECT symbol, name, type, country, exchange, isin, delisted, company_key, is_primary "
+                "FROM listings ORDER BY rowid")
+        ]
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]

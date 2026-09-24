@@ -4,7 +4,7 @@ import pytest
 
 from oracle.cli import main as cli_main
 from oracle.services.context import open_context
-from tests.fakes.financedatabase import BASIC, ETF_COLUMNS, ETFS, FakeFinanceDatabase, bz2_csv
+from tests.fakes.financedatabase import BASIC, ETF_COLUMNS, ETFS, FakeFinanceDatabase, bz2_csv, equity
 
 
 @pytest.fixture
@@ -177,3 +177,14 @@ def test_showing_an_unknown_watchlist_is_an_error_with_a_suggestion(run):
     assert run("watch", "add", "AAPL", "--list", "income")[0] == 0
     code, _, err = run("watch", "show", "incme")
     assert code == 1 and "income" in err
+
+
+def test_merges_lists_what_suffix_blind_grouping_would_join(run):
+    run.fdb.files["equities.bz2"] = bz2_csv([
+        equity("BT-A.L", "BT GROUP PLC", "United Kingdom", "LSE", isin="GB0030913577"),
+        equity("BTQ.DE", "BT Group", "United Kingdom", "GER"),
+    ])
+    run("universe", "refresh")
+    code, out, _ = run("universe", "merges")
+    assert code == 0 and "1 proposed merges" in out and "is off" in out
+    assert "matched on bt group, United Kingdom" in out and "BT-A.L" in out and "BTQ.DE" in out

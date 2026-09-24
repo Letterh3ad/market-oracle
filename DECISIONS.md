@@ -1351,3 +1351,21 @@ symbol; the answer names the accounts holding it. The Company tab offers Swap on
 listing is watched; otherwise it lists the siblings as links.
 **Alternatives:** Appending the new symbol to the end of each list (loses the user's order);
 moving paper positions (a position is a fill history at another listing's prices).
+
+## 2026-09-24 - Suffix-blind grouping: the legal forms, the ISIN block, the report
+**Context:** Ticket universe-quality 02: "BT GROUP PLC" (LSE) and "BT Group" (XETRA) sat in
+two companies. Grouping must not change while the setting is off.
+**Decision:** `[universe] suffix_blind_grouping` (default false, live). Legal forms stripped
+from the end of the normalised name only, keeping at least one word: plc, inc,
+incorporated, corp, corporation, co, ltd, limited, ag, sa, nv, se, spa, ab, asa, oyj, kk
+(punctuation already gone, so "p.l.c." and "S.A." match). Not Holdings, Group or Company. It
+is a second pass after the unchanged grouping, so off runs exactly the old code path; a
+blind link joins two companies unless both already carry trusted ISINs and share none, is
+typed (funds never join companies) and per country, and obeys MAX_LINES_PER_EXCHANGE. The
+report regroups the stored listings with the setting on and lists new groups spanning more
+than one stored company, with the "name, country" they matched on; it runs as a `merges`
+job and never writes. Turning it on applies at the next universe refresh; no separate
+Regroup job yet.
+**Alternatives:** Stripping anywhere in the name (catches "Co-operative"); a pairwise ISIN
+check (order-free but needs every member pair); a Regroup job without the download (left for
+when the user has reviewed the report).

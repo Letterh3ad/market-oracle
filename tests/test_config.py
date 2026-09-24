@@ -287,3 +287,14 @@ def test_example_meanings_read_inline_comments_including_commented_out_keys():
             '[keys]\n# eodhd = "..."   # eodhd.com prices\n# backend = "claude" runs on Claude: no meaning\n')
     assert example_meanings(text) == {("sources", "rate_per_second"): "requests a second",
                                       ("keys", "eodhd"): "eodhd.com prices"}
+
+
+def test_suffix_blind_grouping_is_off_by_default_and_checked(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].universe.suffix_blind_grouping is False
+    path = tmp_path / "oracle.toml"
+    path.write_text("[universe]\nsuffix_blind_grouping = true\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].universe.suffix_blind_grouping is True
+    for line in ('suffix_blind_grouping = "yes"', "later = 1"):
+        path.write_text(f"[universe]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="universe"):
+            load_config(path, cwd=tmp_path)

@@ -37,6 +37,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
         "type", "country", "sector", "industry", "market-cap", "category-group", "category", "family",
         "exchange", "tag", "sort", "desc", "offset", "all-listings", "include-delisted")},
     "universe search --limit": OUTPUT_ONLY,
+    "universe merges": "POST /api/jobs/merges",  # Universe tab, "Proposed merges"
     "universe facets": "GET /api/universe/facets/{field}",
     "tag add": "POST /api/companies/{symbol}/tags",
     "tag remove": "DELETE /api/companies/{symbol}/tags/{tag}",

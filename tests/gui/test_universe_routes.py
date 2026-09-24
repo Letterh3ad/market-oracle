@@ -126,3 +126,12 @@ async def test_status_counts_off_the_event_loop_on_a_connection_of_its_own(loade
     monkeypatch.setattr(universe_routes, "universe_status", spy)
     assert (await loaded.get("/api/universe/status")).json()["loaded"] is True
     assert seen and seen[0] != threading.get_ident()
+
+
+async def test_proposed_merges_run_as_a_job_that_changes_nothing(ctx, loaded):
+    before = ctx.conn.execute("SELECT symbol, company_key, is_primary FROM listings ORDER BY symbol").fetchall()
+    job = await run_job(loaded, "/api/jobs/merges")
+    assert (job["kind"], job["state"], job["link"]) == ("merges", "done", "#universe")
+    assert job["result"] == {"merges": [], "enabled": False}
+    after = ctx.conn.execute("SELECT symbol, company_key, is_primary FROM listings ORDER BY symbol").fetchall()
+    assert [tuple(r) for r in after] == [tuple(r) for r in before]

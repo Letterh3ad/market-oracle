@@ -140,6 +140,13 @@ RESEARCH_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
+class UniverseConfig:
+    suffix_blind_grouping: bool = False
+    """Join companies whose names differ only in legal forms (plc, Inc., AG); applied at the
+    next universe refresh. Off until the user has reviewed the merges it proposes."""
+
+
+@dataclass(frozen=True)
 class GuiConfig:
     host: str = "127.0.0.1"
     """Localhost only by default: nothing on the network can reach the GUI."""
@@ -199,6 +206,7 @@ class Config:
     prices: PricesConfig = field(default_factory=PricesConfig)
     fx: FxConfig = field(default_factory=FxConfig)
     analysts: AnalystsConfig = field(default_factory=AnalystsConfig)
+    universe: UniverseConfig = field(default_factory=UniverseConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
@@ -359,6 +367,9 @@ def _apply(raw: dict) -> Config:
         if name == "analysts":
             values[name] = _analysts(value)
             continue
+        if name == "universe":
+            values[name] = _universe(value)
+            continue
         if name == "risk":
             values[name] = _risk(value)
             continue
@@ -409,6 +420,16 @@ def check_peers(peers: object) -> int:
     if isinstance(peers, bool) or not isinstance(peers, int) or not low <= peers <= high:
         raise ConfigError(f"analysts.peers must be a whole number from {low} to {high}, got {peers!r}")
     return peers
+
+
+def _universe(raw: object) -> UniverseConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("universe must be a [universe] table")
+    _reject_unknown(raw, UniverseConfig, "[universe]")
+    blind = raw.get("suffix_blind_grouping", UniverseConfig.suffix_blind_grouping)
+    if not isinstance(blind, bool):
+        raise ConfigError(f"universe.suffix_blind_grouping must be true or false, got {blind!r}")
+    return UniverseConfig(suffix_blind_grouping=blind)
 
 
 def _risk(raw: object) -> RiskConfig:

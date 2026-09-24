@@ -1,4 +1,6 @@
-from oracle.universe.listings import Listing, group_companies
+import pytest
+
+from oracle.universe.listings import Listing, blind_name, group_companies
 
 
 def L(symbol, name, country, exchange, isin=None, delisted=False, type="equity"):
@@ -160,3 +162,70 @@ def test_a_shared_isin_never_merges_a_fund_with_a_company():
         L("ABC", "Acme Corp", "United States", "NYQ", "US0000000001"),
         L("ABCF.L", "Acme Tracker", None, "LSE", "US0000000001", type="etf"),
     ]) == {"ABC": {"ABC"}, "ABCF.L": {"ABCF.L"}}
+
+
+def blind(listings):
+    """companies() with suffix-blind grouping on."""
+    grouped = group_companies(listings, suffix_blind=True)
+    members = {}
+    for x in grouped:
+        members.setdefault(x.company_key, set()).add(x.symbol)
+    return sorted(sorted(m) for m in members.values())
+
+
+BT = [
+    L("BT-A.L", "BT GROUP PLC", "United Kingdom", "LSE", "GB0030913577"),
+    L("BTQ.DE", "BT Group", "United Kingdom", "GER"),
+]
+
+
+@pytest.mark.parametrize("name, stripped", [
+    ("BT GROUP PLC", "bt group"),
+    ("BP p.l.c.", "bp"),
+    ("Samsung Electronics Co., Ltd.", "samsung electronics"),
+    ("Nestlé S.A.", "nestlé"),
+    ("ASML Holding N.V.", "asml holding"),
+    ("Toyota Motor Corporation", "toyota motor"),
+    ("Siemens AG", "siemens"),
+    ("Co-operative Bank plc", "cooperative bank"),
+    ("Berkshire Hathaway Holdings", "berkshire hathaway holdings"),
+    ("AB", "ab"),
+    ("Ltd Inc.", "ltd"),
+])
+def test_legal_forms_are_stripped_from_the_end_only(name, stripped):
+    assert blind_name(name) == stripped
+
+
+def test_suffix_blind_grouping_joins_a_plc_with_its_bare_name_in_one_country():
+    assert blind(BT) == [["BT-A.L", "BTQ.DE"]]
+
+
+def test_suffix_blind_grouping_is_off_by_default():
+    assert companies(BT) == {"BT-A.L": {"BT-A.L"}, "BTQ.DE": {"BTQ.DE"}}
+
+
+def test_off_changes_nothing_even_where_on_would_merge():
+    rows = BT + [L("BT.F", "BT Group plc", "United Kingdom", "FRA", "GB0030913577")]
+    assert group_companies(rows) == group_companies(rows, suffix_blind=False)
+    assert companies(rows) == {"BT-A.L": {"BT-A.L", "BT.F"}, "BTQ.DE": {"BTQ.DE"}}
+
+
+def test_differing_isins_on_both_sides_block_the_merge():
+    assert blind([
+        L("ABC.L", "Abc plc", "United Kingdom", "LSE", "GB0000000001"),
+        L("ABC.DE", "Abc Ltd", "United Kingdom", "GER", "GB0000000002"),
+    ]) == [["ABC.DE"], ["ABC.L"]]
+
+
+def test_suffix_blind_grouping_never_merges_a_fund_with_a_company():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOOF.L", "Foo", "United Kingdom", "LSE", type="etf"),
+    ]) == [["FOO.L"], ["FOOF.L"]]
+
+
+def test_suffix_blind_grouping_keeps_countries_apart():
+    assert blind([
+        L("FOO.L", "Foo plc", "United Kingdom", "LSE"),
+        L("FOO", "Foo Inc.", "United States", "NYQ"),
+    ]) == [["FOO"], ["FOO.L"]]
