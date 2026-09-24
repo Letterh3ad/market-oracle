@@ -68,7 +68,6 @@ Called over HTTP, not redistributed.
 | `aapl-8k-index.htm`: an 8-K's filing index table | SEC EDGAR (sec.gov page, trimmed) | US government work, public domain | `tests/fixtures/edgar/` |
 | `citi-10q.txt`: first 200 lines of a 10-Q as text | SEC EDGAR filing (Citigroup Inc., Q2 2026 10-Q) | Public filing with the SEC; short excerpt kept as a test input only | `tests/fixtures/edgar/` |
 | `wikipedia-largest-tech-companies.html`: the 2025 table, scripts and styling stripped | Wikipedia, "List of largest technology companies by revenue" (captured 2026-09-24) | CC BY-SA 4.0 (attribution in the file) | `tests/fixtures/list_pages/` |
-| `top10-european-semiconductor.html`: the article, each paragraph cut to its first sentence | startuprise.co.uk, "Top 10 Semiconductor Manufacturing Companies in Europe 2025" (captured 2026-09-24) | All rights reserved by the site; short excerpt kept as a test input only, source in the file | `tests/fixtures/list_pages/` |
 
 ## Dev dependencies
 

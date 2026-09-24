@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 
 from oracle.research.citations import strip_citations
-from oracle.research.notes import LISTS
+from oracle.research.notes import LISTS, is_list_line
 from oracle.research.trace import Evidence
 from oracle.universe.listings import blind_name, normalise_name
 
@@ -15,11 +15,11 @@ RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
 LINKS = RELATIONS[:-1]
 """Relations a news item can state between two companies it names."""
 MAX_COMPANIES = 8
-# A question's items may hold a list page's companies. Kept under what a 4B model's 1024-token
-# reply holds with a why line each.
-MAX_ANSWERS = 12
+# A question's items may hold a list page's companies. With MAX_WHY, kept under what Ollama's
+# 1024-token reply holds: past it the reply is cut and the whole answer lost.
+MAX_ANSWERS = 10
 MAX_NAME = 80
-MAX_WHY = 200
+MAX_WHY = 100
 # The numbers of the items a line rests on travel with it; written into the line they are noise.
 # Only numbers of items given are taken for such, so "(2025)" stays.
 _ITEM_REFS = re.compile(r"\s*[\[(]\s*(\d+(?:\s*,\s*\d+)*)\s*[\])]")
@@ -85,7 +85,7 @@ def topic_prompt(topic: str, headlines: list[str]) -> list[dict]:
 def question_prompt(question: str, items: list[str]) -> list[dict]:
     system = (f"You answer an investor's question from numbered news items. The question: {question}\n"
               f"List the listed companies the items show answer it, best first, at most {MAX_ANSWERS}: each "
-              "company's usual name as written in an item, one short line on why it fits (from the items only), "
+              "company's usual name as written in an item, a few words on why it fits (from the items only),"
               f"and the numbers of the items that show it. An item's \"{LISTS.strip()}\" line names the companies "
               "a list or ranking page gives: each is named in that item. When one of those items says the company "
               "is a supplier, customer, competitor or partner of another company it names, also give that "
@@ -143,7 +143,7 @@ def _related(item: dict, key: str, cited: dict[int, str]) -> tuple[str, tuple[in
     both = tuple(i for i, text in cited.items()
                  if any(f" {key} " in line and f" {other_key} " in line
                         for line in (f" {normalise_name(x)} " for x in text.splitlines()
-                                     if not x.strip().removeprefix("- ").startswith(LISTS))))
+                                     if not is_list_line(x))))
     return (other, both) if both else ("", ())
 
 

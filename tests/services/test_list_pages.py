@@ -25,7 +25,7 @@ from tests.fakes.yahoo import FakeYahoo, bar
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "list_pages"
-TOP10 = "https://startuprise.co.uk/semiconductor-manufacturing-companies-in-europe/"
+TOP10 = "https://startups.test/semiconductor-manufacturing-companies-in-europe/"
 TOP10_TITLE = "Top 10 Semiconductor Manufacturing Companies in Europe 2025"
 WIKI = "https://en.wikipedia.org/wiki/List_of_largest_technology_companies_by_revenue"
 WIKI_TITLE = "List of largest technology companies by revenue - Wikipedia"
@@ -136,11 +136,11 @@ async def test_a_top_10_article_names_companies_no_headline_did(ctx):
 
 
 async def test_a_wikipedia_list_page_is_read_before_newer_news(ctx):
-    m = ListReader(["Samsung Electronics", "Deutsche Telekom", "Nvidia", "Tesla"],
+    m = ListReader(["Samsung Electronics", "Deutsche Telekom", "Nvidia", "Apple", "Tesla"],
                    ["Samsung Electronics", "Deutsche Telekom"])
     view = await ask(ctx, "which are the biggest technology companies?", model=m, searcher=searcher(WIKI, WIKI_TITLE))
     assert len(m.noted) == 1 and "Samsung Electronics" in m.noted[0]
-    assert "Lists: Samsung Electronics; Deutsche Telekom; Nvidia" in m.naming and "Tesla" not in m.naming
+    assert "Lists: Samsung Electronics; Deutsche Telekom; Nvidia; Apple" in m.naming and "Tesla" not in m.naming
     assert {line.item.symbol for line in view.shortlist} == {"005930.KS", "DTE.DE"}
 
 
@@ -160,6 +160,7 @@ def test_the_plan_may_ask_for_a_list_page():
     (TOP10_TITLE, TOP10), (WIKI_TITLE, WIKI), ("15 Biggest Semiconductor Companies and Suppliers in Europe", "x"),
     ("Europe's largest battery makers ranked", "https://a.test/b"), ("Chips", "https://en.wikipedia.org/wiki/List_of_chips"),
     ("Top European semiconductor companies by market cap 2026", "https://s.test/1"),
+    ("The 12 leading European chipmakers", "https://s.test/1"),
 ])
 def test_list_pages_are_known_by_title_or_address(title, url):
     assert list_page(Evidence(1, url, title, None, None, False))
@@ -168,10 +169,20 @@ def test_list_pages_are_known_by_title_or_address(title, url):
 @pytest.mark.parametrize("title,url", [
     ("Siemens Energy tops estimates", "https://n.test/1"), ("ASML top executive leaves", "https://n.test/1"),
     ("Infineon lists new bonds", "https://n.test/1"), ("Chip stocks at a top", "https://n.test/1"),
-    ("Top 10 chipmakers", "https://n.test/top10.pdf"),
+    ("Top 10 chipmakers", "https://n.test/top10.pdf"), ("Top 5 takeaways from ASML earnings", "https://n.test/1"),
+    ("Nvidia ranked most valuable brand", "https://n.test/1"), ("Chipmakers ranked by growth", "https://n.test/1"),
+    ("ASML ranking slips", "https://n.test/1"), ("Top 3 risks for Infineon", "https://n.test/1"),
 ])
 def test_news_and_pdfs_are_no_list_page(title, url):
     assert not list_page(Evidence(1, url, title, None, None, False))
+
+
+@pytest.mark.parametrize("title", [TOP10_TITLE, "3 best AI stocks to buy now", "List of chipmakers",
+                                   "Top 5 takeaways from ASML earnings"])
+def test_a_dated_headline_or_stored_data_is_never_a_list_page(title):
+    """Only an undated web result can take a list page's slot: a list-like headline would push news aside."""
+    assert not list_page(Evidence(1, "https://n.test/1", title, "Reuters", NOW, False))
+    assert not list_page(Evidence(1, "https://n.test/1", title, None, None, False, body="stored"))
 
 
 def test_list_pages_take_the_first_reading_slots():

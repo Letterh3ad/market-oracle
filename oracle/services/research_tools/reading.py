@@ -60,10 +60,12 @@ _REPORT = re.compile(
     r"jaarverslag|årsredovisning|årsrapport|informe anual|relazione finanziaria|決算|"
     r"有価証券報告書|실적", re.I)
 # Titles or addresses of a page listing or ranking companies.
+# A count or superlative alone is a headline ("Top 5 takeaways", "Nvidia ranked first"): it must
+# lead to the companies listed.
 _LIST = re.compile(
-    r"\blist of\b|/wiki/list_of_|\btop \d+\b|\b\d+ (?:biggest|largest|best|leading|top)\b|\branked\b|\branking\b|"
-    r"\b(?:top|biggest|largest|leading)(?: \w+){0,4} (?:companies|stocks|firms|makers|manufacturers|suppliers|"
-    r"producers|players)\b", re.I)
+    r"\blist of\b|/wiki/list_of_|"
+    r"\b(?:top|biggest|largest|leading|best)(?: \w+){0,4} (?:companies|stocks|firms|\w*makers|manufacturers|"
+    r"suppliers|producers|players)\b", re.I)
 
 
 class Reader:
@@ -226,18 +228,22 @@ def pick(evidence: Iterable[Evidence], done: set[int], limit: int, as_of: date |
 
 
 def report_page(e: Evidence) -> bool:
-    """Whether a web search result looks like the company's own results or report page. Web
-    results are the undated evidence; a PDF cannot be read."""
-    path = urlsplit(e.url).path.lower()
-    return (e.published is None and e.body is None and not path.endswith(".pdf")
-            and bool(_REPORT.search(f"{e.title} {path}")))
+    """Whether a web search result looks like the company's own results or report page."""
+    return _web_page(e, _REPORT)
 
 
 def list_page(e: Evidence) -> bool:
-    """Whether an article looks like a list or ranking of companies, by its title or address. A
-    PDF cannot be read."""
-    path = urlsplit(e.url).path
-    return not path.lower().endswith(".pdf") and bool(_LIST.search(f"{e.title} {path}"))
+    """Whether a web search result looks like a list or ranking of companies; a dated headline
+    never takes a list page's slot."""
+    return _web_page(e, _LIST)
+
+
+def _web_page(e: Evidence, named: re.Pattern) -> bool:
+    """A web search result whose title or address matches. Web results are the undated
+    evidence; a PDF cannot be read."""
+    path = urlsplit(e.url).path.lower()
+    return (e.published is None and e.body is None and not path.endswith(".pdf")
+            and bool(named.search(f"{e.title} {path}")))
 
 
 def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:

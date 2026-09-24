@@ -1,5 +1,8 @@
+import json
+
 import pytest
 
+from oracle.research.budget import CHARS_PER_TOKEN, REPLY_TOKENS
 from oracle.research.mentions import (
     MAX_ANSWERS, MAX_COMPANIES, MENTIONS_SCHEMA, QUESTION_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt,
     parse_mentions, question_prompt, topic_prompt,
@@ -121,6 +124,17 @@ def test_a_question_may_name_more_companies_than_a_headline_batch():
     assert MENTIONS_SCHEMA["properties"]["companies"]["maxItems"] == MAX_COMPANIES
     [system, _] = question_prompt("which European chipmakers?", ["x"])
     assert f"at most {MAX_ANSWERS}" in system["content"] and "Lists:" in system["content"]
+
+
+def test_a_full_answer_fits_the_reply_a_small_model_may_write():
+    item = QUESTION_SCHEMA["properties"]["companies"]["items"]["properties"]
+    why = item["why"]["maxLength"]
+    # Company names run under 40 characters; every other field at its longest.
+    full = {"companies": [{"name": "N" * 40, "why": "w" * why, "headlines": [10, 11, 12, 13, 14],
+                           "related_to": "R" * 40, "relation": "competitor"}] * MAX_ANSWERS}
+    assert len(json.dumps(full)) / CHARS_PER_TOKEN < REPLY_TOKENS
+    [system, _] = question_prompt("q", ["x"])
+    assert "a few words on why" in system["content"]
 
 
 def test_a_why_line_comes_back_without_item_numbers_or_citations():

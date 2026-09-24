@@ -18,9 +18,9 @@ MAX_FACT = 200
 MAX_NOTE_TEXT = 12_000
 CUT = " [cut]"
 MAX_LISTED = 15
-# Asked of every article read for a question, a small model also "lists" the two companies a
-# news story names; they are in its facts already, and that is no list page.
-MIN_LISTED = 3
+# Asked of every article read for a question, a small model also "lists" the two or three
+# companies a news story names; they are in its facts already, and that is no list page.
+MIN_LISTED = 4
 MAX_NAME = 80
 LISTS = "Lists: "
 """Starts the note line holding a list page's companies."""
@@ -85,7 +85,8 @@ def read_note(reply: object, listed_in: str | None = None) -> Note | None:
     for fact in facts:
         # A fact is cited as its article; a page writing "[a12]" must not cite another.
         text = cut(strip_citations(fact).strip(), MAX_FACT) if isinstance(fact, str) else ""
-        if text and text not in kept and not text.startswith(LISTS):
+        # Only a question's note has a list line, and only the one written below.
+        if text and text not in kept and not (listed_in is not None and is_list_line(text)):
             kept.append(text)
     kept = kept[:MAX_FACTS]
     if listed_in is not None and len(names := _listed(reply.get("companies"), listed_in)) >= MIN_LISTED:
@@ -100,12 +101,17 @@ def _listed(names: object, text: str) -> list[str]:
     words = f" {normalise_name(text)} "
     out: dict[str, str] = {}
     for name in names:
-        name = " ".join(name.split())[:MAX_NAME] if isinstance(name, str) else ""
+        name = " ".join(strip_citations(name).split())[:MAX_NAME] if isinstance(name, str) else ""
         key = blind_name(name)
         # The line is split on "; " when read back.
         if key and key not in out and f" {key} " in words and ";" not in name:
             out[key] = name
     return list(out.values())[:MAX_LISTED]
+
+
+def is_list_line(line: str) -> bool:
+    """A note's list line, alone or as an item's "  - " fact line."""
+    return line.strip().removeprefix("- ").startswith(LISTS)
 
 
 def listed(facts: tuple[str, ...]) -> tuple[str, ...]:
