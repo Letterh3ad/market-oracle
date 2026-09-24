@@ -95,20 +95,23 @@ _HEDGE = re.compile(r"\b(?:unknown|not sure|unsure|no idea|do not know|don t kno
 
 
 def answered(reply: str, expect: Iterable[str]) -> bool:
-    """Every expected keyword is there, and the reply does not hedge: "unknown, maybe X or Y"
-    names X without knowing it."""
+    """Every expected keyword is there, and no hedge comes before the first of them: "unknown,
+    maybe X or Y" names X without knowing it, while "X; the runner-up is unknown" knows X."""
     said = normalize(reply)
-    if _HEDGE.search(said):
+    found = [[_found(normalize(alt), said) for alt in item.split("|")] for item in expect]
+    starts = [min(s for s in item if s is not None) for item in found if any(s is not None for s in item)]
+    if len(starts) < len(found) or not found:
         return False
-    return all(any(_found(normalize(alt), said) for alt in item.split("|")) for item in expect)
+    hedge = _HEDGE.search(said)
+    return hedge is None or hedge.start() > min(starts)
 
 
-def _found(keyword: str, said: str) -> bool:
-    """Whole words and numbers only: "leo" is not in "leopold", "58" not in "58.17". A pair "a-b"
-    (a range or a vote) is also found as "a to b" or "a and b", but never inside a longer chain
-    like "3.75-4-4.25"."""
+def _found(keyword: str, said: str) -> int | None:
+    """Where the keyword first is, whole words and numbers only: "leo" is not in "leopold", "58" not
+    in "58.17". A pair "a-b" (a range or a vote) is also found as "a to b" or "a and b", but never
+    inside a longer chain like "3.75-4-4.25"."""
     if not keyword:
-        return False
+        return None
     if pair := _PAIR.fullmatch(keyword):
         lo, hi = map(re.escape, pair.groups())
         pattern = rf"(?<!\d-){lo}\s*(?:-|\bto\b|\band\b)\s*{hi}(?!-\d)"
@@ -116,7 +119,8 @@ def _found(keyword: str, said: str) -> bool:
         pattern = rf"{whole[1]}(?:\.\d+)?"
     else:
         pattern = re.escape(keyword)
-    return re.search(_WHOLE_BEFORE + pattern + _WHOLE_AFTER, said) is not None
+    match = re.search(_WHOLE_BEFORE + pattern + _WHOLE_AFTER, said)
+    return match.start() if match else None
 
 
 def month_scores(marks: Iterable[tuple[date, bool]]) -> list[MonthScore]:

@@ -15,7 +15,7 @@ from datetime import date
 
 from oracle.research.cutoff import Event
 
-VERSION = "2026-09-24.3"
+VERSION = "2026-09-24.4"
 
 
 def _e(id_: str, day: str, kind: str, question: str, answer: str, expect: tuple[str, ...], source: str) -> Event:
@@ -124,7 +124,7 @@ EVENTS: tuple[Event, ...] = (
        "María Corina Machado", ("machado",), "https://www.nobelprize.org/prizes/peace/2025/summary/"),
     _e("louvre-value", "2025-10-19", "number",
        "At how many million euros did Paris prosecutors value the jewels stolen from the Louvre on 19 October 2025?",
-       "88 million euros", ("88",),
+       "88 million euros", ("88|88m|88 million",),
        "https://www.france24.com/en/live-news/20251021-louvre-heist-losses-estimated-at-88-million-euros"),
     _e("melissa", "2025-10-28", "other",
        "In which country did Hurricane Melissa make landfall as a Category 5 storm on 28 October 2025?",

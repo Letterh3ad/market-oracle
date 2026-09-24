@@ -40,6 +40,12 @@ CLAIM = date(2025, 5, 20)
     ("I'm not sure, perhaps the Eagles", ("eagles",), False),
     ("I don't know. Eagles?", ("eagles",), False),
     ("The Eagles; nobody knew they would", ("eagles",), True),
+    ("49.42% (Lee Jae-myung); the runner-up's share is unknown", ("49.x",), True),
+    ("About 49.4%, exact figure unknown", ("49.x",), True),
+    ("Eagles 40, Chiefs 22; attendance unknown", ("40", "22"), True),
+    ("Eagles 40, unknown, maybe 22", ("40", "22"), True),
+    ("unknown: 40 or 22?", ("40", "22"), False),
+    ("88m euros", ("88|88m|88 million",), True),
     ("1:59:30", ("1:59:30",), True),
     ("The Big, Beautiful Bill", ("big beautiful bill",), True),
     ("Pope Leo XIV", ("leo",), True),
@@ -130,7 +136,7 @@ def test_after_the_claim_each_month_asks_one_number_one_name_and_one_other_detai
 
 
 def test_the_question_set_covers_january_2025_to_september_2026_with_three_or_more_a_month():
-    assert VERSION == "2026-09-24.3"
+    assert VERSION == "2026-09-24.4"
     by_month: dict[str, int] = {}
     for e in EVENTS:
         by_month[e.month] = by_month.get(e.month, 0) + 1
