@@ -1,8 +1,11 @@
+import json
+
 import pytest
 
+from oracle.research.budget import CHARS_PER_TOKEN, REPLY_TOKENS
 from oracle.research.mentions import (
-    MENTIONS_SCHEMA, QUESTION_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, question_prompt,
-    topic_prompt,
+    MAX_ANSWERS, MAX_COMPANIES, MENTIONS_SCHEMA, QUESTION_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt,
+    parse_mentions, question_prompt, topic_prompt,
 )
 
 HEADLINES = [
@@ -104,6 +107,34 @@ def test_a_stated_link_comes_back_only_when_a_cited_item_names_the_other_company
     found = {m.name: (m.related_to, m.relation) for m in parse_mentions(reply, HEADLINES)}
     assert found == {"Denso": ("Toyota", "supplier"), "Panasonic": ("", "partner"), "Honda": ("", "other"),
                      "Toyota": ("", "partner")}
+
+
+def test_a_list_pages_names_are_that_items_own_words_but_never_a_link_between_them():
+    items = ["Top 10 chipmakers in Europe\n  - Lists: ASML; NXP Semiconductors; Aixtron"]
+    reply = {"companies": [
+        {"name": "ASML", "why": "Listed", "headlines": [1], "related_to": "NXP Semiconductors", "relation": "partner"},
+        {"name": "Aixtron", "why": "Listed", "headlines": [1]},
+        {"name": "Infineon", "why": "Listed", "headlines": [1]}]}
+    found = parse_mentions(reply, items)
+    assert [(m.name, m.headlines, m.related_to) for m in found] == [("ASML", (0,), ""), ("Aixtron", (0,), "")]
+
+
+def test_a_question_may_name_more_companies_than_a_headline_batch():
+    assert QUESTION_SCHEMA["properties"]["companies"]["maxItems"] == MAX_ANSWERS > MAX_COMPANIES
+    assert MENTIONS_SCHEMA["properties"]["companies"]["maxItems"] == MAX_COMPANIES
+    [system, _] = question_prompt("which European chipmakers?", ["x"])
+    assert f"at most {MAX_ANSWERS}" in system["content"] and "Lists:" in system["content"]
+
+
+def test_a_full_answer_fits_the_reply_a_small_model_may_write():
+    item = QUESTION_SCHEMA["properties"]["companies"]["items"]["properties"]
+    why = item["why"]["maxLength"]
+    # Company names run under 40 characters; every other field at its longest.
+    full = {"companies": [{"name": "N" * 40, "why": "w" * why, "headlines": [10, 11, 12, 13, 14],
+                           "related_to": "R" * 40, "relation": "competitor"}] * MAX_ANSWERS}
+    assert len(json.dumps(full)) / CHARS_PER_TOKEN < REPLY_TOKENS
+    [system, _] = question_prompt("q", ["x"])
+    assert "a few words on why" in system["content"]
 
 
 def test_a_why_line_comes_back_without_item_numbers_or_citations():

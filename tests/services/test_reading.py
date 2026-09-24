@@ -711,6 +711,22 @@ async def test_a_listing_abroad_reads_a_results_page_its_web_search_found_before
     assert fetched(pages) == ["https://www.sony.com/en/ir/news/2026/q1-results.html", "https://reuters.test/1"]
 
 
+async def test_company_research_reads_no_list_page_first_and_asks_for_no_companies(ctx, news, pages, searcher):
+    reading(ctx, 2)
+    news.results["Sony"] = [story(1, "Reuters", "2026-09-20"), story(2, "BBC", "2026-09-19")]
+    searcher.results["Sony results"] = [
+        WebResult("https://list.test/top-10-japanese-electronics-companies", "Top 10 Japanese electronics companies", ""),
+        WebResult("https://www.sony.com/en/ir/news/2026/q1-results.html", "Consolidated Financial Results for Q1", "")]
+    for url in ("https://reuters.test/1", "https://bbc.test/2", "https://www.sony.com/en/ir/news/2026/q1-results.html",
+                "https://list.test/top-10-japanese-electronics-companies"):
+        pages.pages[url] = ("text/html", BODY)
+    model = ScriptedModel(step("news_search", "Sony"), step("web_search", "Sony results"), step("final", "Done."))
+    model.roles = {"note_taker": FACTS}
+    await research(ctx, "6758.T", model, searcher=searcher)
+    assert fetched(pages) == ["https://www.sony.com/en/ir/news/2026/q1-results.html", "https://reuters.test/1"]
+    assert all("companies" not in schema["properties"] for _, schema in note_calls(model))
+
+
 def test_the_pick_puts_up_to_two_of_the_companys_own_reports_first_and_leaves_the_others():
     from oracle.services.research_tools.reading import pick
 
