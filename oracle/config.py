@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tomllib
@@ -9,6 +10,8 @@ from pathlib import Path
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
+
+log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_NAME = "oracle.toml"
 
@@ -614,8 +617,10 @@ def _whole(value: object, low: int, high: int) -> bool:
     return not isinstance(value, bool) and isinstance(value, int) and low <= value <= high
 
 
-def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
-    """`[schedule]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
+def check_schedule(raw: Mapping[str, object], strict: bool = False) -> ScheduleConfig:
+    """`[schedule]` from its keys, defaults for the rest; raises ConfigError naming the bad one.
+    A midday time equal to the tick's is refused when `strict` (a write); on load it turns
+    the midday pass off, since a file written before it existed may set `time = "12:30"`."""
     _reject_unknown(raw, ScheduleConfig, "[schedule]")
     s = replace(ScheduleConfig(), **raw)
     checks = {
@@ -635,8 +640,11 @@ def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
     if s.midday_time != "":
         check_schedule_time(s.midday_time, "midday_time", ' or "" (off)')
         if s.midday_time == s.time:
-            raise ConfigError(f"schedule.midday_time must differ from schedule.time ({s.time}): both would be due "
-                              "at once")
+            clash = f"schedule.midday_time must differ from schedule.time ({s.time}): both would be due at once"
+            if strict:
+                raise ConfigError(clash)
+            log.warning("%s; the midday pass is off until one of them changes", clash)
+            return replace(s, midday_time="")
     return s
 
 

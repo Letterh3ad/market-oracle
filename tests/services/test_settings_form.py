@@ -93,3 +93,14 @@ def test_a_blank_midday_time_turns_the_midday_pass_off(ctx):
     assert row(ctx, "schedule", "midday_time")["blank_off"] is True and "blank_off" not in row(ctx, "schedule", "time")
     assert set_setting(ctx, "schedule", "midday_time", "")["value"] == ""
     assert ctx.config.schedule.midday_time == ""
+
+
+def test_a_midday_time_equal_to_the_tick_time_is_refused_on_write(ctx):
+    from oracle.services.settings_service import set_schedule
+
+    before = ctx.config_source.read_bytes()
+    with pytest.raises(InvalidQuery, match="midday_time must differ"):
+        set_setting(ctx, "schedule", "midday_time", "22:30")
+    with pytest.raises(InvalidQuery, match="midday_time must differ"):
+        set_schedule(ctx, True, "12:30")
+    assert ctx.config_source.read_bytes() == before

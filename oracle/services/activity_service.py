@@ -45,8 +45,8 @@ PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
-MISSED_LATE = "missed: started too late"
 """Finished states worth another try; `done` needs no retry."""
+MISSED_LATE = "missed: started too late"
 
 
 @dataclass(eq=False)

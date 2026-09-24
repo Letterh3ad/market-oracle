@@ -11,9 +11,9 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, Setting, check_ai_account,
-    check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config, setting_list,
-    with_settings,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
+    setting_list, with_settings,
 )
 from oracle.services.context import AppContext
 from oracle.services.errors import ConfigInUse, InvalidQuery
@@ -43,8 +43,9 @@ def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:
     """Turn automatic ticks on or off and set their local time; a running scheduler picks
     the change up on its next poll."""
     _check(check_schedule_time, time)
+    schedule = _check_schedule_write(ctx, {"enabled": enabled, "time": time})
     path = _save(ctx, "schedule", {"enabled": enabled, "time": time})
-    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, enabled=enabled, time=time))
+    ctx.config = replace(ctx.config, schedule=schedule)
     return path
 
 
@@ -52,8 +53,7 @@ def set_tick_warning(ctx: AppContext, warn_minutes: int, research_when_idle: boo
     """How long before a scheduled tick the GUI warns (0 off), and whether a tick researches
     only once the PC has been idle `idle_minutes`."""
     values = {"warn_minutes": warn_minutes, "research_when_idle": research_when_idle, "idle_minutes": idle_minutes}
-    s = ctx.config.schedule
-    schedule = _check(check_schedule, {**asdict(s), **values})
+    schedule = _check_schedule_write(ctx, values)
     path = _save(ctx, "schedule", values)
     ctx.config = replace(ctx.config, schedule=schedule)
     return path
@@ -101,6 +101,8 @@ def set_setting(ctx: AppContext, section: str, key: str, value: object) -> dict:
     raw = _read_raw(_config_path(ctx))
     if not any((s.section, s.key) == (section, key) for s in setting_list(tuple(raw.get("sources", {})))):
         raise InvalidQuery(f"no setting [{section}] {key}")
+    if section == "schedule":
+        _check_schedule_write(ctx, {key: value})
     _save(ctx, section, {key: value})
     if section in LIVE_SECTIONS:
         reload_live_settings(ctx)
@@ -140,6 +142,13 @@ def reload_live_settings(ctx: AppContext) -> None:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
     ctx.config = replace(ctx.config, **{section: getattr(loaded, section) for section in LIVE_SECTIONS})
+
+
+def _check_schedule_write(ctx: AppContext, values: dict[str, object]) -> ScheduleConfig:
+    """The schedule after `values` (None: the default), refusing a midday time equal to the tick's."""
+    defaults = asdict(ScheduleConfig())
+    merged = {**asdict(ctx.config.schedule), **{k: defaults[k] if v is None else v for k, v in values.items()}}
+    return _check(lambda raw: check_schedule(raw, strict=True), merged)
 
 
 def _check(check, value):

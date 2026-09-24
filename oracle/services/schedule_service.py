@@ -144,15 +144,17 @@ class Scheduler:
         trigger = "catch-up" if due < self._started else "scheduled"
         if kind == MIDDAY:
             if self._missed(fire_at, now):
+                if due < self._started:
+                    return None  # the app was closed at its time: nothing to say
                 # Never fired late, but recorded, so the Ticks panel says why there was none.
-                why = ("the app was not running at its time" if due < self._started
-                       else f"not started within {MIDDAY_GRACE // timedelta(minutes=1)} minutes of its time")
-                return record_skipped(ctx, trigger, f"missed: {why}", kind=MIDDAY)
+                grace = MIDDAY_GRACE // timedelta(minutes=1)
+                return record_skipped(ctx, trigger, f"missed: not started within {grace} minutes of its time",
+                                      kind=MIDDAY)
         elif trigger == "catch-up" and last_tick(ctx) is None:
             return None  # never ticked, so nothing was missed
         label = KIND_LABELS[kind].lower()
         # Only the same kind: a tick due while a midday pass is queued waits behind it.
-        if any(j.subject == kind for j in self._runner.active("tick")):
+        if self._in_flight(kind):
             return record_skipped(ctx, trigger, f"skipped: a {label} is already queued or running here", kind=kind)
         # A midday pass queued behind a long manual tick checks its grace again as it starts.
         deadline = fire_at + MIDDAY_GRACE if kind == MIDDAY else None
@@ -169,6 +171,10 @@ class Scheduler:
     @staticmethod
     def _missed(fire_at: datetime, now: datetime) -> bool:
         return now - fire_at > MIDDAY_GRACE
+
+    def _in_flight(self, kind: str) -> bool:
+        """A run of `kind` queued or running here, which has no stored record until it ends."""
+        return any(j.subject == kind for j in self._runner.active("tick"))
 
     def _fire_at(self, kind: str, due: datetime) -> datetime:
         return due + POSTPONE if (kind, due) in self._postponed else due
@@ -190,9 +196,10 @@ class Scheduler:
         ctx = self._ctx
         last = last_due(now, hhmm, self._tz)
         fire_at = self._fire_at(kind, last)
-        if last >= self._floors[kind] and not ticked_since(ctx, last, kind):
-            # Still to run: a postponed tick, or a midday pass due but not yet started (queued
-            # behind a tick, or between polls) inside its grace, so the banner acts on it.
+        if last >= self._floors[kind] and not ticked_since(ctx, last, kind) and not self._in_flight(kind):
+            # Still to run: a postponed tick, or a midday pass due but not yet submitted
+            # (between polls) inside its grace, so the banner acts on it. Once submitted it is
+            # past postponing: the banner moves on to the next run.
             if fire_at != last if kind == TICK else not self._missed(fire_at, now):
                 return Upcoming(last, fire_at, kind)
         due = next_due(now, hhmm, self._tz)

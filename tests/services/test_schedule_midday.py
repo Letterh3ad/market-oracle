@@ -62,10 +62,7 @@ async def test_a_pass_missed_while_the_app_was_closed_never_catches_up(ctx):
     at(ctx, utc(2026, 9, 22, 13, 0))  # opened Tuesday 14:00 BST
     s = scheduler(ctx)
     assert (await s.check()).trigger == "catch-up"  # Monday's tick
-    missed = await s.check()
-    assert (missed.kind, missed.outcome) == ("midday", "skipped")
-    assert missed.note == "missed: the app was not running at its time"
-    assert await s.check() is None and last_midday(ctx).id == missed.id
+    assert await s.check() is None and last_midday(ctx) is None  # closed at its time: no record either
 
 
 async def test_a_restart_inside_the_grace_still_runs_that_days_pass(ctx):
@@ -149,7 +146,6 @@ async def test_a_postponed_pass_left_unrun_stops_being_upcoming_once_missed(ctx)
 
 async def test_changing_the_midday_pass_keeps_a_postponed_tick(ctx):
     s = scheduler(ctx)
-    assert (await s.check()).note.startswith("missed")  # Monday's pass, before the app started
     at(ctx, utc(2026, 9, 21, 21, 25))
     assert s.postpone().kind == "tick"
     at(ctx, utc(2026, 9, 21, 21, 45))
@@ -211,3 +207,57 @@ def test_a_stored_kind_reads_back(ctx, kind):
     TickRepo(ctx.conn).save(run)
     back = TickRepo(ctx.conn).recent(1)[0]
     assert (back.kind, back.trigger) == (kind, "scheduled")
+
+
+@pytest.fixture
+def gated_midday(monkeypatch):
+    """Midday passes whose one stage waits for the test."""
+    import asyncio
+
+    from oracle.services import tick_service
+
+    gate = asyncio.Event()
+
+    async def held(c, say):
+        await gate.wait()
+        return "done", None
+
+    monkeypatch.setattr(tick_service, "_midday_stages", lambda started: {"discover": held})
+    return gate
+
+
+async def settle():
+    import asyncio
+
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+async def test_a_pass_in_flight_is_not_offered_for_postpone_or_skip(ctx, gated_midday):
+    import asyncio
+
+    s = scheduler(ctx)
+    await ticked(ctx, s)
+    at(ctx, TUESDAY_MIDDAY)
+    poll = asyncio.create_task(s.check())
+    await settle()
+    ctx.clock.advance(5 * 60)
+    assert s.upcoming().kind == "tick" and s.warning() is None
+    gated_midday.set()
+    assert (await poll).kind == "midday"
+
+
+async def test_a_tick_soon_after_a_running_pass_gets_the_banner(ctx, gated_midday):
+    import asyncio
+
+    schedule(ctx, time="12:50")  # 11:50 UTC, twenty minutes after the pass
+    s = scheduler(ctx)
+    at(ctx, TUESDAY_MIDDAY)
+    poll = asyncio.create_task(s.check())
+    await settle()
+    at(ctx, utc(2026, 9, 22, 11, 45))
+    warned = s.warning()
+    assert (warned.kind, warned.due) == ("tick", utc(2026, 9, 22, 11, 50))
+    assert s.postpone().kind == "tick"
+    gated_midday.set()
+    assert (await poll).kind == "midday"
