@@ -97,6 +97,18 @@ class StrategyConfig:
     """Sell a position this far below its average cost."""
 
 
+DEFAULT_BENCHMARKS = ("VWRL.L", "VUSA.L")
+"""Vanguard FTSE All-World and Vanguard S&P 500, London-listed and GBP-priced, so a GBP
+base currency reads them with no FX noise."""
+
+
+@dataclass(frozen=True)
+class CompareConfig:
+    benchmarks: tuple[str, ...] = DEFAULT_BENCHMARKS
+    """Market index lines shown beside the accounts in the Ledgers comparison: priced
+    alongside watched listings, but never traded, researched, analysed or watchlisted."""
+
+
 @dataclass(frozen=True)
 class ScheduleConfig:
     """Automatic ticks while the GUI runs. Off until the user turns it on."""
@@ -209,6 +221,7 @@ class Config:
     universe: UniverseConfig = field(default_factory=UniverseConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     strategy: StrategyConfig = field(default_factory=StrategyConfig)
+    compare: CompareConfig = field(default_factory=CompareConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     automation: AutomationConfig = field(default_factory=AutomationConfig)
@@ -376,6 +389,9 @@ def _apply(raw: dict) -> Config:
         if name == "strategy":
             values[name] = _strategy(value)
             continue
+        if name == "compare":
+            values[name] = _compare(value)
+            continue
         if name == "gui":
             values[name] = _gui(value)
             continue
@@ -461,6 +477,16 @@ def _strategy(raw: object) -> StrategyConfig:
         if not ok:
             raise ConfigError(f"strategy.{key} must be {wanted}, got {value!r}")
     return StrategyConfig(**raw)
+
+
+def _compare(raw: object) -> CompareConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("compare must be a [compare] table")
+    _reject_unknown(raw, CompareConfig, "[compare]")
+    benchmarks = raw.get("benchmarks", list(DEFAULT_BENCHMARKS))
+    if not isinstance(benchmarks, list) or not all(isinstance(b, str) and b.strip() for b in benchmarks):
+        raise ConfigError(f"compare.benchmarks must be a list of symbols, got {benchmarks!r}")
+    return CompareConfig(benchmarks=tuple(b.strip() for b in benchmarks))
 
 
 def _gui(raw: object) -> GuiConfig:
