@@ -113,6 +113,23 @@ def test_strategy_rules_default_to_the_design_and_are_validated(tmp_path):
             load_config(path, cwd=tmp_path)
 
 
+def test_compare_benchmarks_default_to_two_vanguard_funds_and_can_be_changed(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].compare.benchmarks == ("VWRL.L", "VUSA.L")
+    path = tmp_path / "oracle.toml"
+    path.write_text('[compare]\nbenchmarks = ["SEGA.L"]\n', encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].compare.benchmarks == ("SEGA.L",)
+    path.write_text("[compare]\nbenchmarks = []\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].compare.benchmarks == ()
+
+
+@pytest.mark.parametrize("line", ["benchmarks = 1", 'benchmarks = ["ok", 2]', 'benchmarks = ["ok", ""]'])
+def test_compare_benchmarks_must_be_a_list_of_symbols(tmp_path, line):
+    path = tmp_path / "oracle.toml"
+    path.write_text(f"[compare]\n{line}\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="compare.benchmarks"):
+        load_config(path, cwd=tmp_path)
+
+
 def test_the_gui_listens_on_localhost_by_default_and_the_port_can_change(tmp_path):
     gui = load_config(None, cwd=tmp_path)[0].gui
     assert (gui.host, gui.port) == ("127.0.0.1", 8740)

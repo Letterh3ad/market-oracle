@@ -20,6 +20,15 @@ def max_fall(series: Series) -> float:
     return max_drawdown(series)[0] if series else 0.0
 
 
+def benchmark_return(closes: Sequence[tuple[date, float | None]], start: date) -> list[tuple[date, float]]:
+    """A single benchmark held from `start`, no costs: its close series from the first close
+    on or after `start`, as returns. A day with no close (no rate, or a gap) is left out
+    rather than carried forward, since nothing was bought with it. Empty with no close from
+    `start` on."""
+    usable = [(d, c) for d, c in closes if d >= start and c is not None]
+    return returns_since(usable, start) if usable else []
+
+
 def buy_and_hold(closes: Mapping[str, Sequence[tuple[date, float | None]]], start: date,
                  capital: float) -> tuple[list[tuple[date, float]], list[str]]:
     """`capital` split equally over the listings, each bought at its first close on or after

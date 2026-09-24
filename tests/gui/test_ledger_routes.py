@@ -103,7 +103,9 @@ async def test_the_comparison_waits_for_the_ai_account_history(loaded):
     compare = (await loaded.get("/api/ledgers")).json()["compare"]
     assert compare["start"] is None and "no history yet" in compare["notes"][0]
     assert [(line["name"], line["points"], line["return"]) for line in compare["lines"]] == [
-        ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("buy_and_hold", [], None)]
+        ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("buy_and_hold", [], None),
+        ("VWRL.L", [], None), ("VUSA.L", [], None)]
+    assert [line["label"] for line in compare["lines"][-2:]] == ["World (VWRL.L)", "S&P 500 (VUSA.L)"]
 
 
 async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, yahoo, clock):
@@ -123,6 +125,27 @@ async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, y
     assert lines["buy_and_hold"]["points"] == [["2026-09-23", 0.0]]
     assert lines["buy_and_hold"]["caption"].startswith("Buy and hold: equal amounts of the 1 listing")
     assert all({"max_fall", "trades", "costs"} <= set(line) for line in compare["lines"])
+
+
+async def test_the_comparison_prices_and_includes_a_configured_benchmark_never_watched(ctx, priced, yahoo, clock):
+    ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=True),
+                         compare=replace(ctx.config.compare, benchmarks=("KO",)))
+    yahoo.add("KO", "USD", "America/New_York", [bar("2026-09-22", 60.0)])
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    await run_job(priced, "/api/jobs/prices")  # the whole watchlist, and the benchmark alongside it
+    yahoo.series["AAPL"].bars.append(bar("2026-09-23", 150.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    yahoo.series["KO"].bars.append(bar("2026-09-23", 66.0))
+    clock.advance(86400)
+    await run_job(priced, "/api/jobs/prices")
+    compare = (await priced.get("/api/ledgers")).json()["compare"]
+    ko = {line["name"]: line for line in compare["lines"]}["KO"]
+    # Its own first close on or after the AI account's start (2026-09-23): the 09-22 bar
+    # predates it and is dropped, so the line starts flat with nothing later to move it yet.
+    assert ko["points"] == [["2026-09-23", 0.0]]
+    assert ko["caption"] == "Holding KO from 2026-09-23, no costs."
+    watched = {i["symbol"] for i in (await priced.get("/api/watchlists/main")).json()["items"]}
+    assert "KO" not in watched
 
 
 @pytest.fixture

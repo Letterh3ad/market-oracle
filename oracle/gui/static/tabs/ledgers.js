@@ -180,13 +180,29 @@ const LINES = {
   manual: { label: "Manual", colour: "--text" },
   buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
 };
+const BENCH_COLOURS = ["--bench1", "--bench2"];
 
-// Every account and buy-and-hold, each as its return since the AI account started.
+// Every account and buy_and_hold has a fixed entry above; a benchmark's name is whichever
+// symbol is configured, so its label and colour come from the line itself and its order
+// among the other benchmarks, dashed like buy and hold (another line held, not traded).
+function lineInfos(lines) {
+  const out = {};
+  let bench = 0;
+  for (const l of lines) {
+    out[l.name] = LINES[l.name] ?? { label: l.label || l.name, colour: BENCH_COLOURS[bench++ % BENCH_COLOURS.length],
+      dashed: true };
+  }
+  return out;
+}
+
+// Every account, buy-and-hold and configured benchmark, each as its return since the AI
+// account started.
 function comparison(c, base) {
-  const swatch = (name) => el("span", { class: LINES[name].dashed ? "swatch dashed" : "swatch",
-    style: `background: var(${LINES[name].colour}); color: var(${LINES[name].colour})` });
+  const info = lineInfos(c.lines);
+  const swatch = (name) => el("span", { class: info[name].dashed ? "swatch dashed" : "swatch",
+    style: `background: var(${info[name].colour}); color: var(${info[name].colour})` });
   const rows = c.lines.map((l) => el("tr", null,
-    el("td", null, swatch(l.name), " ", LINES[l.name].label),
+    el("td", null, swatch(l.name), " ", info[l.name].label),
     el("td", { class: `num ${tone(l.return)}` }, l.return == null ? "no history yet" : pct(l.return)),
     el("td", { class: `num ${l.max_fall < 0 ? "down" : ""}` }, pct(l.max_fall)),
     el("td", { class: "num" }, String(l.trades)),
@@ -204,13 +220,14 @@ function comparison(c, base) {
 
 function drawComparison(c) {
   const box = root.querySelector(".compare-chart");
+  const info = lineInfos(c.lines);
   const drawn = c.lines.filter((l) => l.points.length);
   if (!drawn.some((l) => l.points.length > 1)) {
     box.replaceChildren(el("p", { class: "dim small" },
       "The comparison chart starts once the AI account has equity on two different days (Update prices records it)."));
     return;
   }
-  const chart = linesChart(box, drawn.map((l) => ({ ...LINES[l.name], title: LINES[l.name].label, percent: true,
+  const chart = linesChart(box, drawn.map((l) => ({ ...info[l.name], title: info[l.name].label, percent: true,
     points: l.points.map(([day, r]) => ({ time: day, value: r * 100 })) })), 220);
   if (chart) charts.push(chart);
 }

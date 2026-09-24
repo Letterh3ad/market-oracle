@@ -535,9 +535,10 @@ async def test_with_no_ai_history_the_accounts_are_compared_from_their_own_start
     c = comparison(ctx)
     assert c.start is None and any("the ai account has no history yet" in n.lower() for n in c.notes)
     lines = {line.name: line for line in c.lines}
-    assert list(lines) == ["strategy", "ai", "manual", "buy_and_hold"]
+    assert list(lines) == ["strategy", "ai", "manual", "buy_and_hold", "VWRL.L", "VUSA.L"]
     assert lines["strategy"].points == ((date(2026, 9, 18), 0.0), (date(2026, 9, 21), pytest.approx(0.05)))
     assert lines["ai"].points == () and lines["ai"].return_ is None and lines["buy_and_hold"].points == ()
+    assert lines["VWRL.L"].points == () and lines["VWRL.L"].label == "World (VWRL.L)"
 
 
 async def test_lines_since_the_ai_started_with_buy_and_hold_of_the_watchlist_by_hand(ctx, yahoo, clock):
@@ -574,3 +575,72 @@ async def test_a_watched_listing_without_prices_is_left_out_of_buy_and_hold_and_
     c = comparison(ctx)
     assert c.left_out == ("VOD.L",) and any("VOD.L" in n for n in c.notes)
     assert {line.name: line for line in c.lines}["buy_and_hold"].points == ((date(2026, 9, 21), 0.0),)
+
+
+def add_bars(ctx, symbol, currency, closes):
+    """Stores bars for `symbol` directly, bypassing the universe: a benchmark need not
+    resolve there to be priced (tests/services/test_watch_prices.py covers the price update
+    skipping one that is not in the universe)."""
+    from oracle.market.bars import Bar
+    from oracle.store.bars import BarRepo
+
+    rows = [Bar(symbol, d, c, c, c, c, c, 0, currency, "test") for d, c in closes]
+    BarRepo(ctx.conn).upsert(rows, "2026-09-22T00:00:00Z")
+
+
+def add_fx(ctx, currency, rates):
+    from oracle.market.fx import FxRate
+    from oracle.store.fx import FxRepo
+
+    FxRepo(ctx.conn, ctx.config.base_currency).upsert(
+        [FxRate(currency, d, rate, "test") for d, rate in rates], "2026-09-22T00:00:00Z")
+
+
+async def test_a_benchmark_line_is_held_from_the_ai_start_with_fx_and_a_caption(ctx):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VWRL.L", "IUSA")))
+    add_bars(ctx, "VWRL.L", "GBP", [(date(2026, 9, 21), 100.0), (date(2026, 9, 22), 110.0)])
+    add_bars(ctx, "IUSA", "USD", [(date(2026, 9, 21), 50.0), (date(2026, 9, 22), 55.0)])
+    add_fx(ctx, "USD", [(date(2026, 9, 21), 1.25), (date(2026, 9, 22), 1.25)])
+    ai_on(ctx)
+    fill_pending(ctx)  # records the AI account's first equity on 2026-09-21
+    lines = {line.name: line for line in comparison(ctx).lines}
+    assert lines["VWRL.L"].points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), pytest.approx(0.1)))
+    assert lines["VWRL.L"].caption == "Holding VWRL.L (the whole world market) from 2026-09-21, no costs."
+    assert lines["VWRL.L"].label == "World (VWRL.L)"
+    assert lines["IUSA"].points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), pytest.approx(0.1)))
+    assert lines["IUSA"].caption == "Holding IUSA from 2026-09-21, no costs."
+    assert lines["IUSA"].label == "IUSA"
+    assert (lines["VWRL.L"].trades, lines["VWRL.L"].costs) == (0, 0.0)
+
+
+async def test_a_benchmark_with_no_bars_shows_no_history_yet(ctx):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VWRL.L",)))
+    ai_on(ctx)
+    fill_pending(ctx)
+    line = {line.name: line for line in comparison(ctx).lines}["VWRL.L"]
+    assert line.points == () and line.return_ is None
+
+
+async def test_a_benchmarks_label_prefers_the_universe_name_when_it_resolves(ctx):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VOD.L",)))
+    line = {line.name: line for line in comparison(ctx).lines}["VOD.L"]
+    assert line.label == "Vodafone"  # VOD.L is already in this fixture's universe
+
+
+async def test_a_benchmark_is_priced_but_never_traded_researched_or_watched(ctx, yahoo, clock):
+    from oracle.store.watchlists import WatchlistRepo
+
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VOD.L",)))
+    watch(ctx, "AAPL")
+    seed(ctx, "AAPL", "buy")
+    ai_on(ctx)
+    verdict(ctx, "AAPL", "buy", 0.9)
+    strategy_step(ctx)
+    ai_step(ctx)
+    assert "VOD.L" not in WatchlistRepo(ctx.conn).all_symbols()
+    assert LeanRepo(ctx.conn).latest("VOD.L") is None
+    from oracle.store.research import ResearchRepo
+    assert ResearchRepo(ctx.conn).latest_report("VOD.L") is None
+    assert all(d.symbol != "VOD.L" for d in decision_log(ctx, "strategy") + decision_log(ctx, "ai"))
+    assert all(o.symbol != "VOD.L" for account in ("strategy", "ai", "manual")
+              for o in account_view(ctx, account).pending)

@@ -1752,3 +1752,38 @@ already fixed by a later success); a kind allow-list hard-coded in the route ins
 resubmit mapping doubling as the "can this be rebuilt" check (one source of truth instead of
 two lists to keep in sync).
 free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+
+## 2026-09-24 - Market index lines in the Ledgers comparison
+**Context:** The comparison only showed the three accounts and buy-and-hold of the
+watchlist; there was no reading of how the accounts do against a plain market index like the
+world or the S&P 500, and no way to add or change which indexes without a code change.
+**Decision:** A new `[compare] benchmarks` setting (default `["VWRL.L", "VUSA.L"]`,
+Vanguard FTSE All-World and Vanguard S&P 500, both London-listed and GBP-priced so a GBP
+base currency reads them with no FX noise), edited through the existing generic settings
+form (`oracle/config.py`'s `CompareConfig`, walked by `setting_list` and validated in
+`_apply` like every other section). Benchmarks are priced alongside the watchlist:
+`prices_service.update_watched` prices watched listings then any benchmark not already among
+them, but a benchmark unresolvable in the universe is recorded with `ListingOutcome.skipped`
+("not in the universe: benchmark skipped") rather than `.error`, so it is never a "failed"
+listing and never turns a tick "partial" just because an index has not been added to the
+universe yet. Benchmarks are never added to any watchlist, so `strategy_step`, `ai_step` and
+research (all driven off `WatchlistRepo.all_symbols()`) never see them: nothing extra needed
+to keep them untraded. `oracle/broker/compare.py` gains `benchmark_return` (a single symbol's
+own close series as returns since a start day, no split across listings, unlike
+`buy_and_hold`); `paper_service.comparison()` appends one `Line` per configured benchmark,
+its bars read by `prices_service.benchmark_history_in_base` (a new function sharing the FX
+conversion `price_history_in_base` already did, factored into `_bars_in_base`, but reading
+`BarRepo` by symbol directly instead of through `resolve_symbol`, since a benchmark need not
+resolve in the universe to have bars). `Line` gains an optional `label` field (universe
+company name, else a nice fallback for the two defaults, else the symbol) that the GUI and
+CLI already carry through generically (`asdict`). `ledgers.js`'s `LINES` map stays fixed for
+the four known lines; a benchmark's label and one of two new `--bench1`/`--bench2` CSS
+colours are assigned per line at render time in the new `lineInfos()` helper, dashed like
+buy-and-hold (another line held, not traded).
+**Alternatives:** Requiring a benchmark to already be a valid, resolvable listing (simpler,
+but would silently drop the shipped defaults for anyone whose universe has not been refreshed
+yet, with no visible reason); carrying the FX/company logic in `oracle/gui` instead of the
+label living on `Line` (would break the cli/gui-only-imports-services layering, and duplicate
+the label logic between the CLI and the GUI); a static per-symbol colour map in `ledgers.js`
+instead of assigning by position (would silently run out of colours, or collide, once a user
+configures a third benchmark).

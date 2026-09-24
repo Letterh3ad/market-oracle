@@ -1,9 +1,10 @@
 import os
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
-from oracle.config import Config
+from oracle.config import CompareConfig, Config
 from oracle.jobs import JobLock
 from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning
@@ -11,7 +12,7 @@ from oracle.services.prices_service import update_listing, update_watched
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import show_watchlist, watch
 from tests.fakes.clock import FakeClock
-from tests.fakes.financedatabase import FakeFinanceDatabase, bz2_csv, equity
+from tests.fakes.financedatabase import FakeFinanceDatabase, bz2_csv, equity, etf
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar
 
@@ -21,6 +22,7 @@ UNIVERSE = [
     equity("SAP.DE", "SAP SE", "Germany", "GER", currency="EUR"),
     equity("KO", "The Coca-Cola Company", currency="USD"),
 ]
+BENCHMARK_ETFS = [etf("VWRL.L", "Vanguard FTSE All-World UCITS ETF", "LSE", currency="GBP")]
 
 
 @pytest.fixture
@@ -36,7 +38,7 @@ def yahoo():
 
 @pytest.fixture
 def fdb():
-    return FakeFinanceDatabase(UNIVERSE)
+    return FakeFinanceDatabase(UNIVERSE, etfs=BENCHMARK_ETFS)
 
 
 @pytest.fixture
@@ -46,7 +48,10 @@ def web(fdb, yahoo):
 
 @pytest.fixture
 async def ctx(tmp_path, web):
-    with open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport) as c:
+    # No benchmarks by default here: most of this file's tests are about the watchlist
+    # alone, and the benchmark tests below turn one on explicitly.
+    config = Config(db_path=tmp_path / "o.db", compare=CompareConfig(benchmarks=()))
+    with open_context(config, None, FakeClock(NOW), web.transport) as c:
         await refresh_universe(c)
         yield c
 
@@ -90,6 +95,39 @@ async def test_a_watched_symbol_gone_from_the_universe_is_reported_not_fetched(c
 async def test_nothing_watched_is_nothing_to_do(ctx):
     run = await update_watched(ctx)
     assert (run.listings, run.fx) == ((), ())
+
+
+async def test_a_configured_benchmark_is_priced_alongside_the_watchlist_but_never_watched(ctx, yahoo, web):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VWRL.L",)))
+    yahoo.add("VWRL.L", "GBP", "Europe/London", [bar("2026-09-17", 100.0), bar("2026-09-18", 101.0)])
+    watch(ctx, "AAPL")
+    run = await update_watched(ctx)
+    assert [(o.symbol, o.added, o.error) for o in run.listings] == [("AAPL", 2, None), ("VWRL.L", 2, None)]
+    assert len(chart_calls(web, "VWRL.L")) == 1
+    assert "VWRL.L" not in show_watchlist_symbols(ctx)
+
+
+async def test_a_benchmark_already_watched_is_not_priced_twice(ctx, yahoo, web):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("AAPL",)))
+    watch(ctx, "AAPL")
+    run = await update_watched(ctx)
+    assert [o.symbol for o in run.listings] == ["AAPL"]
+    assert len(chart_calls(web, "AAPL")) == 1
+
+
+async def test_a_benchmark_not_in_the_universe_is_skipped_not_failed(ctx):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("NOPE.L",)))
+    watch(ctx, "AAPL")
+    run = await update_watched(ctx)
+    assert [(o.symbol, o.added, o.error) for o in run.listings if o.symbol == "AAPL"] == [("AAPL", 2, None)]
+    [nope] = [o for o in run.listings if o.symbol == "NOPE.L"]
+    assert (nope.added, nope.error, nope.skipped) == (0, None, "not in the universe: benchmark skipped")
+    # A missing benchmark is not a failure: it never blocks the tick or the rest of the run.
+    assert run.failed == []
+
+
+def show_watchlist_symbols(ctx) -> set[str]:
+    return {i.symbol for i in show_watchlist(ctx)}
 
 
 async def test_a_second_update_is_refused_while_one_runs(ctx):
