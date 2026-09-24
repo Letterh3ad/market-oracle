@@ -199,3 +199,33 @@ async def test_a_post_sends_its_form_through_the_gate_with_the_same_retries(conn
     assert [r.method for r in seen] == ["POST", "POST"]
     assert seen[1].content == b"f.req=%5B1%5D" and seen[1].headers["cookie"] == "a=b"
     assert seen[1].headers["user-agent"] == "oracle-test/1"
+
+
+async def test_a_post_transport_error_is_retried_then_raises_request_failed(conn, clock):
+    seen = []
+    client = _client(conn, clock, [httpx.ConnectError("down")] * 3, seen, max_retries=2)
+    with pytest.raises(RequestFailed):
+        await client.post("src", URL, data={"a": "b"})
+    assert len(seen) == 3
+
+
+async def test_a_post_body_past_max_bytes_is_cut_there(conn, clock):
+    gate = SourceGate(conn, clock, {"src": SourceConfig(rate_per_second=10.0)})
+    client = RateLimitedClient(gate, clock, user_agent="t",
+                               transport=httpx.MockTransport(lambda r: httpx.Response(200, content=b"x" * 50)))
+    resp = await client.post("src", URL, data={"a": "b"}, max_bytes=10)
+    assert resp.content == b"x" * 10 and resp.extensions["oracle_truncated"] is True
+
+
+@pytest.mark.parametrize("failure", [429, 503, httpx.ConnectError("down")])
+async def test_a_call_off_the_breaker_is_tried_once_counts_nothing_but_still_holds_back_the_source(
+        conn, clock, failure):
+    seen = []
+    client = _client(conn, clock, [failure, 200], seen)
+    with pytest.raises(RequestFailed):
+        await client.post("src", URL, data={"a": "b"}, breaker=False)
+    assert len(seen) == 1
+    status = SourceGate(conn, clock, {"src": SourceConfig(rate_per_second=10.0)}).status("src")
+    assert status.open_until is None and status.next_slot_in_s > 0.1
+    row = conn.execute("SELECT run_429, run_5xx FROM source_state WHERE source = 'src'").fetchone()
+    assert tuple(row) == (0, 0)

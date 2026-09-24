@@ -1,7 +1,7 @@
 import base64
 import json
 
-from oracle.research.google_links import decode_offline, decoded_url, decoder_form, signature, stub_id
+from oracle.research.google_links import decode_offline, decoded_url, decoder_form, refused, signature, stub_id
 
 # Captured from the live feed on 2026-09-24: every stub there now is the newer, opaque kind.
 BBC_ID = ("CBMiWkFVX3lxTFB4Tk9KM0RQSVhlNjVDMWlJWUQ4YmxpQlZ0NFdXMF9qZEpPSnd6OGVBeHJmYWNXTkw4SXF2djM4MlcyX3hIenow"
@@ -73,3 +73,8 @@ def test_the_decoders_answer_gives_the_address():
     assert decoded_url(')]}\'\n\n[["er",null,null,null,null,405]]') is None
     assert decoded_url('[["wrb.fr","Fbv4je","[\\"garturlres\\",\\"ftp://x\\",1]"]]') is None
     assert decoded_url('[["wrb.fr","Fbv4je","not json"]]') is None
+
+
+def test_an_error_envelope_is_a_refusal():
+    assert refused(')]}\'\n\n[["er",null,null,null,null,400]]')
+    assert not refused(BBC_ANSWER) and not refused("garbage")

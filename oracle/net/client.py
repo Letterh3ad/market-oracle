@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Awaitable, Callable
 from datetime import timezone
 from email.utils import parsedate_to_datetime
 
@@ -59,45 +58,42 @@ class RateLimitedClient:
             follow_redirects=True,
         )
 
-    async def get(
-        self,
-        source: str,
-        url: str,
-        *,
-        params: dict | None = None,
-        headers: dict | None = None,
-        max_bytes: int | None = None,
-        follow_redirects: bool = True,
-        count_403: bool = True,
-    ) -> httpx.Response:
+    async def get(self, source: str, url: str, *, params: dict | None = None, headers: dict | None = None,
+                  max_bytes: int | None = None, follow_redirects: bool = True, count_403: bool = True,
+                  breaker: bool = True) -> httpx.Response:
         """With `max_bytes`, reading stops there (an arbitrary page can be any size);
         `extensions["oracle_truncated"]` says whether it was cut. `count_403` False: a 403
-        refuses this URL alone, so it never counts toward the breaker."""
-        return await self._send(source, count_403, lambda: (
-            self._http.get(url, params=params, headers=headers, follow_redirects=follow_redirects)
-            if max_bytes is None else self._get_capped(url, params, headers, max_bytes, follow_redirects)))
+        refuses this URL alone, so it never counts toward the breaker. `breaker` False: one
+        try, never counted toward the breaker (a side call whose failures must not shut the
+        source), though a 429 or 5xx still holds the source back."""
+        return await self._send(source, "GET", url, params, None, headers, max_bytes, follow_redirects,
+                                count_403, breaker)
 
-    async def post(self, source: str, url: str, *, data: dict, headers: dict | None = None) -> httpx.Response:
-        """A form POST, gated and retried as `get` is. Redirects are not followed."""
-        return await self._send(source, True, lambda: self._http.post(
-            url, data=data, headers=headers, follow_redirects=False))
+    async def post(self, source: str, url: str, *, data: dict, params: dict | None = None,
+                   headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = False,
+                   count_403: bool = True, breaker: bool = True) -> httpx.Response:
+        """A form POST, gated, retried and capped as `get` is."""
+        return await self._send(source, "POST", url, params, data, headers, max_bytes, follow_redirects,
+                                count_403, breaker)
 
-    async def _send(self, source: str, count_403: bool,
-                    send: Callable[[], Awaitable[httpx.Response]]) -> httpx.Response:
-        retries = self._gate.config(source).max_retries
+    async def _send(self, source: str, method: str, url: str, params: dict | None, data: dict | None,
+                    headers: dict | None, max_bytes: int | None, follow_redirects: bool, count_403: bool,
+                    breaker: bool) -> httpx.Response:
+        retries = self._gate.config(source).max_retries if breaker else 0
         for attempt in range(retries + 1):
             last = attempt == retries
             await self._gate.acquire(source)
             try:
-                resp = await send()
+                resp = await self._request(method, url, params, data, headers, max_bytes, follow_redirects)
             except httpx.TransportError as exc:
-                self._gate.record_transport_error(source)
+                if breaker:
+                    self._gate.record_transport_error(source)
+                self._gate.defer(source, _backoff(attempt))
                 if last:
                     raise RequestFailed(source, None, f"{type(exc).__name__}: {exc}") from exc
-                self._gate.defer(source, _backoff(attempt))
                 continue
 
-            if count_403 or resp.status_code != 403:
+            if breaker and (count_403 or resp.status_code != 403):
                 self._gate.record(source, resp.status_code)
             if resp.status_code != 429 and resp.status_code < 500:
                 return resp
@@ -112,9 +108,12 @@ class RateLimitedClient:
                 raise RequestFailed(source, resp.status_code, f"HTTP {resp.status_code}")
         raise AssertionError("unreachable")
 
-    async def _get_capped(self, url: str, params: dict | None, headers: dict | None, max_bytes: int,
-                          follow_redirects: bool) -> httpx.Response:
-        async with self._http.stream("GET", url, params=params, headers=headers,
+    async def _request(self, method: str, url: str, params: dict | None, data: dict | None, headers: dict | None,
+                       max_bytes: int | None, follow_redirects: bool) -> httpx.Response:
+        if max_bytes is None:
+            return await self._http.request(method, url, params=params, data=data, headers=headers,
+                                            follow_redirects=follow_redirects)
+        async with self._http.stream(method, url, params=params, data=data, headers=headers,
                                      follow_redirects=follow_redirects) as resp:
             body = bytearray()
             async for chunk in resp.aiter_bytes():

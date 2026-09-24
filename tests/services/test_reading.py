@@ -292,17 +292,65 @@ async def test_a_failed_decode_falls_back_to_the_headline_search(ctx, news, page
     assert fetched(pages) == ["https://www.reuters.com/markets/a"] and by_id(run, 1).facts
 
 
-async def test_a_decoder_outage_with_no_search_match_is_tried_again_by_the_next_run(ctx, news, pages, searcher):
+@pytest.mark.parametrize("failure", [{"stub_status": 503}, {"stub_status": 429}, {"stub_status": "down"},
+                                     {"stub_status": 302}, {"decoder_refuses": True}])
+async def test_a_passing_decoder_failure_with_no_search_match_is_tried_again_by_the_next_run(
+        ctx, news, pages, searcher, failure):
     news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
     news.decoded[BBC_ID] = BBC_ARTICLE
-    news.stub_status = 503
+    vars(news).update(failure)
     pages.pages[BBC_ARTICLE] = ("text/html", BODY)
-    await research(ctx, "AAPL", model_reading(), searcher=searcher)
-    assert pages.requests == []
-    news.stub_status = 200
+    first = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert pages.requests == [] and len(news.stub_pages) == 1 and searcher.queries == ["Apple beats estimates"]
+    assert by_id(first, 1).read.startswith("could not resolve the Google News link: Google's link decoder")
+    vars(news).update(stub_status=200, decoder_refuses=False)
     ctx.clock.advance(7200)
     run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
     assert by_id(run, 1).facts == ("Revenue rose 8% to $95bn",)
+
+
+async def test_a_throttled_decoder_never_shuts_news_search(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.stub_status = 429
+    for _ in range(3):
+        await research(ctx, "AAPL", model_reading(), searcher=searcher)
+        ctx.clock.advance(60)
+    asked = len(news.queries)
+    await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert len(news.queries) > asked and len(news.stub_pages) == 4
+    (run_429,) = ctx.conn.execute("SELECT run_429 FROM source_state WHERE source = 'google_news'").fetchone()
+    assert run_429 == 0
+
+
+async def test_a_stub_page_cut_before_its_signature_falls_back_to_the_search(ctx, news, pages, searcher):
+    from oracle.services.research_tools.google_links import STUB_PAGE_BYTES
+
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.decoded[BBC_ID] = BBC_ARTICLE
+    news.stub_padding = STUB_PAGE_BYTES
+    searcher.results["Apple beats estimates"] = [WebResult("https://www.bbc.com/news/other", "Apple", "")]
+    pages.pages["https://www.bbc.com/news/other"] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert news.decodes == [] and fetched(pages) == ["https://www.bbc.com/news/other"] and by_id(run, 1).facts
+
+
+@pytest.mark.parametrize("status", ["404", "410"])
+async def test_a_decoded_address_that_is_gone_falls_back_to_the_search(ctx, news, pages, searcher, status):
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.decoded[BBC_ID] = BBC_ARTICLE
+    pages.pages[BBC_ARTICLE] = ("status", status)
+    searcher.results["Apple beats estimates"] = [WebResult("https://www.bbc.com/news/other", "Apple", "")]
+    pages.pages["https://www.bbc.com/news/other"] = ("text/html", BODY)
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert fetched(pages) == [BBC_ARTICLE, "https://www.bbc.com/news/other"] and by_id(run, 1).facts
+
+
+async def test_a_decoded_address_refused_otherwise_is_not_searched_again(ctx, news, pages, searcher):
+    news.results["Apple"] = [(stub(BBC_ID), "Apple beats estimates", "BBC", utc("2026-09-20"))]
+    news.decoded[BBC_ID] = BBC_ARTICLE
+    pages.pages[BBC_ARTICLE] = ("status", "403")
+    run = await research(ctx, "AAPL", model_reading(), searcher=searcher)
+    assert searcher.queries == [] and by_id(run, 1).read == "the page answered HTTP 403"
 
 
 @pytest.mark.parametrize("decoded", ["https://copycat.test/apple", "http://127.0.0.1/apple",
@@ -408,8 +456,32 @@ def test_a_host_reduces_to_its_registered_domain_and_an_outlet_to_its_sites_name
     assert registered_domain("uk.finance.yahoo.com") == "yahoo.com" and site_name("uk.finance.yahoo.com") == "yahoo"
     assert registered_domain("www.bbc.co.uk") == "bbc.co.uk" and site_name("www.bbc.co.uk") == "bbc"
     assert registered_domain("localhost") == "" and site_name("") == ""
+    assert registered_domain("fool.co.com") == "co.com" and registered_domain("reuters.com.de") == "com.de"
+    assert registered_domain("www.fool.com.au") == "fool.com.au"
     assert outlet_key("The Motley Fool") == "fool" and outlet_key("The Wall Street Journal") == "wsj"
     assert outlet_key("Reuters") == "reuters" and outlet_key("Fool's Gold Weekly") == "foolsgoldweekly"
+
+
+LISTED_OUTLETS = [("The Motley Fool", "www.fool.com"), ("The Motley Fool UK", "www.fool.co.uk"),
+                  ("The Motley Fool Canada", "www.fool.ca"), ("The Motley Fool Australia", "www.fool.com.au"),
+                  ("The Wall Street Journal", "www.wsj.com"), ("Financial Times", "www.ft.com"),
+                  ("The New York Times", "www.nytimes.com"), ("Investor's Business Daily", "www.investors.com")]
+
+
+@pytest.mark.parametrize("outlet, host", LISTED_OUTLETS)
+def test_every_listed_outlet_matches_its_registered_site(outlet, host):
+    from oracle.research.web import outlet_key
+    from oracle.services.research_tools.reading import from_outlet
+
+    assert from_outlet(f"https://{host}/a", None, outlet)
+    assert outlet_key(outlet) == host.split(".")[1]
+
+
+def test_every_listed_outlet_is_reachable_from_its_name_past_the_filler_words():
+    from oracle.research.web import OUTLET_SITES, outlet_sites
+
+    reached = set().union(*(outlet_sites(outlet) for outlet, _ in LISTED_OUTLETS))
+    assert reached == set().union(*OUTLET_SITES.values())
 
 
 def test_an_outlet_is_matched_at_its_registered_site_when_name_and_domain_differ_in_form():
@@ -424,7 +496,10 @@ def test_an_outlet_is_matched_at_its_registered_site_when_name_and_domain_differ
     assert not from_outlet("https://fool.com.evil.test/x", None, "The Motley Fool")
     assert not from_outlet("https://foolnews.com/x", None, "The Motley Fool")
     assert not from_outlet("https://www.thetimes.com/x", None, "Financial Times")
-    assert not from_outlet("https://ft.fake.test/x", None, "Financial Times")
+    for host in ("ft.xyz", "ft.co.uk", "www.ft.com.xyz"):
+        assert not from_outlet(f"https://{host}/a", None, "Financial Times")
+    assert not from_outlet("https://fool.co.com/a", None, "The Motley Fool")
+    assert not from_outlet("https://reuters.com.de/a", None, "Reuters")
     assert not from_outlet("https://www.fool.com/x", None, "Fool's Gold Weekly")
     assert not from_outlet("https://other.substack.com/p/x", "jane.substack.com", "Jane's Notes")
     assert not from_outlet("https://www.yahoo.com.evil.test/x", "finance.yahoo.com", "Yahoo Finance")

@@ -30,6 +30,14 @@ class Unavailable(ToolError):
     """A passing failure (the network, a rate limit, an open breaker): worth trying again later."""
 
 
+class Refused(ToolError):
+    """The source answered with a status the caller does not accept."""
+
+    def __init__(self, message: str, status: int) -> None:
+        super().__init__(message)
+        self.status = status
+
+
 class Shelf:
     """Where tools put what they find: stored once per URL, cut to the as-of date, newest
     first, and shown with the ids findings cite."""
@@ -98,13 +106,15 @@ def query(input: str) -> str:
 
 async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *, params: dict | None = None,
                 headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = True,
-                accept: tuple[int, ...] = (200,), count_403: bool = True, form: dict | None = None) -> httpx.Response:
+                accept: tuple[int, ...] = (200,), count_403: bool = True, form: dict | None = None,
+                breaker: bool = True) -> httpx.Response:
     """A GET, or with `form` a POST, through the gate whose failures read as tool errors the
     model can act on."""
+    options = dict(params=params, headers=headers, max_bytes=max_bytes, follow_redirects=follow_redirects,
+                   count_403=count_403, breaker=breaker)
     try:
-        resp = await (client.post(source, url, data=form, headers=headers) if form is not None else
-                      client.get(source, url, params=params, headers=headers, max_bytes=max_bytes,
-                                 follow_redirects=follow_redirects, count_403=count_403))
+        resp = await (client.post(source, url, data=form, **options) if form is not None else
+                      client.get(source, url, **options))
     except (CircuitOpen, RequestFailed) as exc:
         raise Unavailable(f"{label} unavailable ({exc}); try another tool") from exc
     # An address httpx cannot encode (an IDNA label, a control character) or a body it cannot
@@ -112,5 +122,5 @@ async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *,
     except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
         raise ToolError(f"{label} could not be read ({type(exc).__name__}: {exc})") from exc
     if resp.status_code not in accept:
-        raise ToolError(f"{label} answered HTTP {resp.status_code}")
+        raise Refused(f"{label} answered HTTP {resp.status_code}", resp.status_code)
     return resp

@@ -73,13 +73,25 @@ def decoder_form(stub: str, ts: int, sg: str) -> dict[str, str]:
     return {"f.req": json.dumps([[["Fbv4je", json.dumps(request), None, "generic"]]])}
 
 
-def decoded_url(answer: str) -> str | None:
-    """The article's address from the decoder's answer, or None if it gave none."""
+def _envelopes(answer: str) -> list:
     # Google prefixes JSON answers with a line that stops them running as a script.
     _, _, rest = answer.partition("\n")
     try:
-        envelopes = json.loads(rest)
-        [inner] = [e[2] for e in envelopes if isinstance(e, list) and e[:2] == ["wrb.fr", "Fbv4je"]]
+        body = json.loads(rest)
+    except ValueError:
+        return []
+    return [e for e in body if isinstance(e, list) and e] if isinstance(body, list) else []
+
+
+def refused(answer: str) -> bool:
+    """Whether the decoder answered with an error envelope (a stale signature, throttling)."""
+    return any(e[0] == "er" for e in _envelopes(answer))
+
+
+def decoded_url(answer: str) -> str | None:
+    """The article's address from the decoder's answer, or None if it gave none."""
+    try:
+        [inner] = [e[2] for e in _envelopes(answer) if e[:2] == ["wrb.fr", "Fbv4je"]]
         body = json.loads(inner)
     except (ValueError, TypeError, IndexError):
         return None

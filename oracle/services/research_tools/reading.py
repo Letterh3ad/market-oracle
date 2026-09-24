@@ -25,11 +25,11 @@ from oracle.research.notes import take_note
 from oracle.research.tools import ToolError
 from oracle.research.trace import Evidence
 from oracle.research.web import (
-    REGISTERED_AS, THIN_PAGE, WebSearcher, outlet_key, registered_domain, site_name, unsafe_url,
+    THIN_PAGE, WebSearcher, outlet_key, outlet_sites, registered_domain, site_name, unsafe_url,
 )
 from oracle.services.research_tools.google_links import decode_online
-from oracle.services.research_tools.shelf import Unavailable, domain, evidence_line
-from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, read_page, search_web
+from oracle.services.research_tools.shelf import Refused, Unavailable, domain, evidence_line
+from oracle.services.research_tools.web import MAX_PAGE_BYTES, MAX_TEXT, THIN, Page, read_page, search_web
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.research import note_model
@@ -37,6 +37,10 @@ from oracle.store.research import note_model
 log = logging.getLogger(__name__)
 
 UNUSABLE_NOTE = "the model's note was unusable"
+# Passing, so a live run resolves it later.
+REPLAY = "not resolved in a replay (a Google News link needs Google or a web search)"
+# A decoded address answering these is stale; the headline search may find where it went.
+GONE = (404, 410)
 # Advice for the loop's model, not for someone reading why an article went unread.
 TRY_ANOTHER = "; try another tool"
 _WORD = re.compile(r"[a-z0-9]+")
@@ -94,8 +98,8 @@ class Reader:
 
     async def _fetch(self, e: Evidence, site: str | None, form: str | None) -> str | None:
         try:
-            url = await self._resolve(e, site) if domain(e.url) == "news.google.com" else e.url
-            page = await read_page(self._client, url, self._contact, FILING_BYTES if form else MAX_PAGE_BYTES)
+            page = await (self._read_stub(e, site) if domain(e.url) == "news.google.com" else
+                          read_page(self._client, e.url, self._contact, FILING_BYTES if form else MAX_PAGE_BYTES))
             if len(page.text) < THIN_PAGE:
                 raise ToolError(THIN)
         except ToolError as exc:
@@ -111,34 +115,49 @@ class Reader:
         self._articles.save_text(e.id, page.url, text, self._now())
         return text
 
-    async def _resolve(self, e: Evidence, site: str | None) -> str:
-        """The article behind a Google News redirect stub: the address the stub carries, else
-        Google's decoder for it, else a web search for its headline taking the first result at
-        the outlet's own site. A decoded address is held to the same outlet check."""
-        why = "could not resolve the Google News link"
+    async def _read_stub(self, e: Evidence, site: str | None) -> Page:
+        """The article behind a Google News redirect stub: at its decoded address, else (or
+        when that is gone) the first result at the outlet's own site of a search for its headline."""
+        decoded, why, passing = await self._decode(e, site)
+        if decoded:
+            try:
+                return await read_page(self._client, decoded, self._contact)
+            except Refused as exc:
+                if exc.status not in GONE:
+                    raise
+                why = f"{decoded} is gone ({exc})"
+        return await read_page(self._client, await self._search(e, site, why, passing), self._contact)
+
+    async def _decode(self, e: Evidence, site: str | None) -> tuple[str | None, str, bool]:
+        """The stub's address if it passes the outlet check, else why not and whether that
+        failure passes. An older stub carries it; a newer one needs Google's decoder."""
         stub = stub_id(e.url)
-        offline = decode_offline(stub) if stub else None
-        if offline and not (bad := off_outlet(offline, site, e.outlet)):
-            return offline
+        if stub is None:
+            return None, "the link has no id to decode", False
+        url = decode_offline(stub)
+        if url is None:
+            if self._searcher is None:
+                raise Unavailable(REPLAY)
+            try:
+                url = await decode_online(self._client, stub)
+            except ToolError as exc:
+                return None, str(exc).removesuffix(TRY_ANOTHER), isinstance(exc, Unavailable)
+        why = off_outlet(url, site, e.outlet)
+        return (None, why, False) if why else (url, "", False)
+
+    async def _search(self, e: Evidence, site: str | None, why: str, passing: bool) -> str:
+        """The first result at the outlet's own site of a web search for the headline."""
         if self._searcher is None:
-            # Passing, so a live run resolves it later.
-            raise Unavailable("not resolved in a replay (a Google News link needs Google or a web search)")
-        passing = False
-        try:
-            decoded = await decode_online(self._client, stub) if stub and not offline else offline
-            bad = off_outlet(decoded, site, e.outlet) if decoded else "the link has no id to decode"
-            if not bad:
-                return decoded
-        except ToolError as exc:
-            bad, passing = str(exc).removesuffix(TRY_ANOTHER), isinstance(exc, Unavailable)
+            raise Unavailable(REPLAY)
+        failed = f"could not resolve the Google News link: {why}"
         try:
             results = await search_web(self._searcher, self._gate, e.title)
         except Unavailable as exc:
-            raise Unavailable(f"{why}: {bad}, and {exc}") from exc
+            raise Unavailable(f"{failed}, and {exc}") from exc
         for r in results:
             if from_outlet(r.url, site, e.outlet):
                 return r.url
-        failure = f"{why}: {bad}, and no search result from {site or e.outlet or 'its outlet'}"
+        failure = f"{failed}, and no search result from {site or e.outlet or 'its outlet'}"
         raise Unavailable(failure) if passing else ToolError(failure)
 
     async def _note(self, e: Evidence, text: str) -> None:
@@ -199,10 +218,11 @@ def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:
         # A shared host (jane.substack.com) is registered under no outlet's name, so stays exact.
         same = key and site_name(site) == key and registered_domain(host) == registered_domain(site)
         return host == site or host.endswith("." + site) or bool(same)
+    if listed := outlet_sites(outlet or ""):
+        return registered_domain(host) in listed
     name = site_name(host)
     names = {"".join(_WORD.findall((outlet or "").lower())), key}
-    # Short names match only when listed: two letters are too easily someone else's.
-    return (len(name) >= 3 or name in REGISTERED_AS.values()) and name in names
+    return len(name) >= 3 and name in names
 
 
 def off_outlet(url: str, site: str | None, outlet: str | None) -> str | None:
