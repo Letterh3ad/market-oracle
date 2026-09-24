@@ -343,6 +343,17 @@ FILED_10Q = f"{ARCHIVE}/000032019326000077/aapl-20260627.htm"
 FILED_8K = f"{ARCHIVE}/000032019326000090/aapl-8k.htm"
 
 
+INDEX_8K = f"{ARCHIVE}/000032019326000090/0000320193-26-000090-index.htm"
+EXHIBIT = f"{ARCHIVE}/000032019326000090/a8-kex991q3202606272026.htm"
+
+
+def press_release(sec, folder: str = "000032019326000090", index: str = INDEX_8K) -> None:
+    """The 8-K's filing index, naming its EX-99.1, and the exhibit."""
+    listed = (FIXTURES / "aapl-8k-index.htm").read_text(encoding="utf-8")
+    sec.documents[index] = listed.replace("000032019326000018", folder)
+    sec.documents[f"{ARCHIVE}/{folder}/a8-kex991q3202606272026.htm"] = (FIXTURES / "aapl-ex991.htm").read_text("utf-8")
+
+
 def sec_documents(sec) -> None:
     apple_filings(sec)
     sec.documents[FILED_10Q] = (FIXTURES / "aapl-10q.htm").read_text(encoding="utf-8")
@@ -370,7 +381,7 @@ async def test_a_us_listings_filings_are_read_first_trimmed_to_what_bears_on_the
     assert event.startswith("[a4] 2026-09-10 SEC: 8-K Current report\n\nItem 2.02") and "Inline XBRL" not in event
     assert article.startswith("[a1] 2026-09-20 Reuters")
     documents = [r for r in sec.requests if "/Archives/" in str(r.url)]
-    assert [str(r.url) for r in documents] == [FILED_10Q, FILED_8K]
+    assert [str(r.url) for r in documents] == [FILED_10Q, FILED_8K, INDEX_8K]
     assert all("faye@example.com" in r.headers["user-agent"] for r in documents)
     assert by_id(run, 3).facts == ("Revenue rose 8% to $95bn",) and by_id(run, 3).outlet == "SEC"
     (text,) = ctx.conn.execute("SELECT text FROM article_texts WHERE article_id = 3").fetchone()
@@ -426,6 +437,56 @@ async def test_a_filing_with_no_headings_is_read_from_its_start_and_sec_trouble_
     assert run.status == "done"
 
 
+def sec_evidence(run, title: str) -> Evidence:
+    return next(e for e in run.evidence if e.outlet == "SEC" and e.title == title)
+
+
+async def test_an_earnings_8k_is_read_from_its_press_release_exhibit_then_its_other_items(ctx, sec):
+    with_contact(ctx)
+    sec_documents(sec)
+    press_release(sec)
+    model = model_reading()
+    run = await research(ctx, "AAPL", model)
+    event = sec_evidence(run, "8-K Current report")
+    [noted] = [t for t in noted_texts(model) if t.startswith(f"[a{event.id}]")]
+    assert noted.startswith(f"[a{event.id}] 2026-09-10 SEC: 8-K Current report\n\nEX-99.1\n"
+                            "Apple reports fourth quarter results\nRecord September quarter revenue")
+    assert "retire as Chief Operating Officer" in noted and "A copy is furnished" not in noted
+    documents = [r for r in sec.requests if "/Archives/" in str(r.url)]
+    assert [str(r.url) for r in documents] == [FILED_10Q, FILED_8K, INDEX_8K, EXHIBIT]
+    assert all("faye@example.com" in r.headers["user-agent"] for r in documents)
+    assert event.facts == ("Revenue rose 8% to $95bn",)
+    url, text = ctx.conn.execute("SELECT url, text FROM article_texts WHERE article_id = ?", (event.id,)).fetchone()
+    assert url == EXHIBIT and text.startswith("EX-99.1\nApple reports")
+
+
+async def test_an_earnings_8k_whose_exhibit_cannot_be_read_keeps_its_own_items(ctx, sec):
+    with_contact(ctx)
+    sec_documents(sec)
+    press_release(sec)
+    del sec.documents[EXHIBIT]
+    model = model_reading()
+    run = await research(ctx, "AAPL", model)
+    event = sec_evidence(run, "8-K Current report")
+    [noted] = [t for t in noted_texts(model) if t.startswith(f"[a{event.id}]")]
+    assert noted.startswith(f"[a{event.id}] 2026-09-10 SEC: 8-K Current report\n\nItem 2.02 Results")
+
+
+async def test_a_replay_reads_the_exhibit_of_an_8k_filed_before_its_cutoff_and_nothing_after(ctx, sec):
+    with_contact(ctx)
+    sec_documents(sec)
+    press_release(sec)
+    sec.filings[APPLE_CIK].insert(0, ("8-K", "2026-09-15", "0000320193-26-000095", "aapl-8k2.htm", "8-K"))
+    sec.documents[f"{ARCHIVE}/000032019326000095/aapl-8k2.htm"] = sec.documents[FILED_8K]
+    press_release(sec, "000032019326000095", f"{ARCHIVE}/000032019326000095/0000320193-26-000095-index.htm")
+    model = model_reading()
+    run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 12))
+    assert [e.title for e in run.evidence if e.outlet == "SEC"] == ["8-K Current report", "10-Q Quarterly report"]
+    assert any("EX-99.1\nApple reports" in t for t in noted_texts(model))
+    assert EXHIBIT in [str(r.url) for r in sec.requests]
+    assert not any("000032019326000095" in str(r.url) for r in sec.requests)
+
+
 async def test_a_listing_abroad_reads_a_results_page_its_web_search_found_before_news(ctx, news, pages, searcher):
     reading(ctx, 2)
     news.results["Sony"] = [story(1, "Reuters", "2026-09-20"), story(2, "BBC", "2026-09-19")]
@@ -469,3 +530,9 @@ def test_a_report_page_is_an_undated_web_result_named_like_results_or_a_report_a
     assert not report_page(ev("https://www.sony.com/q1.pdf", "Consolidated Financial Results for Q1"))
     assert not report_page(ev("https://reuters.test/1", "Sony financial results beat", "2026-09-20"))
     assert not report_page(ev("https://blog.test/sony", "Sony fan page"))
+
+
+async def test_a_filing_that_ended_up_off_sec_gov_is_not_asked_for_an_exhibit():
+    from oracle.services.research_tools.filings import press_exhibit
+
+    assert await press_exhibit(None, "Faye faye@example.com", "https://evil.test/320193/000032019326000090/d.htm") is None

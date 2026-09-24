@@ -1,0 +1,200 @@
+UNITED STATES
+SECURITIES AND EXCHANGE COMMISSION
+WASHINGTON, D.C. 20549
+FORM 10-Q
+(Mark One)
+☒
+QUARTERLY REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+For the quarterly period ended June 30, 2026
+OR
+☐
+TRANSITION REPORT PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934
+For the transition period from to
+Commission file number 1-9924
+Citigroup Inc .
+(Exact name of registrant as specified in its charter)
+Delaware 52-1568099
+(State or other jurisdiction of incorporation or organization) (I.R.S. Employer Identification No.)
+388 Greenwich Street, New York NY 10013
+(Address of principal executive offices) (Zip code)
+( 212 ) 559-1000
+(Registrant’s telephone number, including area code)
+Securities registered pursuant to Section 12(b) of the Securities Exchange Act of 1934 formatted in Inline XBRL: See Exhibit 99.01
+Indicate by check mark whether the registrant (1) has filed all reports required to be filed by Section 13 or 15(d) of the Securities Exchange Act of 1934 during the preceding 12 months (or for such shorter period that the registrant was required to file such reports), and (2) has been subject to such filing requirements for the past 90 days. Yes ☒ No ☐
+Indicate by check mark whether the registrant has submitted electronically every Interactive Data File required to be submitted pursuant to Rule 405 of Regulation S-T (§232.405 of this chapter) during the preceding 12 months (or for such shorter period that the registrant was required to submit such files). Yes ☒ No ☐
+Indicate by check mark whether the registrant is a large accelerated filer, an accelerated filer, a non-accelerated filer, a smaller reporting company, or an emerging growth company. See the definitions of “large accelerated filer,” “accelerated filer,” “smaller reporting company,” and “emerging growth company” in Rule 12b-2 of the Exchange Act.
+Large accelerated filer ☒ Accelerated filer ☐ Non-accelerated filer ☐ Smaller reporting company ☐
+Emerging growth company ☐
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+Indicate by check mark whether the registrant is a shell company (as defined in Rule 12b-2 of the Exchange Act). Yes ☐ No ☒
+Number of shares of Citigroup Inc. common stock outstanding on June 30, 2026: 1,677,436,783
+Available online at www.citigroup.com
+This page intentionally left blank.
+CITIGROUP’S SECOND QUARTER 2026—FORM 10-Q
+OVERVIEW
+4
+Citigroup’s Five Reportable Business Segments
+6
+MANAGEMENT’S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS
+7
+Executive Summary
+7
+Citi’s Multiyear Transformation
+9
+Summary of Selected Financial Data
+10
+Balance Sheet Overview
+12
+Segment Revenues and Income (Loss)
+14
+Services
+15
+Markets
+18
+Banking
+21
+Wealth
+24
+U.S. Consumer Cards (USCC)
+27
+All Other—Managed Basis
+30
+All Other—Divestiture-Related Impacts (Reconciling Items)
+33
+CAPITAL RESOURCES
+35
+Managing Global Risk—Table of Contents
+45
+MANAGING GLOBAL RISK
+46
+SIGNIFICANT ACCOUNTING POLICIES AND
+SIGNIFICANT ESTIMATES
+84
+DISCLOSURE CONTROLS AND PROCEDURES
+88
+DISCLOSURE PURSUANT TO SECTION 219 OF THE IRAN THREAT REDUCTION AND SYRIA HUMAN RIGHTS ACT
+88
+FORWARD-LOOKING STATEMENTS
+89
+Financial Statements and Notes—Table of Contents
+91
+CONSOLIDATED FINANCIAL STATEMENTS
+92
+NOTES TO CONSOLIDATED FINANCIAL STATEMENTS (UNAUDITED)
+100
+UNREGISTERED SALES OF EQUITY SECURITIES,
+REPURCHASES OF EQUITY SECURITIES AND DIVIDENDS
+198
+OTHER INFORMATION
+198
+EXHIBIT INDEX
+199
+SIGNATURES
+200
+GLOSSARY OF TERMS AND ACRONYMS
+201
+OVERVIEW
+This Quarterly Report on Form 10-Q should be read in conjunction with Citigroup’s Annual Report on Form 10-K for the year ended December 31, 2025 (referred to herein as Citi’s 2025 Form 10-K) and Citigroup’s Quarterly Report on Form 10-Q for the quarter ended March 31, 2026 (First Quarter of 2026 Form 10-Q).
+Throughout this report, “Citigroup,” “Citi” and “the Company” refer to Citigroup Inc. and its consolidated subsidiaries. All “Note” references correspond to the Notes to the Consolidated Financial Statements herein, unless otherwise indicated.
+For a list of certain terms and acronyms used in this Quarterly Report on Form 10-Q and other Citigroup presentations, see “Glossary of Terms and Acronyms” at the end of this report.
+Additional Information
+Additional information about Citigroup is available on Citi’s website at www.citigroup.com. Citigroup’s annual reports on Form 10-K, quarterly reports on Form 10-Q, current reports on Form 8-K and proxy statements, as well as other filings with the U.S. Securities and Exchange Commission (SEC) are available free of charge through Citi’s website by clicking on “SEC Filings” under the “Investors” tab. The SEC’s website also contains these filings and other information regarding Citi at www.sec.gov.
+Reporting Changes
+As discussed below, certain reclassifications have been made to the prior periods’ financial statements and disclosures to conform to the current period’s presentation, effective January 1, 2026. Citi’s consolidated results were unchanged for all periods presented.
+• Citi transferred its Retail Banking business from the former U.S. Personal Banking (USPB) to Wealth and integrated the remaining USPB businesses into a new U.S. Consumer Cards segment.
+• As part of this transfer, the financial results and balance sheet of the Retail Banking business moved to the Wealth segment.
+• Citi allocates tangible common equity (TCE) internally to its businesses annually, taking into consideration a variety of factors, including the economics of client relationships that cross businesses. Citi updated its TCE allocation methodology among the Services , Markets and Banking segments to better align their capital usage associated with the shared economic benefits of corporate lending to clients across these segments, eliminating the need for a corporate lending revenue share arrangement, which had historically been reflected in the “All other” revenue line item of these segments.
+• As a result of these changes, the revenues of Services and Markets increased and the revenues of Banking decreased.
+• Certain interest rate risk-management activities within Markets were moved to All Other —Corporate/Other, or between businesses within Markets . These changes impacted the results for Markets , as well as All Other —Corporate/Other.
+For additional information on these and other reporting changes, see the Historical Quarterly Financial Data Supplement for the five-year quarterly and annual periods ended December 31, 2025, reflecting the above-mentioned first quarter of 2026 presentation changes, included as Exhibit 99.1 to Citigroup’s Current Report on Form 8-K furnished to the SEC on April 3, 2026.
+As previously announced, Citi also enhanced its 2026 TCE allocation methodology, which affected the TCE allocation for each segment as of the first quarter of 2026. For additional information, see Citi’s First Quarter 2026 Earnings Results Presentation available on Citi’s Investor Relations website. This earnings results presentation is not incorporated by reference into, and does not form any part of, this Form 10-Q.
+Non-GAAP Financial Measures
+Citi prepares its financial statements in accordance with U.S. generally accepted accounting principles (GAAP) and also presents certain non-GAAP financial measures (non-GAAP measures) that exclude certain items or otherwise include components that differ from the most directly comparable measures calculated in accordance with U.S. GAAP. These non-GAAP financial measures are not intended to be a substitute for GAAP financial measures and may not be defined or calculated the same way as non-GAAP measures with similar names used by other companies.
+Citi’s non-GAAP measures in this Form 10-Q include the following:
+• All Other (managed basis), which excludes divestiture-related impacts
+• Banking and Corporate Lending revenues excluding gain (loss) on loan hedges
+• TCE, return on tangible common equity (RoTCE) and tangible book value per share (TBVPS)
+• Non- Markets net interest income (NII)
+• Non- Markets non-interest revenue (NIR)
+Citi’s All Other (managed basis) results, which exclude divestiture-related impacts, represent as reported, or GAAP, financial results adjusted for items that are incurred and recognized, which are wholly and necessarily a consequence of actions taken to sell (including through a public offering), dispose of or wind down business activities associated with Citi’s previously announced exit markets within All Other —Legacy Franchises.
+Citi’s Chief Executive Officer, its chief operating decision maker, regularly reviews financial information for All Other on a managed basis. For additional information, see “All Other—Divestiture-Related Impacts (Reconciling Items)” below.
+4
+Citi believes All Other (managed basis) results are useful to investors, industry analysts and others in evaluating Citi’s results of operations and comparing its operational performance between periods, by providing a meaningful depiction of the underlying fundamentals of period-to-period operating results; improved visibility into management decisions and their impacts on operational performance; and additional comparability to peer companies.
+Citi believes that Banking and Corporate Lending revenues excluding gain (loss) on loan hedges are useful to investors, industry analysts and others because the gain (loss) on loan hedges are independent of Banking and Corporate Lending’s core operations and not indicative of the performance of the business operations. For more information on Banking and Corporate Lending revenues excluding gain (loss) on loan hedges, see “Banking” below.
+TCE, RoTCE and TBVPS are used by management, as well as investors, industry analysts and others, in assessing Citi’s use of equity. Citi believes TCE and RoTCE are useful to investors, industry analysts and others by providing alternative measures of capital strength and performance. Citi believes TBVPS provides additional useful information about the level of tangible assets in relation to Citi’s outstanding shares of common stock. For more information on TCE, RoTCE and TBVPS, see “Capital Resources—Tangible Common Equity, Book Value Per Share, Tangible Book Value Per Share and Return on Equity” below.
+Management uses non- Markets NII and non- Markets NIR to assess the performance of Citi’s non- Markets lending, investing (including asset-liability management) and deposit-raising activities, apart from any volatility associated with such Markets ’ activities. Citi believes the use of this non-GAAP measure provides investors, industry analysts and others with an alternative measure to analyze the NII and NIR trends of Citi’s lending, investing and deposit-raising activities, by providing a meaningful depiction of the underlying fundamentals of period-to-period operating results of those activities; improved visibility into management decisions and their impacts on operational performance; and additional comparability to peer companies. For more
+information on non- Markets NII, see “Executive Summary” and “Market Risk—Non- Markets Net Interest Income (NII)” below. For more information on non- Markets NIR, see “Executive Summary” below.
+Please see “Risk Factors” in Citi’s 2025 Form 10-K for a discussion of material risks and uncertainties that could impact Citigroup’s businesses, results of operations and financial condition.
+5
+Citigroup is managed pursuant to five reportable business segments (segments), also referred to as Citi’s “five businesses”: Services , Markets , Banking , Wealth and U.S. Consumer Cards. Activities not assigned to the segments are included in All Other . For additional information, see the results of operations for each of the segments and All Other within “Management’s Discussion and Analysis of Financial Condition and Results of Operations” below.
+Note: Mexico is included in Latin America (LATAM) within International.
+(1) Fixed Income Markets consists of the Rates and Currencies sub-business and Spread Products and Other Fixed Income sub-business; Equity Markets consists of the e quity derivatives, equity cash and prime services sub-businesses.
+(2) Investment Banking consists of the Debt Capital Markets (DCM), Equity Capital Markets (ECM) and Advisory sub-businesses.
+(3) USCC ’s unsecured consumer lending consists of General Purpose Credit Cards (GPCC), Private Label Credit Cards (PLCC) and Installment Lending products.
+(4) Mexico Consumer/SBMM operates primarily through Grupo Financiero Banamex, S.A. de C.V. (Banamex) and its consolidated subsidiaries.
+(5) Primarily consists of Korea, and Poland before its sale in the second quarter of 2026.
+(6) Within International, Citi is organized into six clusters: United Kingdom; Japan, Asia North and Australia (JANA); LATAM; Asia South; Europe; and Middle East, Africa and Russia (MEA) (as previously disclosed, on February 18, 2026, Citi completed the sale of AO Citibank in Russia—see Note 2). Although the chief operating decision maker (CODM) does not manage Citi’s segments and All Other by cluster, Citi provides selected financial information (revenue and certain corporate credit metrics) below for these six clusters.
+6
+MANAGEMENT’S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION
+AND RESULTS OF OPERATIONS
+EXECUTIVE SUMMARY
+Overview
+As described further throughout this Executive Summary, during the second quarter of 2026:
+• Citi and four of its five businesses achieved positive operating leverage. Citi’s positive operating leverage was driven by revenue growth of 14% and disciplined expense management, with expenses up 5%.
+• Citi returned $5.0 billion to common shareholders in the form of share repurchases ($4.0 billion) under its 2026 $30 billion common stock repurchase program and dividends ($1.0 billion). For additional information, see “Unregistered Sales of Equity Securities, Repurchases of Equity Securities and Dividends” below.
+• Citi’s Common Equity Tier 1 (CET1) Capital ratio under the Basel III Standardized Approach was 12.8% as of June 30, 2026, approximately 120 basis points above the regulatory requirement.
+• Citi announced its plans to increase its quarterly common dividend from $0.60 to $0.67 per share, subject to quarterly approval by Citi’s Board of Directors. A quarterly dividend of $0.67 per share was declared on July 21, 2026.
+• Citi completed the acquisition of the additional American Airlines co-branded card portfolio.
+• Citi continued to make progress on its remaining divestitures, including (i) completing the sale of the Poland consumer banking business and (ii) closing an additional Banamex equity sale. For additional information, see “All Other—Managed Basis—Legacy Franchises (Managed Basis)” below and Note 2.
+Second Quarter of 2026 Results Summary
+The below comparisons are to the second quarter of 2025:
+Citigroup
+Citigroup reported net income of $5.8 billion, or $3.15 per share. This compared to net income of $4.0 billion, or $1.96 per share in the prior-year period.
+Net income increased 45% versus the prior-year period, driven by higher revenues and a lower provision for credit losses, partially offset by higher expenses.
+Citigroup revenues of $24.8 billion increased 14%, driven by growth in each of Citi’s five interconnected businesses and Legacy Franchises (managed basis) in All Other , including the impact of FX translation, partially offset by a decline in Corporate/Other, also in All Other .
+Net interest income (NII) of $17.1 billion increased 13% versus the prior-year period. The increase in NII was driven by increases in Markets , Services , Wealth , USCC , Banking and Legacy Franchises (managed basis), partially offset by a decline in Corporate/Other. Non- Markets NII increased 6%, driven by growth in Services , Wealth , USCC , Banking and Legacy Franchises (managed basis), partially offset by a decline in Corporate/Other. Markets NII of $4.0 billion in the
+second quarter of 2026 compared to $2.9 billion in the prior-year period.
+Non-interest revenue (NIR) of $7.6 billion increased 18% versus the prior-year period. The increase in NIR was driven by increases in All Other (managed basis), Banking , Services and Wealth , partially offset by declines in USCC and Markets . Non- Markets NIR increased 39% from the second quarter of 2025, driven by growth in All Other (managed basis), Banking , Services and Wealth , partially offset by a decline in USCC . Markets NIR of $3.0 billion in the second quarter of 2026 compared to $3.2 billion in the prior-year period.
+Citigroup’s average loans were $785 billion, up 10% versus the prior-year period, largely driven by loan growth in Markets , Services , Wealth and USCC . For additional information about Citi’s average loans by business, including drivers and loan trends, see each business’s results of operations and “Managing Global Risk—Credit Risk—Average Loans” below.
+Citigroup’s average deposits were approximately $1.5 trillion, up 12% versus the prior-year period, driven by an increase in Services . For additional information about Citi’s average deposits by business, including drivers and deposit trends, see each business’s results of operations and “Liquidity Risk—Deposits” below.
+Expenses
+Citigroup’s operating expenses of $14.2 billion increased 5% from the prior-year period, including the impact of FX translation, driven by:
+• higher compensation and benefits,
+• higher transactional and product servicing expenses, and
+• higher deposit insurance costs,
+• partially offset by lower professional services expenses.
+The increase in compensation and benefits expenses was driven by higher performance-related and other compensation and benefits expenses, and higher compensation associated with investments in the businesses, largely offset by productivity savings and lower transformation expenses.
+The increase in transactional and product servicing expenses was driven by higher volumes in Markets , particularly in Equity Markets, and higher customer engagement costs in USCC .
+The higher deposit insurance costs were driven by the absence of a benefit in the prior-year period and higher deposit volume.
+The decrease in professional services expenses was driven by lower transformation spend.
+Provisions
+Citi’s total provisions for credit losses and for benefits and claims were $2.5 billion, reflecting net credit losses of $2.4 billion and a net allowance for credit losses (ACL) build of $118 million.
+7
+Net credit losses were up 8% from the prior-year period, driven by increases in Banking and Legacy Franchises (managed basis).
+The net ACL build was driven by portfolio growth and changes to certain macroeconomic variables, offset by net improvements in portfolio quality, including seasonal changes in USCC .
+Citi’s total provisions for credit losses and for benefits and claims in the prior-year period were $2.9 billion, reflecting net credit losses of $2.2 billion and a net ACL build of $638 million, driven by transfer risk, portfolio growth and changes to certain macroeconomic variables, partially offset by changes in credit quality.
+For additional information on Citi’s ACL and Citi’s net credit losses , see each segment’s and All Other ’s results of operations, “Credit Risk” and “ Significant Accounting Policies and Significant Estimates — Allowance for Credit Losses” below.
+Capital
+Citigroup’s Common Equity Tier 1 (CET1) Capital ratio was 12.8% as of June 30, 2026, compared to 13.5% as of June 30, 2025, based on the Basel III Standardized Approach for determining risk-weighted assets (RWA). The decrease was driven by common share repurchases, the payment of common and preferred dividends and an increase in RWA, largely offset by net income and net beneficial movements in Accumulated other comprehensive income (AOCI) .
+For additional information on Citi’s capital metrics and capital actions, see “Capital Resources” and “Unregistered Sales of Equity Securities, Repurchases of Equity Securities and Dividends” below.
+For information on the results of operations for the second quarter of 2026 for each segment and All Other , see “Services,” “Markets,” “Banking,” “Wealth,” “U.S. Consumer Cards (USCC)” and “All Other—Managed Basis” below.
+Macroeconomic and Other Risks and Uncertainties Various macroeconomic , geopolitical and regulatory factors continue to contribute to challenges and uncertainties in the U.S. and globally , including , but not limited to, elevated inflation; conflicts in the Middle East; changes in U.S. laws or policies; and changes in interest rates and monetary policies. These factors could result in volatility and disruptions in financial markets, as well as adversely affect economic growth and unemployment in the U.S. and other countries and jurisdictions. Such risks and uncertainties could also adversely impact Citi’s clients, customers, businesses, funding costs, provisions and overall results of operations and financial condition during the remainder of 2026.
+For a further discussion of trends, uncertainties and risks that will or could impact Citi’s segments and All Other , results of operations, capital and other financial condition during the remainder of 2026, see each segment’s and All Other ’s results of operations, “Managing Global Risk” and “Forward-Looking Statements” below and “Citi’s Multiyear Transformation” and “Risk Factors” in Citi’s 2025 Form 10-K.
+8
+CITI’S MULTIYEAR TRANSFORMATION
+As previously disclosed, Citi’s transformation, including remediating its 2020 Consent Orders with the Board of Governors of the Federal Reserve System (FRB) and Office of the Comptroller of the Currency (OCC), is a multiyear endeavor that has not been linear. For additional information on Citi’s transformation, including remaining focus areas and status, consent order compliance and governance, see “Citi’s Multiyear Transformation” in Citi’s First Quarter of 2026 Form 10-Q, Citi’s 2025 Form 10-K and Citi’s 2026 Proxy Statement for its Annual Meeting of Stockholders.
+9
+RESULTS OF OPERATIONS
+SUMMARY OF SELECTED FINANCIAL DATA
+Citigroup Inc. and Consolidated Subsidiaries
+Second Quarter Six Months
+In millions of dollars, except per share amounts 2026 2025 % Change 2026 2025 % Change
+Net interest income (NII) $ 17,125 $ 15,175 13 % $ 32,866 $ 29,187 13 %
+Non-interest revenue (NIR) 7,641 6,493 18 16,533 14,077 17
+Revenues, net of interest expense $ 24,766 $ 21,668 14 % $ 49,399 $ 43,264 14 %
+Operating expenses 14,215 13,577 5 28,526 27,002 6
+Provisions for credit losses and for benefits and claims 2,522 2,872 (12) 5,327 5,595 (5)
+Income from continuing operations before income taxes $ 8,029 $ 5,219 54 % $ 15,546 $ 10,667 46 %
+Income taxes 2,005 1,186 69 3,583 2,526 42
+Income from continuing operations $ 6,024 $ 4,033 49 % $ 11,963 $ 8,141 47 %
+Income (loss) from discontinued operations, net of taxes — — — (1) (1) —

@@ -207,6 +207,28 @@ async def test_real_filings_are_trimmed_to_their_key_sections(ticker):
                 assert "discussion" in kept[:300].lower(), f"{form} {filing.url}: {kept[:300]!r}"
 
 
+async def test_real_earnings_8k_is_read_from_its_press_release_exhibit(tmp_path):
+    from oracle.research import edgar
+    from oracle.services.http import open_client
+    from oracle.services.research_tools.filings import press_exhibit
+    from oracle.services.research_tools.reading import FILING_BYTES
+    from oracle.services.research_tools.web import read_page
+
+    contact = os.environ.get("ORACLE_SEC_CONTACT")
+    if not contact:
+        pytest.skip('set ORACLE_SEC_CONTACT="Name email" to check EDGAR live')
+    # Apple's results for the quarter ended June 27, 2026.
+    document = f"{edgar.ARCHIVES}/320193/000032019326000018/aapl-20260730.htm"
+    with open_context(Config(db_path=tmp_path / "o.db"), None) as ctx:
+        async with open_client(ctx) as client:
+            page = await read_page(client, document, contact, FILING_BYTES)
+            exhibit = await press_exhibit(client, contact, document)
+            assert edgar.reads_exhibit(page.text) and exhibit and exhibit.kind == "EX-99.1"
+            release = await read_page(client, exhibit.url, contact, FILING_BYTES)
+    kept = edgar.with_exhibit(exhibit, release.text, page.text)
+    assert kept.startswith("EX-99.1\n") and "quarter" in kept[:600].lower() and "net sales" in kept.lower()
+
+
 async def test_real_claude_answers_inside_the_research_schema():
     """Costs a fraction of a cent; runs only with ORACLE_CLAUDE_SMOKE=1 set."""
     if not os.environ.get("ORACLE_CLAUDE_SMOKE"):

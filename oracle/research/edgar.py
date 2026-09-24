@@ -8,7 +8,7 @@ import re
 from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, timedelta
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
 from oracle.research.notes import MAX_NOTE_TEXT
 
@@ -36,6 +36,27 @@ _RISKS = re.compile(rf"^[ \t]*item\s*1a{_SEP}risk\s+factors", re.I | re.M)
 _ITEM = re.compile(r"^[ \t]*item\s*(\d\.\d{2})", re.I | re.M)
 # Only lists the exhibits.
 _EXHIBITS = "9.01"
+# Results, and press releases under Regulation FD or "other events": the item text only
+# points at the exhibit that says it.
+PRESS_ITEMS = frozenset({"2.02", "7.01", "8.01"})
+_PRESS = re.compile(r"EX-99(?:\.\d+)?", re.I)
+_ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.I | re.S)
+_CELL = re.compile(r"<td[^>]*>(.*?)</td>", re.I | re.S)
+_HREF = re.compile(r'href="([^"]+)"', re.I)
+_TAG = re.compile(r"<[^>]+>|&nbsp;|&#160;")
+# Reports without "Item N." headings (Citigroup's) still head their MD&A in words.
+_WORDED = re.compile(r"^[ \t]*(?:management\S*\s+discussion\s+and\s+analysis|executive\s+summary|"
+                     r"results\s+of\s+operations)\b[^\n]{0,80}$", re.I | re.M)
+# The cover page ends with the filer's check-mark questions; the contents lines after it are
+# short, so the first paragraph past them is the report's.
+_COVER = re.compile(r"check mark", re.I)
+COVER_REACH = 20_000
+_PARAGRAPH = re.compile(r"^[^\n]{150,}", re.M)
+# A heading with prose under it, not its table of contents line: a line of PROSE_LINE
+# characters or more within its next PROSE_LINES lines (a contents entry is followed by
+# page numbers and other entries).
+PROSE_LINES = 5
+PROSE_LINE = 80
 
 
 @dataclass(frozen=True)
@@ -47,9 +68,24 @@ class Filing:
 
     @property
     def title(self) -> str:
-        """The form and its description, which often only repeats the form."""
-        same = self.description.strip().upper() in ("", self.form.upper())
-        return self.form if same else f"{self.form} {self.description.strip()}"
+        return _named(self.form, self.description)
+
+
+@dataclass(frozen=True)
+class Exhibit:
+    kind: str
+    url: str
+    description: str
+
+    @property
+    def label(self) -> str:
+        return _named(self.kind, self.description)
+
+
+def _named(kind: str, description: str) -> str:
+    """The kind and its description, which often only repeats the kind."""
+    same = description.strip().upper() in ("", kind.upper())
+    return kind if same else f"{kind} {description.strip()}"
 
 
 def submissions_url(cik: int) -> str:
@@ -99,25 +135,84 @@ def worth_reading(filings: list[Filing], day: date) -> list[Filing]:
     return ([periodic] if periodic else []) + events
 
 
+def index_url(document_url: str) -> str:
+    """The filing's index page on EDGAR, in the folder its document sits in, named by its
+    accession number with dashes."""
+    folder = document_url.rsplit("/", 1)[0]
+    n = folder.rsplit("/", 1)[1]
+    return f"{folder}/{n[:10]}-{n[10:12]}-{n[12:]}-index.htm"
+
+
+def find_exhibit(index_html: str, index: str) -> Exhibit | None:
+    """The filing's EX-99.1 from its index page, else its first EX-99.x. Only a document in
+    the filing's own folder, so the index cannot send the reader elsewhere."""
+    folder = index.rsplit("/", 1)[0] + "/"
+    found = []
+    for row in _ROW.findall(index_html):
+        cells = [_TAG.sub(" ", c).strip() for c in _CELL.findall(row)]
+        href = _HREF.search(row)
+        if len(cells) < 4 or not href or not _PRESS.fullmatch(cells[3]):
+            continue
+        url = urljoin(index, href.group(1).removeprefix("/ix?doc="))
+        if url.startswith(folder) and "/" not in url[len(folder):]:
+            found.append(Exhibit(cells[3].upper(), url, cells[1]))
+    return next((e for e in found if e.kind == "EX-99.1"), found[0] if found else None)
+
+
+def reads_exhibit(text: str) -> bool:
+    """Whether an 8-K's items are results or a press release, said in an exhibit."""
+    return any(m.group(1) in PRESS_ITEMS for m in _ITEM.finditer(text))
+
+
+def with_exhibit(exhibit: Exhibit, exhibit_text: str, text: str, cap: int = FILING_TEXT) -> str:
+    """An 8-K read as its labelled press exhibit, then its items the exhibit does not cover."""
+    items = _items(text, [m.start() for m in _HEADING.finditer(text)])
+    others = [s for item, s in items.items() if item not in PRESS_ITEMS]
+    return _fit([f"{exhibit.label}\n{exhibit_text.strip()}", *others], cap)
+
+
 def key_text(form: str, text: str, cap: int = FILING_TEXT) -> str:
     """The parts of a filing's text that bear on the price: MD&A and risk factors for a 10-Q
-    or 10-K, the items of an 8-K. With none found, the start of the text, so a filing laid
-    out unusually is still read."""
+    or 10-K, the items of an 8-K. A report without item headings is read from its MD&A
+    headed in words; with nothing found, from past the cover page and table of contents."""
     heads = [m.start() for m in _HEADING.finditer(text)]
     if form in PERIODIC:
         sections = [s for s in (_longest(text, heads, _MDNA), _longest(text, heads, _RISKS)) if s]
     elif form == EVENT:
-        items: dict[str, str] = {}
-        for m in _ITEM.finditer(text):
-            if m.group(1) != _EXHIBITS:
-                section = _section(text, heads, m.start())
-                items[m.group(1)] = max(items.get(m.group(1), ""), section, key=len)
-        sections = list(items.values())
+        sections = list(_items(text, heads).values())
     else:
         sections = []
-    if not sections or (form in PERIODIC and sum(map(len, sections)) < MIN_SECTIONS):
-        return text[:cap]
-    return _fit(sections, cap)
+    if sections and (form not in PERIODIC or sum(map(len, sections)) >= MIN_SECTIONS):
+        return _fit(sections, cap)
+    worded = _worded(text) if form in PERIODIC else None
+    return text[worded if worded is not None else _body(text):][:cap]
+
+
+def _items(text: str, heads: list[int]) -> dict[str, str]:
+    """An 8-K's items but the exhibit list, each its longest occurrence."""
+    items: dict[str, str] = {}
+    for m in _ITEM.finditer(text):
+        if m.group(1) != _EXHIBITS:
+            items[m.group(1)] = max(items.get(m.group(1), ""), _section(text, heads, m.start()), key=len)
+    return items
+
+
+def _worded(text: str) -> int | None:
+    """Where the first MD&A or results heading with prose under it starts."""
+    return next((m.start() for m in _WORDED.finditer(text) if _prose(text, m.end())), None)
+
+
+def _prose(text: str, at: int) -> bool:
+    lines = text[at:].split("\n", PROSE_LINES + 1)[1:PROSE_LINES + 1]
+    return any(len(line) >= PROSE_LINE for line in lines)
+
+
+def _body(text: str) -> int:
+    """The first paragraph past the cover page, which skips the table of contents too; with
+    none, the start."""
+    covers = [m.end() for m in _COVER.finditer(text, 0, COVER_REACH)]
+    m = _PARAGRAPH.search(text, covers[-1] if covers else 0)
+    return m.start() if m else 0
 
 
 def _section(text: str, heads: list[int], start: int) -> str:

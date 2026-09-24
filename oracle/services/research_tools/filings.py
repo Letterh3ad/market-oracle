@@ -18,6 +18,7 @@ from oracle.store.sec import SecTickerRepo
 
 # SEC's ticker map changes slowly; a week-old copy only misses brand-new listings.
 TICKERS_MAX_AGE = timedelta(days=7)
+INDEX_BYTES = 1_000_000
 
 
 class NoFilings(ToolError):
@@ -83,6 +84,18 @@ class Filings:
             return resp.json()
         except ValueError as exc:
             raise ToolError(f"SEC sent something unreadable ({exc})") from exc
+
+
+async def press_exhibit(client: RateLimitedClient, contact: str | None, document_url: str) -> edgar.Exhibit | None:
+    """The press exhibit a filing's index names, if any. Only on sec.gov: the contact is
+    sent with the request."""
+    if not edgar.is_sec(document_url):
+        return None
+    index = edgar.index_url(document_url)
+    headers = {"User-Agent": edgar.user_agent(need_contact(contact))}
+    resp = await fetch(client, "sec_edgar", "the filing index", index, headers=headers, max_bytes=INDEX_BYTES,
+                       follow_redirects=False)
+    return edgar.find_exhibit(resp.text, index)
 
 
 def _article(f: edgar.Filing) -> Article:
