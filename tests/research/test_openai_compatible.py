@@ -213,6 +213,41 @@ async def test_a_server_window_smaller_than_the_profile_gets_that_reply_uncapped
     assert server.bodies[2]["max_tokens"] == MAX_REPLY_TOKENS, "only that reply went uncapped"
 
 
+@pytest.mark.parametrize("message", ["Grammar too large", "Invalid schema: too large"])
+async def test_a_schema_too_large_is_a_format_refusal_not_a_context_one(message):
+    server = FakeOpenAI({"ok": True})
+    replies = [httpx.Response(400, json={"error": {"message": message}})]
+
+    def handle(request):
+        return replies.pop(0) if replies else server.handle(request)
+
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, transport=httpx.MockTransport(handle))
+    assert await model.reply(ASK, SCHEMA) == {"ok": True}
+    assert server.bodies[0]["response_format"]["type"] == "json_object" and "max_tokens" in server.bodies[0]
+
+
+def cut_off(content):
+    def handle(request):
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}, "finish_reason": "length"}]})
+    return OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, CONTEXT, transport=httpx.MockTransport(handle))
+
+
+async def test_a_reply_cut_off_by_the_cap_names_the_cap_and_how_to_raise_it():
+    with pytest.raises(ModelError, match=rf"ran out of its {MAX_REPLY_TOKENS} output tokens.*raise the profile's context"):
+        await cut_off('<think>still thinking about {"ok"').reply(ASK, SCHEMA)
+
+
+async def test_a_reply_that_parses_is_kept_even_at_the_cap():
+    assert await cut_off('{"ok": true}').reply(ASK, SCHEMA) == {"ok": True}
+
+
+def test_this_provider_keeps_more_room_for_the_reply_than_the_budgets_default():
+    from oracle.research.budget import REPLY_TOKENS, reply_room
+
+    model = chat(FakeOpenAI())
+    assert reply_room(model) == model.reply_tokens == 4096 > REPLY_TOKENS
+
+
 @pytest.mark.parametrize("wording", [0, 1])
 async def test_a_prompt_longer_than_the_server_window_says_so(wording):
     server = FakeOpenAI(window=1000, wording=wording)

@@ -874,7 +874,7 @@ def check_profile(name: str, raw: object, strict: bool = True) -> ModelProfile:
     if p.base_url and not _plain_url(p.base_url):
         # Never echoed: the user or query part may hold a password or key.
         unusable = f"{where}.base_url must be an http(s) URL with no user, password, query or fragment"
-    elif (p.key or p.key_env) and p.base_url and not _safe_for_keys(p.base_url):
+    elif (p.key or p.key_env or PROVIDERS[p.provider].fallback_key) and p.base_url and not _safe_for_keys(p.base_url):
         unusable = (f"{where} would send its key unencrypted to {urlsplit(p.base_url).hostname}: use https://, "
                     "or plain http:// only to this machine")
     if unusable and strict:

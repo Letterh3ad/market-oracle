@@ -25,7 +25,11 @@ REPLY_MARGIN = 256
 """Tokens kept free beside the estimated prompt for the chat template."""
 CAP_NAMES = ("max_tokens", "max_completion_tokens", None)
 """The output cap's name, renamed as the model calls the one before unsupported; None sends none."""
-OVERFLOW = re.compile(r"maximum context length|too large|exceeds? the (?:available )?context|\d+ in the completion")
+OVERFLOW = re.compile(r"maximum context length|exceeds? the (?:available )?context|\d+ in the completion"
+                      r"|tokens.{0,60}too large|too large.{0,60}tokens")
+"""A 400 about the context. "Too large" counts only near tokens: a grammar or schema can be too large too."""
+REPLY_RESERVE = 4096
+"""Tokens every prompt leaves for the reply: reasoning models think inside it."""
 THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 REFUSED = r"(?:unsupported|not supported|does not support|only the default)"
@@ -53,6 +57,7 @@ def shown_url(url: str) -> str:
 
 class OpenAICompatibleChat:
     name = "openai_compatible"
+    reply_tokens = REPLY_RESERVE
 
     def __init__(self, model: str, base_url: str, timeout_s: float, context: int, *, api_key: str | None = None,
                  key_source: str = NO_KEY, transport: httpx.AsyncBaseTransport | None = None) -> None:
@@ -76,7 +81,8 @@ class OpenAICompatibleChat:
     async def reply(self, messages: list[dict], schema: dict) -> object:
         fell_back_now, capped = False, True
         while True:
-            response = await self._post(self._payload(messages, schema, capped))
+            payload = self._payload(messages, schema, capped)
+            response = await self._post(payload)
             if response.status_code not in (400, 422):
                 break
             problem = _problem(response)
@@ -102,14 +108,22 @@ class OpenAICompatibleChat:
                 raise ModelError(f"{self._where} refused the request (HTTP {response.status_code}: {problem})")
         self._check(response)
         try:
-            message = response.json()["choices"][0]["message"]
+            choice = response.json()["choices"][0]
+            message = choice["message"]
             if not isinstance(message, dict):
                 raise TypeError(f"message is {type(message).__name__}")
             if message.get("refusal"):
                 return None
-            return _parsed(_answer(message))
+            answer = _parsed(_answer(message))
         except (KeyError, IndexError, TypeError, ValueError) as exc:
             raise ModelError(f"{self._where} gave no usable answer: {exc!r}"[:300]) from exc
+        if isinstance(answer, str) and choice.get("finish_reason") == "length":
+            # A reasoning model can spend the whole cap thinking; say so rather than hand back a stub.
+            cap = next((payload[k] for k in CAP_NAMES if k and k in payload), None)
+            spent = f"its {cap} output tokens" if cap else "the server's output limit"
+            raise ModelError(f"{self._where} ran out of {spent} before finishing the answer; raise the profile's "
+                             "context in Settings > Models (and the server's window) to leave more for the reply")
+        return answer
 
     @property
     def _where(self) -> str:
@@ -134,7 +148,8 @@ class OpenAICompatibleChat:
 
     def _cap(self, messages: list[dict], schema: dict) -> int:
         """What the prompt leaves of the context, estimated as the budget cuts prompts, up to
-        MAX_REPLY_TOKENS; never below the REPLY_TOKENS every prompt was cut to leave."""
+        MAX_REPLY_TOKENS. The budget cuts prompts to leave REPLY_RESERVE, so this is rarely much
+        less; a prompt the budget did not cut still gets the budget's default REPLY_TOKENS."""
         chars = sum(len(str(m.get("content") or "")) for m in messages) + len(json.dumps(schema))
         room = self._context - chars // CHARS_PER_TOKEN - REPLY_MARGIN
         return max(REPLY_TOKENS, min(MAX_REPLY_TOKENS, room))

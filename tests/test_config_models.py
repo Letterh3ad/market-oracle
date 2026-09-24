@@ -155,10 +155,17 @@ def test_a_profile_that_loaded_before_the_url_rules_is_kept_but_unusable(tmp_pat
     ({"provider": "ollama", "base_url": "http://u:p@gpu:11434"}, r"models.fast.base_url must be an http\(s\)"),
     ({"provider": "openai_compatible", "base_url": "http://gpu.lan:8000/v1", "key_env": "K"},
      r"models.fast would send its key unencrypted to gpu.lan: use https://"),
+    ({"provider": "claude_api", "base_url": "http://proxy.lan:8080"},
+     r"models.fast would send its key unencrypted to proxy.lan"),
 ])
 def test_a_save_refuses_what_a_load_only_marks_unusable(table, message):
     with pytest.raises(ConfigError, match=message):
         check_profile("fast", {"model": "x", **table})
+
+
+def test_a_keyless_profile_may_use_plain_http_when_its_provider_has_no_fallback_key():
+    check_profile("lm", {"provider": "openai_compatible", "model": "x", "base_url": "http://gpu.lan:8000/v1"})
+    check_profile("big", {"provider": "ollama", "model": "x", "base_url": "http://gpu.lan:11434"})
 
 
 def test_unusable_is_not_a_key_a_file_may_set(tmp_path):

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from oracle.research.budget import budget, cut
+from oracle.research.budget import REPLY_TOKENS, budget, cut, reply_room
 from oracle.research.citations import strip_citations
 from oracle.research.llm import ChatModel
 
@@ -39,15 +39,15 @@ def system_prompt(company: str) -> str:
     return _SYSTEM.format(company=company, n=MAX_FACTS)
 
 
-def note_room(context_tokens: int, system: str, heading: str) -> int:
+def note_room(context_tokens: int, system: str, heading: str, reply_tokens: int = REPLY_TOKENS) -> int:
     """Characters of article text that fit beside the prompt, its heading and the reply."""
-    return max(0, min(MAX_NOTE_TEXT, budget(context_tokens, system) - len(heading) - 2))
+    return max(0, min(MAX_NOTE_TEXT, budget(context_tokens, system, reply_tokens) - len(heading) - 2))
 
 
 async def take_note(model: ChatModel, company: str, heading: str, text: str, context_tokens: int) -> Note | None:
     """None when the reply is unusable; ModelError when the backend cannot answer at all."""
     system = system_prompt(company)
-    room = note_room(context_tokens, system, heading)
+    room = note_room(context_tokens, system, heading, reply_room(model))
     body = text if len(text) <= room else text[: max(0, room - len(CUT))] + CUT
     reply = await model.reply([{"role": "system", "content": system},
                                {"role": "user", "content": f"{heading}\n\n{body}"}], SCHEMA)

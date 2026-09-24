@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 
-from oracle.research.budget import budget
+from oracle.research.budget import budget, reply_room
 from oracle.research.checks import Answer
 from oracle.research.citations import cited
 from oracle.research.llm import ChatModel, ModelError
@@ -108,7 +108,7 @@ async def add_verdict(model: ChatModel, report: Report, material: Material, cont
     """The report with the verdict, or with why there is none; it never guesses one. A backend
     that cannot answer costs only the verdict, never the report."""
     system = prompt(ROLE, WHO, TASK)
-    fitted = fit(material, budget(context_tokens, system))
+    fitted = fit(material, budget(context_tokens, system, reply_room(model)))
     try:
         reply = await model.reply([{"role": "system", "content": system}, {"role": "user", "content": fitted.text}],
                                   {"type": "object", "properties": SCHEMA, "required": list(SCHEMA)})

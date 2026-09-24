@@ -8,6 +8,7 @@ import json
 
 import httpx
 
+from oracle.research.budget import REPLY_TOKENS
 from oracle.research.llm import ModelError
 
 
@@ -18,6 +19,7 @@ MAX_REPLY_TOKENS = 1024
 
 class OllamaChat:
     name = "ollama"
+    reply_tokens = REPLY_TOKENS
 
     def __init__(self, model: str, base_url: str, timeout_s: float, context: int,
                  transport: httpx.AsyncBaseTransport | None = None) -> None:

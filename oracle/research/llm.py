@@ -17,6 +17,8 @@ class ChatModel(Protocol):
     model: str
     fell_back_to: set[str]
     """Models that answered in this one's place after a refusal; the caller clears it per run."""
+    reply_tokens: int
+    """Tokens every prompt leaves free for the reply (`budget.reply_room` reads it)."""
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         """The model's next message, parsed from JSON constrained to `schema`."""

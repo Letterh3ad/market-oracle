@@ -10,6 +10,7 @@ import json
 
 import anthropic
 
+from oracle.research.budget import REPLY_TOKENS
 from oracle.research.llm import ModelError, closed_schema
 
 # Room for adaptive thinking plus a short JSON answer, under the SDK's non-streaming limits.
@@ -20,6 +21,7 @@ NO_CREDENTIALS = "set ANTHROPIC_API_KEY or run `ant auth login`"
 
 class ClaudeChat:
     name = "claude"
+    reply_tokens = REPLY_TOKENS
 
     def __init__(self, model: str, timeout_s: float, client: object | None = None, *,
                  api_key: str | None = None, base_url: str | None = None, key_source: str = NO_CREDENTIALS) -> None:

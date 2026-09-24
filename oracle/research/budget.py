@@ -9,9 +9,14 @@ CHARS_PER_TOKEN = 3
 REPLY_TOKENS = 1024
 
 
-def budget(context_tokens: int, system: str) -> int:
+def budget(context_tokens: int, system: str, reply_tokens: int = REPLY_TOKENS) -> int:
     """Characters of material that fit beside the system prompt and the reply."""
-    return max(0, (context_tokens - REPLY_TOKENS) * CHARS_PER_TOKEN - len(system))
+    return max(0, (context_tokens - reply_tokens) * CHARS_PER_TOKEN - len(system))
+
+
+def reply_room(model: object) -> int:
+    """Tokens the model's reply needs kept free; a model that names none (scripted ones) takes the default."""
+    return getattr(model, "reply_tokens", REPLY_TOKENS)
 
 
 def cut(text: str, limit: int) -> str:
