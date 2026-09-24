@@ -11,11 +11,9 @@ from datetime import date, datetime, time, timedelta, timezone
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
-from oracle.research.claude import ClaudeChat
 from oracle.research.engine import react
 from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
-from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
 from oracle.research.queries import EDITION, MAX_LINKED, Search, link_queries, plan, seed_queries, suggest
 from oracle.research.roles import digest, digest_room, write_report
@@ -31,6 +29,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import research_links
+from oracle.services.models_service import DEFAULT_PROFILE, context_tokens, model_for
 from oracle.services.research_tools import (
     Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
     evidence_entry, market_summary,
@@ -57,19 +56,17 @@ JOB = "research"
 UNUSABLE = "the model's answers were unusable"
 # Far longer than a run takes; a crashed holder is freed by the pid check instead.
 LEASE_S = 3600.0
-# Conservative for every Claude model the backend can name.
-CLAUDE_CONTEXT = 200_000
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
                    as_of: date | None = None, searcher: WebSearcher | None = None) -> ResearchRun:
     """One run over the listing, one at a time across processes. `model` defaults to the
-    configured backend. With `as_of`, the run replays that day: every tool sees only what
+    default model profile. With `as_of`, the run replays that day: every tool sees only what
     existed by its end, for backtests after the model's training cutoff."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    model = model or configured_model(ctx)
+    model = model or model_for(ctx, DEFAULT_PROFILE)
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
         model.fell_back_to.clear()
@@ -112,7 +109,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
         reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, model,
-                        f"{profile.name} ({profile.symbol})", context_tokens(ctx))
+                        f"{profile.name} ({profile.symbol})", context_tokens(ctx, DEFAULT_PROFILE))
         filings = await sec.to_read(day) if sec else {}
         await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
                           lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
@@ -125,7 +122,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     read = frozenset(e.id for e in evidence if e.facts)
     digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
                          [lines[e.id] for e in evidence if e.id not in read], findings,
-                         digest_room(context_tokens(ctx)))
+                         digest_room(context_tokens(ctx, DEFAULT_PROFILE)))
     report = await write_report(model, digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
@@ -133,7 +130,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
             repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
         return
     material = Material(statistics, data_id, findings, report, evidence, run.steps, lines, read)
-    report = await add_verdict(model, report, material, context_tokens(ctx))
+    report = await add_verdict(model, report, material, context_tokens(ctx, DEFAULT_PROFILE))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)
@@ -304,24 +301,11 @@ def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:
     return ResearchRepo(ctx.conn).latest(resolve_symbol(ctx, symbol).symbol)
 
 
-def context_tokens(ctx: AppContext) -> int:
-    """How much the configured model reads at once; `[llm] context` sizes Ollama's only."""
-    return ctx.config.llm.context if ctx.config.llm.backend == "ollama" else CLAUDE_CONTEXT
-
-
 def latest_verdict(ctx: AppContext, symbol: str) -> ResearchRun | None:
     """The newest live report's run when that report has a valid verdict: a newer report whose
     verdict was rejected supersedes every older one. Replays never count."""
     run = ResearchRepo(ctx.conn).latest_report(resolve_symbol(ctx, symbol).symbol)
     return run if run and run.report.verdict else None
-
-
-def configured_model(ctx: AppContext) -> ChatModel:
-    """The model `[llm] backend` names."""
-    llm = ctx.config.llm
-    if llm.backend == "claude":
-        return ClaudeChat(llm.claude_model, llm.timeout_s)
-    return OllamaChat(llm.model, llm.base_url, llm.timeout_s, llm.context, transport=ctx.transport)
 
 
 def _about(p: ListingProfile, day: date) -> str:

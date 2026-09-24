@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { sendJson } from "./ui.js";
 import { el, showError } from "./dom.js";
 import { offerRestart } from "./control.js";
+import * as models from "./models.js";
 
 // Every oracle.toml key, one row each, saved one at a time. The server checks each change
 // by loading the whole file, so the page only turns inputs into JSON values.
@@ -111,7 +112,11 @@ async function load() {
 // tries again on the next opening.
 function mount() {
   const details = pane().closest("details");
-  details.addEventListener("toggle", () => { if (details.open && !loaded) load(); });
+  details.addEventListener("toggle", () => {
+    if (!details.open) return;
+    models.load();
+    if (!loaded) load();
+  });
 }
 
 export { mount, read };

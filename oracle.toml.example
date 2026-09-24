@@ -119,6 +119,23 @@ context = 16384      # tokens of context asked of the model; 16384 fits the 4B m
 # ANTHROPIC_API_KEY or `ant auth login`, never this file.
 claude_model = "claude-opus-5"   # the model when backend is "claude"
 
+# Model profiles: named models a task can run on, edited in Settings > Models too. [llm]
+# above is the "default" profile unless a [models.default] table replaces it (max_steps
+# stays in [llm] either way). Keys: provider (ollama or claude_api), model, and optionally
+# base_url, context (tokens; defaults 16384 on ollama, 200000 on claude_api), timeout_s
+# (default 180), and one of key_env (the environment variable holding the key) or key
+# (the key itself; never shown). claude_api with neither uses ANTHROPIC_API_KEY or
+# `ant auth login`. `oracle models list` shows them; `oracle models test NAME` checks one.
+# [models.big]
+# provider = "ollama"
+# model = "qwen3:8b"
+# context = 8192
+#
+# [models.claude]
+# provider = "claude_api"
+# model = "claude-opus-5"
+# key_env = "ANTHROPIC_API_KEY"
+
 # Research sources. SEC EDGAR requires a name and email in every request's User-Agent;
 # it is sent to sec.gov only. Unset, the filings tool is skipped.
 [research]

@@ -38,7 +38,7 @@ def ctx(tmp_path, yahoo, clock, news):
 def model(monkeypatch):
     m = ScriptedModel()
     m.suggestions = {"queries": ["summer demand"], "local": [], "market_caps": [], "exclude": []}
-    monkeypatch.setattr(discovery_chat_service, "configured_model", lambda c: m)
+    monkeypatch.setattr(discovery_chat_service, "model_for", lambda c, p: m)
     monkeypatch.setattr(discovery_chat_service, "DdgsSearcher", FakeSearcher)
     return m
 

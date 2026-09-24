@@ -50,7 +50,7 @@ const GLOSSARY = {
   research:
     "An AI model searches news, filings and the web about the company, then a small team of AI roles writes a " +
     "report from what it found. By default the model runs on this machine (Ollama) and takes about a minute; " +
-    "[llm] backend in oracle.toml can switch it to Claude.",
+    "editing the default profile in Settings > Models can switch it to Claude.",
   research_unvalidated:
     "Unvalidated: AI research has not yet proven itself. It will count only once the strategy account, using " +
     "it, beats price patterns and company figures alone over enough paper trades. It never changes the lean.",

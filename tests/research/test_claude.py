@@ -105,6 +105,27 @@ async def test_a_served_id_that_differs_without_a_fallback_is_not_one():
     assert chat.fell_back_to == set()
 
 
+async def test_a_profiles_key_and_endpoint_reach_the_client(monkeypatch):
+    made = []
+
+    class Recording(FakeClient):
+        def __init__(self, **kwargs):
+            super().__init__(message(text('{"action": "final"}')))
+            made.append(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+    monkeypatch.setattr(anthropic, "AsyncAnthropic", Recording)
+    await ClaudeChat("claude-opus-5", 60.0, api_key="sk-x", base_url="https://proxy.test").reply([], SCHEMA)
+    await ClaudeChat("claude-opus-5", 60.0).reply([], SCHEMA)
+    assert made == [{"timeout": 60.0, "api_key": "sk-x", "base_url": "https://proxy.test"},
+                    {"timeout": 60.0, "api_key": None, "base_url": None}]
+
+
 async def test_a_reply_too_slow_is_called_a_timeout():
     error = anthropic.APITimeoutError(request=httpx2.Request("POST", "https://api.anthropic.com/v1/messages"))
     with pytest.raises(ModelError, match="took longer than 60s"):

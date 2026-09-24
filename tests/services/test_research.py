@@ -717,26 +717,6 @@ async def test_a_report_saved_before_verdicts_reads_back_as_having_none(ctx, new
     assert old.verdict is None and old.no_verdict == "written before reports had verdicts" and old.unread == ()
 
 
-def test_the_verdicts_budget_follows_the_configured_model(ctx):
-    from dataclasses import replace
-
-    from oracle.services.research_service import CLAUDE_CONTEXT, context_tokens
-
-    assert context_tokens(ctx) == 16384
-    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
-    assert context_tokens(ctx) == CLAUDE_CONTEXT
-
-
-def test_the_configured_backend_decides_which_model_runs(ctx):
-    from dataclasses import replace
-
-    from oracle.services.research_service import configured_model
-
-    assert (configured_model(ctx).name, configured_model(ctx).model) == ("ollama", "qwen3:4b-instruct-2507-q8_0")
-    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
-    assert (configured_model(ctx).name, configured_model(ctx).model) == ("claude", "claude-opus-5")
-
-
 async def test_a_redirect_into_this_machine_or_the_lan_is_refused_at_each_hop(ctx, pages):
     pages.pages["https://evil.test/r"] = ("redirect", "http://127.0.0.1:11434/api/tags")
     pages.pages["https://news.test/old"] = ("redirect", "https://news.test/new")

@@ -25,9 +25,9 @@ from oracle.services.errors import InvalidQuery, NeverListed, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
 from oracle.services.links_service import SOURCE_DISCOVERY, LinkFound, record_links
+from oracle.services.models_service import DEFAULT_PROFILE, model_for
 from oracle.services.never_list import never_company
 from oracle.services.peers_service import choose_peers
-from oracle.services.research_service import configured_model
 from oracle.services.research_tools.shelf import fetch
 from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import DEFAULT_LIST, Watched, unwatch, watch
@@ -196,7 +196,7 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         meta = MetaRepo(ctx.conn)
         order = [s for s in _after(list(SOURCES), meta.get(_LAST_SOURCE)) if s in usable]
         meta.set(_LAST_SOURCE, order[0])
-        run = _Run(ctx, held, model or configured_model(ctx), _Screen(ctx, room))
+        run = _Run(ctx, held, model or model_for(ctx, DEFAULT_PROFILE), _Screen(ctx, room))
         tried: list[str] = []
         async with open_client(ctx) as client:
             run.client = client

@@ -22,10 +22,14 @@ NO_CREDENTIALS = "set ANTHROPIC_API_KEY or run `ant auth login`"
 class ClaudeChat:
     name = "claude"
 
-    def __init__(self, model: str, timeout_s: float, client: object | None = None) -> None:
+    def __init__(self, model: str, timeout_s: float, client: object | None = None, *,
+                 api_key: str | None = None, base_url: str | None = None) -> None:
+        """No `api_key`: the SDK's own lookup (ANTHROPIC_API_KEY, then `ant auth login`)."""
         self.model = model
         self._timeout = timeout_s
         self._client = client
+        self._api_key = api_key
+        self._base_url = base_url
         self.fell_back_to: set[str] = set()
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
@@ -39,15 +43,17 @@ class ClaudeChat:
             if self._client is not None:
                 response = await self._client.beta.messages.create(**request)
             else:
-                async with anthropic.AsyncAnthropic(timeout=self._timeout) as client:
+                async with anthropic.AsyncAnthropic(timeout=self._timeout, api_key=self._api_key,
+                                                    base_url=self._base_url) as client:
                     response = await client.beta.messages.create(**request)
         except anthropic.APITimeoutError as exc:
             raise ModelError(f"Claude took longer than {self._timeout:.0f}s to answer; "
-                             "raise [llm] timeout_s") from exc
+                             "raise its timeout_s in Settings > Models") from exc
         except anthropic.AuthenticationError as exc:
             raise ModelError(f"Claude refused the credentials: {NO_CREDENTIALS}") from exc
         except anthropic.RateLimitError as exc:
-            raise ModelError("Claude is rate limiting this account: wait, or switch [llm] backend to ollama") from exc
+            raise ModelError("Claude is rate limiting this account: wait, or switch to an Ollama profile in "
+                             "Settings > Models") from exc
         except anthropic.APIStatusError as exc:
             raise ModelError(f"Claude answered HTTP {exc.status_code}: {exc.message}") from exc
         except anthropic.APIConnectionError as exc:

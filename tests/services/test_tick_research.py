@@ -146,7 +146,7 @@ async def test_ai_off_skips_research_and_the_ai_step_saying_so(ctx):
 
 async def test_a_tick_researches_with_the_configured_model_then_runs_the_ai_step(ctx, monkeypatch):
     model = ScriptedModel(*[step("final", "Nothing new.")] * len(SYMBOLS))
-    monkeypatch.setattr(research_service, "configured_model", lambda c: model)
+    monkeypatch.setattr(research_service, "model_for", lambda c, p: model)
     reported(ctx, "MSFT", date(2026, 9, 20))
     said = []
     run = await run_tick(ctx, on_stage=said.append)

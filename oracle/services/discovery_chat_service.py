@@ -29,7 +29,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
-from oracle.services.research_service import configured_model, context_tokens
+from oracle.services.models_service import DEFAULT_PROFILE, context_tokens, model_for
 from oracle.services.research_tools import GdeltSearch, LocalNewsSearch, NewsSearch, Reader, Shelf, WebSearch
 from oracle.services.research_tools.reading import TRY_ANOTHER
 from oracle.store.db import to_utc_iso
@@ -189,7 +189,7 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
     repo = QuestionRepo(ctx.conn)
     q = _question(repo, question_id)
     asked = _asked(repo, q)
-    model = model or configured_model(ctx)
+    model = model or model_for(ctx, DEFAULT_PROFILE)
     with single_flight(ctx, JOB, LEASE_S):
         answer_id = repo.start(q.id, _model_label(model), _now(ctx))
         notes: list[str] = []
@@ -337,7 +337,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
             notes.append("the searches found nothing to read")
             return []
         reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, ctx.config.research.contact, model,
-                        f'companies that answer "{asked}"', context_tokens(ctx), note_key)
+                        f'companies that answer "{asked}"', context_tokens(ctx, DEFAULT_PROFILE), note_key)
         newest_first = sorted(evidence_of(ctx.conn, ids, note_key),
                               key=lambda e: (e.published is not None, e.published), reverse=True)
         await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
