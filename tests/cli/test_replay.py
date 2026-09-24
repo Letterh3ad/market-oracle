@@ -7,7 +7,7 @@ from oracle.cli.main import main
 from oracle.config import Config
 from oracle.services import replay_score
 from oracle.services.context import open_context
-from oracle.services.errors import PriceUnavailable
+from oracle.services.prices_service import ListingOutcome
 from oracle.store.bars import BarRepo
 from oracle.store.replay import ReplayRepo
 from oracle.store.universe import UniverseRepo
@@ -77,10 +77,11 @@ def scored_study(tmp_path):
         repo = ReplayRepo(c.conn)
         sid = repo.create(datetime(2025, 8, 1, tzinfo=timezone.utc), *days, json.dumps(LISTINGS[:2]),
                           [(p["symbol"], d) for d in days for p in LISTINGS[:2]])
-        closes = {"AAA": [100, 110, 121, 121, 121, 121], "BBB": [100, 100, 90, 90, 90, 90]}
+        # Entries are the first closes after each as-of day: Jun 3 and Jul 2.
+        closes = {"AAA": [100, 100, 110, 110, 121, 121, 121, 121], "BBB": [100, 100, 100, 100, 90, 90, 90, 90]}
         for s, values in closes.items():
-            days_closes = dict(zip(("2025-06-02", "2025-07-01", "2025-08-01", "2025-09-02", "2025-10-01",
-                                    "2025-12-31"), values))
+            days_closes = dict(zip(("2025-06-02", "2025-06-03", "2025-07-01", "2025-07-02", "2025-08-01",
+                                    "2025-09-02", "2025-10-01", "2025-12-31"), values))
             BarRepo(c.conn).upsert(bars(s, days_closes), "2026-01-01T00:00:00Z")
         at = datetime(2025, 8, 1, tzinfo=timezone.utc)
         for cell, call in zip(repo.cells(sid), [("buy", 0.9), ("sell", 0.7), ("buy", 0.8), None]):
@@ -92,7 +93,7 @@ def no_fetch(monkeypatch):
     async def fetch(*_):
         raise AssertionError("nothing is missing")
 
-    monkeypatch.setattr(replay_score, "update_listing", fetch)
+    monkeypatch.setattr(replay_score, "update_listings", fetch)
 
 
 def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tmp_path, no_fetch):
@@ -102,6 +103,8 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
     assert "3 verdicts, 1 without a verdict, 0 failed, 0 still to run, of 4 replays" in out
     assert "Verdict mix: 2 buy, 0 hold, 1 sell (67% buys), mean confidence 0.80" in out
     assert "1 month: 3 scored, 0 pending, 0 without prices; hit rate 67%, 100% against the basket" in out
+    assert "base rates: 50% of all windows rose, 50% beat the basket" in out
+    assert "Study prices last updated: 20" in out  # the report's own check just ran
     assert "survivorship" in out and "GDELT" in out
     replay(cfg, "report", "--json")
     body = json.loads(capsys.readouterr().out)
@@ -109,10 +112,10 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
 
 
 def test_report_fetches_missing_bars_first_and_says_how_it_went(cfg, capsys, tmp_path, monkeypatch):
-    async def fetch(c, symbol):
-        raise PriceUnavailable(f"no price data for {symbol}")
+    async def fetch(c, symbols, since):
+        return [ListingOutcome(s, 0, None, f"no price data for {s}") for s in symbols]
 
-    monkeypatch.setattr(replay_score, "update_listing", fetch)
+    monkeypatch.setattr(replay_score, "update_listings", fetch)
     scored_study(tmp_path)
     with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
         c.conn.execute("DELETE FROM bars WHERE symbol = 'BBB'")

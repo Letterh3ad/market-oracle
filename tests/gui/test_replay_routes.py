@@ -1,3 +1,5 @@
+from datetime import date
+
 from oracle.store.replay import ReplayRepo
 from tests.fakes.yahoo import bar
 from tests.gui.conftest import DAYS
@@ -60,7 +62,8 @@ async def test_update_prices_is_a_job_fetching_only_what_the_score_lacks(loaded,
     job = await run_job(loaded, "/api/replay/prices")
     assert job["kind"] == "replay_prices" and job["state"] == "done"
     fetched = {o["symbol"]: o for o in job["result"]["listings"]}
-    assert fetched["AAPL"]["added"] == len(DAYS) and fetched["7203.T"]["error"]
+    in_window = [d for d in DAYS if d >= date(2026, 5, 25)]  # the study window, from a week before its first day
+    assert fetched["AAPL"]["added"] == len(in_window) and fetched["7203.T"]["error"]
     report = (await loaded.get("/api/replay/report")).json()["report"]
     assert report["unpriced_listings"] == ["7203.T", "005930.KS"]
 

@@ -22,7 +22,9 @@ from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
+from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
+from oracle.store.replay import ReplayRepo
 from oracle.store.ticks import INTERRUPTED, MIDDAY, TICK, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
 
@@ -48,14 +50,26 @@ it is, for a long stage's progress."""
 
 async def _prices(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     run = await update_watched(ctx, fx=False)
+    study = await _study_prices(ctx)
     if not run.listings:
-        return "nothing watched", None
+        return "nothing watched" + study, None
     added = sum(o.added for o in run.listings)
     skipped = sum(1 for o in run.listings if o.skipped)
     tried = len(run.listings) - skipped
     first = run.failed[0] if run.failed else None
     summary = f"{tried - len(run.failed)} of {tried} listings updated, {added} new bars"
-    return summary + (f", {skipped} skipped (no data lately)" if skipped else ""), first and first.error
+    return summary + (f", {skipped} skipped (no data lately)" if skipped else "") + study, first and first.error
+
+
+async def _study_prices(ctx: AppContext) -> str:
+    """Keeps the replay study's interim score current while nobody opens it. Its listings are
+    rarely watched, and a failure here is the study's, never the tick's."""
+    if ReplayRepo(ctx.conn).current() is None:
+        return ""
+    out = await update_study_prices(ctx)
+    failed = sum(1 for o in out if o.error)
+    return (f"; replay study: {len(out) - failed} of {len(out)} listings refetched"
+            + (f", {failed} failed" if failed else "")) if out else "; replay study prices current"
 
 
 async def _fx(ctx: AppContext, _: Say) -> tuple[str, str | None]:

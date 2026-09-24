@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -7,9 +8,11 @@ from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import account_view, decision_log, place_buy
+from oracle.services.replay_service import study_status
 from oracle.services.tick_service import STAGES, last_tick, run_tick
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
+from oracle.store.replay import ReplayRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
@@ -70,6 +73,16 @@ async def test_a_listing_failing_makes_prices_partial_and_the_rest_still_run(ctx
     assert states["prices"] == "partial" and "NOBARS" in run.stages[0].error
     assert states["fill"] == states["step"] == "ok"
     assert run.outcome == "partial" and run.first_error.startswith("prices: ")
+
+
+async def test_the_prices_stage_keeps_the_replay_study_priced_without_failing_for_it(ctx):
+    listing = [{"symbol": "NOBARS", "name": "No Bars", "region": "US", "sector": "x", "market_cap": None}]
+    ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
+                                [("NOBARS", date(2026, 6, 1))])
+    run = await run_tick(ctx)
+    prices = run.stages[0]
+    assert prices.state == "ok" and prices.summary.endswith("; replay study: 0 of 1 listings refetched, 1 failed")
+    assert study_status(ctx).score.prices_updated_at.date() == NOW.date()
 
 
 async def test_a_stage_that_cannot_run_is_recorded_and_later_stages_still_run(ctx):

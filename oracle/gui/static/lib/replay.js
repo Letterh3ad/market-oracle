@@ -11,6 +11,7 @@ const POLL_MS = 15000;
 const minutes = (s) => `${Math.max(0, Math.round(s / 60))} min`;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const share = (v) => (v == null ? "n/a" : `${Math.round(v * 100)}%`);
+const rate = (v, ci) => share(v) + (ci ? ` (95% ${share(ci[0])} to ${share(ci[1])})` : "");
 const HORIZON_NAMES = { "1m": "1 month", "3m": "3 months" };
 
 function replaySection() {
@@ -109,8 +110,9 @@ function replaySection() {
   function horizon(h) {
     return [
       el("p", null, `${HORIZON_NAMES[h.horizon] ?? h.horizon}: ${h.scored} scored, ${h.pending} pending, `
-        + `${h.unpriced} without prices; hit rate ${share(h.hit_rate)}, ${share(h.hit_rate_vs_basket)} against `
-        + `the basket.`),
+        + `${h.unpriced} without prices; hit rate ${rate(h.hit_rate, h.hit_ci)}, `
+        + `${rate(h.hit_rate_vs_basket, h.hit_vs_basket_ci)} against the basket. Base rates: `
+        + `${share(h.base_rate_up)} of all the study's windows rose, ${share(h.base_rate_beat_basket)} beat the basket.`),
       table([["Verdict or band"], ["Count", null, true], ["Hit", null, true], ["Hit vs basket", null, true],
         ["Mean return", null, true], ["Mean vs basket", null, true], ["Confidence", null, true]],
       [...h.by_verdict, ...h.by_band].map(group), ""),
@@ -137,6 +139,9 @@ function replaySection() {
     const missing = r.unpriced_listings.length
       ? `No stored prices cover ${r.unpriced_listings.join(", ")} for a window that has closed: press Update prices.`
       : "Every closed window has its prices.";
+    const updated = r.prices_updated_at
+      ? `Study prices last updated ${r.prices_updated_at.slice(0, 16).replace("T", " ")} UTC.`
+      : "Study prices not updated yet.";
     return [
       el("h3", null, "Score"),
       el("p", null, `${r.verdicts} verdicts, ${r.no_verdict} without a verdict, ${r.failed} failed, `
@@ -145,8 +150,9 @@ function replaySection() {
           : m.mean_confidence.toFixed(2)}.`),
       ...r.horizons.flatMap(horizon),
       el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
-        + "bands hold buys and sells only, their returns as called (a sell's sign flipped)."),
-      el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, missing)),
+        + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "
+        + "listing's own currency, so \"vs basket\" compares against a basket that mixes currencies."),
+      el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, `${missing} ${updated}`)),
       el("h3", null, "Limits"),
       el("ul", { class: "small" }, ...r.limits.map((line) => el("li", null, line))),
     ];

@@ -100,7 +100,8 @@ def _report(ctx: AppContext, args: argparse.Namespace) -> int:
         print("null" if args.json else "No replay study yet: `oracle replay create --from YYYY-MM-DD`.")
         return 0
     for o in asyncio.run(update_study_prices(ctx)):
-        line = f"Prices for {o.symbol}: " + (f"failed ({o.error})" if o.error else f"{o.added} new bars ({o.source})")
+        line = f"Prices for {o.symbol}: " + (f"failed ({o.error})" if o.error else f"skipped ({o.skipped})"
+                                             if o.skipped else f"{o.added} new bars ({o.source})")
         print(line, file=sys.stderr if args.json else sys.stdout)
     score = replay_report(ctx)
     assert score is not None
@@ -113,6 +114,10 @@ def _report(ctx: AppContext, args: argparse.Namespace) -> int:
 
 def _pct(v: float | None, signed: bool = False) -> str:
     return "n/a" if v is None else f"{v:+.2%}" if signed else f"{v:.0%}"
+
+
+def _rate(v: float | None, ci: tuple[float, float] | None) -> str:
+    return _pct(v) + (f" (95% {ci[0]:.0%} to {ci[1]:.0%})" if ci else "")
 
 
 def print_report(s: Score) -> None:
@@ -128,6 +133,8 @@ def print_report(s: Score) -> None:
         print_horizon(h)
     if s.unpriced_listings:
         print(f"  No stored prices cover: {', '.join(s.unpriced_listings)}")
+    updated = f"{s.prices_updated_at:%Y-%m-%d %H:%M} UTC" if s.prices_updated_at else "never"
+    print(f"  Study prices last updated: {updated}")
     print("Limits:")
     for line in s.limits:
         print(f"  - {line}")
@@ -135,11 +142,14 @@ def print_report(s: Score) -> None:
 
 def print_horizon(h: HorizonScore) -> None:
     print(f"  {h.months} month{'' if h.months == 1 else 's'}: {h.scored} scored, {h.pending} pending, {h.unpriced} "
-          f"without prices; hit rate {_pct(h.hit_rate)}, {_pct(h.hit_rate_vs_basket)} against the basket")
+          f"without prices; hit rate {_rate(h.hit_rate, h.hit_ci)}, {_rate(h.hit_rate_vs_basket, h.hit_vs_basket_ci)} "
+          f"against the basket; base rates: {_pct(h.base_rate_up)} of all windows rose, "
+          f"{_pct(h.base_rate_beat_basket)} beat the basket")
     print(f"    {'':<14}{'n':>4}{'hit':>7}{'hit rel':>11}{'mean':>10}{'mean rel':>11}{'confidence':>12}")
     for g in (*h.by_verdict, *h.by_band):
         print_group(g)
-    print("    (rel: against the basket; bands: buys and sells only, as called, a sell's sign flipped)")
+    print("    (rel: against the basket, which mixes the listings' currencies; bands: buys and sells only, as "
+          "called, a sell's sign flipped)")
 
 
 def print_group(g: Group) -> None:
