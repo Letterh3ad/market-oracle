@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from urllib.parse import quote
 
@@ -62,3 +63,31 @@ def _parse(symbol: str, body: dict) -> list[Bar]:
 
 def _epoch(day: date) -> int:
     return int(datetime.combine(day, time(0), tzinfo=timezone.utc).timestamp())
+
+
+SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+
+
+@dataclass(frozen=True)
+class Quote:
+    """One line Yahoo's search finds for a name."""
+
+    symbol: str
+    name: str
+    short_name: str
+    kind: str
+    """Yahoo's quoteType: EQUITY, ETF, MUTUALFUND..."""
+    score: float
+
+
+async def search_quotes(client: RateLimitedClient, text: str) -> list[Quote]:
+    """The lines Yahoo's search finds for `text`, best first: NoData or SourceFailed when it
+    cannot say."""
+    params = {"q": text, "quotesCount": "6", "newsCount": "0", "listsCount": "0"}
+    body = (await sources.get(client, SOURCE, SEARCH_URL, params)).json()
+    quotes = body.get("quotes") if isinstance(body, dict) else None
+    if not isinstance(quotes, list):
+        raise NoData("no quotes")
+    return [Quote(q["symbol"], q.get("longname") or q.get("shortname") or q["symbol"],
+                  q.get("shortname") or "", q.get("quoteType") or "", float(q.get("score") or 0))
+            for q in quotes if isinstance(q, dict) and isinstance(q.get("symbol"), str)]

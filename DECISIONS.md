@@ -2383,3 +2383,26 @@ board (SIC and CEDEAR tickers follow no one pattern).
 **Context:** Merging list pages (02) with the universe screen (01): the answer's pooled price-check budget was 8, plus 20 when the screen runs, with named companies checked first. A list page lets the naming call fill its 10, so with no screen the last 2 were left off as "too many to price-check".
 **Decision:** The base budget is the naming cap (`MAX_PRICE_CHECKS = MAX_ANSWERS`, 10), so every named company is checked; the screen's 20 stay on top for screened ones.
 **Alternatives:** Keeping 8 (a list page's last names always dropped unchecked); a separate budget for list-page names (two budgets for one kind of check).
+
+## 2026-09-24 - Brands, parents and private names resolved in the shared name match
+**Context:** Discovery 04. The robotics question matched 1 of 10 names: groups refused as ambiguous
+(Siemens, Samsung, Sony, Toyota, Ericsson) or too short (Arm, BAE, LG), brands and subsidiaries not
+found (Google, Intrinsic), startups "not in the universe" like a gap, and wrong listings (CATL a SPAC,
+Meta a Brazilian receipt, Besi a bond, Lovable Lingerie for Lovable).
+**Decision:** In `candidate_screen` (chat, tick discovery and auto share it; now async), rules first:
+receipts and lines with no sector, size or country never match; unsized regional quotes give way to
+sized companies; several companies starting with a name are settled by the whole name in the news,
+then the only one in the question's sectors, then the group's own name ("Siemens Aktiengesellschaft"),
+then clearly biggest (one band once the sectors narrowed them); only then the model picks among at most
+5 (never for a place word), else refused naming the candidates. Short names match whole words only.
+A parent the news names ("Alphabet's Intrinsic", "Intrinsic, an Alphabet company") is offered with
+"Intrinsic is part of Alphabet Inc."; a named parent beats a small by-start match. A name the universe
+lacks, a tiny listing matched only by ticker, or a refused match gets one Yahoo search: its own name,
+its ticker, or a far-first big result ("Google" is Alphabet). Yahoo listing nothing, or the news
+calling it a startup, is "private, not listed"; Yahoo listing it outside the universe says so. A small
+company matched by its start whose rest of name says a trade the news does not ("Lingerie") is refused
+unless the news writes its whole name. Name trade words count their sectors ("bancorp" for banks).
+**Alternatives:** A model confirm for small by-start matches (measured on qwen3 4B: yes to Lovable,
+Aleph and Cera, no to a true Kestra Medical, reason-first prompt said no to all); a built-in brand to
+parent table (goes stale, never covers startups); adding "Aktiengesellschaft" to legal forms (would
+regroup the universe's company keys).
