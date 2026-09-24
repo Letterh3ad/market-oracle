@@ -9,7 +9,7 @@ from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
-from oracle.services.watch_service import WatchLine, show_watchlist, unwatch, watch, watchlists
+from oracle.services.watch_service import WatchLine, create_watchlist, show_watchlist, unwatch, watch, watchlists
 
 router = APIRouter(prefix="/api/watchlists")
 
@@ -18,9 +18,19 @@ class NewItem(BaseModel):
     symbol: str
 
 
+class NewList(BaseModel):
+    name: str
+
+
 @router.get("")
 async def list_watchlists(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     return [asdict(w) for w in watchlists(ctx)]
+
+
+@router.post("")
+async def create(body: NewList, ctx: AppContext = Depends(get_ctx)) -> dict:
+    name, created = create_watchlist(ctx, body.name)
+    return {"name": name, "created": created}
 
 
 @router.get("/{name}")

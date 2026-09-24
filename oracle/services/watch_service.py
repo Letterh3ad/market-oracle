@@ -16,7 +16,7 @@ from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
     "DEFAULT_LIST", "WatchLine", "Watched", "WatchlistSummary",
-    "show_watchlist", "unwatch", "watch", "watchlists",
+    "create_watchlist", "show_watchlist", "unwatch", "watch", "watchlists",
 ]
 
 DEFAULT_LIST = "main"
@@ -58,6 +58,11 @@ def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watche
     listing = resolve_symbol(ctx, symbol)
     stored, added = WatchlistRepo(ctx.conn).add(name, listing.symbol, to_utc_iso(ctx.clock.utcnow()))
     return Watched(listing.symbol, listing.name, stored, added)
+
+
+def create_watchlist(ctx: AppContext, watchlist: str) -> tuple[str, bool]:
+    """An empty list, or the one already so named (without case): (its name, whether new)."""
+    return WatchlistRepo(ctx.conn).create(_name(watchlist), to_utc_iso(ctx.clock.utcnow()))
 
 
 def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool:

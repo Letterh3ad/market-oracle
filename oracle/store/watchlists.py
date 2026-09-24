@@ -35,6 +35,14 @@ class WatchlistRepo:
         row = self._conn.execute("SELECT name FROM watchlists WHERE name = ?", (name,)).fetchone()
         return row[0] if row else None
 
+    def create(self, watchlist: str, now: str) -> tuple[str, bool]:
+        """(the list's stored name, whether it was new)."""
+        with transaction(self._conn):
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO watchlists (name, created_at) VALUES (?, ?)", (watchlist, now)
+            )
+            return self.name_of(watchlist), cur.rowcount > 0
+
     def add(self, watchlist: str, symbol: str, now: str) -> tuple[str, bool]:
         """(the list's stored name, whether the symbol was new to it)."""
         with transaction(self._conn):

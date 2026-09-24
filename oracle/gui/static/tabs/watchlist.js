@@ -2,7 +2,8 @@ import { api } from "../lib/api.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, tone } from "../lib/fmt.js";
 import { tip } from "../lib/tip.js";
-import { busyButton, runJob } from "../lib/ui.js";
+import { busyButton, runJob, sendJson } from "../lib/ui.js";
+import { fillPicker } from "../lib/watchlists.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
 const SHORT = { technicals: "tech", volatility: "vol", quality: "qual", growth: "grow" };
@@ -20,10 +21,7 @@ async function load(pane) {
   }
   // A newer load (another list picked) answered already, or another tab owns the pane.
   if (mine !== seq || !pane.querySelector("#w-table")) return;
-  const picker = pane.querySelector("#w-list");
-  const names = lists.map((w) => w.name);
-  if (!names.includes(list)) names.unshift(list);
-  picker.replaceChildren(...names.map((n) => el("option", { value: n, selected: n === list ? "" : null }, n)));
+  fillPicker(pane.querySelector("#w-list"), lists, list);
   pane.querySelector("#w-table").replaceChildren(table(body, pane));
   pane.querySelector("#w-credits").replaceChildren(...body.credits.map((c) => el("p", { class: "dim small" }, c)));
 }
@@ -102,10 +100,25 @@ function analyseSummary(r) {
     : `${o.symbol}: ${o.lean ? `baseline lean ${o.lean.label} ${Math.round(o.lean.probability * 100)}%` : "no lean (needs a year of prices)"}`));
 }
 
+// Creates the list (or finds it, named without case) and switches to it.
+function newList(pane) {
+  const name = el("input", { placeholder: "new list", size: "12", "aria-label": "New watchlist name", maxlength: "40" });
+  const create = async () => {
+    try {
+      clearError();
+      list = (await sendJson("/api/watchlists", { name: name.value })).name;
+      name.value = "";
+      load(pane);
+    } catch (err) { showError(err.message); }
+  };
+  name.addEventListener("keydown", (e) => { if (e.key === "Enter") create(); });
+  return [name, el("button", { type: "button", onclick: create }, "Create")];
+}
+
 function render(pane) {
   const picker = el("select", { id: "w-list", "aria-label": "Watchlist", onchange: (e) => { list = e.target.value; load(pane); } });
   pane.replaceChildren(
-    el("div", { class: "row" }, el("span", { class: "dim" }, "List"), picker,
+    el("div", { class: "row" }, el("span", { class: "dim" }, "List"), picker, ...newList(pane),
       jobButton("Update prices", "/api/jobs/prices", pricesSummary, pane),
       jobButton("Analyse", "/api/jobs/analyse", analyseSummary, pane),
       el("span", { class: "dim small" }, "Both run for every watched listing, on all lists.")),

@@ -39,7 +39,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Every tag: the Universe tab's "Your tags" row. One company's: its search result row.
     "tag list": "GET /api/universe/tags",
     "watch add": "POST /api/watchlists/{name}/items",
-    "watch add --list": Pending("gui-parity 06"),
+    "watch add --list": "POST /api/watchlists",  # Watchlist tab "Create"; Watch targets any list
     "watch remove": "DELETE /api/watchlists/{name}/items/{symbol}",
     "watch remove --list": "DELETE /api/watchlists/{name}/items/{symbol}",
     "watch show": "GET /api/watchlists/{name}",

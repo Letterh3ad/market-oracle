@@ -3,6 +3,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
 import { sendJson, busyButton, runJob } from "../lib/ui.js";
 import { refresh as refreshHeader } from "../lib/status.js";
+import { fillPicker } from "../lib/watchlists.js";
 
 const PAGE = 50;
 const LABELS = {
@@ -216,9 +217,12 @@ async function render(pane) {
       clearTimeout(timer);
       timer = setTimeout(() => { state.q = e.target.value; searchAgain(pane); }, 250);
     } });
+  const target = el("select", { "aria-label": "Watchlist", onchange: (e) => { state.list = e.target.value; } });
+  fillPicker(target, [], state.list);
+  api("/api/watchlists").then((lists) => fillPicker(target, lists, state.list)).catch((err) => showError(err.message));
   pane.replaceChildren(
-    el("div", { class: "row" }, box, el("span", { class: "dim" }, "Watch adds to "),
-      el("input", { value: state.list, size: "8", "aria-label": "Watchlist", onchange: (e) => { state.list = e.target.value.trim() || "main"; } })),
+    el("div", { class: "row" }, box, el("span", { class: "dim" }, "Watch adds to "), target,
+      el("span", { class: "dim small" }, "(new lists: Watchlist tab)")),
     el("div", { id: "u-tags", class: "row" }), el("div", { id: "u-controls" }), el("div", { id: "u-results" }), el("div", { id: "u-pages" }));
   pane.prepend(el("div", { class: "row" }, el("span", { id: "u-status-text", class: "dim" }, "Universe ..."),
     refreshButton(pane), tip("", "universe")));

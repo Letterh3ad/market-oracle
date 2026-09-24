@@ -6,7 +6,7 @@ from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidWatchlistName, UnknownSymbol, UnknownWatchlist
 from oracle.services.universe_service import refresh_universe
-from oracle.services.watch_service import show_watchlist, unwatch, watch, watchlists
+from oracle.services.watch_service import create_watchlist, show_watchlist, unwatch, watch, watchlists
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import UNIVERSE, FakeFinanceDatabase, bz2_csv
 
@@ -115,3 +115,21 @@ async def test_a_listing_delisted_after_a_refresh_is_marked(ctx, fdb):
     await refresh_universe(ctx)
     [item] = show_watchlist(ctx)
     assert (item.delisted, item.missing) == (True, False)
+
+
+def test_a_list_created_empty_is_listed_and_shows_empty(ctx):
+    assert create_watchlist(ctx, "  Dividend   picks ") == ("Dividend picks", True)
+    assert lists(ctx) == [("Dividend picks", 0, 0)] and symbols(ctx, "dividend picks") == []
+
+
+def test_creating_a_list_that_exists_keeps_it_as_named(ctx):
+    watch(ctx, "AAPL", "Dividends")
+    assert create_watchlist(ctx, "dividends") == ("Dividends", False)
+    assert lists(ctx) == [("Dividends", 1, 0)]
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 41])
+def test_a_list_with_a_bad_name_is_not_created(ctx, bad):
+    with pytest.raises(InvalidWatchlistName):
+        create_watchlist(ctx, bad)
+    assert lists(ctx) == []
