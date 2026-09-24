@@ -13,7 +13,7 @@ from datetime import date
 
 from oracle.broker.backtest import LeanSource, Replay, Trade, Venue, replay
 from oracle.broker.compare import max_fall
-from oracle.broker.fills import COSTS, fee
+from oracle.broker.fills import COSTS, costs_for, fee
 from oracle.broker.rules import Lean
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
@@ -60,15 +60,16 @@ class Account:
 
 def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mapping[str, date],
              calls: Mapping[str, Sequence[Call]], start: date, end: date, left_out: Sequence[str],
-             lagging: Mapping[str, date], failing: Set[str]) -> Account:
+             lagging: Mapping[str, date], failing: Set[str], bands: Mapping[str, str | None]) -> Account:
     """`history` is each priced listing's bars, from a year before `start` for the risk sizes;
     `first` its first as-of day; `calls` its verdicts, oldest first; `lagging` the last close
     of each listing whose bars stop well before `end` (held flat after it); `failing` the
-    listings the last price check could not fetch."""
+    listings the last price check could not fetch; `bands` the size band each was picked in,
+    which sets its slippage."""
     base = ctx.config.base_currency
     rates, unrated = _rates(ctx, history, start)
     rows = {s: _priced(bars, rates[s]) for s, bars in history.items()}
-    venues = {s: _venue(ctx, s) for s in history}
+    venues = {s: _venue(ctx, s, bands.get(s)) for s in history}
     rules, max_age, capital = strategy_rules(ctx), ctx.config.ai_account.max_verdict_age_days, NOTIONAL
     risk = {**asdict(ctx.config.risk), "account": capital}
 
@@ -99,7 +100,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "
         f"{rules.stop_loss:.0%} stop, and act on a verdict for {max_age} days; buy and hold is fully invested, so read "
         "the verdicts' effect as AI against every verdict a buy.",
-        f"Fills pay the paper accounts' costs at the first close after the as-of day: {COSTS.slippage:.1%} slippage, "
+        f"Fills pay the paper accounts' costs at the first close after the as-of day: {_slippage(venues)}, "
         f"the broker's fee table for each listing's exchange, a {COSTS.fx_spread:.1%} FX spread each way for listings "
         f"not in {base} and {COSTS.stamp_duty:.1%} stamp duty on LSE buys.",
         f"Simulated at a notional {capital:,.0f} {base} so whole shares do not distort the comparison; fixed fee "
@@ -150,12 +151,20 @@ def _verdicts(calls: Mapping[str, Sequence[Call]], max_age: int) -> LeanSource:
     return lean
 
 
-def _venue(ctx: AppContext, symbol: str) -> Venue:
+def _venue(ctx: AppContext, symbol: str, band: str | None) -> Venue:
     profile = UniverseRepo(ctx.conn).profile(symbol)
     if profile is None:
-        return Venue("", "")
+        return Venue("", "", band)
     exchange = profile.exchange or ""
-    return Venue(exchange_country(exchange) or profile.country or "", exchange)
+    return Venue(exchange_country(exchange) or profile.country or "", exchange, band)
+
+
+def _slippage(venues: Mapping[str, Venue]) -> str:
+    by_rate: dict[float, list[str]] = {}
+    for band in sorted({v.band or "no known band" for v in venues.values()}):
+        by_rate.setdefault(costs_for(band).slippage, []).append(band)
+    return "slippage by size band (" + ", ".join(f"{rate:.2%} for {' and '.join(bands)}"
+                                                 for rate, bands in sorted(by_rate.items())) + ")"
 
 
 def _rates(ctx: AppContext, history: Mapping[str, Sequence[Bar]], start: date) -> tuple[dict[str, float], list[str]]:
@@ -234,8 +243,9 @@ def _buy_and_hold(rows: Mapping[str, Sequence[ConvertedBar]], first: Mapping[str
 def _units(cash: float, p: ConvertedBar, venue: Venue) -> float:
     """What `cash` (base currency) buys of a listing at its close after the paper costs, as
     `fills.buy_fill` charges them, in fractional units."""
-    spread = COSTS.fx_spread if p.rate != 1.0 else 0.0
-    local, price = cash * p.rate * (1 - spread), p.bar.close * (1 + COSTS.slippage)
-    stamp = COSTS.stamp_duty if venue.exchange == "LSE" else 0.0
-    paid = local - fee(venue.country, local / price, price, COSTS)
+    costs = costs_for(venue.band)
+    spread = costs.fx_spread if p.rate != 1.0 else 0.0
+    local, price = cash * p.rate * (1 - spread), p.bar.close * (1 + costs.slippage)
+    stamp = costs.stamp_duty if venue.exchange == "LSE" else 0.0
+    paid = local - fee(venue.country, local / price, price, costs)
     return max(0.0, paid / (price * (1 + stamp)))

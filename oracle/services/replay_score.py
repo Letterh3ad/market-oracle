@@ -266,8 +266,9 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Ac
     start, repo = min(first.values()), BarRepo(ctx.conn)
     state = _price_state(ctx, study.id)
     fetched = {s: date.fromisoformat(d) for s, d in state.get("fetched", {}).items()}
-    history, left_out = {}, []
+    history, left_out, bands = {}, [], {}
     for p in json.loads(study.listings):
+        bands[p["symbol"]] = p.get("market_cap")
         s = p["symbol"]
         if s not in first:
             continue
@@ -286,7 +287,7 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Ac
             calls.setdefault(c.symbol, []).append((c.as_of, c.verdict, c.confidence))
     lagging = {s: b[-1].date for s, b in history.items() if end - b[-1].date > STALE}
     return simulate(ctx, history, {s: first[s] for s in history}, calls, start, end, left_out, lagging,
-                    set(state.get("failures", ())))
+                    set(state.get("failures", ())), bands)
 
 
 def _unpriced(bars: Sequence[Bar], first: date, fetched: date | None) -> str | None:

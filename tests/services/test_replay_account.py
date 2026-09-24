@@ -64,9 +64,10 @@ def store(ctx, symbol, closes, currency="USD"):
                               for d, c in closes.items()], "2026-09-23T22:00:00Z")
 
 
-def make_study(ctx, calls, failed=(), symbols=SYMBOLS):
+def make_study(ctx, calls, failed=(), symbols=SYMBOLS, bands=None):
     repo = ReplayRepo(ctx.conn)
-    listings = [{"symbol": s, "name": s, "region": "US", "sector": "Energy", "market_cap": "Mega Cap"} for s in symbols]
+    listings = [{"symbol": s, "name": s, "region": "US", "sector": "Energy",
+                 "market_cap": (bands or {}).get(s, "Mega Cap")} for s in symbols]
     sid = repo.create(NOW, JUN, AUG, json.dumps(listings), [(s, d) for d in (JUN, JUL, AUG) for s in symbols],
                       allowed=1)
     cells = {(c.symbol, c.as_of): c.id for c in repo.cells(sid)}
@@ -332,3 +333,15 @@ def test_replays_on_or_before_the_cutoff_are_left_out_of_the_account_as_of_the_s
     assert [(t.symbol, t.side.value, t.day) for t in account.trades] == [("BBB", "buy", date(2026, 7, 2)),
                                                                        ("AAA", "buy", date(2026, 8, 4))]
     assert min(d for d, _ in lines(account)["buy_and_hold"].points) == JUL
+
+
+def test_fills_pay_slippage_by_the_size_band_the_study_picked_the_listing_in(ctx):
+    make_study(ctx, {(s, JUN): ("buy", 0.9) for s in SYMBOLS}, bands={"BBB": "Small Cap"})
+    account = replay_report(ctx).account
+    closes = {s: dict((b.date, b.close) for b in BarRepo(ctx.conn).history(s)) for s in SYMBOLS}
+    trades = {t.symbol: t for t in account.trades}
+    assert trades["AAA"].price == pytest.approx(closes["AAA"][trades["AAA"].day] * 1.001)
+    assert trades["BBB"].price == pytest.approx(closes["BBB"][trades["BBB"].day] * 1.005)
+    held = lines(account)["buy_and_hold"]
+    assert held.costs == pytest.approx(sum(t.costs for t in account.trades), rel=0.05)
+    assert any("slippage by size" in n and "0.50% for Small Cap" in n for n in account.notes)

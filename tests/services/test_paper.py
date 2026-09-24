@@ -644,3 +644,13 @@ async def test_a_benchmark_is_priced_but_never_traded_researched_or_watched(ctx,
     assert all(d.symbol != "VOD.L" for d in decision_log(ctx, "strategy") + decision_log(ctx, "ai"))
     assert all(o.symbol != "VOD.L" for account in ("strategy", "ai", "manual")
               for o in account_view(ctx, account).pending)
+
+
+async def test_a_smaller_company_fills_with_more_slippage(ctx, yahoo, clock, monkeypatch):
+    real = UniverseRepo.profile
+    monkeypatch.setattr(UniverseRepo, "profile", lambda self, symbol: replace(real(self, symbol), market_cap="Small Cap"))
+    place_buy(ctx, "AAPL", 1000.0)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    [fill] = PaperRepo(ctx.conn).fills("manual")
+    assert fill.price == pytest.approx(100.0 * 1.005)
