@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -183,11 +183,13 @@ def _band_key(value: str) -> str:
     return value.casefold().removesuffix(" cap").strip()
 
 
-async def refresh_universe(ctx: AppContext) -> UniverseStatus:
+async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = lambda _: None) -> UniverseStatus:
     """Download FinanceDatabase and swap it in whole: a failure anywhere leaves the
-    previous universe untouched."""
+    previous universe untouched. `on_stage` hears "downloading", then "saving"."""
     with single_flight(ctx, JOB, LEASE_S) as held:
+        on_stage("downloading")
         sha, listings = await _download(ctx)
+        on_stage("saving")
         grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols())
         held.check()
         with transaction(ctx.conn):

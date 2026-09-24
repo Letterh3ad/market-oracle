@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
-from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe
+from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe, universe_status
 
 router = APIRouter(prefix="/api/universe")
 
@@ -31,6 +31,12 @@ async def search(
                            all_listings=all_listings, include_delisted=include_delisted,
                            limit=limit + 1, offset=offset)
     return {"hits": [asdict(h) for h in hits[:limit]], "more": len(hits) > limit}
+
+
+@router.get("/status")
+async def status(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """What is loaded, by type, and when it was refreshed (over half a second on the full universe)."""
+    return asdict(universe_status(ctx))
 
 
 @router.get("/options")

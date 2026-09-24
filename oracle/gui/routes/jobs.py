@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_prices, submit_research, submit_tick,
+    JobRunner, submit_analyse, submit_prices, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 
@@ -41,3 +41,9 @@ async def research(symbol: str, ctx: AppContext = Depends(get_ctx), runner: JobR
 async def tick(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """The whole routine once: prices, FX, fills, analysis, strategy step."""
     return shapes.job(submit_tick(ctx, runner))
+
+
+@router.post("/universe", status_code=202)
+async def universe(runner: JobRunner = Depends(get_runner)) -> dict:
+    """Download FinanceDatabase (~17 MB) and replace the universe whole."""
+    return shapes.job(submit_universe_refresh(runner))

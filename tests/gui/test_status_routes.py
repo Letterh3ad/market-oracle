@@ -4,7 +4,7 @@ from oracle.net.gate import SourceGate
 async def test_a_fresh_database_says_the_universe_needs_loading(client):
     body = (await client.get("/api/status")).json()
     assert body["universe"] == {"loaded": False, "listings": 0, "refreshed_at": None,
-                                "next": "run `oracle universe refresh`"}
+                                "next": "press Refresh universe on the Universe tab"}
     assert body["base_currency"] == "GBP"
 
 

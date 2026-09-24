@@ -1,7 +1,8 @@
 import { api } from "../lib/api.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { tip } from "../lib/tip.js";
-import { sendJson } from "../lib/ui.js";
+import { sendJson, busyButton, runJob } from "../lib/ui.js";
+import { refresh as refreshHeader } from "../lib/status.js";
 
 const PAGE = 50;
 const LABELS = {
@@ -151,6 +152,46 @@ function pages(more, pane) {
     el("button", { type: "button", disabled: more ? null : "", onclick: () => move(PAGE) }, "Next"));
 }
 
+function describe(u) {
+  if (!u.loaded) return "Not loaded yet: press Refresh universe (downloads about 17 MB).";
+  return `${u.listings.toLocaleString()} listings, ${u.companies.toLocaleString()} companies, `
+    + `${u.delisted.toLocaleString()} delisted; refreshed ${new Date(u.refreshed_at).toLocaleString()}`;
+}
+
+async function showStatus(pane) {
+  const line = pane.querySelector("#u-status-text");
+  try {
+    const u = await api("/api/universe/status");
+    if (line.isConnected) line.textContent = describe(u);
+    return u;
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function refreshButton(pane) {
+  return busyButton("Refresh universe", async (onState) => {
+    try {
+      const u = await runJob("/api/jobs/universe", onState);
+      if (!pane.querySelector("#u-status-text")) return;
+      pane.querySelector("#u-status-text").textContent = `Refreshed. ${describe(u)}`;
+      refreshHeader();
+      await start(pane);
+    } catch (err) { showError(`universe refresh: ${err.message}`); }
+  });
+}
+
+async function start(pane) {
+  try {
+    options ??= await api("/api/universe/options");
+  } catch (err) {
+    showError(err.message);
+    return;
+  }
+  renderControls(pane);
+  run(pane);
+}
+
 async function render(pane) {
   let timer;
   const box = el("input", { type: "search", placeholder: "Search companies by name or symbol", size: "40",
@@ -162,14 +203,10 @@ async function render(pane) {
     el("div", { class: "row" }, box, el("span", { class: "dim" }, "Watch adds to "),
       el("input", { value: state.list, size: "8", "aria-label": "Watchlist", onchange: (e) => { state.list = e.target.value.trim() || "main"; } })),
     el("div", { id: "u-controls" }), el("div", { id: "u-results" }), el("div", { id: "u-pages" }));
-  try {
-    options ??= await api("/api/universe/options");
-  } catch (err) {
-    showError(err.message);
-    return;
-  }
-  renderControls(pane);
-  run(pane);
+  pane.prepend(el("div", { class: "row" }, el("span", { id: "u-status-text", class: "dim" }, "Universe ..."),
+    refreshButton(pane), tip("", "universe")));
+  const u = await showStatus(pane);
+  if (u?.loaded) await start(pane);
 }
 
 export default { id: "universe", label: "Universe", render };

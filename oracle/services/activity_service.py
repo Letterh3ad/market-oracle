@@ -22,11 +22,11 @@ from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.research_service import research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
-from oracle.services.universe_service import resolve_symbol
+from oracle.services.universe_service import refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
-           "sweep_leftovers"]
+           "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -278,3 +278,10 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
 
     return runner.submit("tick", f"Tick ({trigger})", work, subject="tick", link="#watchlist",
                          progress=lambda: stage[-1] if stage else None, automatic=trigger != "manual")
+
+
+def submit_universe_refresh(runner: JobRunner) -> Job:
+    """Download and replace the universe; a second press joins the refresh already going."""
+    stage: list[str] = []
+    return runner.submit("universe", "Refresh universe", lambda c: refresh_universe(c, on_stage=stage.append),
+                         subject="universe", link="#universe", progress=lambda: stage[-1] if stage else None)

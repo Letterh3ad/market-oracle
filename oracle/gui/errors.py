@@ -30,7 +30,7 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ServiceError)
     async def _service_error(request: Request, exc: ServiceError) -> JSONResponse:
         code = next((c for kinds, c in STATUS if isinstance(exc, kinds)), 400)
-        return JSONResponse(status_code=code, content={"error": str(exc)})
+        return JSONResponse(status_code=code, content={"error": exc.in_gui or str(exc)})
 
     @app.exception_handler(RequestValidationError)
     async def _malformed(request: Request, exc: RequestValidationError) -> JSONResponse:

@@ -61,7 +61,7 @@ def _analysed(runs: list[WatchedAnalysis]) -> dict:
 
 
 # What a finished job's button shows, by kind; research shows its report on the company page.
-_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick}
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict}
 
 
 def _result(j: Job) -> dict | None:

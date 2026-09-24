@@ -33,7 +33,13 @@ def raising(ctx, exc):
 async def test_service_errors_carry_their_message_and_a_fitting_status(ctx, exc, code):
     async with raising(ctx, exc) as client:
         response = await client.get("/api/boom")
-    assert (response.status_code, response.json()) == (code, {"error": str(exc)})
+    assert (response.status_code, response.json()) == (code, {"error": exc.in_gui or str(exc)})
+
+
+async def test_an_error_naming_a_cli_command_names_the_gui_control_instead(ctx):
+    async with raising(ctx, UniverseNotLoaded()) as client:
+        error = (await client.get("/api/boom")).json()["error"]
+    assert "Refresh universe" in error and "oracle" not in error
 
 
 async def test_an_unexpected_error_is_a_plain_500_without_the_traceback(ctx):

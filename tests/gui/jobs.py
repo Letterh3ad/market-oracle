@@ -6,6 +6,10 @@ async def run_job(client, path, **params) -> dict:
     response = await client.post(path, params=params or None)
     job = response.json()
     assert response.status_code == 202, job
+    return await wait_job(client, job)
+
+
+async def wait_job(client, job: dict) -> dict:
     while job["state"] in ("queued", "running"):
         await asyncio.sleep(0.01)
         job = (await client.get(f"/api/activity/{job['id']}")).json()

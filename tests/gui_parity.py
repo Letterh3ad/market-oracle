@@ -24,8 +24,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "status": "GET /api/status",
     "net status": "GET /api/status",
     "jobs status": Pending("untracked: job lock holders are not shown"),
-    "universe refresh": Pending("gui-parity 03"),
-    "universe status": Pending("gui-parity 03"),
+    "universe refresh": "POST /api/jobs/universe",
+    "universe status": "GET /api/universe/status",
     "universe search": "GET /api/universe/search",
     **{f"universe search --{flag}": "GET /api/universe/search" for flag in (
         "type", "country", "sector", "industry", "market-cap", "category-group", "category", "family",
