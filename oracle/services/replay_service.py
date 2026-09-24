@@ -109,6 +109,9 @@ class Picked:
     region: str
     sector: str
     market_cap: str | None
+    """The company's band the pick ranked it by (its primary listing's)."""
+    half: str | None = None
+    """The half of the study it was picked or named for; None in studies from before halves."""
 
 
 @dataclass(frozen=True)
@@ -255,7 +258,7 @@ async def pick_listings(ctx: AppContext, first: date, say: Callable[[str], None]
         for region, sector in SLOTS:
             for group in HALVES[half]:
                 if chosen := await _pick_slot(ctx, first, universe, dead, region, sector, group, picked, say):
-                    picked.append(chosen)
+                    picked.append(replace(chosen, half=half))
                     break
             else:
                 left_out.append(f"{region} {sector}{tag}")
@@ -279,13 +282,13 @@ async def _pick_slot(ctx: AppContext, first: date, universe: UniverseRepo, dead:
         if problem := await _price_problem(ctx, line.symbol, first):
             say(f"  passed over: {problem}")
             continue
-        profile = universe.profile(line.symbol)
-        return Picked(line.symbol, company.name, region, sector, profile.market_cap if profile else None)
+        return Picked(line.symbol, company.name, region, sector, company.market_cap)
     return None
 
 
 async def check_symbol(ctx: AppContext, symbol: str, first: date) -> Picked:
-    """A listing the user named, held to the same rules as a picked one except its slot."""
+    """A listing the user named, held to the same rules as a picked one except its slot; it
+    stands in for the large half, and without a band of its own takes its company's."""
     universe = UniverseRepo(ctx.conn)
     resolved = universe.resolve(symbol)
     profile = universe.profile(symbol)
@@ -299,7 +302,8 @@ async def check_symbol(ctx: AppContext, symbol: str, first: date) -> Picked:
         raise InvalidQuery(problem)
     line = next((x for x in universe.company_listings(resolved.company_key) if x.symbol == resolved.symbol), None)
     region = (line and _region_of(line)) or OTHER
-    return Picked(resolved.symbol, resolved.name, region, profile.sector or "", profile.market_cap)
+    return Picked(resolved.symbol, resolved.name, region, profile.sector or "",
+                  profile.market_cap or resolved.market_cap, LARGE)
 
 
 def _window(ctx: AppContext, first: date | None) -> tuple[date, date]:
@@ -346,7 +350,7 @@ async def replace_listing(ctx: AppContext, old: str, new: str) -> StudyStatus:
         raise InvalidQuery(f"{chosen.symbol} is already in the study")
     study = _untouched(ctx)
     listings[at] = Picked(chosen.symbol, chosen.name, listings[at].region if chosen.region == OTHER else chosen.region,
-                          chosen.sector or listings[at].sector, chosen.market_cap)
+                          chosen.sector or listings[at].sector, chosen.market_cap, listings[at].half)
     rc = replay_cutoff(ctx)
     if rc.note:
         raise InvalidQuery(rc.note)

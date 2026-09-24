@@ -837,3 +837,27 @@ async def test_symbols_stand_in_for_the_large_half_of_a_mix(mixed):
 async def test_a_new_study_is_a_mix_unless_told_otherwise(mixed):
     s = await create_study(mixed, FIRST)
     assert [p.symbol for p in s.listings] == [*SYMBOLS, "MIDT", "SMLF", "SMLH.L"]
+
+
+async def test_a_pick_keeps_the_band_it_was_ranked_by_the_companys_primary_one(mixed, yahoo):
+    UniverseRepo(mixed.conn).replace_all([
+        *SPREAD, equity("SMLJ.DE", "Small Japan", "Japan", IT, "GER", "EUR", cap="Mid Cap", key="smlj"),
+        equity("6666.T", "Small Japan", "Japan", IT, "JPX", "JPY", cap="Small Cap", key="smlj", primary=False)])
+    priced(yahoo, "6666.T")
+    picked, _ = await pick_listings(mixed, FIRST, bands="mid-small")
+    assert [(p.symbol, p.market_cap, p.half) for p in picked] == [("6666.T", "Mid Cap", "mid-small")]
+
+
+async def test_a_named_listing_without_a_band_takes_its_primarys_else_counts_in_the_large_half(mixed, yahoo):
+    UniverseRepo(mixed.conn).replace_all([
+        *SPREAD, *SMALLER,
+        equity("BANDX", "Banded Co", "Japan", IT, "NYQ", "USD", cap="Large Cap", key="banded"),
+        equity("7777.T", "Banded Co", "Japan", IT, "JPX", "JPY", cap=None, key="banded", primary=False),
+        equity("8888.T", "Unbanded Co", "Japan", IT, "JPX", "JPY", cap=None)])
+    for symbol in ("7777.T", "8888.T"):
+        priced(yahoo, symbol)
+    s = await create_study(mixed, FIRST, symbols=["7777.T", "8888.T"])
+    assert [(p.symbol, p.market_cap, p.half) for p in s.listings[:2]] == [
+        ("7777.T", "Large Cap", "large"), ("8888.T", None, "large")]
+    sizes = {z.size: z.listings for z in replay_report(mixed).by_size}
+    assert sizes == {"large": ("7777.T", "8888.T"), "mid-small": ("MIDT", "SMLF", "SMLH.L")}

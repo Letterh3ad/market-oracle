@@ -438,8 +438,9 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
 
 
 def _by_size(listings: Sequence[dict], judged: Sequence[CellScore]) -> tuple[SizeScore, ...]:
-    """Each size's headline numbers, against the whole study's basket; none for a study of one size."""
-    sizes = {p["symbol"]: size_of(p.get("market_cap")) or UNKNOWN_SIZE for p in listings}
+    """Each size's headline numbers, against the whole study's basket; none for a study of one size.
+    A listing of no known band counts in the half it was picked or named for."""
+    sizes = {p["symbol"]: size_of(p.get("market_cap")) or p.get("half") or UNKNOWN_SIZE for p in listings}
     present = [z for z in (*SIZES, UNKNOWN_SIZE) if z in sizes.values()]
     if len(present) < 2:
         return ()

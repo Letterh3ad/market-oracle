@@ -48,6 +48,8 @@ class Resolved:
     name: str
     """The company's name, from its primary listing."""
     currency: str | None
+    market_cap: str | None = None
+    """The company's band, from its primary listing."""
 
 
 PEER_FIELDS = ("industry_group", "sector")
@@ -192,6 +194,7 @@ class UniverseRepo:
         listing: biggest band first, then the most widely listed, as peers are ranked."""
         rows = self._conn.execute(
             f"""SELECT p.symbol, p.company_key, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.currency,
+                       p.market_cap,
                        (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
                 FROM listings p
                 WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0 AND p.sector = ?
@@ -200,7 +203,7 @@ class UniverseRepo:
                 ORDER BY {_CAP_ORDER}, n DESC, p.symbol""",
             (sector, *countries, *bands),
         )
-        return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"]) for r in rows]
+        return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"], r["market_cap"]) for r in rows]
 
     def screen(self, classes: Sequence[tuple[str, Set[str]]], countries: Set[str] | None, bands: Sequence[str],
                untrusted_exchanges: Sequence[str] = ()) -> list[ListingProfile]:
@@ -280,7 +283,8 @@ class UniverseRepo:
     def resolve(self, symbol: str) -> Resolved | None:
         """A symbol in any case, as stored, with its company; None if not listed."""
         row = self._conn.execute(
-            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name, l.currency
+            """SELECT l.symbol, l.company_key, COALESCE(NULLIF(p.name, ''), l.symbol) AS name, l.currency,
+                      p.market_cap
                FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
                WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
             {"s": symbol.strip()},
