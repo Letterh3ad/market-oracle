@@ -3,7 +3,7 @@ import pytest
 
 from oracle.gui.app import build_app
 from oracle.services.errors import (
-    InvalidQuery, JobAlreadyRunning, NoPrices, PriceUnavailable, ServiceError, UniverseNotLoaded, UnknownSymbol,
+    ConfigInUse, InvalidQuery, JobAlreadyRunning, NoPrices, PriceUnavailable, ServiceError, UniverseNotLoaded, UnknownSymbol,
 )
 
 CASES = [
@@ -12,6 +12,7 @@ CASES = [
     (JobAlreadyRunning("prices update is already running"), 409),
     (UniverseNotLoaded(), 409),
     (NoPrices("no prices stored for AAPL"), 409),
+    (ConfigInUse("oracle.toml is open in another program: close it and try again"), 409),
     (PriceUnavailable("yahoo is not answering"), 502),
     (ServiceError("anything else a service reports"), 400),
 ]
@@ -33,20 +34,20 @@ def raising(ctx, exc):
 async def test_service_errors_carry_their_message_and_a_fitting_status(ctx, exc, code):
     async with raising(ctx, exc) as client:
         response = await client.get("/api/boom")
-    assert (response.status_code, response.json()) == (code, {"error": exc.in_gui or str(exc)})
+    assert (response.status_code, response.json()) == (code, {"error": str(exc)})
 
 
-async def test_an_error_naming_a_cli_command_names_the_gui_control_instead(ctx):
+async def test_an_error_names_the_action_not_a_cli_command(ctx):
     async with raising(ctx, UniverseNotLoaded()) as client:
         error = (await client.get("/api/boom")).json()["error"]
-    assert "Refresh universe" in error and "oracle" not in error
+    assert "refresh the universe" in error and "`oracle" not in error
 
 
 async def test_an_unexpected_error_is_a_plain_500_without_the_traceback(ctx):
     async with raising(ctx, KeyError("secret internals")) as client:
         response = await client.get("/api/boom")
     assert response.status_code == 500
-    assert response.json() == {"error": "something went wrong inside Market Oracle: see the terminal running `oracle gui`"}
+    assert response.json() == {"error": "something went wrong inside Market Oracle: try again, and if it keeps happening press Restart"}
 
 
 async def test_a_malformed_request_says_which_field_is_wrong(client):

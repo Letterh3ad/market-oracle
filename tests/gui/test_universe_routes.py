@@ -1,4 +1,7 @@
 import asyncio
+import threading
+
+import oracle.gui.routes.universe as universe_routes
 
 from tests.gui.jobs import run_job, wait_job
 
@@ -36,7 +39,7 @@ async def test_a_bad_filter_value_says_what_was_meant(loaded):
 
 async def test_searching_before_the_universe_is_loaded_says_how_to_load_it(client):
     response = await client.get("/api/universe/search")
-    assert response.status_code == 409 and "Refresh universe" in response.json()["error"]
+    assert response.status_code == 409 and "refresh the universe" in response.json()["error"]
 
 
 async def test_options_name_every_filter_and_sort(client):
@@ -111,3 +114,15 @@ async def test_every_tag_is_listed_with_its_companies(loaded):
     await loaded.post("/api/companies/KO/tags", json={"tag": "picks"})
     assert (await loaded.get("/api/universe/tags")).json() == [
         {"tag": "picks", "symbols": ["AAPL", "KO"], "orphaned": []}]
+
+
+async def test_status_counts_off_the_event_loop_on_a_connection_of_its_own(loaded, monkeypatch):
+    real, seen = universe_routes.universe_status, []
+
+    def spy(ctx):
+        seen.append(threading.get_ident())
+        return real(ctx)
+
+    monkeypatch.setattr(universe_routes, "universe_status", spy)
+    assert (await loaded.get("/api/universe/status")).json()["loaded"] is True
+    assert seen and seen[0] != threading.get_ident()

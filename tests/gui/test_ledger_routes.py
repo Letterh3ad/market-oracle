@@ -44,7 +44,7 @@ async def test_the_decision_log_lists_the_strategy_steps_newest_first(ctx, price
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
     strategy_step(ctx)
     [d] = (await priced.get("/api/ledgers/decisions")).json()
-    assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: run `oracle analyse`")
+    assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: analyse it first")
 
 
 async def test_ledgers_carry_the_credits_their_rates_require(ctx, loaded, monkeypatch):

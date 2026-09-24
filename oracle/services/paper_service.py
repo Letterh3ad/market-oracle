@@ -229,9 +229,9 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
         if universe.resolve(symbol) is None:
             skips.append(Decision(symbol, Action.SKIP, None, GONE))
         elif lean is None:
-            skips.append(Decision(symbol, Action.SKIP, None, "no lean yet: run `oracle analyse`"))
+            skips.append(Decision(symbol, Action.SKIP, None, "no lean yet: analyse it first"))
         elif last is not None and lean.as_of < last:
-            skips.append(Decision(symbol, Action.SKIP, None, f"{lean.source} lean is out of date: run `oracle analyse`"))
+            skips.append(Decision(symbol, Action.SKIP, None, f"{lean.source} lean is out of date: analyse it again"))
         else:
             found[symbol] = lean
     return found, skips
@@ -391,7 +391,7 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
         return None
     rate = _rate(ctx, bar.currency, bar.date)
     if rate is None:
-        note = f"no {bar.currency} rate for {bar.date.isoformat()}: run `oracle fx update`"
+        note = f"no {bar.currency} rate for {bar.date.isoformat()}: update FX rates first"
         repo.set_status(order.id, Status.PENDING, note)
         return FillOutcome(order, Status.PENDING, note)
     if profile is None:

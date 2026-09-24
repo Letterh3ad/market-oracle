@@ -6,6 +6,8 @@ import { busyButton, runJob } from "./ui.js";
 // and Update FX (every configured source in order, or only the ticked ones).
 const picked = new Set();
 let box = null;
+// Outlives each reload, so Update FX's results stay on screen after the table refreshes.
+let note = null;
 
 const credits = (lines) => lines.map((c) => el("p", { class: "dim small" }, c));
 
@@ -32,7 +34,7 @@ function rateRow(c, days, history) {
       c.stale ? el("span", { class: "badge warn" }, "stale") : null));
 }
 
-function updateButton(note) {
+function updateButton() {
   return busyButton("Update FX", async (onState) => {
     const query = [...picked].map((s) => `source=${encodeURIComponent(s)}`).join("&");
     try {
@@ -50,7 +52,6 @@ async function load() {
   let body;
   try { body = await api("/api/fx"); } catch (err) { showError(`fx: ${err.message}`); return; }
   const history = el("div");
-  const note = el("div", { class: "result" });
   const days = el("select", { "aria-label": "Days of history" },
     ...[10, 30, 90, 365].map((d) => el("option", { value: d }, `${d} days`)));
   const sources = body.sources.map((s) => el("label", { class: "small" },
@@ -64,13 +65,14 @@ async function load() {
       el("tbody", null, ...body.currencies.map((c) => rateRow(c, days, history))))
       : el("p", { class: "dim" }, "No foreign-currency prices stored yet."),
     ...credits(body.credits),
-    el("div", { class: "row" }, updateButton(note), el("span", { class: "dim small" }, "Only from:"), ...sources,
+    el("div", { class: "row" }, updateButton(), el("span", { class: "dim small" }, "Only from:"), ...sources,
       el("span", { class: "dim small" }, "History:"), days),
     note, history);
 }
 
 function mount(container) {
   box = container;
+  note = el("div", { class: "result" });
   // Loaded on opening, so ages and new currencies are current without polling.
   container.closest("details").addEventListener("toggle", (e) => { if (e.target.open) load(); });
 }

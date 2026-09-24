@@ -129,7 +129,7 @@ def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
     if found:
         return found
     near = [h.symbol for h in search_universe(ctx, symbol, limit=3, include_delisted=True)]
-    raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "try `oracle universe search`"))
+    raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "search the universe for it"))
 
 
 def _require_loaded(ctx: AppContext) -> None:
@@ -159,7 +159,7 @@ def _canonical_values(repo: UniverseRepo, name: str, values: Sequence[str]) -> t
             near = [known[c] for c in closest(k, known)]
             raise UnknownFilterValue(
                 f"no {name.replace('_', ' ')} {value!r}; "
-                + hint(near, f"see `oracle universe facets {name}`")
+                + hint(near, f"see the {name.replace('_', ' ')} values the universe has")
             )
         out.append(known[k])
     return tuple(out)
@@ -174,7 +174,7 @@ def _canonical_tags(ctx: AppContext, tags: Sequence[str]) -> tuple[str, ...]:
         except ValueError:
             tag = raw
         if tag not in known:
-            raise UnknownFilterValue(f"no tag {raw!r}; " + hint(closest(tag, known), "see `oracle tag list`"))
+            raise UnknownFilterValue(f"no tag {raw!r}; " + hint(closest(tag, known), "see the tag list"))
         out.append(tag)
     return tuple(out)
 

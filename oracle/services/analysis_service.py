@@ -70,7 +70,7 @@ async def analyse(ctx: AppContext, symbol: str) -> Analysis:
     listing = resolve_symbol(ctx, symbol).symbol
     bars = BarRepo(ctx.conn).history(listing)
     if not bars:
-        raise NoPrices(f"no prices stored for {listing}: run `oracle prices update {listing}`")
+        raise NoPrices(f"no prices stored for {listing}: update its prices first")
     results = [f(bars) for f in (trend, rsi_signal, macd_signal, volatility_signal)]
     results.append(combine([r for r in results if isinstance(r, AnalystSignal)], listing))
     results.append(_risk(ctx, listing))
@@ -114,7 +114,7 @@ async def _factors(ctx: AppContext, listing: str) -> list[AnalystSignal | Skippe
 def _risk(ctx: AppContext, listing: str) -> AnalystSignal | Skipped:
     mine = _base_series(ctx, listing)
     if not mine:
-        return Skipped("risk", listing, "no exchange rates for its prices yet: run `oracle fx update`")
+        return Skipped("risk", listing, "no exchange rates for its prices yet: update FX rates first")
     universe = UniverseRepo(ctx.conn)
     # A watched symbol gone from the universe has no prices to compare; `watch show` flags it.
     others = {

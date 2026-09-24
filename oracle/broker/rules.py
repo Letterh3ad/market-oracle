@@ -97,7 +97,7 @@ def _why_not(lean: Lean, positions: int, spendable: float, sizes: Mapping[str, f
     if positions >= rules.max_positions:
         return f"already {rules.max_positions} positions"
     if sizes.get(lean.symbol, 0.0) <= 0:
-        return "no risk size yet: run `oracle analyse`"
+        return "no risk size yet: analyse it first"
     if spendable <= 0:
         return "no cash above the cash floor"
     return None

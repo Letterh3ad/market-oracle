@@ -48,5 +48,5 @@ async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(
 async def test_a_strategy_step_runs_the_rules_and_says_why_for_each_listing(priced):
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
     [d] = (await priced.post("/api/ledgers/step")).json()
-    assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: run `oracle analyse`")
+    assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: analyse it first")
     assert [x["symbol"] for x in (await priced.get("/api/ledgers/decisions")).json()] == ["AAPL"]

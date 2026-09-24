@@ -2,7 +2,7 @@ import pytest
 
 from oracle.config import Config, load_config, setting_list
 from oracle.services.context import load_settings, open_context
-from oracle.services.errors import InvalidQuery
+from oracle.services.errors import ConfigInUse, InvalidQuery
 from oracle.services.settings_service import set_setting, settings_form
 
 START = '# mine\n[schedule]\ntime = "22:30"   # keep this comment\n\n[keys]\neodhd = "secret-value"\n'
@@ -74,3 +74,16 @@ def test_without_a_config_file_defaults_are_listed_and_a_save_makes_one(tmp_path
         assert row(ctx, "risk", "account")["value"] == 10_000.0
         set_setting(ctx, "risk", "account", 5000)
     assert load_config(tmp_path / "oracle.toml")[0].risk.account == 5000.0
+
+
+def test_a_config_file_another_program_holds_is_a_readable_error_and_is_left_as_it_was(ctx, monkeypatch):
+    before = ctx.config_source.read_bytes()
+
+    def locked(src, dst):
+        raise PermissionError(13, "Access is denied", str(dst))
+
+    monkeypatch.setattr("oracle.services.settings_service.os.replace", locked)
+    with pytest.raises(ConfigInUse, match="oracle.toml is open in another program: close it and try again"):
+        set_setting(ctx, "schedule", "time", "21:15")
+    assert ctx.config_source.read_bytes() == before
+    assert [p.name for p in ctx.config_source.parent.iterdir() if p.suffix == ".new"] == []

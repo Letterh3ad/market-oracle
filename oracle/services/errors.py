@@ -1,15 +1,16 @@
 class ServiceError(Exception):
     """Base for failures a frontend reports to the user rather than as a traceback."""
 
-    in_gui: str | None = None
-    """The message in the GUI, when the CLI's names a command to run."""
-
 
 class DatabaseTooNew(ServiceError):
     pass
 
 
 class ConfigInvalid(ServiceError):
+    pass
+
+
+class ConfigInUse(ServiceError):
     pass
 
 
@@ -22,10 +23,8 @@ class UniverseUnavailable(ServiceError):
 
 
 class UniverseNotLoaded(ServiceError):
-    in_gui = "the universe is not loaded yet: press Refresh universe on the Universe tab"
-
     def __init__(self) -> None:
-        super().__init__("the universe is not loaded yet: run `oracle universe refresh`")
+        super().__init__("the universe is not loaded yet: refresh the universe first")
 
 
 class UnknownFilterValue(ServiceError):

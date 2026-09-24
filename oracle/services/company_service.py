@@ -32,7 +32,7 @@ class CompanyProfile(ListingProfile):
 class CompanyView:
     profile: CompanyProfile
     price: ConvertedBar | None
-    """The listing's latest stored bar; None until `oracle prices update`."""
+    """The listing's latest stored bar; None until its prices are updated."""
     day_change: float | None
     """Ratio: 0.05 is up 5%, like every other ratio here."""
     fundamentals: Fundamentals | None
@@ -42,7 +42,7 @@ class CompanyView:
     market_cap_rate_source: str | None
     """Where the rate converting market cap came from, for attribution."""
     signals: tuple[StoredSignal, ...] = ()
-    """Each analyst's latest stored signal; empty until `oracle analyse`."""
+    """Each analyst's latest stored signal; empty until it is analysed."""
     lean: Lean | None = None
     lean_stale: bool = False
     """Older than the last stored bar: the strategy will not trade on it."""

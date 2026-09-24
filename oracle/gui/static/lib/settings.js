@@ -29,9 +29,13 @@ function input(row) {
 }
 
 // An empty box means "use the default", sent as null (the key is removed from the file).
+// A key is only removed by Clear, and a number the browser could not parse reads as "", so
+// both refuse rather than silently drop the key.
 function read(row, box) {
   if (row.kind === "bool") return box.checked;
+  if (box.validity?.badInput) throw new Error("not a number: type one, or use Default");
   const text = box.value.trim();
+  if (!text && row.secret) throw new Error("type a key, or use Clear");
   if (!text) return null;
   if (row.kind === "list") return text.split(",").map((s) => s.trim()).filter(Boolean);
   return row.kind === "int" || row.kind === "float" ? Number(text) : text;
@@ -46,20 +50,26 @@ function state(row) {
 function settingRow(row) {
   const box = input(row);
   const note = el("span", { class: row.live || row.secret ? "dim small" : "warn-text small" }, state(row));
+  const label = `${row.section ? `[${row.section}] ` : ""}${row.key}`;
   const save = async (value) => {
     try {
       const saved = await sendJson("/api/settings", { section: row.section, key: row.key, value }, "PUT");
       tr.replaceWith(settingRow(saved));
       if (!saved.live) offerRestart();
     } catch (err) {
-      showError(`${row.section ? `[${row.section}] ` : ""}${row.key}: ${err.message}`);
+      showError(`${label}: ${err.message}`);
     }
+  };
+  const saveBox = () => {
+    let value;
+    try { value = read(row, box); } catch (err) { showError(`${label}: ${err.message}`); return; }
+    save(value);
   };
   const tr = el("tr", null,
     el("td", { class: "mono" }, row.key),
     el("td", null, box),
     el("td", null,
-      el("button", { type: "button", class: "small-btn", onclick: () => save(read(row, box)) }, "Save"),
+      el("button", { type: "button", class: "small-btn", onclick: saveBox }, "Save"),
       el("button", { type: "button", class: "small-btn", title: row.secret ? "Remove the key from oracle.toml" :
         "Remove the key from oracle.toml so the default applies", onclick: () => save(null) },
       row.secret ? "Clear" : "Default")),
@@ -76,6 +86,8 @@ function sectionTable(title, rows) {
       el("tbody", null, ...rows.map(settingRow))));
 }
 
+let loaded = false;
+
 async function load() {
   let rows;
   try {
@@ -84,6 +96,7 @@ async function load() {
     pane().replaceChildren(el("span", { class: "down" }, `settings: ${err.message}`));
     return;
   }
+  loaded = true;
   const sections = [...new Set(rows.map((r) => r.section))];
   const tables = sections.map((s) => [s, sectionTable(s ? `[${s}]` : "top level", rows.filter((r) => r.section === s))]);
   const pacing = tables.filter(([s]) => s.startsWith("sources."));
@@ -94,10 +107,11 @@ async function load() {
     el("details", null, el("summary", { class: "dim" }, "Request pacing per source"), ...pacing.map(([, t]) => t)));
 }
 
-// Loads when first opened, so the page does not fetch every key at start.
+// Loads when first opened, so the page does not fetch every key at start; a failed load
+// tries again on the next opening.
 function mount() {
   const details = pane().closest("details");
-  details.addEventListener("toggle", () => { if (details.open && !pane().childElementCount) load(); });
+  details.addEventListener("toggle", () => { if (details.open && !loaded) load(); });
 }
 
-export { mount };
+export { mount, read };

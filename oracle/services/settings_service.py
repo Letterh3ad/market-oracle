@@ -16,7 +16,7 @@ from oracle.config import (
     with_settings,
 )
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery
+from oracle.services.errors import ConfigInUse, InvalidQuery
 
 log = logging.getLogger(__name__)
 
@@ -178,6 +178,10 @@ def _write_settings(path: Path, section: str, values: dict[str, object]) -> None
             load_config(staged, cwd=path.parent)
         except ConfigError as exc:
             raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
-        os.replace(staged, path)
+        try:
+            os.replace(staged, path)
+        except OSError as exc:
+            # Windows refuses to replace a file another program (an editor, Excel) has open.
+            raise ConfigInUse(f"{path.name} is open in another program: close it and try again") from exc
     finally:
         staged.unlink(missing_ok=True)

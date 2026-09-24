@@ -76,5 +76,5 @@ def test_limit_caps_results(ctx):
 
 
 def test_searching_before_a_refresh_says_how_to_load(empty_ctx):
-    with pytest.raises(UniverseNotLoaded, match="oracle universe refresh"):
+    with pytest.raises(UniverseNotLoaded, match="refresh the universe first"):
         search_universe(empty_ctx, "apple")

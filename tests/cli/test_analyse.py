@@ -68,7 +68,7 @@ def test_analyse_without_a_symbol_runs_the_watchlist_and_names_failures(run):
     run("watch", "add", "NOBARS")
     code, out, _ = run("analyse")
     assert code == 1
-    assert "AAPL" in out and "NOBARS: FAILED" in out and "prices update" in out
+    assert "AAPL" in out and "NOBARS: FAILED" in out and "update its prices" in out
 
 
 def test_analyse_with_nothing_watched_says_how_to_watch(run):

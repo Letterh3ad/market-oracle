@@ -45,9 +45,9 @@ class WatchLine(WatchItem):
     """Ratio against the previous stored close: 0.05 is up 5%."""
     stale: bool = False
     signals: tuple[StoredSignal, ...] = ()
-    """Each analyst's latest stored signal; empty until `oracle analyse`."""
+    """Each analyst's latest stored signal; empty until it is analysed."""
     lean: Lean | None = None
-    """The latest lean; None until `oracle analyse`."""
+    """The latest lean; None until it is analysed."""
     lean_stale: bool = False
     """Older than the last stored bar: the strategy will not trade on it."""
 
@@ -78,7 +78,7 @@ def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[Watch
             return []
         known = {s.name.casefold(): s.name for s in repo.summaries()}
         near = [known[k] for k in closest(name.casefold(), known)]
-        raise UnknownWatchlist(f"no watchlist {name!r}; " + hint(near, "see `oracle watch lists`"))
+        raise UnknownWatchlist(f"no watchlist {name!r}; " + hint(near, "see the list of watchlists"))
     return [_with_price(ctx, item) for item in repo.items(name)]
 
 

@@ -75,7 +75,7 @@ def test_show_scores_both_accounts_and_history_lists_equity(run):
 
 def test_step_without_a_lean_says_how_to_get_one(run):
     code, out, _ = run("paper", "step")
-    assert code == 0 and "VOD.L: skip (no lean yet: run `oracle analyse`)" in out
+    assert code == 0 and "VOD.L: skip (no lean yet: analyse it first)" in out
 
 
 def test_step_with_nothing_watched_says_how_to_watch(run):
