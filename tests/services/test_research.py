@@ -516,7 +516,7 @@ async def test_every_role_reads_the_dated_evidence_and_the_stored_data(ctx, news
     roles = [c for c in model.calls if c[0][0]["content"].startswith("Role: ")]
     assert [c[0][0]["content"].split(".")[0] for c in roles] == [
         "Role: fundamental_analyst", "Role: technical_analyst", "Role: news_analyst", "Role: bull", "Role: bear",
-        "Role: risk"]
+        "Role: risk", "Role: verdict"]
     digest = roles[0][0][1]["content"]
     assert "[a1] 2026-09-20 Reuters: Apple beats estimates" in digest
     assert "[a3] 2026-09-21 stored data:" in digest and "Last close 105.00 USD" in digest
@@ -529,6 +529,39 @@ async def test_a_case_with_no_valid_citation_is_left_out(ctx, news):
     model.roles["risk"] = "garbled"
     report = (await research(ctx, "AAPL", model)).report
     assert report.bull is None and report.bear is not None and report.risks == () and report.invalidated_if is None
+
+
+async def test_what_the_checks_rejected_is_stored_with_the_report(ctx, news):
+    model = report_script(news)
+    model.roles["risk"] = "garbled"
+    run = await research(ctx, "AAPL", model)
+    assert run.status == "done"
+    assert run.report.rejections == ("1 of 6 roles gave an unusable answer; "
+                                     "2 claims dropped (1 citing nothing shown, 1 with no citation)")
+    assert latest_research(ctx, "AAPL").report.checks == run.report.checks and len(run.report.checks) == 6
+
+
+async def test_a_run_whose_roles_all_gave_unusable_answers_fails_without_a_report(ctx, news):
+    from oracle.services.research_service import report_history
+
+    model = report_script(news)
+    model.roles = {role: "garbled" for role in ("fundamental_analyst", "technical_analyst", "news_analyst",
+                                                "bull", "bear", "risk")}
+    run = await research(ctx, "AAPL", model)
+    assert (run.status, run.error, run.report) == ("failed", "the model's answers were unusable", None)
+    assert run.findings == "Beat [a1]." and run.finished_at is not None
+    assert report_history(ctx, "AAPL") == []
+
+
+async def test_a_report_saved_before_answers_were_checked_reads_back_with_no_checks(ctx, news):
+    import json
+
+    run = await research(ctx, "AAPL", report_script(news))
+    body = json.loads(ctx.conn.execute("SELECT body FROM research_reports").fetchone()[0])
+    del body["checks"]
+    ctx.conn.execute("UPDATE research_reports SET body = ?", (json.dumps(body),))
+    old = latest_research(ctx, "AAPL").report
+    assert old.checks == () and old.rejections is None and old.bull == run.report.bull
 
 
 async def test_research_never_changes_the_traded_lean(ctx, news):
@@ -560,6 +593,110 @@ async def test_report_history_lists_each_run_newest_first(ctx, news):
         model.roles["bull"] = {"case": case, "cites": ["a1"]}
         await research(ctx, "AAPL", model)
     assert [r.report.bull.text for r in report_history(ctx, "AAPL")] == ["Second view", "First view"]
+
+
+VERDICT = {"verdict": "buy", "confidence": 0.7, "reason": "Beat estimates on momentum", "cites": ["a1"],
+           "invalidated_if": "Guidance is cut"}
+
+
+def verdict_call(model):
+    [call] = [c for c in model.calls if c[0][0]["content"].startswith("Role: verdict.")]
+    return call[0][1]["content"]
+
+
+async def test_the_verdict_reads_the_statistics_the_full_run_and_the_team_and_is_stored(ctx, news):
+    from oracle.research.trace import Verdict
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = VERDICT
+    run = await research(ctx, "AAPL", model)
+    assert run.report.verdict == Verdict("buy", 0.7, "Beat estimates on momentum", (1,), "Guidance is cut")
+    assert run.report.no_verdict is None and run.report.did_not_read is None
+    material = verdict_call(model)
+    assert "[a3] 2026-09-21 stored data:" in material and "Change over 1 day: +5.0%" in material
+    assert "Beat [a1]." in material  # the researcher's notes
+    assert "- bear case: Priced for perfection [a3] [a2]" in material
+    assert "Step 1, news_search(Apple):" in material and "iPhone demand slows in China" in material
+    assert latest_research(ctx, "AAPL").report.verdict == run.report.verdict
+    assert latest_verdict(ctx, "aapl").id == run.id
+
+
+async def test_an_invalid_verdict_leaves_the_report_without_one_and_says_why(ctx, news):
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = {**VERDICT, "confidence": 7}
+    run = await research(ctx, "AAPL", model)
+    assert run.status == "done" and run.report.verdict is None
+    assert latest_research(ctx, "AAPL").report.no_verdict == (
+        "the verdict was rejected: confidence 7 is not a number from 0 to 1")
+    assert latest_verdict(ctx, "AAPL") is None
+
+
+async def test_a_backend_failing_at_the_verdict_keeps_the_report_and_records_why(ctx, news):
+    from oracle.research.llm import ModelError
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = ModelError("ollama went away")
+    run = await research(ctx, "AAPL", model)
+    assert run.status == "done" and run.report.bull is not None
+    assert run.report.no_verdict == "the verdict was rejected: the model could not write a verdict: ollama went away"
+    assert latest_verdict(ctx, "AAPL") is None
+
+
+async def test_a_verdict_citing_what_the_budget_left_out_is_rejected_and_the_trim_recorded(ctx, news):
+    from dataclasses import replace
+
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = VERDICT
+    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, context=1024))
+    run = await research(ctx, "AAPL", model)
+    assert "[a3] 2026-09-21 stored data:" in verdict_call(model) and "Reuters" not in verdict_call(model)
+    assert run.report.no_verdict == "the verdict was rejected: its reason cites nothing it was shown"
+    assert run.report.did_not_read == ("did not read: the researcher's notes, 6 role outputs, 2 cited items, "
+                                       "1 step observation")
+    assert latest_research(ctx, "AAPL").report.unread == run.report.unread
+    assert latest_verdict(ctx, "AAPL") is None
+
+
+async def test_a_replays_verdict_is_never_the_latest_one(ctx, news):
+    from datetime import date
+
+    from oracle.services.research_service import latest_verdict
+
+    model = report_script(news)
+    model.roles["verdict"] = VERDICT
+    live = await research(ctx, "AAPL", model)
+    model.replies = [step("final", "Done.")]
+    model.roles["verdict"] = {**VERDICT, "cites": ["a4"]}  # the replay's own stored data
+    replay = await research(ctx, "AAPL", model, as_of=date(2026, 9, 18))
+    assert replay.report.verdict is not None and latest_verdict(ctx, "AAPL").id == live.id
+
+
+async def test_a_report_saved_before_verdicts_reads_back_as_having_none(ctx, news):
+    import json
+
+    await research(ctx, "AAPL", report_script(news))
+    body = json.loads(ctx.conn.execute("SELECT body FROM research_reports").fetchone()[0])
+    for key in ("verdict", "verdict_rejected", "unread"):
+        del body[key]
+    ctx.conn.execute("UPDATE research_reports SET body = ?", (json.dumps(body),))
+    old = latest_research(ctx, "AAPL").report
+    assert old.verdict is None and old.no_verdict == "written before reports had verdicts" and old.unread == ()
+
+
+def test_the_verdicts_budget_follows_the_configured_model(ctx):
+    from dataclasses import replace
+
+    from oracle.services.research_service import CLAUDE_CONTEXT, context_tokens
+
+    assert context_tokens(ctx) == 8192
+    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
+    assert context_tokens(ctx) == CLAUDE_CONTEXT
 
 
 def test_the_configured_backend_decides_which_model_runs(ctx):

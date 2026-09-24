@@ -3,24 +3,29 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, time, timezone
+import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import date, datetime, time, timedelta, timezone
 
 from oracle.net.client import RateLimitedClient
 from oracle.net.gate import SourceGate
 from oracle.research.citations import keep_citations
 from oracle.research.claude import ClaudeChat
 from oracle.research.engine import react
+from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
 from oracle.research.queries import plan, seed_queries, suggest
 from oracle.research.roles import write_report
 from oracle.research.tools import Tool
-from oracle.research.trace import UNVALIDATED, Claim, Report, ResearchRun, RunStatus, Step
+from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
+from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, ModelUnavailable
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
@@ -28,19 +33,27 @@ from oracle.services.research_tools import (
     market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
+from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
+from oracle.system import idle
 
 __all__ = [
-    "UNVALIDATED", "Claim", "Report", "ResearchRun", "RunStatus", "Step", "latest_research", "report_history", "research",
-    "research_progress", "sweep_interrupted",
+    "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
+    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "sweep_interrupted",
 ]
 
+log = logging.getLogger(__name__)
+
 JOB = "research"
+UNUSABLE = "the model's answers were unusable"
 # Far longer than a run takes; a crashed holder is freed by the pid check instead.
 LEASE_S = 3600.0
+# Conservative for every Claude model the backend can name.
+CLAUDE_CONTEXT = 200_000
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
@@ -88,13 +101,91 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
     findings, cited = keep_citations(outcome.findings, shown)
-    evidence = await _evidence(ctx, shelf, repo, run_id, listing, as_of, day, findings)
-    report = await write_report(model, evidence, shown, day)
+    statistics, data_id = await _statistics(ctx, shelf, run_id, listing, as_of, day)
+    run = repo.get(run_id)
+    evidence = tuple(e for e in run.evidence if e.id != data_id)
+    lines = {e.id: evidence_line(e.id, e.published, e.outlet, e.title) for e in evidence}
+    digest = "\n".join(["Evidence:", statistics, *lines.values()]) + f"\n\nResearcher's notes: {findings or '(none)'}"
+    report = await write_report(model, digest, shown, day)
+    if not report.usable:
+        with transaction(ctx.conn):
+            repo.set_cited(run_id, cited)
+            repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
+        return
+    material = Material(statistics, data_id, findings, report, evidence, run.steps, lines)
+    report = await add_verdict(model, report, material, context_tokens(ctx))
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)
         repo.set_cited(run_id, cited | report.cites)
         repo.finish(run_id, outcome.status, findings, None, _now(ctx), model.fell_back_to)
+
+
+@dataclass(frozen=True)
+class Refresh:
+    """One pass over the watched listings' stale research."""
+
+    due: int
+    researched: list[str] = field(default_factory=list)
+    failed: list[tuple[str, str]] = field(default_factory=list)
+    """Listing and error."""
+    deferred: list[str] = field(default_factory=list)
+    """Left for the next pass, for `deferred_why`."""
+    deferred_why: str | None = None
+
+
+async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = lambda _: None,
+                           run: Callable[[AppContext, str], Awaitable[object]] | None = None) -> Refresh:
+    """Research the watched listings whose report is missing, too old or behind a price move
+    (`[ai_account]`), most stale first, starting runs only while the time budget lasts.
+    `progress` hears each listing as it starts; `run` defaults to `research`."""
+    run = run or research
+    ai = ctx.config.ai_account
+    started = ctx.clock.utcnow()
+    known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
+    due = due_for_research(known, started.date(), ai.max_verdict_age_days, ai.move_threshold)
+    done = Refresh(len(due))
+    if due and _pc_in_use(ctx):
+        return _defer(done, due, "PC in use")
+    for i, d in enumerate(due):
+        if ctx.clock.utcnow() - started >= timedelta(minutes=ai.research_budget_min):
+            return _defer(done, due[i:], "time budget spent")
+        progress(f"research {i + 1} of {len(due)}: {d.symbol}")
+        try:
+            await run(ctx, d.symbol)
+        except JobAlreadyRunning:
+            # A manual run holds the lock for minutes: leave the rest to the next tick.
+            return _defer(done, due[i:], "research is busy")
+        except Exception as exc:
+            if not isinstance(exc, ServiceError):
+                log.exception("research on %s failed", d.symbol)
+            done.failed.append((d.symbol, str(exc) or type(exc).__name__))
+        else:
+            done.researched.append(d.symbol)
+    return done
+
+
+def _pc_in_use(ctx: AppContext) -> bool:
+    """With `research_when_idle`, whether someone used the PC too recently for research to
+    take its GPU. A PC that cannot tell counts as idle, so research is never held off forever."""
+    s = ctx.config.schedule
+    if not s.research_when_idle:
+        return False
+    seconds = idle.idle_seconds()
+    return seconds is not None and seconds < s.idle_minutes * 60
+
+
+def _defer(done: Refresh, left: list, why: str) -> Refresh:
+    return Refresh(done.due, done.researched, done.failed, [d.symbol for d in left], why)
+
+
+def _known(ctx: AppContext, symbol: str) -> Known:
+    repo = ResearchRepo(ctx.conn)
+    latest = repo.latest_report(symbol)
+    day = latest.report.day if latest else None
+    bars = BarRepo(ctx.conn)
+    return Known(symbol, day, bars.close_on(symbol, day) if day else None, bars.close_on(symbol),
+                 bool(latest and latest.report.verdict), repo.last_attempt(symbol))
 
 
 def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: ChatModel, exc: BaseException) -> None:
@@ -110,10 +201,10 @@ def _record_failure(ctx: AppContext, repo: ResearchRepo, run_id: int, model: Cha
         exc.add_note(f"the run could not be marked failed either: {also!r}")
 
 
-async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: int, listing: str,
-                    as_of: date | None, day: date, notes: str) -> str:
-    """What the roles read: the stored data as one citable item (kept with the run, so the
-    report can be checked later), every article the run was shown, and the loop's notes."""
+async def _statistics(ctx: AppContext, shelf: Shelf, run_id: int, listing: str, as_of: date | None,
+                      day: date) -> tuple[str, int]:
+    """The stored data as one citable item (kept with the run, so the report can be checked
+    later), as the roles read it, and its id."""
     signals = "; ".join(f"{s.signal.analyst}: {s.signal.direction.value} ({s.signal.reason})"
                         + (" [out of date]" if s.stale else "")
                         for s in latest_signals(ctx, listing) if s.signal.as_of <= day)
@@ -121,10 +212,7 @@ async def _evidence(ctx: AppContext, shelf: Shelf, repo: ResearchRepo, run_id: i
     [data_id] = shelf.keep([Article(f"oracle:data/{listing}/run-{run_id}",
                                     f"{listing} stored prices, fundamentals and analyst signals", "stored data",
                                     datetime.combine(day, time(), timezone.utc), body=data)], "oracle")
-    lines = [f"[a{data_id}] {day.isoformat()} stored data: {data}"]
-    lines += [evidence_line(e.id, e.published, e.outlet, e.title) for e in repo.get(run_id).evidence
-              if e.id != data_id]
-    return "Evidence:\n" + "\n".join(lines) + f"\n\nResearcher's notes: {notes or '(none)'}"
+    return f"[a{data_id}] {day.isoformat()} stored data: {data}", data_id
 
 
 def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
@@ -168,6 +256,18 @@ def sweep_interrupted(ctx: AppContext) -> None:
 
 def latest_research(ctx: AppContext, symbol: str) -> ResearchRun | None:
     return ResearchRepo(ctx.conn).latest(resolve_symbol(ctx, symbol).symbol)
+
+
+def context_tokens(ctx: AppContext) -> int:
+    """How much the configured model reads at once; `[llm] context` sizes Ollama's only."""
+    return ctx.config.llm.context if ctx.config.llm.backend == "ollama" else CLAUDE_CONTEXT
+
+
+def latest_verdict(ctx: AppContext, symbol: str) -> ResearchRun | None:
+    """The newest live report's run when that report has a valid verdict: a newer report whose
+    verdict was rejected supersedes every older one. Replays never count."""
+    run = ResearchRepo(ctx.conn).latest_report(resolve_symbol(ctx, symbol).symbol)
+    return run if run and run.report.verdict else None
 
 
 def configured_model(ctx: AppContext) -> ChatModel:

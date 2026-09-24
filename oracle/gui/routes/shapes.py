@@ -9,7 +9,7 @@ from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
-from oracle.services.schedule_service import ScheduleView
+from oracle.services.schedule_service import ScheduleView, Upcoming
 from oracle.services.tick_service import TickRun
 
 
@@ -74,6 +74,15 @@ def schedule(view: ScheduleView) -> dict:
     return asdict(view)
 
 
+def upcoming(up: Upcoming | None) -> dict | None:
+    return None if up is None else {"due": up.due, "at": up.at, "postponed": up.postponed}
+
+
+def running_tick(j: Job | None) -> dict | None:
+    """A tick queued or running here, for the banner whose Stop is Activity's cancel."""
+    return None if j is None else {"id": j.id, "label": j.label, "state": j.state, "stage": j.progress()}
+
+
 def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
 
@@ -92,7 +101,9 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
         "report": None if report is None else {
             "day": report.day, "bull": report.bull and asdict(report.bull), "bear": report.bear and asdict(report.bear),
             "findings": [asdict(c) for c in report.findings], "risks": [asdict(c) for c in report.risks],
-            "invalidated_if": report.invalidated_if,
+            "invalidated_if": report.invalidated_if, "rejections": report.rejections,
+            "verdict": report.verdict and asdict(report.verdict), "no_verdict": report.no_verdict,
+            "did_not_read": report.did_not_read,
         },
         # A link only for a web address: stored-data items have none, and nothing else may run.
         "evidence": [{**asdict(e), "link": e.url if urlsplit(e.url).scheme in ("http", "https") else None}

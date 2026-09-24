@@ -145,10 +145,10 @@ def gated_stages(monkeypatch):
 
     gate = asyncio.Event()
 
-    async def quick(ctx):
+    async def quick(ctx, say):
         return "done", None
 
-    async def slow(ctx):
+    async def slow(ctx, say):
         await gate.wait()
         return "done", None
 
@@ -209,6 +209,19 @@ async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gate
     assert skipped.outcome == "skipped" and "already queued or running" in skipped.note
     gated_stages.set()
     await runner.wait(manual.id)
+
+
+async def test_stopping_a_scheduled_tick_records_it_interrupted_and_it_is_not_run_again(runner, ctx, gated_stages):
+    scheduler = london_scheduler(ctx, runner)
+    ctx.clock.advance(31 * 60)
+    poll = asyncio.create_task(scheduler.check())
+    await settle()
+    job = runner.active("tick")[0]
+    assert job.progress() == "analyse"
+    runner.cancel(job.id)
+    stopped = await poll
+    assert job.state == "cancelled" and stopped.outcome == "interrupted"
+    assert await scheduler.check() is None
 
 
 async def test_finished_jobs_survive_a_restart(ctx, runner):
@@ -325,3 +338,20 @@ async def test_scheduled_ticks_are_automatic_and_manual_ones_are_not(runner, ctx
     gated_stages.set()
     await runner.wait(scheduled.id)
     assert scheduled.automatic and not submit_tick(ctx, runner).automatic
+
+
+async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from oracle.research.trace import RunStatus
+    from oracle.services import activity_service
+    from oracle.services.activity_service import submit_research
+
+    async def unusable(c, listing):
+        return SimpleNamespace(status=RunStatus.FAILED, error="the model's answers were unusable")
+
+    monkeypatch.setattr(activity_service, "research", unusable)
+    monkeypatch.setattr(activity_service, "resolve_symbol", lambda c, s: SimpleNamespace(symbol=s))
+    job = submit_research(ctx, runner, "AAPL")
+    await runner.wait(job.id)
+    assert (job.state, job.error) == ("failed", "the model's answers were unusable")

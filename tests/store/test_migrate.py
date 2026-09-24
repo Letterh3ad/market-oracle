@@ -102,3 +102,19 @@ def test_fx_history_marks_currencies_a_history_source_already_filled(tmp_path, m
     monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
     migrate(conn)
     assert [tuple(r) for r in conn.execute("SELECT currency, filled FROM fx_history")] == [("USD", 1)]
+
+
+def test_decisions_logged_before_accounts_belong_to_the_strategy(tmp_path, monkeypatch):
+    from oracle.store import migrations
+    from oracle.store.paper import DecisionRepo
+
+    conn = connect(tmp_path / "t.db")
+    before = migrations.MIGRATIONS[: migrations.MIGRATIONS.index(migrations.m0030_decision_accounts)]
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", before)
+    migrate(conn)
+    conn.execute("INSERT INTO strategy_decisions (day, symbol, action, reason) VALUES ('2026-09-22', 'AAPL', 'skip', 'x')")
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
+    migrate(conn)
+    [old] = DecisionRepo(conn).recent("strategy")
+    assert (old.account, old.symbol, old.report_id) == ("strategy", "AAPL", None)
+    assert DecisionRepo(conn).recent("ai") == []

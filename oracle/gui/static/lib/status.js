@@ -20,6 +20,7 @@ async function refresh() {
     u.loaded ? ` ${u.listings.toLocaleString()} listings` : ` not loaded (${u.next})`,
   );
   tick.show(status.tick, status.schedule);
+  tick.showBanner(status.warning, status.running_tick);
   control.show(status);
   const paused = status.sources.filter((s) => s.state === "paused");
   document.getElementById("sources-state").textContent =

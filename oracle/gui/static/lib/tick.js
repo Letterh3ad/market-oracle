@@ -1,4 +1,5 @@
 import { el, showError } from "./dom.js";
+import { api } from "./api.js";
 import { busyButton, runJob, sendJson } from "./ui.js";
 
 const OUTCOME_CLASS = { ok: "up", partial: "warn-text", failed: "down", interrupted: "down", skipped: "dim" };
@@ -13,9 +14,14 @@ function outcome(value) {
 
 const toggle = el("input", { type: "checkbox", id: "schedule-on" });
 const time = el("input", { type: "time", id: "schedule-time", required: "" });
+const warnMinutes = el("input", { type: "number", min: "0", max: "120", step: "1", class: "tag-input" });
+const whenIdle = el("input", { type: "checkbox" });
+const idleMinutes = el("input", { type: "number", min: "1", max: "240", step: "1", class: "tag-input" });
+let refreshAll = async () => {};
 
 // Built once, so the 30-second refresh never replaces a button mid-run or a field being edited.
 function mount(refresh) {
+  refreshAll = refresh;
   const save = async () => {
     try {
       await sendJson("/api/settings/schedule", { enabled: toggle.checked, time: time.value }, "PUT");
@@ -26,6 +32,16 @@ function mount(refresh) {
   };
   toggle.addEventListener("change", save);
   time.addEventListener("change", () => { if (time.value) save(); });
+  const saveWarning = async () => {
+    try {
+      await sendJson("/api/settings/tick-warning", { warn_minutes: Number(warnMinutes.value),
+        research_when_idle: whenIdle.checked, idle_minutes: Number(idleMinutes.value) }, "PUT");
+    } catch (err) {
+      showError(`tick warning: ${err.message}`);
+    }
+    await refresh();
+  };
+  for (const input of [warnMinutes, whenIdle, idleMinutes]) input.addEventListener("change", saveWarning);
   document.getElementById("tick-controls").replaceChildren(
     busyButton("Run tick now", async (onState) => {
       try {
@@ -37,11 +53,18 @@ function mount(refresh) {
     }),
     el("label", null, toggle, " Run automatically on weekdays at "), time,
     el("span", { id: "schedule-next", class: "dim small" }));
+  document.getElementById("tick-options").replaceChildren(
+    el("label", null, "Warn ", warnMinutes, " minutes before a scheduled tick (0: no warning)"),
+    el("label", null, whenIdle, " Research only after the PC has been idle "), idleMinutes,
+    el("span", null, " minutes (otherwise it waits for the next tick)"));
 }
 
 function showSchedule(schedule) {
   toggle.checked = schedule.enabled;
   if (document.activeElement !== time) time.value = schedule.time;
+  if (document.activeElement !== warnMinutes) warnMinutes.value = schedule.warn_minutes;
+  if (document.activeElement !== idleMinutes) idleMinutes.value = schedule.idle_minutes;
+  whenIdle.checked = schedule.research_when_idle;
   let text;
   if (schedule.enabled) {
     text = `Next run ${when(schedule.next_run)}, while this app is open.`;
@@ -70,4 +93,57 @@ function show(tick, schedule) {
       el("td", { class: "small" }, s.error || ""))))) : "");
 }
 
-export { mount, show };
+function hhmm(iso) {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+async function act(what, path) {
+  try {
+    await api(path, { method: "POST" });
+  } catch (err) {
+    showError(`${what}: ${err.message}`);
+  }
+  await refreshAll();
+}
+
+let notified = null; // the warning last sent as a browser notification, so each is sent once
+
+function notify(warning) {
+  const key = `${warning.due}/${warning.at}`;
+  if (notified === key || !("Notification" in window) || Notification.permission !== "granted") return;
+  notified = key;
+  new Notification("Market Oracle", { body: `Tick at ${hhmm(warning.at)}. Postpone or skip it on the Oracle page.` });
+}
+
+// Permission may only be asked from a click, so the banner offers it until answered.
+function notifyButton() {
+  if (!("Notification" in window) || Notification.permission !== "default") return null;
+  return el("button", { type: "button", class: "small-btn", title: "Also warn with a desktop notification",
+    onclick: async () => { await Notification.requestPermission(); await refreshAll(); } }, "Notify me");
+}
+
+// The banner under the header: a scheduled tick coming soon, and any tick running now.
+function showBanner(warning, running) {
+  const banner = document.getElementById("tick-banner");
+  const lines = [];
+  if (warning) {
+    notify(warning);
+    lines.push(el("div", { class: "row" },
+      el("span", null, `Tick at ${hhmm(warning.at)}${warning.postponed ? " (postponed)" : ""}.`),
+      warning.postponed ? null : el("button", { type: "button", class: "small-btn",
+        onclick: () => act("postpone", "/api/schedule/postpone") }, "Postpone 1 hour"),
+      el("button", { type: "button", class: "small-btn", onclick: () => act("skip", "/api/schedule/skip") },
+        "Skip today"),
+      notifyButton()));
+  }
+  if (running) {
+    lines.push(el("div", { class: "row" },
+      el("span", null, `${running.label} ${running.state}${running.stage ? `: ${running.stage}` : ""}.`),
+      el("button", { type: "button", class: "small-btn", title: "Stop it; it is recorded as interrupted",
+        onclick: () => act("stop", `/api/activity/${running.id}/cancel`) }, "Stop")));
+  }
+  banner.replaceChildren(...lines);
+  banner.hidden = !lines.length;
+}
+
+export { mount, show, showBanner };

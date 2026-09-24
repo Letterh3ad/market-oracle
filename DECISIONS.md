@@ -1154,3 +1154,131 @@ dev checkout points at the dev checkout: set them from the live GUI's App sectio
 **Alternatives:** Cancelling every job on "off" (manual work is the user's own); asking
 every time even with nothing automatic running (noise); `%USERPROFILE%\Desktop` (wrong under
 OneDrive).
+
+## 2026-09-23 - Research answer checks live in the report JSON; a run with no usable role fails
+
+**Context:** ai-account 06: every research role's answer is checked (usable or not, claims
+dropped by reason) and the counts are shown with the report. The ticket asked for a migration.
+**Decision:** The per-role checks are stored inside `research_reports.body` beside the claims,
+since they are only ever read with the report; reports saved earlier read back with no checks.
+If no role gave a usable answer, the run finishes `failed` with "the model's answers were
+unusable", keeps the loop's notes, and saves no report (no exception, so the job reads done
+and the company page shows the failure beside the last report). The CLI exits 1 then. The
+fake models now answer a well-formed empty reply for roles a test does not script.
+**Alternatives:** A `research_checks` table (a migration for data never queried on its own);
+saving an empty report for an all-garbled run (looks like research that found nothing);
+raising (the run is already recorded as failed; an exception adds nothing but a noisy job).
+
+## 2026-09-23 - The verdict reads the statistics and the whole run, under a context budget
+
+**Context:** ai-account 01: each report ends in a buy/hold/sell verdict. The user asked that
+it read the regular statistics and the full research run, not only the final report.
+**Decision:** A seventh role, `verdict`, runs after the six (only when the report is usable).
+Its input, filled in this order: the stored-data line (prices, 1-day/1-month/3-month change,
+fundamentals, baseline lean and probability, analyst signals; never trimmed), the
+researcher's notes, the six roles' outputs, cited evidence, tool observations that show cited
+evidence, other observations, then uncited evidence. Budget: `([llm] context - 1024) * 4`
+characters less the system prompt; Claude uses a fixed 200k tokens. Filling stops at the first
+item that does not fit, so nothing lower-priority takes its room; what was left out is counted
+by kind ("did not read: 7 uncited items") and shown. The reason must cite an item the verdict
+role was actually shown; otherwise, and for a bad label, confidence or blank condition, the
+verdict is rejected with its reason. It reuses ticket 06's `Answer` check.
+**Alternatives:** Skipping items that do not fit and packing smaller later ones (lets uncited
+items displace role outputs); counting tokens with a tokenizer (a dependency for a rough
+budget); letting the verdict cite anything the run was shown (it could cite what it never read).
+
+## 2026-09-23 - The verdict is stored in the report JSON; replays never supply the latest verdict
+
+**Context:** Ticket 02's AI step reads each listing's latest verdict.
+**Decision:** `verdict`, `verdict_rejected` and `unread` live in `research_reports.body` like
+06's checks (no migration); older reports read back with none ("written before reports had
+verdicts"). `latest_verdict(ctx, symbol)` returns the newest live run whose report has a valid
+verdict, found with `json_extract`; as-of replays are excluded so a backtest never trades live.
+**Alternatives:** A verdict column or table (a migration for one query `json_extract` serves);
+returning the newest report even when its verdict was rejected (ticket 02 can still apply its
+own age limit to the older valid one).
+
+## 2026-09-23 - The AI account shares the strategy's step; its verdicts become leans
+
+**Context:** Ticket 02 adds a third paper account, `ai`, trading research verdicts under the
+strategy's rules.
+**Decision:** `strategy_step` and `ai_step` share one decide/place/log helper; only the input
+step differs. A verdict becomes `Lean(symbol, report day, label, confidence, "ai")`, so buy,
+hold and sell go through the same pure `decide`, sizes (risk analyst), limits and stop loss.
+The AI step uses the newest valid live verdict even when a newer report's verdict was
+rejected (subject to the age limit); with no valid one it skips, quoting the newest report's
+rejection. Age is report day to today, at most `[ai_account] max_verdict_age_days` (default 7,
+1 to 90). Off, `ai_step` returns None and the CLI and GUI say so. `strategy_decisions` gains
+`account` (old rows `strategy`) and `report_id` (the research run) rather than a new table.
+`[ai_account]` reloads live like `[schedule]`.
+**Alternatives:** A second rule set for verdicts (drifts from the strategy's); skipping when the
+newest report's verdict was rejected (throws away a valid, still-fresh call); a separate
+`ai_decisions` table (two logs to query for ticket 04's comparison).
+
+## 2026-09-23 - Ticks refresh stale research inline, within a time budget
+
+**Context:** Ticket 03: while the AI account is on, each tick keeps research fresh before the
+AI step.
+**Decision:** Two new tick stages, `research` (after `analyse`) and `ai_step` (after `step`),
+both no-ops that say so while the AI account is off. Research runs inline in the tick's worker
+thread, calling `research()` per listing, not as separate Activity jobs: the tick is already a
+job, so queuing runs from it means cross-thread waits for no gain, and cancelling the tick
+stops its research too. A listing is due with no report, a report older than
+`max_verdict_age_days` (reused, so the refresh age matches the trading age), or a close moved
+more than `move_threshold` (default 5%) since the report day's close. Order: no report first,
+then oldest report, then biggest move. New runs start only while
+`research_budget_min` (default 30, 1 to 480) lasts on `ctx.clock`; the rest is deferred to
+the next tick. A busy research lock (a manual run) defers the rest instead of failing them;
+other errors count as failed and the next listing runs. Stage progress ("research 2 of 5:
+MSFT") doubles as the tick lock's heartbeat. Settings are edited from the Ledgers AI column.
+**Alternatives:** Research as runner jobs the tick waits on (the older HANDOFF note); a
+separate "max report age" setting (two ages that can disagree); retrying the next listing
+after a busy lock (a manual run holds it for minutes).
+
+## 2026-09-23 - Rules, AI, manual and buy-and-hold are compared from the day the AI account started
+**Context:** ai-account ticket 04 needs one start day and a buy-and-hold benchmark to measure the accounts against.
+**Decision:** The start is the AI account's first equity record. Each account's line is its return against its first
+record on or after that day; trades and costs count its fills since then. Buy-and-hold splits the starting cash equally
+over the listings watched today, each bought at its first close (base currency) on or after the start and held with no
+costs; a missing day or a close with no FX rate keeps the last value, a listing not yet priced waits as cash, and one
+with no close from the start on (or gone from the universe) is left out and named. With no AI history yet, each account
+is shown from its own first record and buy-and-hold is empty. Pure helpers live in `oracle/broker/compare.py`; `oracle
+paper history` without `--account` prints the comparison.
+**Alternatives:** buying at the last close before the start (a weekend start would then use a stale price); counting
+buy-and-hold costs (hides the benchmark behind fee assumptions); the watchlist as it was at the start (not stored).
+
+## 2026-09-24 - Postpone and Skip are scheduler state; Skip is a tick record at the due time
+**Context:** ai-account ticket 05 warns before a scheduled tick and lets the user postpone or skip it.
+**Decision:** Skip stores a skipped tick ("skipped: skipped by the user") dated at the due time, so `ticked_since`
+covers it, the next poll never fires it, and a restart still honours it. Postpone (one hour, once per due time) is held
+in the running `Scheduler` only; a restart forgets it and the tick then fires as a catch-up. The GUI always builds the
+`Scheduler` (polling only with `schedule=True`) so its postpone and skip routes answer. Changing `warn_minutes` or the
+idle settings never moves the scheduler's floor; only `enabled`, `time` and automation do. Stop is Activity's cancel.
+**Alternatives:** persisting postponements in the DB (a new table for a one-hour state); a skip dated now (would not
+cover a due time still ahead).
+
+## 2026-09-24 - Research waits for an idle PC only when asked, on every tick
+**Context:** research can hold the GPU for up to the research budget; the user may be using the PC.
+**Decision:** `[schedule] research_when_idle` (off) with `idle_minutes` (15): the research stage defers every due
+listing ("PC in use") when the last keyboard or mouse input is more recent; the light stages still run. The idle time
+comes from `oracle/system/idle.py` (Windows `GetLastInputInfo`); a PC that cannot tell counts as idle, so research is
+never held off forever. It applies to manual ticks too (the option is about the PC being in use, whoever started it).
+Browser notifications ask permission only from a "Notify me" click and fire once per warning; the in-page banner
+always shows. `warn_minutes` defaults to 10 (0 to 120, 0 off).
+**Alternatives:** gating only scheduled ticks; a Windows toast (deferred to packaging); a new notification dependency.
+
+## 2026-09-24 - ai-account gate: the newest report rules, the comparison starts when the AI is first on
+
+**Context:** Review gate round 1 on ai-account overturned four recorded choices.
+**Decision:** The AI step and research freshness use each listing's newest live report: no
+valid verdict on it means skip (quoting why) and due for research; an older valid verdict is
+never traded past a newer rejected one. A backend failure at the verdict keeps the report,
+with "the model could not write a verdict: ..." as the rejection. Tick research orders due
+listings by last attempt (any run status), never tried first, so a listing whose research
+always fails cannot hold the front of the queue. The `ai` account's equity is recorded only
+while it is on, so "since the AI account started" means since it was first turned on. The
+verdict budget fills at 3 characters a token (75% of the old 4), since numbers and URLs run
+nearer 3.
+**Alternatives:** Falling back to the newest valid verdict within the age limit (trades a call
+the latest research no longer supports); ordering by report day (starvation); recording `ai`
+equity from the upgrade (a start the user never chose).

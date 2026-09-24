@@ -6,10 +6,10 @@ from tests.fakes.yahoo import bar
 from tests.gui.jobs import run_job
 
 
-async def test_both_accounts_start_level_side_by_side(loaded):
+async def test_every_account_starts_level_side_by_side(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["base_currency"] == "GBP"
-    assert [a["name"] for a in body["accounts"]] == ["strategy", "manual"]
+    assert [a["name"] for a in body["accounts"]] == ["strategy", "ai", "manual"]
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
         assert (a["positions"], a["pending"], a["sells"], a["history"]) == ([], [], [], [])
@@ -17,7 +17,7 @@ async def test_both_accounts_start_level_side_by_side(loaded):
 
 async def test_a_queued_buy_shows_as_pending_on_its_account(ctx, loaded):
     place_buy(ctx, "AAPL", 1000.0)
-    manual = (await loaded.get("/api/ledgers")).json()["accounts"][1]
+    manual = (await loaded.get("/api/ledgers")).json()["accounts"][2]
     [order] = manual["pending"]
     assert (order["symbol"], order["side"], order["cash"], order["status"]) == ("AAPL", "buy", 1000.0, "pending")
 
@@ -32,7 +32,7 @@ async def test_a_filled_buy_shows_as_a_position_with_an_equity_record(ctx, price
     clock.advance(2 * 86400)  # past that session's close, so its bar counts as complete
     run = (await run_job(priced, "/api/jobs/prices", symbol="AAPL"))["result"]
     assert [f["status"] for f in run["fills"]] == ["filled"]
-    manual = (await priced.get("/api/ledgers")).json()["accounts"][1]
+    manual = (await priced.get("/api/ledgers")).json()["accounts"][2]
     [position] = manual["positions"]
     assert position["symbol"] == "AAPL" and position["shares"] > 0 and manual["pending"] == []
     assert manual["cash"] < 10_000.0 and manual["costs"] > 0
@@ -61,3 +61,61 @@ async def test_the_strategy_rules_shown_are_the_configured_ones(ctx, loaded):
     rules = (await loaded.get("/api/ledgers")).json()["rules"]
     assert rules == {"min_probability": 0.6, "max_positions": 7, "max_position": 0.1, "cash_floor": 0.2,
                      "stop_loss": 0.08}
+
+
+async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdicts(ctx, priced):
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    assert (await priced.get("/api/ledgers")).json()["ai_account"] == {
+        "enabled": False, "max_verdict_age_days": 7, "move_threshold": 0.05, "research_budget_min": 30}
+    off = (await priced.post("/api/ledgers/ai/step")).json()
+    assert off["decisions"] == [] and off["off"].startswith("the AI account is off")
+    assert (await priced.put("/api/ledgers/ai", json={"enabled": True})).json() == {"enabled": True}
+    assert ctx.config.ai_account.enabled is True
+    on = (await priced.post("/api/ledgers/ai/step")).json()
+    assert on["off"] is None and on["badge"].startswith("unvalidated: AI research")
+    assert [(d["symbol"], d["action"], d["reason"]) for d in on["decisions"]] == [
+        ("AAPL", "skip", "no verdict yet: run research on it")]
+    [d] = (await priced.get("/api/ledgers/decisions", params={"account": "ai"})).json()
+    assert (d["account"], d["symbol"], d["report_id"]) == ("ai", "AAPL", None)
+    assert (await priced.get("/api/ledgers/decisions")).json() == []
+
+
+async def test_the_ai_switch_and_decision_log_refuse_what_they_do_not_know(loaded):
+    assert (await loaded.put("/api/ledgers/ai", json={"enabled": "yes"})).status_code in (400, 422)
+    assert (await loaded.get("/api/ledgers/decisions", params={"account": "manual"})).status_code in (400, 422)
+
+
+async def test_the_ai_research_settings_are_saved_and_refused_out_of_range(ctx, loaded):
+    body = {"max_verdict_age_days": 10, "move_threshold": 0.08, "research_budget_min": 20}
+    saved = (await loaded.put("/api/ledgers/ai/research", json=body)).json()
+    assert saved == {"enabled": False, **body}
+    assert (await loaded.get("/api/ledgers")).json()["ai_account"] == saved
+    refused = await loaded.put("/api/ledgers/ai/research", json={**body, "research_budget_min": 0})
+    assert refused.status_code == 400 and "research_budget_min" in refused.json()["error"]
+    assert ctx.config.ai_account.research_budget_min == 20
+
+
+async def test_the_comparison_waits_for_the_ai_account_history(loaded):
+    compare = (await loaded.get("/api/ledgers")).json()["compare"]
+    assert compare["start"] is None and "no history yet" in compare["notes"][0]
+    assert [(line["name"], line["points"], line["return"]) for line in compare["lines"]] == [
+        ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("buy_and_hold", [], None)]
+
+
+async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, yahoo, clock):
+    ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=True))
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
+    # The start day's close only exists once that session has closed.
+    assert (await priced.get("/api/ledgers")).json()["compare"]["left_out"] == ["AAPL"]
+    yahoo.series["AAPL"].bars.append(bar("2026-09-23", 150.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    clock.advance(86400)
+    await run_job(priced, "/api/jobs/prices", symbol="AAPL")
+    compare = (await priced.get("/api/ledgers")).json()["compare"]
+    assert compare["start"] == "2026-09-23" and compare["left_out"] == []
+    lines = {line["name"]: line for line in compare["lines"]}
+    assert lines["ai"]["points"] == [["2026-09-23", 0.0], ["2026-09-24", 0.0]] and lines["ai"]["return"] == 0.0
+    assert lines["buy_and_hold"]["points"] == [["2026-09-23", 0.0]]
+    assert lines["buy_and_hold"]["caption"].startswith("Buy and hold: equal amounts of the 1 listing")
+    assert all({"max_fall", "trades", "costs"} <= set(line) for line in compare["lines"])

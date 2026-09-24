@@ -54,12 +54,26 @@ port = 8740
 [schedule]
 enabled = false
 time = "22:30"   # 24-hour, local time
+warn_minutes = 10            # the GUI warns this long before, with Postpone and Skip (0 off, up to 120)
+research_when_idle = false   # true: a tick researches only once the PC has sat idle idle_minutes
+idle_minutes = 15            # 1 to 240; otherwise research waits for the next tick
 
 # The master switch for everything that starts by itself (scheduled ticks now, later AI
 # research refreshes and discovery). Off: nothing starts on its own; buttons still work.
 # The GUI header's Automation switch changes it too.
 [automation]
 enabled = true
+
+# The AI paper account: trades each watched listing's latest research verdict under the
+# strategy's rules, limits and starting cash. Unvalidated; off until you turn it on (the
+# Ledgers tab's switch and fields change these too). While it is on, each tick first
+# researches watched listings whose report is missing, too old, or behind a price move,
+# most stale first, then runs the AI step.
+[ai_account]
+enabled = false
+max_verdict_age_days = 7   # an older verdict is never traded, and is researched again (1 to 90)
+move_threshold = 0.05      # research again after the price moved this share since the report
+research_budget_min = 30   # minutes a tick may spend starting research; the rest waits (1 to 480)
 
 # The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
 [llm]

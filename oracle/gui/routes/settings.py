@@ -7,7 +7,7 @@ from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.schedule_service import schedule_status
-from oracle.services.settings_service import set_peer_count, set_schedule
+from oracle.services.settings_service import set_peer_count, set_schedule, set_tick_warning
 
 router = APIRouter(prefix="/api/settings")
 
@@ -21,6 +21,12 @@ class Schedule(BaseModel):
     time: StrictStr
 
 
+class TickWarning(BaseModel):
+    warn_minutes: StrictInt
+    research_when_idle: StrictBool
+    idle_minutes: StrictInt
+
+
 @router.put("/peers")
 async def put_peers(body: PeerCount, ctx: AppContext = Depends(get_ctx)) -> dict:
     path = set_peer_count(ctx, body.count)
@@ -32,4 +38,10 @@ async def put_peers(body: PeerCount, ctx: AppContext = Depends(get_ctx)) -> dict
 async def put_schedule(body: Schedule, ctx: AppContext = Depends(get_ctx)) -> dict:
     """Takes effect on the running scheduler within a poll; no restart."""
     set_schedule(ctx, body.enabled, body.time)
+    return shapes.schedule(schedule_status(ctx))
+
+
+@router.put("/tick-warning")
+async def put_tick_warning(body: TickWarning, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_tick_warning(ctx, body.warn_minutes, body.research_when_idle, body.idle_minutes)
     return shapes.schedule(schedule_status(ctx))

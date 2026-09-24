@@ -1,4 +1,4 @@
-"""Paper trading: two ledgers in the base currency, orders filled at the next open with
+"""Paper trading: three ledgers in the base currency, orders filled at the next open with
 pessimistic costs."""
 
 from __future__ import annotations
@@ -7,11 +7,12 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from oracle.analysts.risk import max_drawdown
+from oracle.broker.compare import buy_and_hold, max_fall, returns_since
 from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
 from oracle.market.fx import RateSeries, pick_rate
+from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.prices_service import price_history_in_base
@@ -21,18 +22,25 @@ from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
 from oracle.store.leans import LeanRepo
 from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision, Order, PaperRepo
+from oracle.store.research import ResearchRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AccountScore", "AccountView", "Action", "FillOutcome", "Order", "Position", "Sell", "Side",
-    "Status", "account_score", "account_view", "equity_history", "fill_pending", "pending_orders", "place_buy",
-    "place_sell", "sells", "strategy_log", "strategy_step",
+    "ACCOUNTS", "AI_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
+    "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
+    "strategy_step",
 ]
 
-ACCOUNTS = ("strategy", "manual")
+ACCOUNTS = ("strategy", "ai", "manual")
+TRADERS = ("strategy", "ai")
+"""The accounts that trade by themselves."""
+GONE = "no longer in the universe"
+AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
+          "or set [ai_account] enabled = true in oracle.toml")
 
 
 @dataclass(frozen=True)
@@ -91,6 +99,34 @@ class Sell:
 
 
 @dataclass(frozen=True)
+class Line:
+    """One line of the comparison, from the comparison's start (or its own first record)."""
+    name: str
+    caption: str
+    points: tuple[tuple[date, float], ...]
+    """(day, return since the start as a ratio), 0.0 on the first day; empty with no history."""
+    max_fall: float
+    trades: int
+    costs: float
+    """Paid since the start, base currency."""
+
+    @property
+    def return_(self) -> float | None:
+        return self.points[-1][1] if self.points else None
+
+
+@dataclass(frozen=True)
+class Comparison:
+    start: date | None
+    """The AI account's first equity record; None before it has one."""
+    lines: tuple[Line, ...]
+    """The accounts in ACCOUNTS order, then buy_and_hold."""
+    left_out: tuple[str, ...]
+    """Watched listings buy-and-hold could not hold: no prices from the start on."""
+    notes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class FillOutcome:
     order: Order
     status: Status
@@ -140,14 +176,30 @@ def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> st
 def strategy_step(ctx: AppContext) -> list[Decision]:
     """Run the strategy rules over every watched listing's latest lean and queue the
     resulting orders on the strategy account. Every decision, skips included, is logged."""
-    account = "strategy"
-    repo, leans = PaperRepo(ctx.conn), LeanRepo(ctx.conn)
-    view = account_view(ctx, account)
     watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, unusable = _usable_leans(ctx, leans, watched)
+    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), watched)
+    return _step(ctx, "strategy", found, skips, {})
+
+
+def ai_step(ctx: AppContext) -> list[Decision] | None:
+    """The strategy's rules, limits and fills over each watched listing's latest research
+    verdict instead of its lean, on the AI account; None, doing nothing, while that account
+    is off. Every decision is logged with the research run its verdict came from."""
+    if not ctx.config.ai_account.enabled:
+        return None
+    watched = WatchlistRepo(ctx.conn).all_symbols()
+    found, skips, runs = _usable_verdicts(ctx, watched)
+    return _step(ctx, "ai", found, skips, runs)
+
+
+def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
+          reports: dict[str, int]) -> list[Decision]:
+    """Decide over `found` with the strategy's rules, queue the orders on `account` and log
+    every decision; `reports` maps a listing to the research run behind its decision."""
+    view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
-    sizes = {s: size for s in watched if (size := _risk_size(ctx, s)) is not None}
-    orders = repo.pending(account)
+    sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
+    orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
     rules = Rules(ctx.config.strategy.min_probability, ctx.config.risk.max_position,
                   ctx.config.strategy.max_positions, ctx.config.risk.cash_floor, ctx.config.strategy.stop_loss)
@@ -163,7 +215,8 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
         elif d.action == Action.SELL:
             order = place_sell(ctx, d.symbol, None, account, source=account)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
-        log.log([LoggedDecision(today, d.symbol, d.action, d.cash, d.reason, order.id if order else None)])
+        log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
+                                reports.get(d.symbol))])
     return decisions
 
 
@@ -174,7 +227,7 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
         lean = leans.latest(symbol)
         last = bars.last_date(symbol)
         if universe.resolve(symbol) is None:
-            skips.append(Decision(symbol, Action.SKIP, None, "no longer in the universe"))
+            skips.append(Decision(symbol, Action.SKIP, None, GONE))
         elif lean is None:
             skips.append(Decision(symbol, Action.SKIP, None, "no lean yet: run `oracle analyse`"))
         elif last is not None and lean.as_of < last:
@@ -184,9 +237,35 @@ def _usable_leans(ctx: AppContext, leans: LeanRepo, watched: list[str]) -> tuple
     return found, skips
 
 
-def strategy_log(ctx: AppContext, limit: int = 50) -> list[LoggedDecision]:
-    """The strategy account's recent decisions, newest first."""
-    return DecisionRepo(ctx.conn).recent(limit)
+def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lean], list[Decision], dict[str, int]]:
+    """Each listing's newest live report's verdict as a lean, unless it has none (a rejected
+    verdict is never passed over for an older one) or it is older than the configured age;
+    with the research run behind each, skips included."""
+    research, universe, today = ResearchRepo(ctx.conn), UniverseRepo(ctx.conn), ctx.clock.utcnow().date()
+    max_age = ctx.config.ai_account.max_verdict_age_days
+    found, skips, runs = {}, [], {}
+    for symbol in watched:
+        run = research.latest_report(symbol)
+        if universe.resolve(symbol) is None:
+            skips.append(Decision(symbol, Action.SKIP, None, GONE))
+            continue
+        if run is None:
+            skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it"))
+            continue
+        runs[symbol] = run.id
+        if (v := run.report.verdict) is None:
+            skips.append(Decision(symbol, Action.SKIP, None, f"no verdict: {run.report.no_verdict}"))
+        elif (today - run.report.day).days > max_age:
+            skips.append(Decision(symbol, Action.SKIP, None, f"the verdict is from {run.report.day.isoformat()}, older "
+                                                             f"than {max_age} days: run research on it again"))
+        else:
+            found[symbol] = Lean(symbol, run.report.day, v.label, v.confidence, "ai")
+    return found, skips, runs
+
+
+def decision_log(ctx: AppContext, account: str, limit: int = 50) -> list[LoggedDecision]:
+    """An account's recent decisions, newest first."""
+    return DecisionRepo(ctx.conn).recent(account, limit)
 
 
 def _risk_size(ctx: AppContext, symbol: str) -> float | None:
@@ -212,11 +291,14 @@ def account_score(ctx: AppContext, account: str) -> AccountScore:
     view = account_view(ctx, account)
     fills = PaperRepo(ctx.conn).fills(account)
     unrealised = sum(p.value - p.cost for p in view.positions if p.value is not None)
-    costs = sum((f.fee + f.stamp) / f.rate + f.fx + f.slippage for f in fills)
-    history = EquityRepo(ctx.conn).history(account)
-    max_fall = max_drawdown(history)[0] if history else 0.0
+    costs = sum(_cost(f) for f in fills)
     return AccountScore(account, view.equity, ctx.config.risk.account, view.realised, unrealised, costs,
-                        max_fall)
+                        max_fall(EquityRepo(ctx.conn).history(account)))
+
+
+def _cost(f: FillRow) -> float:
+    """Fees, stamp duty, FX spread and slippage of one fill, base currency."""
+    return (f.fee + f.stamp) / f.rate + f.fx + f.slippage
 
 
 def equity_history(ctx: AppContext, account: str) -> list[tuple]:
@@ -224,9 +306,60 @@ def equity_history(ctx: AppContext, account: str) -> list[tuple]:
     return EquityRepo(ctx.conn).history(account)
 
 
+CAPTIONS = {
+    "strategy": "Strategy: trades the leans under the fixed rules.",
+    "ai": "AI: trades the research verdicts under the same rules.",
+    "manual": "Manual: your own buys and sells.",
+}
+NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
+
+
+def comparison(ctx: AppContext) -> Comparison:
+    """Every account and an equal-weight buy-and-hold of today's watchlist, each as its
+    return since the day the AI account started, with its largest fall, trades and costs."""
+    equity = EquityRepo(ctx.conn)
+    histories = {name: equity.history(name) for name in ACCOUNTS}
+    start = histories["ai"][0][0] if histories["ai"] else None
+    lines = [_account_line(ctx, name, history, start) for name, history in histories.items()]
+    if start is None:
+        notes = ("The AI account has no history yet: each account is shown from its own first record, and buy and "
+                 "hold starts once the AI account has one.", NOT_VALIDATED)
+        lines.append(Line("buy_and_hold", "Buy and hold: starts with the AI account.", (), 0.0, 0, 0.0))
+        return Comparison(None, tuple(lines), (), notes)
+    closes = {}
+    for symbol in WatchlistRepo(ctx.conn).all_symbols():
+        try:
+            closes[symbol] = [(c.bar.date, c.close_base) for c in price_history_in_base(ctx, symbol)]
+        except UnknownSymbol:
+            closes[symbol] = []
+    held, left_out = buy_and_hold(closes, start, ctx.config.risk.account)
+    n = len(closes) - len(left_out)
+    lines.append(Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'} "
+                                      f"watched today, bought at the first close from {start.isoformat()} and never "
+                                      "sold, with no costs.",
+                      tuple(returns_since(held, start)), max_fall(held), 0, 0.0))
+    notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
+    if left_out:
+        notes.append(f"Left out of buy and hold, no prices from {start.isoformat()} on: {', '.join(left_out)}.")
+    return Comparison(start, tuple(lines), tuple(left_out), tuple(notes))
+
+
+def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date | None) -> Line:
+    since = start or (history[0][0] if history else None)
+    if since is None:
+        return Line(name, CAPTIONS[name], (), 0.0, 0, 0.0)
+    kept = [(d, v) for d, v in history if d >= since]
+    fills = [f for f in PaperRepo(ctx.conn).fills(name) if f.date >= since]
+    return Line(name, CAPTIONS[name], tuple(returns_since(kept, since)), max_fall(kept), len(fills),
+                sum(_cost(f) for f in fills))
+
+
 def _record_equity(ctx: AppContext) -> None:
+    """The AI account only while it is on, so the comparison starts the day it was first turned on."""
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
+        if account == "ai" and not ctx.config.ai_account.enabled:
+            continue
         view = account_view(ctx, account)
         EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
 

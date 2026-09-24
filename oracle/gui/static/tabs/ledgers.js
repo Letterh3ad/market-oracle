@@ -1,7 +1,8 @@
 import { api } from "../lib/api.js";
-import { lineChart } from "../lib/chart.js";
+import { lineChart, linesChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
+import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
 
@@ -37,6 +38,58 @@ function strategyRules(r) {
   return `Trades by itself on the leans, under fixed rules: buy on a buy lean at ${p(r.min_probability)} or more, ` +
     `at most ${r.max_positions} positions of up to ${p(r.max_position)} each, ${p(r.cash_floor)} always kept in cash, ` +
     `sell on a sell lean or ${p(r.stop_loss)} below cost. Its record is the honest test. Change the rules in oracle.toml.`;
+}
+
+function aiRules(r, ai) {
+  const p = (v) => `${Math.round(v * 100)}%`;
+  return "Trades by itself on each watched listing's latest research verdict, under the strategy's rules and limits: " +
+    `buy on a buy verdict at ${p(r.min_probability)} confidence or more, sell on a sell verdict or ${p(r.stop_loss)} below cost. ` +
+    `A verdict older than ${ai.max_verdict_age_days} days is never traded. While it is on, each tick first researches ` +
+    "the listings whose report is missing, too old or behind a price move, then runs the AI step. " +
+    "Unvalidated: its record is how we find out whether the research adds anything.";
+}
+
+// How ticks keep the research fresh: saved to oracle.toml, used from the next tick.
+function aiResearch(ai) {
+  const note = el("div", { class: "form-note" });
+  const field = (label, value, attrs) => el("input", { type: "number", step: "1", value: String(value),
+    style: "width: 60px", "aria-label": label, ...attrs });
+  const age = field("Research again after days", ai.max_verdict_age_days, { min: "1", max: "90" });
+  const move = field("Research again after a price move of percent", +(ai.move_threshold * 100).toFixed(2),
+    { min: "0.1", max: "99", step: "any" });
+  const budget = field("Research minutes per tick", ai.research_budget_min, { min: "1", max: "480" });
+  const save = busyButton("Save", async () => {
+    try {
+      await sendJson("/api/ledgers/ai/research", { max_verdict_age_days: Number(age.value),
+        move_threshold: Number(move.value) / 100, research_budget_min: Number(budget.value) }, "PUT");
+      lastResult = ["Saved: the next tick researches by the new limits."];
+      refresh();
+    } catch (err) {
+      note.className = "form-note down";
+      note.textContent = err.message;
+    }
+  });
+  return el("div", { class: "small" },
+    el("div", { class: "row" }, "Research again after ", age, " days or a ", move, "% price move; up to ", budget,
+      " min per tick ", save), note);
+}
+
+// The AI account's on/off switch; off, its step does nothing.
+function aiSwitch(ai) {
+  const box = el("input", { type: "checkbox", "aria-label": "AI account on" });
+  box.checked = ai.enabled;
+  box.addEventListener("change", async () => {
+    box.disabled = true;
+    try {
+      await sendJson("/api/ledgers/ai", { enabled: box.checked }, "PUT");
+      clearError();
+    } catch (err) {
+      showError(`AI account switch: ${err.message}`);
+    }
+    refresh();
+  });
+  return el("label", { class: ai.enabled ? "small" : "small warn-text" }, box,
+    ai.enabled ? " On: AI step trades the verdicts" : " Off: AI step does nothing");
 }
 
 // Buy and sell forms for the manual account. Refusals appear under the form that caused them.
@@ -77,7 +130,7 @@ function sellButton(p) {
   } }, "Sell");
 }
 
-function column(a, base, rules) {
+function column(a, base, rules, ai) {
   const manual = a.name === "manual";
   const gain = (p) => (p.value == null ? null : p.value - p.cost);
   const heads = [["Symbol"], ["Shares", null, 1], [`Cost (${base})`, "position_cost", 1],
@@ -99,13 +152,58 @@ function column(a, base, rules) {
       el("td", { class: "num" }, String(s.shares)), el("td", { class: "num" }, money(s.proceeds)),
       el("td", { class: `num ${tone(s.realised)}` }, signed(s.realised)))),
     "Nothing sold yet.");
-  const title = manual ? tip("Manual", "manual_account") : tipText("Strategy", strategyRules(rules));
+  const title = manual ? tip("Manual", "manual_account")
+    : a.name === "ai" ? tipText("AI", aiRules(rules, ai)) : tipText("Strategy", strategyRules(rules));
+  const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
-    el("h2", null, title), metrics(a, base), manual ? trading(base) : null,
+    el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
+    a.name === "ai" ? aiResearch(ai) : null,
+    metrics(a, base), manual ? trading(base) : null,
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,
     el("h3", null, tip("Waiting", "pending")), pending,
     el("h3", null, tip("Sells", "realised")), sold);
+}
+
+const LINES = {
+  strategy: { label: "Strategy", colour: "--accent" },
+  ai: { label: "AI", colour: "--warn" },
+  manual: { label: "Manual", colour: "--text" },
+  buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
+};
+
+// Every account and buy-and-hold, each as its return since the AI account started.
+function comparison(c, base) {
+  const swatch = (name) => el("span", { class: LINES[name].dashed ? "swatch dashed" : "swatch",
+    style: `background: var(${LINES[name].colour}); color: var(${LINES[name].colour})` });
+  const rows = c.lines.map((l) => el("tr", null,
+    el("td", null, swatch(l.name), " ", LINES[l.name].label),
+    el("td", { class: `num ${tone(l.return)}` }, l.return == null ? "no history yet" : pct(l.return)),
+    el("td", { class: `num ${l.max_fall < 0 ? "down" : ""}` }, pct(l.max_fall)),
+    el("td", { class: "num" }, String(l.trades)),
+    el("td", { class: "num" }, money(l.costs))));
+  return el("div", { class: "card" },
+    el("h2", null, "Since the AI account started"),
+    ...c.notes.map((n) => el("p", { class: "dim small" }, n)),
+    el("div", { class: "row compare" },
+      el("div", { class: "compare-chart" }),
+      el("div", null,
+        table([["Line"], ["Return", "return", 1], ["Largest fall", "max_fall", 1], ["Trades", null, 1],
+          [`Costs (${base})`, "costs", 1]], rows, ""),
+        el("ul", { class: "dim small" }, ...c.lines.map((l) => el("li", null, l.caption))))));
+}
+
+function drawComparison(c) {
+  const box = root.querySelector(".compare-chart");
+  const drawn = c.lines.filter((l) => l.points.length);
+  if (!drawn.some((l) => l.points.length > 1)) {
+    box.replaceChildren(el("p", { class: "dim small" },
+      "The comparison chart starts once the AI account has equity on two different days (Update prices records it)."));
+    return;
+  }
+  const chart = linesChart(box, drawn.map((l) => ({ ...LINES[l.name], title: LINES[l.name].label, percent: true,
+    points: l.points.map(([day, r]) => ({ time: day, value: r * 100 })) })), 220);
+  if (chart) charts.push(chart);
 }
 
 function drawCharts(accounts) {
@@ -123,13 +221,14 @@ function drawCharts(accounts) {
   }
 }
 
-function decisions(rows, base) {
+function decisions(rows, base, empty) {
   return table([["Day"], ["Symbol"], ["Did"], ["Why"]],
     rows.map((d) => el("tr", null, el("td", null, d.day), el("td", null, companyLink(d.symbol)),
       el("td", { class: d.action === "buy" ? "up" : d.action === "sell" ? "down" : "dim" },
         d.action + (d.cash != null ? ` ${money(d.cash)} ${base}` : "")),
-      el("td", { class: "small" }, d.reason))),
-    "The strategy has not run yet: press Strategy step.");
+      el("td", { class: "small" }, d.reason,
+        d.report_id != null ? el("span", { class: "dim" }, ` (research run ${d.report_id})`) : null))),
+    empty);
 }
 
 function jobs(base) {
@@ -146,13 +245,17 @@ function jobs(base) {
   });
   const fillLines = (r) => (r.length ? r.map((o) => `${o.account}: ${o.side} ${o.symbol} ${o.status}${o.note ? ` (${o.note})` : ""}`)
     : ["No orders waiting."]);
-  const stepLines = (r) => (r.length
-    ? r.map((d) => `strategy: ${d.action} ${d.symbol}${d.cash != null ? ` for ${money(d.cash)} ${base}` : ""} (${d.reason})`)
-    : ["Nothing to decide: watch listings and analyse them first."]);
+  const stepLines = (account, r, empty) => (r.length
+    ? r.map((d) => `${account}: ${d.action} ${d.symbol}${d.cash != null ? ` for ${money(d.cash)} ${base}` : ""} (${d.reason})`)
+    : [empty]);
+  const strategyLines = (r) => stepLines("strategy", r, "Nothing to decide: watch listings and analyse them first.");
+  const aiLines = (r) => (r.off ? [r.off] : [r.badge[0].toUpperCase() + r.badge.slice(1),
+    ...stepLines("ai", r.decisions, "Nothing to decide: watch listings and research them first.")]);
   return el("div", null,
-    el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines), run("Strategy step", "/api/ledgers/step", stepLines),
+    el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
+      run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
-        + "Strategy step lets the strategy account act on its leans.")),
+        + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts.")),
     out);
 }
 
@@ -166,9 +269,10 @@ async function render(target) {
   const mine = el("div", null, el("p", { class: "dim" }, "Loading..."));
   root = mine;
   pane.replaceChildren(mine);
-  let body, log;
+  let body, log, aiLog;
   try {
-    [body, log] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions")]);
+    [body, log, aiLog] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
+      api("/api/ledgers/decisions?account=ai")]);
   } catch (err) {
     if (pane.contains(mine)) mine.replaceChildren(el("p", { class: "dim" }, `Could not load the ledgers: ${err.message}`));
     return;
@@ -177,10 +281,14 @@ async function render(target) {
   const base = body.base_currency;
   mine.replaceChildren(
     jobs(base),
-    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules))),
+    comparison(body.compare, base),
+    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
-    el("h3", null, "Strategy decisions"), decisions(log, base));
+    el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
+    el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
+      ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures."));
   drawCharts(body.accounts);
+  drawComparison(body.compare);
 }
 
 export default { id: "ledgers", label: "Ledgers", render };

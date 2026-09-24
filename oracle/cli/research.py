@@ -7,7 +7,7 @@ from datetime import date
 
 from oracle.services.context import AppContext
 from oracle.services.research_service import (
-    UNVALIDATED, Claim, Report, ResearchRun, RunStatus, report_history, research,
+    UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, report_history, research,
 )
 
 WIDTH = 96
@@ -32,8 +32,9 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.history:
         print_history(report_history(ctx, args.symbol), args.symbol)
         return 0
-    print_run(asyncio.run(research(ctx, args.symbol, as_of=args.as_of)), ctx.config.llm.max_steps)
-    return 0
+    r = asyncio.run(research(ctx, args.symbol, as_of=args.as_of))
+    print_run(r, ctx.config.llm.max_steps)
+    return 1 if r.status == RunStatus.FAILED else 0
 
 
 def print_run(r: ResearchRun, max_steps: int) -> None:
@@ -53,6 +54,8 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
         print(f"stopped at the {max_steps}-step limit; findings asked for then")
     print(f"Findings ({r.model_label}):")
     _wrapped(r.findings or "(none given)", "  ")
+    if r.status == RunStatus.FAILED:
+        print(f"Failed: {r.error}")
     if r.report:
         print_report(r.report)
     cited = [e for e in r.evidence if e.cited]
@@ -66,6 +69,11 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
 
 def print_report(report: Report) -> None:
     print(f"Report ({UNVALIDATED}):")
+    _wrapped(f"Verdict {UNVALIDATED_TAG}: {_verdict(report)}", "  ")
+    if report.verdict:
+        _wrapped(f"Verdict wrong if: {report.verdict.invalidated_if}", "  ")
+    if report.did_not_read:
+        _wrapped(f"The verdict {report.did_not_read}", "  ")
     for label, case in (("Bull", report.bull), ("Bear", report.bear)):
         _wrapped(f"{label}: {_claim(case) if case else '(no case the evidence supports)'}", "  ")
     if report.findings:
@@ -78,6 +86,8 @@ def print_report(report: Report) -> None:
         _wrapped(f"- {_claim(c)}", "    ")
     if report.invalidated_if:
         _wrapped(f"Invalidated if: {report.invalidated_if}", "  ")
+    if report.rejections:
+        _wrapped(f"Rejected: {report.rejections}", "  ")
 
 
 def print_history(runs: list[ResearchRun], symbol: str) -> None:
@@ -86,12 +96,23 @@ def print_history(runs: list[ResearchRun], symbol: str) -> None:
     for r in runs:
         replay = " (replay)" if r.as_of else ""
         print(f"{r.report.day.isoformat()}{replay}  {r.model_label}")
+        _wrapped(f"verdict {UNVALIDATED_TAG}: {_verdict(r.report)}", "  ")
         for label, case in (("bull", r.report.bull), ("bear", r.report.bear)):
             _wrapped(f"{label}: {case.text if case else '(none)'}", "  ")
 
 
+def _verdict(report: Report) -> str:
+    if v := report.verdict:
+        return f"{v.label.upper()}, confidence {v.confidence:.0%}: {_cited(v.reason, v.cites)}"
+    return f"none ({report.no_verdict})"
+
+
 def _claim(c: Claim) -> str:
-    return f"{c.text} {' '.join(f'[a{i}]' for i in c.cites)}"
+    return _cited(c.text, c.cites)
+
+
+def _cited(text: str, cites: tuple[int, ...]) -> str:
+    return f"{text} {' '.join(f'[a{i}]' for i in cites)}"
 
 
 def _wrapped(text: str, indent: str) -> None:

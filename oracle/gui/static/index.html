@@ -29,6 +29,9 @@ main { flex: 1; padding: 16px; overflow: auto; }
 #error-banner { display: flex; gap: 12px; align-items: center; padding: 8px 16px;
   background: #3a1417; border-bottom: 1px solid var(--down); }
 #error-banner[hidden] { display: none; }
+#tick-banner { padding: 6px 16px 0; background: #2e2610; border-bottom: 1px solid var(--warn); }
+#tick-banner[hidden] { display: none; }
+#tick-banner .row { margin-bottom: 6px; }
 #error-close { margin-left: auto; background: none; border: 0; color: var(--text); cursor: pointer; font-size: 16px; }
 details { margin-top: 24px; }
 table { border-collapse: collapse; }
@@ -81,6 +84,10 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
 .ledger { flex: 1 1 400px; min-width: 0; }
 .metrics td:first-child { padding-left: 0; }
 .equity-chart { margin: 8px 0; }
+.compare { align-items: flex-start; gap: 16px; }
+.compare-chart { flex: 2 1 400px; min-width: 0; }
+.swatch { display: inline-block; width: 12px; height: 3px; vertical-align: middle; }
+.swatch.dashed { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px) !important; }
 .trade { margin: 12px 0; padding-top: 8px; border-top: 1px solid var(--border); }
 .form-note { font-size: 12px; color: var(--text-dim); min-height: 1em; }
 .small-btn { padding: 0 6px; font-size: 12px; }
@@ -111,6 +118,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
 </header>
 <div id="error-banner" hidden role="alert"><span id="error-msg"></span>
   <button id="error-close" type="button" aria-label="Dismiss">&times;</button></div>
+<div id="tick-banner" hidden role="status"></div>
 <div class="layout">
   <nav><div id="tab-list"></div></nav>
   <main>
@@ -118,6 +126,7 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
     <details open>
       <summary id="tick-summary" class="dim">Ticks</summary>
       <div id="tick-controls" class="row"></div>
+      <div id="tick-options" class="row small"></div>
       <div id="tick-last"></div>
     </details>
     <details>

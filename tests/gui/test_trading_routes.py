@@ -38,7 +38,7 @@ async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(
     yahoo.series["GBPUSD=X"].bars.append(bar(tomorrow, 1.25))
     clock.advance(2 * 86400)
     await run_job(priced, "/api/jobs/prices", symbol="AAPL")  # fills on the way in
-    [position] = (await priced.get("/api/ledgers")).json()["accounts"][1]["positions"]
+    [position] = (await priced.get("/api/ledgers")).json()["accounts"][2]["positions"]
     sell = (await priced.post("/api/ledgers/manual/sell", json={"symbol": "AAPL", "shares": 2})).json()
     assert (sell["side"], sell["shares"], position["shares"] > 2) == ("sell", 2, True)
     too_many = await priced.post("/api/ledgers/manual/sell", json={"symbol": "AAPL", "shares": 10_000})

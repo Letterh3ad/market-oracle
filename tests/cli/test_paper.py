@@ -29,7 +29,7 @@ def run(tmp_path, capsys, monkeypatch):
         out, err = capsys.readouterr()
         return code, out, err
 
-    _run.yahoo, _run.clock = yahoo, clock
+    _run.yahoo, _run.clock, _run.config = yahoo, clock, cfg
     _run("universe", "refresh")
     _run("watch", "add", "VOD.L")
     _run("prices", "update")
@@ -82,3 +82,44 @@ def test_step_with_nothing_watched_says_how_to_watch(run):
     run("watch", "remove", "VOD.L")
     code, out, _ = run("paper", "step")
     assert code == 0 and "oracle watch add" in out
+
+
+def test_the_ai_account_is_shown_and_its_step_says_when_it_is_off(run):
+    _, out, _ = run("paper", "show")
+    assert "ai: equity 10,000.00" in out
+    code, out, _ = run("paper", "step", "--account", "ai")
+    assert code == 0 and "the AI account is off" in out and "[ai_account] enabled = true" in out
+    _, out, _ = run("paper", "log", "--account", "ai")
+    assert out == ""
+
+
+def ai_on(run):
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[ai_account]\nenabled = true\n", encoding="utf-8")
+
+
+def test_the_ai_step_logs_its_skips_per_account(run):
+    ai_on(run)
+    code, out, _ = run("paper", "step", "--account", "ai")
+    assert code == 0 and "VOD.L: skip (no verdict yet: run research on it)" in out
+    assert out.startswith("AI decisions (unvalidated: AI research has not yet beaten")
+    _, out, _ = run("paper", "log", "--account", "ai")
+    assert "VOD.L" in out and "no verdict yet" in out and out.startswith("AI decisions (unvalidated:")
+    _, out, _ = run("paper", "log")
+    assert out == ""
+
+
+def test_history_compares_every_line_since_the_ai_started(run):
+    # The AI account's first record is this 2026-09-18 price run, its first while on; buy and hold buys at that
+    # day's close.
+    ai_on(run)
+    run("prices", "update")
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 18), 70.0, 70.0, 70.0, 70.0, 70.0, 1000))
+    run.yahoo.series["VOD.L"].bars.append((date(2026, 9, 21), 77.0, 77.0, 77.0, 77.0, 77.0, 1000))
+    run.clock.advance(3 * 86400)
+    run("prices", "update")
+    code, out, _ = run("paper", "history")
+    assert code == 0 and "since 2026-09-18, the day the AI account started" in out
+    assert "validated yet" in out and "Buy and hold: equal amounts of the 1 listing watched" in out
+    [hold] = [line for line in out.splitlines() if line.startswith("buy_and_hold")]
+    assert hold.split()[1:5] == ["+10.00%", "0.0%", "0", "0.00"]
+    assert "2026-09-21" in out and "+10.00%" in out

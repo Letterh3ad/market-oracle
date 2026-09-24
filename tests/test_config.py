@@ -197,6 +197,20 @@ def test_schedule_settings_are_checked(tmp_path):
             load_config(path, cwd=tmp_path)
 
 
+def test_a_tick_warns_10_minutes_ahead_and_research_ignores_idleness_by_default(tmp_path):
+    s = load_config(None, cwd=tmp_path)[0].schedule
+    assert (s.warn_minutes, s.research_when_idle, s.idle_minutes) == (10, False, 15)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[schedule]\nwarn_minutes = 0\nresearch_when_idle = true\nidle_minutes = 5\n", encoding="utf-8")
+    s = load_config(path, cwd=tmp_path)[0].schedule
+    assert (s.warn_minutes, s.research_when_idle, s.idle_minutes) == (0, True, 5)
+    for line in ("warn_minutes = -1", "warn_minutes = 121", "warn_minutes = 2.5", "warn_minutes = true",
+                 'research_when_idle = "yes"', "idle_minutes = 0", "idle_minutes = 241"):
+        path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="schedule"):
+            load_config(path, cwd=tmp_path)
+
+
 def test_automation_is_on_by_default_and_checked(tmp_path):
     assert load_config(None, cwd=tmp_path)[0].automation.enabled is True
     path = tmp_path / "oracle.toml"
@@ -205,4 +219,32 @@ def test_automation_is_on_by_default_and_checked(tmp_path):
     for line in ('enabled = "no"', "later = 1"):
         path.write_text(f"[automation]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="automation"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_the_ai_account_is_off_by_default_with_a_week_long_verdict_age(tmp_path):
+    ai = load_config(None, cwd=tmp_path)[0].ai_account
+    assert (ai.enabled, ai.max_verdict_age_days) == (False, 7)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nenabled = true\nmax_verdict_age_days = 3\n", encoding="utf-8")
+    ai = load_config(path, cwd=tmp_path)[0].ai_account
+    assert (ai.enabled, ai.max_verdict_age_days) == (True, 3)
+    for line in ('enabled = "yes"', "max_verdict_age_days = 0", "max_verdict_age_days = 2.5",
+                 "max_verdict_age_days = 91", "max_verdict_age_days = true", "later = 1"):
+        path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="ai_account"):
+            load_config(path, cwd=tmp_path)
+
+
+def test_ai_research_refresh_defaults_to_a_5_percent_move_and_30_minutes(tmp_path):
+    ai = load_config(None, cwd=tmp_path)[0].ai_account
+    assert (ai.move_threshold, ai.research_budget_min) == (0.05, 30)
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nmove_threshold = 0.1\nresearch_budget_min = 45\n", encoding="utf-8")
+    ai = load_config(path, cwd=tmp_path)[0].ai_account
+    assert (ai.move_threshold, ai.research_budget_min) == (0.1, 45)
+    for line in ("move_threshold = 0", "move_threshold = 1", "move_threshold = true", "research_budget_min = 0",
+                 "research_budget_min = 481", "research_budget_min = 2.5"):
+        path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="ai_account"):
             load_config(path, cwd=tmp_path)

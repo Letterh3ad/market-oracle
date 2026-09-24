@@ -74,3 +74,34 @@ def test_an_unexpected_failure_while_checking_leaves_the_file_and_no_leftovers(t
             set_peer_count(ctx, 40)
     assert path.read_text(encoding="utf-8") == original
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith("oracle")] == ["oracle.toml"]
+
+
+def test_the_ai_account_switch_is_saved_keeping_its_verdict_age_and_reloaded_live(tmp_path):
+    from oracle.services.settings_service import reload_live_settings, set_ai_account
+
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nmax_verdict_age_days = 3\n", encoding="utf-8")
+    config, source = load_settings(path)
+    with open_context(with_db(config, tmp_path), source) as ctx:
+        set_ai_account(ctx, True)
+        assert (ctx.config.ai_account.enabled, ctx.config.ai_account.max_verdict_age_days) == (True, 3)
+        path.write_text("[ai_account]\nenabled = false\n", encoding="utf-8")
+        reload_live_settings(ctx)
+        assert ctx.config.ai_account.enabled is False
+    assert load_config(path)[0].ai_account.enabled is False
+
+
+def test_ai_research_settings_are_saved_keeping_the_switch_and_refused_when_out_of_range(tmp_path):
+    from oracle.services.settings_service import set_ai_research
+
+    path = tmp_path / "oracle.toml"
+    path.write_text("[ai_account]\nenabled = true\n", encoding="utf-8")
+    config, source = load_settings(path)
+    with open_context(with_db(config, tmp_path), source) as ctx:
+        set_ai_research(ctx, 10, 0.08, 20)
+        ai = ctx.config.ai_account
+        assert (ai.enabled, ai.max_verdict_age_days, ai.move_threshold, ai.research_budget_min) == (True, 10, 0.08, 20)
+        with pytest.raises(InvalidQuery, match="research_budget_min"):
+            set_ai_research(ctx, 10, 0.08, 0)
+        assert ctx.config.ai_account == ai
+    assert load_config(path)[0].ai_account == ai

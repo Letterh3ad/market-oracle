@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any
 
 from oracle.jobs import pid_alive
+from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
@@ -212,7 +213,14 @@ def sweep_leftovers(ctx: AppContext) -> None:
 def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
     """Queue one research run; an unknown symbol is refused now, not when its turn comes."""
     listing = resolve_symbol(ctx, symbol).symbol
-    return runner.submit("research", f"Research {listing}", lambda c: research(c, listing), subject=listing,
+
+    async def work(c: AppContext):
+        run = await research(c, listing)
+        if run.status == RunStatus.FAILED:  # recorded on the run; Activity must agree with the company page
+            raise ServiceError(run.error or "research failed")
+        return run
+
+    return runner.submit("research", f"Research {listing}", work, subject=listing,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
 
 

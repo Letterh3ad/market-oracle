@@ -5,9 +5,11 @@ import argparse
 from oracle.cli.common import print_fills
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, Order, Side, account_score, account_view, equity_history, fill_pending, place_buy, place_sell,
-    strategy_log, strategy_step,
+    ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison, decision_log,
+    equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
+
+AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -26,10 +28,16 @@ def register(parser: argparse.ArgumentParser) -> None:
     show = sub.add_parser("show", help="cash, positions and pending orders")
     show.add_argument("--account", choices=ACCOUNTS)
     show.set_defaults(handler=show_cmd)
-    sub.add_parser("step", help="run the strategy rules and queue its orders").set_defaults(handler=step_cmd)
-    sub.add_parser("log", help="the strategy account's recent decisions").set_defaults(handler=log_cmd)
-    history = sub.add_parser("history", help="daily equity of an account")
-    history.add_argument("--account", choices=ACCOUNTS, default="strategy")
+    step = sub.add_parser("step", help="run an account's rules and queue its orders")
+    step.add_argument("--account", choices=TRADERS, default="strategy",
+                      help="strategy trades the leans, ai the research verdicts")
+    step.set_defaults(handler=step_cmd)
+    log = sub.add_parser("log", help="an account's recent decisions")
+    log.add_argument("--account", choices=TRADERS, default="strategy")
+    log.set_defaults(handler=log_cmd)
+    history = sub.add_parser("history", help="every account against buy-and-hold since the AI account started, "
+                                                "or one account's daily equity")
+    history.add_argument("--account", choices=ACCOUNTS)
     history.set_defaults(handler=history_cmd)
 
 
@@ -73,6 +81,8 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    if args.account is None:
+        return _compare(ctx)
     rows = equity_history(ctx, args.account)
     if not rows:
         print(f"no equity recorded for {args.account} yet: it is recorded each time orders are filled")
@@ -82,8 +92,36 @@ def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     return 0
 
 
+def _compare(ctx: AppContext) -> int:
+    c = comparison(ctx)
+    for note in c.notes:
+        print(note)
+    for line in c.lines:
+        print(f"  {line.caption}")
+    costs = f"costs ({ctx.config.base_currency})"
+    print()
+    print(f"{'line':<14}{'return':>9}{'largest fall':>14}{'trades':>8}{costs:>13}")
+    for line in c.lines:
+        gain = f"{line.return_:+.2%}" if line.return_ is not None else "none yet"
+        print(f"{line.name:<14}{gain:>9}{line.max_fall:>14.1%}{line.trades:>8}{line.costs:>13,.2f}")
+    days = sorted({d for line in c.lines for d, _ in line.points})
+    if not days:
+        return 0
+    print()
+    print(f"{'day':<12}" + "".join(f"{line.name:>14}" for line in c.lines))
+    by_line = [dict(line.points) for line in c.lines]
+    for day in days:
+        print(f"{day.isoformat():<12}" + "".join(f"{f'{p[day]:+.2%}' if day in p else '':>14}" for p in by_line))
+    return 0
+
+
 def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    decisions = strategy_step(ctx)
+    decisions = strategy_step(ctx) if args.account == "strategy" else ai_step(ctx)
+    if decisions is None:
+        print(AI_OFF)
+        return 0
+    if args.account == "ai":
+        print(AI_HEADER)
     if not decisions:
         print("no decisions: nothing watched or held (add listings with `oracle watch add SYMBOL`)")
     for d in decisions:
@@ -93,6 +131,9 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def log_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    for d in strategy_log(ctx):
+    rows = decision_log(ctx, args.account)
+    if rows and args.account == "ai":
+        print(AI_HEADER)
+    for d in rows:
         print(f"{d.day.isoformat()}  {d.symbol:<12}{d.action:<6}{d.reason}")
     return 0
