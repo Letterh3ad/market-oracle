@@ -145,13 +145,29 @@ def test_ai_decisions_logged_before_the_flag_say_whether_they_need_research(tmp_
 def test_a_database_at_version_37_runs_the_replay_study_the_cutoff_probe_then_screened_items(tmp_path, monkeypatch):
     from oracle.store import migrations
 
-    assert migrations.MIGRATIONS[-3:] == [migrations.m0038_replay_study, migrations.m0039_cutoff_probes,
-                                          migrations.m0040_screened_items]
+    assert migrations.MIGRATIONS[37:40] == [migrations.m0038_replay_study, migrations.m0039_cutoff_probes,
+                                            migrations.m0040_screened_items]
     monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS[:37])
     conn = connect(tmp_path / "o.db")
     assert migrate(conn) == 37
     monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
-    assert migrate(conn) == 40 == current_version(conn)
+    assert migrate(conn) == len(migrations.MIGRATIONS) == current_version(conn)
     assert {"cutoff_probes", "cutoff_answers"} <= _tables(conn)
     assert "universe" in {r[1] for r in conn.execute("PRAGMA table_info(discovery_answer_items)")}
+    conn.close()
+
+
+def test_a_database_at_version_40_keeps_its_listings_as_financedatabases_own(tmp_path, monkeypatch):
+    from oracle.store import migrations
+
+    assert migrations.MIGRATIONS[40] is migrations.m0041_universe_backfill
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS[:40])
+    conn = connect(tmp_path / "o.db")
+    migrate(conn)
+    conn.execute("INSERT INTO listings (symbol, name, type, company_key, is_primary, delisted) "
+                 "VALUES ('AAPL', 'Apple Inc.', 'equity', 'k', 1, 0)")
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
+    migrate(conn)
+    assert [tuple(r) for r in conn.execute("SELECT symbol, source FROM listings")] == [("AAPL", None)]
+    assert {"index_members", "index_pages", "backfill_rows", "backfill_tries"} <= _tables(conn)
     conn.close()

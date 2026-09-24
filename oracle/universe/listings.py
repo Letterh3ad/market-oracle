@@ -62,6 +62,8 @@ class Listing:
     family: str | None = None
     company_key: str = ""
     is_primary: bool = False
+    source: str | None = None
+    """Where a line FinanceDatabase lacks came from (the index backfill); None for its own."""
 
 
 def normalise_name(name: str) -> str:
