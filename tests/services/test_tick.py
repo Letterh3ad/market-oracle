@@ -12,6 +12,7 @@ from oracle.services.replay_service import study_status
 from oracle.services.tick_service import STAGES, last_tick, run_tick
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
+from oracle.store.fx import FxRepo
 from oracle.store.replay import ReplayRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
@@ -32,7 +33,8 @@ def yahoo():
 @pytest.fixture
 async def ctx(tmp_path, yahoo):
     web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD"),
-                                       equity("NOBARS", "No Bars", currency="USD")]), yahoo)
+                                       equity("NOBARS", "No Bars", currency="USD"),
+                                       equity("7203.T", "Toyota", "Japan", "JPX", currency="JPY")]), yahoo)
     # Discovery off: its news searches have no fake here, and it has its own tests.
     config = Config(db_path=tmp_path / "o.db", discovery=DiscoveryConfig(enabled=False))
     with open_context(config, None, FakeClock(NOW), web.transport) as c:
@@ -84,6 +86,18 @@ async def test_the_prices_stage_keeps_the_replay_study_priced_without_failing_fo
     assert prices.state == "ok" and prices.summary.endswith("; replay study: 0 of 1 listings refetched, 1 failed")
     score = study_status(ctx).score
     assert score.prices_checked_at.date() == NOW.date() and score.price_failures == ("NOBARS",)
+
+
+async def test_the_fx_stage_fetches_the_currencies_of_the_replay_studys_listings(ctx, yahoo):
+    yahoo.add("7203.T", "JPY", "Asia/Tokyo", [bar("2026-06-01", 3000.0), bar("2026-09-18", 3100.0)])
+    yahoo.add("GBPJPY=X", "JPY", "Europe/London", [bar("2026-06-01", 190.0), bar("2026-09-18", 195.0)])
+    listing = [{"symbol": "7203.T", "name": "Toyota", "region": "Japan", "sector": "x", "market_cap": None}]
+    ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
+                                [("7203.T", date(2026, 6, 1))], allowed=1)
+    run = await run_tick(ctx)
+    fx = next(s for s in run.stages if s.name == "fx")
+    assert fx.state == "ok" and fx.summary.startswith("2 of 2 currencies updated")
+    assert FxRepo(ctx.conn, "GBP").history("JPY")
 
 
 async def test_a_replay_study_price_error_never_fails_or_hides_the_prices_stage(ctx, monkeypatch):
