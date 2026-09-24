@@ -177,7 +177,9 @@ def print_report(s: Score) -> None:
         print(f"  Due a whole-window refetch: {', '.join(s.refetch_listings)}")
     checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
     failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
-    print(f"  Study prices last checked: {checked}{failed}")
+    resting = ", ".join(f"{sym} until {t:%Y-%m-%d %H:%M} UTC" for sym, t in s.price_backoff.items())
+    print(f"  Study prices last checked: {checked}{failed}"
+          + (f"; resting after repeated failures: {resting}" if resting else ""))
     if s.by_size:
         print_sizes(s)
     if s.account:

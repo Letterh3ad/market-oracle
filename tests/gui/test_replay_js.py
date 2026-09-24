@@ -34,6 +34,7 @@ REPORT = {
         {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
          "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
     "refetch_listings": ["7203.T"], "prices_checked_at": "2026-09-24T06:00:00+00:00", "price_failures": ["AAPL"],
+    "price_backoff": {"AAPL": "2026-09-25T06:00:00+00:00"},
     "limits": ["The listings and their fundamentals are today's (survivorship)."],
 }
 
@@ -177,6 +178,7 @@ def test_the_score_shows_headline_numbers_a_table_and_the_limits():
             "basket. No skill: of the called windows 40% rose and 50% beat the basket, so this mix of calls would hit "
             "45% (50% against the basket) by chance.") in text
     assert "Study prices last checked 2026-09-24 06:00 UTC. Failed then: AAPL." in text and "mixes currencies" in text
+    assert "Resting after repeated failures: AAPL until 2026-09-25 06:00 UTC." in text
     assert "3 months: 0 scored, 2 pending" in text
     assert "buy250%100%+1.20%+3.00%0.85" in text and "0.80 and up2" in text
     assert "A window closed since 7203.T last had prices fetched" in text and "(survivorship)" in text

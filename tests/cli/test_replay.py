@@ -188,6 +188,21 @@ def test_report_fetches_missing_bars_first_and_says_how_it_went(cfg, capsys, tmp
     assert body["refetch_listings"] == ["BBB"] and body["price_failures"] == ["BBB"] and "BBB" in captured.err
 
 
+def test_report_says_which_listings_rest_after_repeated_failures(cfg, capsys, tmp_path, monkeypatch):
+    async def fetch(c, symbols, since):
+        return [ListingOutcome(s, 0, None, f"no price data for {s}") for s in symbols]
+
+    monkeypatch.setattr(replay_score, "update_listings", fetch)
+    scored_study(tmp_path, fetched=("AAA",))
+    for _ in range(3):
+        replay(cfg, "report")
+    capsys.readouterr()
+    replay(cfg, "report")
+    out = capsys.readouterr().out
+    assert "Prices for BBB: skipped (failed 3 times in a row: next try after " in out
+    assert "; failed: BBB; resting after repeated failures: BBB until " in out
+
+
 def test_report_without_a_study(cfg, capsys, no_fetch):
     replay(cfg, "report")
     assert "No replay study yet" in capsys.readouterr().out

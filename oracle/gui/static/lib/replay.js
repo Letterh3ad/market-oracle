@@ -209,7 +209,9 @@ function replaySection() {
     const missing = r.refetch_listings.length
       ? `A window closed since ${r.refetch_listings.join(", ")} last had prices fetched: press Update prices.`
       : "Every closed window has its prices fetched.";
-    const failures = r.price_failures.length ? ` Failed then: ${r.price_failures.join(", ")}.` : "";
+    const resting = Object.entries(r.price_backoff ?? {}).map(([sym, t]) => `${sym} until ${clock(t)} UTC`);
+    const failures = (r.price_failures.length ? ` Failed then: ${r.price_failures.join(", ")}.` : "")
+      + (resting.length ? ` Resting after repeated failures: ${resting.join(", ")}.` : "");
     const updated = r.prices_checked_at
       ? `Study prices last checked ${clock(r.prices_checked_at)} UTC.${failures}`
       : "Study prices not checked yet.";

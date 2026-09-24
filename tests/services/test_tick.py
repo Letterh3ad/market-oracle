@@ -100,6 +100,17 @@ async def test_the_fx_stage_fetches_the_currencies_of_the_replay_studys_listings
     assert FxRepo(ctx.conn, "GBP").history("JPY")
 
 
+async def test_a_replay_study_listing_resting_after_repeated_failures_is_skipped_by_the_tick(ctx):
+    listing = [{"symbol": "NOBARS", "name": "No Bars", "region": "US", "sector": "x", "market_cap": None}]
+    ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
+                                [("NOBARS", date(2026, 6, 1))], allowed=1)
+    for _ in range(3):
+        await run_tick(ctx)
+    prices = (await run_tick(ctx)).stages[0]
+    assert prices.summary.endswith("; replay study: 1 skipped")
+    assert study_status(ctx).score.price_failures == ("NOBARS",)
+
+
 async def test_a_replay_study_price_error_never_fails_or_hides_the_prices_stage(ctx, monkeypatch):
     from oracle.services import tick_service
 
