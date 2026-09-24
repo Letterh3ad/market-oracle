@@ -148,6 +148,20 @@ def test_a_press_item_that_says_more_than_a_pointer_is_kept_after_the_exhibit():
     assert "See Exhibit 99.1" not in kept
 
 
+def test_a_results_item_that_only_points_at_the_exhibit_under_the_usual_legend_is_dropped():
+    item = ("Item 2.02 Results of Operations and Financial Condition.\n"
+            "On July 30, 2026, Apple Inc. issued a press release regarding its financial results for its third fiscal "
+            "quarter ended June 27, 2026. A copy of the press release is furnished as Exhibit 99.1 to this Current "
+            "Report on Form 8-K.\n"
+            "The information contained in this Item 2.02 and in the accompanying Exhibit 99.1 shall not be deemed "
+            "filed for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, nor shall it be "
+            "deemed incorporated by reference in any filing under the Securities Act of 1933, as amended, or the "
+            "Exchange Act, except as shall be expressly set forth by specific reference in such a filing.")
+    assert len(item) >= edgar.MIN_SECTIONS
+    kept = edgar.with_exhibit(edgar.Exhibit("EX-99.1", "u", ""), "Press release text.", f"Cover\n{item}\nItem 9.01 X")
+    assert kept == "EX-99.1\nPress release text."
+
+
 CITI = (FIXTURES / "citi-10q.txt").read_text(encoding="utf-8")
 
 

@@ -40,6 +40,8 @@ _EXHIBITS = "9.01"
 # Results, and press releases under Regulation FD or "other events": the item text mostly
 # points at the exhibit that says it.
 PRESS_ITEMS = frozenset({"2.02", "7.01", "8.01"})
+_SENTENCE = re.compile(r"(?<=[.!?])\s+")
+_BOILERPLATE = re.compile(r"exhibit\s+99|furnished|deemed|incorporated\s+by\s+reference", re.I)
 # Some filers pad the exhibit number (EX-99.01).
 _PRESS = re.compile(r"EX-99(?:\.0*(\d+))?", re.I)
 _ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.I | re.S)
@@ -170,8 +172,16 @@ def reads_exhibit(text: str) -> bool:
 def with_exhibit(exhibit: Exhibit, exhibit_text: str, text: str, cap: int = FILING_TEXT) -> str:
     """An 8-K read as its labelled press exhibit, then its items that say more than point at it."""
     items = _items(text, [m.start() for m in _HEADING.finditer(text)])
-    others = [s for item, s in items.items() if item not in PRESS_ITEMS or len(s) >= MIN_SECTIONS]
+    others = [s for item, s in items.items() if item not in PRESS_ITEMS or _says_more(s)]
     return _fit([f"{exhibit.label}\n{exhibit_text.strip()}", *others], cap)
+
+
+def _says_more(section: str) -> bool:
+    """Whether a press item has MIN_SECTIONS of its own past its heading, the pointer at the
+    exhibit and the "not deemed filed" legend."""
+    body = section.split("\n", 1)[1] if "\n" in section else ""
+    said = [s for s in _SENTENCE.split(body) if not _BOILERPLATE.search(s)]
+    return sum(map(len, said)) >= MIN_SECTIONS
 
 
 def key_text(form: str, text: str, cap: int = FILING_TEXT) -> str:
