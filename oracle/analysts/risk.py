@@ -7,9 +7,11 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from datetime import date
+from typing import Protocol
 
-from oracle.analysts.indicators import MIN_BARS, YEAR, mean, volatility
+from oracle.analysts.indicators import MIN_BARS, YEAR, closes, mean, volatility
 from oracle.analysts.signals import AnalystSignal, Skipped
+from oracle.market.bars import Bar
 
 NAME = "risk"
 # Shared trading days below this make a correlation noise.
@@ -17,6 +19,21 @@ MIN_SHARED_DAYS = 60
 
 Series = Sequence[tuple[date, float]]
 """(date, close in the base currency), oldest first."""
+
+
+class Priced(Protocol):
+    @property
+    def bar(self) -> Bar: ...
+
+    @property
+    def rate(self) -> float | None:
+        """Units of the bar's currency per unit of base currency; None without one."""
+
+
+def base_series(priced: Sequence[Priced]) -> Series:
+    """Adjusted closes in the base currency; days without a rate are left out."""
+    kept = [p for p in priced if p.rate]
+    return [(p.bar.date, close / p.rate) for p, close in zip(kept, closes([p.bar for p in kept]))]
 
 
 def suggested_size(vol: float, *, account: float, max_position: float, cash_floor: float,

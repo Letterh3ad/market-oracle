@@ -4,12 +4,10 @@ from dataclasses import asdict, dataclass, replace
 from datetime import timedelta
 
 from oracle.analysts import factors
-from oracle.analysts.indicators import closes
 from oracle.analysts.meanings import figure_meaning
-from oracle.analysts.risk import Series, risk
+from oracle.analysts.risk import Series, base_series, risk
 from oracle.analysts.signals import AnalystSignal, Direction, Skipped
-from oracle.analysts.technicals import combine, macd_signal, rsi_signal, volatility_signal
-from oracle.analysts.trend import trend
+from oracle.analysts.technicals import price_signals
 from oracle.broker.baseline import baseline_lean, inputs
 from oracle.broker.rules import Lean
 from oracle.market.sources import Instrument
@@ -71,8 +69,7 @@ async def analyse(ctx: AppContext, symbol: str) -> Analysis:
     bars = BarRepo(ctx.conn).history(listing)
     if not bars:
         raise NoPrices(f"no prices stored for {listing}: update its prices first")
-    results = [f(bars) for f in (trend, rsi_signal, macd_signal, volatility_signal)]
-    results.append(combine([r for r in results if isinstance(r, AnalystSignal)], listing))
+    results = price_signals(bars, listing)
     results.append(_risk(ctx, listing))
     results += await _factors(ctx, listing)
     signals = tuple(r for r in results if isinstance(r, AnalystSignal))
@@ -125,9 +122,7 @@ def _risk(ctx: AppContext, listing: str) -> AnalystSignal | Skipped:
 
 
 def _base_series(ctx: AppContext, symbol: str) -> Series:
-    """Adjusted closes in the base currency; days without a rate are left out."""
-    converted = [c for c in price_history_in_base(ctx, symbol) if c.rate]
-    return [(c.bar.date, close / c.rate) for c, close in zip(converted, closes([c.bar for c in converted]))]
+    return base_series(price_history_in_base(ctx, symbol))
 
 
 async def analyse_listing(ctx: AppContext, symbol: str) -> Analysis:

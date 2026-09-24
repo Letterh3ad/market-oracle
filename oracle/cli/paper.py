@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from oracle.cli.common import print_fills
+from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison, decision_log,
@@ -98,12 +98,8 @@ def _compare(ctx: AppContext) -> int:
         print(note)
     for line in c.lines:
         print(f"  {line.caption}")
-    costs = f"costs ({ctx.config.base_currency})"
     print()
-    print(f"{'line':<14}{'return':>9}{'largest fall':>14}{'trades':>8}{costs:>13}")
-    for line in c.lines:
-        gain = f"{line.return_:+.2%}" if line.return_ is not None else "none yet"
-        print(f"{line.name:<14}{gain:>9}{line.max_fall:>14.1%}{line.trades:>8}{line.costs:>13,.2f}")
+    print_lines(c.lines, ctx.config.base_currency)
     days = sorted({d for line in c.lines for d, _ in line.points})
     if not days:
         return 0

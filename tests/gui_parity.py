@@ -78,6 +78,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "paper log --account": "GET /api/ledgers/decisions",
     "paper history": "GET /api/ledgers",
     "paper history --account": OUTPUT_ONLY,
+    **{key: Pending("backtest 02: the Ledgers tab's Backtest section") for key in (
+        "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
+        "backtest --commission")},
     "tick": "POST /api/jobs/tick",
     "tick --last": "GET /api/status",
     "schedule": "GET /api/status",

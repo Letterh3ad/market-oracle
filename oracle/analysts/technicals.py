@@ -7,6 +7,7 @@ from statistics import median
 
 from oracle.analysts.indicators import MIN_BARS, YEAR, closes, macd, rsi, volatility
 from oracle.analysts.signals import AnalystSignal, Skipped
+from oracle.analysts.trend import trend
 from oracle.market.bars import Bar
 
 OVERBOUGHT, OVERSOLD = 70.0, 30.0
@@ -90,6 +91,13 @@ def combine(signals: Sequence[AnalystSignal], symbol: str) -> AnalystSignal | Sk
     last = max(parts, key=lambda s: s.as_of)
     return AnalystSignal("technicals", last.symbol, last.as_of, round(score, 4), round(confidence, 4), reason,
                          tuple((s.analyst, s.score) for s in parts) + ((("volatility_ratio", vol),) if vol else ()))
+
+
+def price_signals(bars: Sequence[Bar], symbol: str) -> list[AnalystSignal | Skipped]:
+    """Trend, RSI, MACD and volatility over `bars`, then the technicals line combining them."""
+    results = [f(bars) for f in (trend, rsi_signal, macd_signal, volatility_signal)]
+    results.append(combine([r for r in results if isinstance(r, AnalystSignal)], symbol))
+    return results
 
 
 def _too_short(name: str, bars: Sequence[Bar]) -> Skipped | None:

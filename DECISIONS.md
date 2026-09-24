@@ -1396,3 +1396,28 @@ already researches stale listings.
 read time from the current due list (would also flag buys behind a price move, which the
 reason does not say); queueing one batch job for all listings (one cancel for all, and a
 listing already queued by its own button would run twice).
+
+## 2026-09-24 - Backtest engine: in memory, technicals-only leans, a capped lookback
+**Context:** Ticket backtest/01 replays the strategy's fixed rules over stored history
+(`oracle backtest`), with no look-ahead and nothing written to the paper accounts. Chosen
+overnight while the user slept.
+**Decision:** A pure day loop in `oracle/broker/backtest.py` over each listing's stored bars
+and that day's rate; `backtest_service.run_backtest` only reads, so no migration and no run
+record (ticket 02 decides what to keep). Each day, after the close, a listing's lean is the
+baseline over the technicals signal alone (`price_signals`, now shared with `analyse`), sized
+by the risk analyst from its last year of base-currency closes, and the strategy's `Rules`
+(`strategy_rules`, shared with the paper accounts) and pure `decide` place orders. Orders
+fill at that listing's next bar with an open and a rate, reusing `buy_fill`/`sell_fill` in
+whole shares: slippage in bps, a flat commission per trade in the base currency (a new
+`Costs.commission`), no FX spread, stamp duty or exchange fees. No orders on the last day.
+Signals see the last `YEAR + MIN_BARS` bars, not the whole history: RSI and MACD averages
+forget their start well inside that (a test pins the same lean as the full history) and a
+long replay stays linear (10 listings over 5 years, about 30 s). The report states the
+survivorship bias, that fundamentals are left out and a technicals-only lean tops out at
+62.5% (and says so when the threshold is above that, as nothing can then be bought), and the
+listings left out. Buy and hold is `compare.buy_and_hold` over the same listings and days.
+`--list` defaults to `main` like the watch commands. The parity manifest marks the command
+and its flags `Pending` on ticket 02.
+**Alternatives:** Full history per day (quadratic: minutes for a few years); the IBKR fee table
+and FX spread the paper accounts use (the spec asks for commission and slippage only, default
+free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
