@@ -1,11 +1,14 @@
 """The strategy's fixed rules replayed over stored bars, one day at a time, in memory. Each
-day's leans come from bars up to that day only; orders fill at the next open."""
+day's leans come from bars up to that day only; orders fill at the next bar's open (or close).
+The leans are the technicals baseline unless another source is passed: the replay study's
+verdicts, or a baseline account's."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal
 
 from oracle.analysts.indicators import MIN_BARS, YEAR
 from oracle.analysts.risk import Priced, Series, base_series
@@ -13,14 +16,25 @@ from oracle.analysts.risk import risk as risk_signal
 from oracle.analysts.signals import AnalystSignal
 from oracle.analysts.technicals import price_signals
 from oracle.broker.baseline import baseline_lean
-from oracle.broker.fills import Costs, Fill, buy_fill, sell_fill
+from oracle.broker.fills import COSTS, Costs, Fill, buy_fill, sell_fill
 from oracle.broker.orders import Action, Side
-from oracle.broker.rules import Decision, Lean, Position, Rules, decide
+from oracle.broker.rules import BUY_LABELS, Decision, Lean, Position, Rules, decide
+from oracle.market.bars import Bar
 
 LOOKBACK = YEAR + MIN_BARS
 """Bars each day's signals see: the trend's year and the volatility's year of readings, with
 room for the RSI and MACD averages to forget their start (a trace of a billionth). A full
 history would make a long replay grow with the square of its length."""
+
+LeanSource = Callable[[str, Sequence[Bar]], Lean | None]
+"""A listing's lean after the close of the last of its bars given (up to LOOKBACK of them)."""
+
+
+@dataclass(frozen=True)
+class Venue:
+    """Where a listing trades, for the paper accounts' fee table and stamp duty."""
+    country: str
+    exchange: str
 
 
 @dataclass(frozen=True)
@@ -35,7 +49,7 @@ class Trade:
     cash: float
     """Change to cash in the base currency: negative for a buy."""
     costs: float
-    """Slippage and commission, base currency."""
+    """Slippage, fees, stamp duty and FX spread, base currency."""
     reason: str
     """Why the rules placed the order."""
 
@@ -60,10 +74,15 @@ class _Order:
 
 
 def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, rules: Rules,
-           risk: Mapping[str, float], slippage: float, commission: float) -> Replay:
+           risk: Mapping[str, float], slippage: float, commission: float, lean: LeanSource | None = None,
+           fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None) -> Replay:
     """`history` is each listing's bars, oldest first, with that day's rate. `risk` holds
     the risk analyst's settings; its `account` is the starting cash. `commission` is a flat
-    fee per trade in the base currency."""
+    fee per trade in the base currency. `lean` defaults to the technicals baseline. With
+    `venues`, every fill pays the paper accounts' costs instead (`fills.COSTS` and the fee
+    table for the listing's venue, dearest without one), and `slippage` and `commission`
+    are not used."""
+    lean = lean or technicals_lean
     capital = risk["account"]
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
     seen = dict.fromkeys(history, 0)
@@ -87,10 +106,11 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
         waiting = []
         for order in pending:
             p = today.get(order.decision.symbol)
-            if p is None or p.bar.open is None or p.rate is None:
+            if p is None or _price(p.bar, fill_at) is None or p.rate is None:
                 waiting.append(order)
                 continue
-            trade, note = _fill(order, p, cash, held, slippage, commission)
+            trade, note = _fill(order, p, _price(p.bar, fill_at), cash, held, _charges(
+                order.decision.symbol, p, venues, slippage, commission))
             if note:
                 rejected.append(note)
                 continue
@@ -118,8 +138,11 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
             last = rows[seen[s] - 1].bar.date
             if s not in leans or leans[s][0] != last:
                 bars = [p.bar for p in rows[max(0, seen[s] - LOOKBACK):seen[s]]]
-                leans[s] = (last, *_lean(s, bars, base[s][:base_seen[s]], risk))
-        found = {s: lean for s, (_, lean, _) in leans.items() if lean is not None}
+                picked = lean(s, bars)
+                # Only a buy is sized, and sizing is most of a replay's time.
+                size = _size(s, base[s][:base_seen[s]], risk) if picked and picked.label in BUY_LABELS else None
+                leans[s] = (last, picked, size)
+        found = {s: x for s, (_, x, _) in leans.items() if x is not None}
         sizes = {s: size for s, (_, _, size) in leans.items() if size is not None}
         committed = sum(o.decision.cash for o in pending if o.decision.action == Action.BUY)
         for d in decide(found, positions, cash - committed, total, sizes, rules, {o.decision.symbol for o in pending}):
@@ -130,25 +153,42 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
                   tuple(sorted({o.decision.symbol for o in pending})))
 
 
-def _lean(symbol: str, bars: list, series: Series, settings: Mapping[str, float]) -> tuple[Lean | None, float | None]:
-    """The technicals-only baseline lean and the risk analyst's size as a share of equity."""
-    technicals = [s for s in price_signals(bars, symbol) if isinstance(s, AnalystSignal) and s.analyst == "technicals"]
-    lean = baseline_lean(symbol, technicals)
+def technicals_lean(symbol: str, bars: Sequence[Bar]) -> Lean | None:
+    """The technicals-only baseline lean."""
+    technicals = [s for s in price_signals(list(bars), symbol)
+                  if isinstance(s, AnalystSignal) and s.analyst == "technicals"]
+    return baseline_lean(symbol, technicals)
+
+
+def _size(symbol: str, series: Series, settings: Mapping[str, float]) -> float | None:
+    """The risk analyst's size as a share of equity."""
     # Its size reads only the last year of returns; the rest of the history is display.
     sized = risk_signal(symbol, series[-(YEAR + 1):], {}, currency="", **settings)
-    return lean, dict(sized.figures)["size_share"] if isinstance(sized, AnalystSignal) else None
+    return dict(sized.figures)["size_share"] if isinstance(sized, AnalystSignal) else None
 
 
-def _fill(order: _Order, p: Priced, cash: float, held: Mapping[str, list], slippage: float,
-          commission: float) -> tuple[Trade | None, str | None]:
+def _price(bar: Bar, fill_at: str) -> float | None:
+    return bar.close if fill_at == "close" else bar.open
+
+
+def _charges(symbol: str, p: Priced, venues: Mapping[str, Venue] | None, slippage: float,
+             commission: float) -> tuple[Costs, Venue]:
+    if venues is None:
+        return Costs(slippage=slippage, fx_spread=0.0, stamp_duty=0.0, commission=commission * p.rate), Venue("", "")
+    return COSTS, venues.get(symbol, Venue("", ""))
+
+
+def _fill(order: _Order, p: Priced, price: float, cash: float, held: Mapping[str, list],
+          charges: tuple[Costs, Venue]) -> tuple[Trade | None, str | None]:
     d, bar = order.decision, p.bar
-    costs = Costs(slippage=slippage, fx_spread=0.0, stamp_duty=0.0, commission=commission * p.rate)
+    costs, venue = charges
     if d.action == Action.SELL:
-        fill = sell_fill(held[d.symbol][0], open_price=bar.open, rate=p.rate, country="", costs=costs)
+        fill = sell_fill(held[d.symbol][0], open_price=price, rate=p.rate, country=venue.country, costs=costs)
     elif d.cash > cash:
         return None, f"{bar.date.isoformat()} {d.symbol}: not enough cash to buy ({d.cash:,.2f} asked, {cash:,.2f} left)"
     else:
-        fill = buy_fill(d.cash, open_price=bar.open, rate=p.rate, country="", exchange="", costs=costs)
+        fill = buy_fill(d.cash, open_price=price, rate=p.rate, country=venue.country, exchange=venue.exchange,
+                        costs=costs)
         if fill.shares == 0:
             return None, f"{bar.date.isoformat()} {d.symbol}: {d.cash:,.2f} buys no whole share after costs"
     return _trade(bar.date, d, bar.currency, p.rate, fill), None
@@ -156,5 +196,9 @@ def _fill(order: _Order, p: Priced, cash: float, held: Mapping[str, list], slipp
 
 def _trade(day: date, d: Decision, currency: str, rate: float, fill: Fill) -> Trade:
     side = Side.BUY if d.action == Action.BUY else Side.SELL
-    return Trade(day, d.symbol, side, fill.shares, fill.price, currency, fill.cash, fill.fee / rate + fill.slippage,
-                 d.reason)
+    return Trade(day, d.symbol, side, fill.shares, fill.price, currency, fill.cash, fill_costs(fill, rate), d.reason)
+
+
+def fill_costs(fill: Fill, rate: float) -> float:
+    """Everything a fill paid beyond the price, in the base currency."""
+    return (fill.fee + fill.stamp) / rate + fill.slippage + fill.fx

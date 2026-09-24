@@ -14,7 +14,7 @@ from oracle.services.discovery_chat_service import (
     add_to_discovered, answer, answer_progress, ask, new_question, question, questions, sweep_interrupted_answers,
 )
 from oracle.services.discovery_service import discovered, remove_discovered
-from oracle.services.discovery_chat_service import exclusion
+from oracle.services.industry_words import classes as exclusion
 from oracle.services.errors import InvalidQuery, ModelUnavailable, NeverListed, SearchFailed, UnknownQuestion
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
@@ -241,7 +241,7 @@ def left_out(exclude, universe, company):
                "industry": frozenset(r[2] for r in universe)}
     rule = exclusion(exclude, classes)
     profile = SimpleNamespace(sector=company[0], industry_group=company[1], industry=company[2])
-    return rule and rule.leaves_out(profile)
+    return rule and rule.holds(profile)
 
 
 PHARMA = ("Health Care", "Pharmaceuticals, Biotechnology & Life Sciences", "Pharmaceuticals")

@@ -2221,6 +2221,12 @@ The pacer polls every 10 s in the GUI server, stores each poll's time and wait r
 **Decision:** A forward return runs from the listing's first close strictly after the as-of day (a replay reads that day's news to 24:00 UTC, after most closes) to its last close on or before the first weekday on or after the same day 1 or 3 calendar months later, in the listing's currency, using adjusted closes only when both ends have one (else plain closes). Either close more than 7 days from the day it stands for is a gap, so unpriced (exactly 7 is a price); so is a zero or missing close between them, and any day-over-day close move outside 0.5x to 2x, taken for a split the stored bars were not re-based for (real days reach about 0.77). A horizon is pending while its end is today or later; unpriced once it has passed without covering bars. The basket is the equal-weight mean of every study listing's return from the same day over the same horizon, with its count; under half the study's listings priced, it and the relative results are unpriced. A verdict's relative return is its return minus the basket's. Hits are buys that rose and sells that fell (flat is a miss); holds count in the mix and mean returns but call no direction. Every hit rate carries a Wilson 95% interval from 10 calls (None below), and each horizon has base rates over the same (listing, day) windows as the scored buys and sells (the queue runs oldest first, so all windows would compare different months): the share that rose and that beat the basket, plus the hit rate that call mix would expect by chance (buy share times the rise rate plus sell share times its complement). Confidence bands are under 0.60, 0.60 to 0.80 and 0.80 and up, over buys and sells only, with returns as called (a sell's sign flipped). Scoring reads stored bars and verdicts only (the verdict via `json_extract` on the report body) and is recomputed on every call, about 60 ms for a full 300-cell study, with no cache to invalidate. Fetching is `update_study_prices`: `oracle replay report` (before it scores), the card's Update prices (a `replay_prices` job) and every tick's prices stage (so the interim stays current unattended; any error there, even an unexpected one, only adds a note to the stage summary). It refetches, over one client and skipping dead listings, the whole study window (the first as-of day less a week, via `update_listings(since=)`) of every study listing, watched or not, with a window closed on or after its last whole-window fetch day (kept per study in meta), so each window reads closes on one split and dividend basis: incremental updates can add bars on a newer basis, and a 3:2 split passes the ratio guard. A suspect split or missing bars therefore heal on the next check; once a whole fetch after the window's close still cannot price it, it stays unpriced without refetching daily. Rather than hide failures behind an "updated" time, the score carries `prices_checked_at` (every check, fetches or not) and `price_failures` (the listings the last check could not fetch). The status JSON carries a small `score` block: verdicts, no-verdict count, buy share, mean confidence, `prices_checked_at`, `price_failures`, a note pointing at the limits, and per horizon scored, pending, unpriced, hit rates with intervals, base rates, expected hit rates and per verdict n, raw mean return and mean as called. The stated limits are one constant printed with every report.
 **Alternatives:** The as-of day's own close (look-ahead for Asian listings and after-hours news). Trading-day offsets (21 and 63 bars; calendar months match how the study picks its dates). A cached score keyed on cells and bars (invalidation for 60 ms saved). Incremental fetches (mix split bases across fetches). Pricing study listings in the pacer (it is being reworked; the tick already runs unattended daily). A benchmark index for the basket (another currency and universe; the study's own listings are what the verdicts chose among). Counting holds as hits when the move is small (needs an arbitrary threshold).
 
+## 2026-09-24 - Replay study: the simulated account
+
+**Context:** Replay study 04: what the replay verdicts would have earned as an account, against buy-and-hold, reusing the backtest engine and the AI account's rules.
+**Decision:** The backtest engine (`broker/backtest.replay`) gains a lean source (`lean=`, default the technicals baseline), `fill_at="close"` and `venues=` (per listing country and exchange; given, every fill pays the paper accounts' `fills.COSTS`: 0.1% slippage, the broker's fee table, a 0.2% FX spread each way when the rate is not 1, 0.5% stamp duty on LSE buys; `Trade.costs` now counts stamp and spread). Without `venues`, `oracle backtest` charges exactly what it did. Only a buy lean is now sized, which leaves every decision the same; it speeds up the verdict account (few buy leans) and not the technicals backtest (131.8 s against 130.0 s on the live list). The study account passes each listing's newest verdict with an as-of day on or before the decision day, used for `max_verdict_age_days` like the live AI account's, and fills at the next close, so a verdict enters at the first close strictly after its as-of day as the score does. Rules, risk sizes (the year before each day), the stop and whole shares are the engine's, with each listing's venue from the universe. Prices stay in each listing's major currency unit (pence to pounds; adjusted closes when every bar has one) at one fixed rate per listing, the stored base rate nearest the first day, so returns stay in the listing's currency like the score's while fees and share prices are real. Every line starts from a notional 1,000,000 in the base currency (`NOTIONAL`), not the AI account's 10,000: at that size a 500 to 1,000 slot buys no ASML, LLY or CAT share and half an AAPL one, and the study picks the biggest company per slot; at the notional, whole shares are negligible, proportional costs stay, and fixed fee minimums are negligible, as a note says; a listing with no stored rate is priced as if a share cost 1 base unit on the first day, and named. Three lines are drawn: the verdicts (`ai`); every verdict taken as a buy at its confidence under the same rules (`all_buy`), because the caps (20% cash floor, at most 10 positions of 10%, the 8% stop, a short verdict age) keep both traded lines partly in cash, so the verdicts' own effect is AI against that line and a note names the caps; and buy and hold, equal amounts bought in fractional units at the first close after each listing's first as-of day, paying the same costs on that one entry (counted as a trade only when it buys something). Rejected orders are collapsed to one note per listing and reason. Replays on or before the current cutoff are left out of every line, as the score leaves them out, so the account and buy and hold start at the first replay day after it. Each line shows return (against the starting capital, so entry costs count), largest fall, trades and costs, in `oracle replay report` and on the card. A listing is left out of every line, and named, when the score's pricing rules fail from its first as-of day on (no close within 7 days after it, a zero close, a day-over-day move outside 0.5x to 2x) or when a whole-window fetch more than 7 days after its last close found nothing newer (stopped trading). A listing whose bars merely lag (unwatched ones are refetched about monthly) is held flat after its last close and named (as failing to fetch when the last price check could not fetch it), rather than dropped or dragging the end back. Risk sizes read only the bars after the last zero close or suspect split up to the first close after the first as-of day, and study price refetches now start 400 days before the first as-of day so the sizing year shares the window's basis. `replay_report` adds the account to `Score` and the report route runs on a worker thread and connection; `score_study` (the status poll) never runs it (about 600 ms for a 300-cell study with three lines, against 45 ms for the score), so the interim block has no account line. `BASELINES` in `replay_account` takes more rule accounts by name (caption and lean source), run through the same engine, listings, days and costs: quant-basics adds the momentum baseline there.
+**Alternatives:** A second simulator for verdicts (two sets of fill and sizing rules to keep in step). Filling at the next open (one day later than the score's entry). Daily FX conversion (the study's KRW, SGD and BRL have no stored rates, and the score's returns leave FX out). Indexed prices with flat costs (fee minimums and per-share fees need real prices and share counts). The AI account's own 10,000 (whole shares left buy and hold 15 to 25% in cash and the biggest names unbought). Ending the account at the earliest last close (one monthly-refetched listing would cut weeks off every line). Dropping lagging listings (most unwatched study listings would drop). Comparing the verdicts to buy and hold alone (measures the rules' cash drag, not the calls). An interim account line (a far slower status poll every 15 s).
+
 ## 2026-09-24 - A name matched by its start must fit the question; one GDELT search per answer
 **Context:** Discovery 03. "Olix" (a UK chip startup) matched OliX Pharmaceuticals (Korea) by the
 start of its name, and 3 of an answer's 4 GDELT searches failed on 429 and the open circuit. Gate
@@ -2283,7 +2289,97 @@ moving the extra GDELT searches to Google News (each query is there already).
 **Decision:** A study stores the profile each research stage ran on at creation (`replay_studies.stages`, added in migration 39) and shows it in status, the CLI and the card. Before every submit the pacer reads the slots, probes and claims again: stage profiles that differ from the stored ones pause the study ("the replay models changed since the study was created: verdict default to big"), as does an unprobed model or a cutoff that leaves no day (its note); pending cells on or before the current cutoff fail for good ("on or before the cutoff X of profile", no attempt left). Start refuses on the same grounds. Replace builds cells from the later of the study's first day and the day after the cutoff. Retry, in the study or in Activity, never requeues a cell on or before the cutoff (Retry all skips them). The score leaves out done replays on or before the current cutoff and says how many.
 **Alternatives:** Pinning each replay job to the stored profiles (a run would then ignore a slot the user moved on purpose, silently). Letting a study run on mixed models (its verdicts would no longer measure one set of models).
 
+## 2026-09-24 - The universe screen answers "which companies" questions (discovery 01)
+**Context:** Three live questions named 11 companies and matched 1: headlines favour famous names
+and startups, so real listed mid caps that fit a question's industry, region and size never came up.
+**Decision:** The chat plan also returns `industries` (up to 3, offered the universe's industry names
+in the prompt) and `regions` (up to 5). Industries map onto the universe's classifications with the
+exclude matcher, now `industry_words.classes` (the most specific level); regions and countries
+through one table, `oracle/universe/regions.py` (regions, nationality words, each country's
+currency), which also replaces 03's Europe and nationality tables in `business_fit`. A word naming
+nothing is dropped with a note. A screen needs an industry: a region or a size alone would list any
+big company there. `universe_screen` takes active primary equity companies in any of the
+classifications, based in the countries asked (or with a US OTC primary, where the universe's
+country is often wrong), within the plan's bands, biggest band first then most widely listed; it
+drops never-listed companies (any line's name), depositary receipts and companies with no live home
+line. The home line is the replay picker's rule, moved to `regions.home_line` and used by both: the
+best-ranked line on a main board (tier 1 or 2) in the country's own currency, inside the countries
+asked (STMicro is STM.PA for Europe, not its New York primary). Replay's per-region currency sets
+became per-country currencies; its slot regions stay its own (`STUDY_REGIONS`: Europe there leaves
+out the UK). In the shortlist, companies both named and screened rank first and carry both kinds of
+evidence, then those only named, then those only screened, up to 15, with their own budget of 20
+price checks; one without recent prices is passed over for the next and only counted. The evidence
+line ("universe: Semiconductors & Semiconductor Equipment, Netherlands, Mega Cap") is stored per
+item (m0040) and shown on the Discover tab and in `oracle discover show`; a note says how many
+matched and how many are shown. The recognised industry words join the question in `NamedIn.asked`,
+so 03's sector check holds a name matched by its start to them. Auto: a company only the screen found
+is never validated or added ("a universe match alone is not evidence"); a named one on its screened
+home line passes the line check. When nothing screens, answers work as before, and the screen runs
+even when the news finds nothing.
+**Alternatives:** Screening lines rather than companies (each line carries the company's same wrong
+sector, so nothing gained); trusting the universe's country alone (US OTC lines hide Rheinmetall);
+the primary line as it is (New York ADR-like lines and OTC lines of foreign companies); listing
+screened companies without prices as left off (no one named them: noise); a screen on region or size
+alone; letting auto add on a universe match (DECISIONS 05 wants outlet evidence).
+
+## 2026-09-24 - Universe screen follow-ups left open
+**Context:** Found while building discovery 01 on the live universe.
+**Decision:** Recorded, not fixed: wrong sectors hide companies from the screen (Rheinmetall is
+Consumer Discretionary / Specialty Retail on every line, so a defence question misses it); the
+universe keeps acquired companies (Dialog Semiconductor, Meggitt), which the price check passes over;
+the plan's region is still not enforced on news-named companies; words below the universe's
+industries ("robotics", "batteries", "solar") screen nothing unless the model picks a listed name;
+NXP's Europe line is Xetra (VNX.DE), as it has none in Amsterdam; a company split in two by the
+universe with its home line carrying no currency (Prysmian: PRY.MI apart from AEU.F) has no home line.
+**Alternatives:** A sector override table (hand upkeep); a company-level country vote across lines
+(every Rheinmetall line says United States).
+
+## 2026-09-24 - Universe screen gate round 1 fixes
+**Context:** The gate found that a screen with no region picked ADRs, BDRs and foreign secondaries
+(NIO, TSM, TMCO34.SA), that an unrecognised region ("EU") widened the screen to the world, and that
+named companies and screened ones had separate price-check budgets and screened checks ignored the
+auto deadline.
+**Decision:** With no region asked, a company's home line must be in its own country, unless its
+primary is a US OTC line (the universe's country is then not trusted and any home line counts); a
+company with no country, or no such line, is dropped. Receipt lines are never chosen, and "DRN" (Sao
+Paulo's BDR suffix) counts as a receipt. Regions asked of which none is recognised skip the screen with
+a note. `countries_of` ignores dots and hyphens and knows the EU, Eurozone, Western Europe, Southeast
+Asia, Asia-Pacific/APAC, Africa, emerging markets (roughly MSCI's), England/Scotland/Wales and more
+nationalities. One price-check budget per answer (8, plus 20 when the screen runs): named companies
+take from it first. Screened companies are not price-checked past the auto deadline, and the note says
+so. A plan industry phrase naming nothing whole is tried a word at a time ("defence contractors",
+"oil majors"); aliases ev, homebuilder and miner.
+**Alternatives:** The best main-board line anywhere (brought back NIO and TSM); screening the world
+for an unknown region (answers a different question); a separate screen budget (named companies could
+go unchecked while the screen spent its own).
+
+## 2026-09-24 - Universe screen gate round 2 fixes
+**Context:** The word-by-word retry matched phrases by their first known word ("electric vehicles" as
+Electric Utilities, "private equity" as Equity REITs, "car parts" as Automobiles), and Brazilian BDRs
+kept as companies of their own passed a region screen (C1HI34.SA for Sinopec, "ECOPETROL SADRN").
+**Decision:** A plan phrase is matched whole, else once more without a trade noun at its end (makers,
+manufacturers, contractors, companies, firms, producers, suppliers, majors, players, stocks, groups,
+providers, operators, developers); anything else stays unrecognised with the note. A name ending in
+"DRN", glued or not, is a receipt, and so is a B3 ticker of four letters or digits and 32, 33, 34, 35
+or 39 (`is_receipt_symbol`); the screen checks both on the primary and on every line it may choose.
+**Alternatives:** Keeping the per-word retry with a stop list (every new phrase finds a new wrong
+word); dropping every Sao Paulo line of a foreign company (the ticker says which are receipts).
+
+## 2026-09-24 - Universe screen gate round 3: foreign quotes on Latin American boards
+**Context:** With a region asked, Mexico's SIC quotes and Buenos Aires' CEDEARs of foreign companies
+stood as home lines (TSMN.MX for TSMC, SQ.BA for Square): they trade on a main board in the local
+currency.
+**Decision:** The screen never takes a line on BUE, MEX or SAO for a company whose universe country is
+not that exchange's country. The replay picker's rule is left as it is.
+**Alternatives:** Changing `home_line` itself (would change the replay spread); a ticker pattern per
+board (SIC and CEDEAR tickers follow no one pattern).
+
 ## 2026-09-24 - List pages read for a question keep the companies they list
 **Context:** Discovery 02. Discovery chat answers named few companies because headlines name few. A "top 10" article or a Wikipedia "List of ..." page names many, but its note kept 3 facts and no names.
 **Decision:** Reading for a question (never for company research), the note call itself also asks for up to 15 `companies` when the page lists or ranks them: no extra call, and the 4B model judges what a list is. The prompt says a page listing companies of the kind asked about is about them: without that, live qwen3 4B called a top-10 of European chipmakers "not about" a question adding "gain from the EU Chips Act". Code keeps a name only when the text the model read (after the cut) holds it, citations stripped, once each, and only 4 or more names (live, a plain story "lists" the two or three companies it names, which its facts already carry). It stores the names as one more line of the note, `Lists: A; B; C; D`. No migration: the naming call sees them as that item's own words, and the item-words rule, business fit and price checks apply unchanged. That line never counts as a line naming two linked companies. A question's reading gives undated web results whose title or address looks like a list of companies ("list of", "/wiki/List_of_", or top, biggest, largest, leading or best followed within 4 words by companies, stocks, firms, makers, manufacturers, suppliers, producers or players) the 2 first slots that report pages take in research, so a list page is read ahead of newer headlines. A dated headline never takes those slots ("Top 5 takeaways from ASML earnings", "3 best AI stocks to buy now"), and a bare count or "ranked" is no list. The naming call may name 10 companies (was 8), each with a why of at most 100 characters ("a few words"), so a full reply stays under Ollama's 1024 reply tokens. The plan's queries include a search for a page listing the companies when the question asks which fit. Each list page read adds an answer note ('9 companies from the list page "..."'), shown in the GUI and `oracle discover show`.
 **Alternatives:** Detecting list pages in code alone (repeated short lines or table rows; text extraction flattens tables unevenly) or a second call for names (one more model call per page); a names column in `article_notes` (a migration that 01's m0040 would have to renumber around); a naming cap of 12 or 15 with 200-character why lines (can outrun Ollama's 1024 reply tokens and lose the whole answer); any dated headline shaped like a list taking a list slot (pick reads only 2 such, so real news would be pushed out).
+
+## 2026-09-24 - A question's named companies all get a price check
+**Context:** Merging list pages (02) with the universe screen (01): the answer's pooled price-check budget was 8, plus 20 when the screen runs, with named companies checked first. A list page lets the naming call fill its 10, so with no screen the last 2 were left off as "too many to price-check".
+**Decision:** The base budget is the naming cap (`MAX_PRICE_CHECKS = MAX_ANSWERS`, 10), so every named company is checked; the screen's 20 stay on top for screened ones.
+**Alternatives:** Keeping 8 (a list page's last names always dropped unchecked); a separate budget for list-page names (two budgets for one kind of check).

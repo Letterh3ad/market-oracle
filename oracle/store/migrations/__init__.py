@@ -60,6 +60,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0037_model_slots,
     m0038_replay_study,
     m0039_cutoff_probes,
+    m0040_screened_items,
 )
 
 MIGRATIONS = [
@@ -102,4 +103,5 @@ MIGRATIONS = [
     m0037_model_slots,
     m0038_replay_study,
     m0039_cutoff_probes,
+    m0040_screened_items,
 ]

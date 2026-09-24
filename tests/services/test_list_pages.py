@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from oracle.config import Config
+from oracle.research.mentions import MAX_ANSWERS
 from oracle.research.trace import Evidence
 from oracle.research.web import WebResult
 from oracle.services.context import open_context
@@ -44,7 +45,13 @@ UNIVERSE = [
     equity("DTE.DE", "Deutsche Telekom AG", "Germany", "GER", currency="EUR", market_cap="Mega Cap",
            sector="Communication Services", industry_group="Telecommunication Services",
            industry="Diversified Telecommunication Services"),
+    *(equity(s, n, sector="Information Technology", market_cap="Mega Cap")
+      for s, n in [("AAPL", "Apple Inc."), ("GOOGL", "Alphabet Inc."), ("MSFT", "Microsoft Corporation"),
+                   ("NVDA", "NVIDIA Corporation"), ("ORCL", "Oracle Corporation"),
+                   ("DELL", "Dell Technologies Inc."), ("ACN", "Accenture plc"), ("CSCO", "Cisco Inc.")]),
 ]
+BIG_TECH = ["Samsung Electronics", "Deutsche Telekom", "Apple", "Alphabet", "Microsoft", "Nvidia", "Oracle",
+            "Dell Technologies", "Accenture", "Cisco"]
 # Newer than the list page and from as many outlets as there are reading slots, none naming a listed company.
 HEADLINES = ["EU Chips Act money flows to new fabs", "Brussels weighs a second Chips Act",
              "Chip subsidies race heats up in Europe", "Europe's share of chip output stalls",
@@ -142,6 +149,13 @@ async def test_a_wikipedia_list_page_is_read_before_newer_news(ctx):
     assert len(m.noted) == 1 and "Samsung Electronics" in m.noted[0]
     assert "Lists: Samsung Electronics; Deutsche Telekom; Nvidia; Apple" in m.naming and "Tesla" not in m.naming
     assert {line.item.symbol for line in view.shortlist} == {"005930.KS", "DTE.DE"}
+
+
+async def test_every_company_named_from_a_list_page_is_price_checked_with_no_screen(ctx):
+    m = ListReader(BIG_TECH, BIG_TECH)
+    view = await ask(ctx, "which are the biggest technology companies?", model=m, searcher=searcher(WIKI, WIKI_TITLE))
+    assert len(BIG_TECH) == MAX_ANSWERS
+    assert len(view.shortlist) == MAX_ANSWERS and view.skipped == ()
 
 
 async def test_the_listed_names_still_pass_the_shortlist_checks(ctx):

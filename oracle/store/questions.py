@@ -38,6 +38,9 @@ class ShortlistItem:
     """Why it is not on the shortlist; None when it is."""
     validation: Validation | None = None
     """What an auto question's validation made of it; None when not validated."""
+    universe: str | None = None
+    """What the universe screen found it by ("universe: Semiconductors & Semiconductor Equipment,
+    Netherlands, Mega Cap"); None when only the news named it."""
 
 
 @dataclass(frozen=True)
@@ -122,9 +125,9 @@ class QuestionRepo:
         with transaction(self._conn):
             self._conn.executemany(
                 "INSERT INTO discovery_answer_items (answer_id, n, name, symbol, company_key, company, why, evidence, "
-                "skipped, validation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "skipped, validation, universe) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(answer_id, i.n, i.name, i.symbol, i.company_key, i.company, i.why, json.dumps(list(i.evidence)),
-                  i.skipped, i.validation.to_json() if i.validation else None) for i in items])
+                  i.skipped, i.validation.to_json() if i.validation else None, i.universe) for i in items])
             self._conn.execute(
                 "UPDATE discovery_answers SET status = ?, error = ?, notes = ?, stage = NULL, finished_at = ? "
                 "WHERE id = ?", (status, error, json.dumps(list(notes)), now, answer_id))
@@ -158,6 +161,7 @@ class QuestionRepo:
 
     def _items(self, answer_id: int) -> tuple[ShortlistItem, ...]:
         rows = self._conn.execute(
-            "SELECT n, name, symbol, company_key, company, why, evidence, skipped, validation "
+            "SELECT n, name, symbol, company_key, company, why, evidence, skipped, validation, universe "
             "FROM discovery_answer_items WHERE answer_id = ? ORDER BY n", (answer_id,))
-        return tuple(ShortlistItem(*r[:6], tuple(json.loads(r[6])), r[7], Validation.from_json(r[8])) for r in rows)
+        return tuple(ShortlistItem(*r[:6], tuple(json.loads(r[6])), r[7], Validation.from_json(r[8]), r[9])
+                     for r in rows)

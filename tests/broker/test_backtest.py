@@ -3,9 +3,10 @@ from dataclasses import dataclass, replace
 import pytest
 
 from oracle.analysts.technicals import price_signals
-from oracle.broker.backtest import LOOKBACK, replay
+from oracle.broker.backtest import LOOKBACK, Venue, replay
+from oracle.broker.fills import COSTS, buy_fill
 from oracle.broker.orders import Side
-from oracle.broker.rules import Rules
+from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar
 from tests.analysts.bars import series
 
@@ -140,3 +141,42 @@ def test_the_lookback_leans_as_the_full_history_would():
         full = [s for s in price_signals(bars[:end], "TEST") if s.analyst == "technicals"]
         cut = [s for s in price_signals(bars[end - LOOKBACK:end], "TEST") if s.analyst == "technicals"]
         assert (full[0].score, full[0].confidence) == (cut[0].score, cut[0].confidence)
+
+
+def test_a_lean_source_replaces_the_technicals_and_orders_can_fill_at_the_close():
+    bars = rising(400)
+    day = bars[320].date
+    seen = []
+
+    def leans(symbol, window):
+        seen.append(window[-1].date)
+        return Lean(symbol, window[-1].date, "buy", 0.9, "test") if window[-1].date >= day else None
+
+    r = replay({"UP": priced(bars)}, bars[300].date, bars[-1].date, rules=RULES, risk=RISK, slippage=0.001,
+               commission=0.0, lean=leans, fill_at="close")
+    first = r.trades[0]
+    assert first.day == bars[321].date and first.reason == "test lean buy at 90%"
+    assert first.price == pytest.approx(bars[321].close * 1.001)
+    assert max(seen) < bars[-1].date  # the last day decides nothing
+
+
+def test_venues_charge_the_paper_accounts_full_costs():
+    def buy(symbol, window):
+        return Lean(symbol, window[-1].date, "buy", 0.9, "test")
+
+    def first_buy(symbol, venue, rate):
+        bars = rising(400, symbol)
+        r = replay({symbol: priced(bars, rate)}, bars[300].date, bars[-1].date, rules=RULES, risk=RISK, slippage=0.0,
+                   commission=0.0, lean=buy, fill_at="close", venues={symbol: venue})
+        return r.trades[0], next(b for b in bars if b.date == r.trades[0].day)
+
+    lse, bar = first_buy("VOD.L", Venue("United Kingdom", "LSE"), 1.0)
+    fill = buy_fill(-lse.cash + 1e-9, open_price=bar.close, rate=1.0, country="United Kingdom", exchange="LSE",
+                    costs=COSTS)
+    assert lse.price == pytest.approx(bar.close * 1.001) and lse.shares == fill.shares
+    assert lse.costs == pytest.approx(fill.fee + fill.slippage + fill.stamp)
+    assert fill.stamp > 0
+    usd, bar = first_buy("AAPL", Venue("United States", "NMS"), 1.25)
+    fill = buy_fill(-usd.cash + 1e-9, open_price=bar.close, rate=1.25, country="United States", exchange="NMS",
+                    costs=COSTS)
+    assert usd.costs == pytest.approx(fill.fee / 1.25 + fill.slippage + fill.fx) and fill.fx > 0

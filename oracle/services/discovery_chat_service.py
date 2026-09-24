@@ -7,13 +7,14 @@ again and says what changed."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.mentions import (
-    QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
+    MAX_ANSWERS, QUESTION_SCHEMA, Mention, item_text, item_words, parse_mentions, question_prompt,
 )
 from oracle.research.notes import listed
 from oracle.research.queries import EDITION, MAX_QUERY
@@ -29,19 +30,19 @@ from oracle.services.errors import (
     InvalidQuery, JobAlreadyRunning, ModelUnavailable, SearchFailed, ServiceError, UnknownQuestion,
 )
 from oracle.services.http import open_client
-from oracle.services.industry_words import NOT_A_SECTOR, universe_words
-from oracle.services.industry_words import word_list as _word_list, words as _words
+from oracle.services.industry_words import Classes, classes
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
 from oracle.services.models_service import RunModel, check_model_profile, resolve_stages
 from oracle.services.research_tools import GdeltSearch, LocalNewsSearch, NewsSearch, Reader, Shelf, WebSearch
 from oracle.services.research_tools.reading import TRY_ANOTHER
+from oracle.services.universe_screen import Filters, Screened, Screening, plan_filters, screen_universe
 from oracle.store.db import to_utc_iso
 from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.questions import DONE, FAILED, RUNNING, Answer, Question, QuestionRepo, ShortlistItem
 from oracle.store.research import evidence_of, note_model
-from oracle.store.universe import CLASSIFICATION_LEVELS, ListingProfile, UniverseRepo
+from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import MARKET_CAP_BANDS
 
@@ -63,23 +64,30 @@ MAX_LOCAL = 2
 MAX_GDELT = 1
 MAX_ITEMS = 24
 READ = 4
-MAX_PRICE_CHECKS = 8
+# Every company the naming call may name (a list page's can fill it) gets its check.
+MAX_PRICE_CHECKS = MAX_ANSWERS
 MAX_EXCLUDE = 5
+MAX_INDUSTRIES = 3
+MAX_REGIONS = 5
+# Companies the universe screen adds to one answer, and the price checks it adds to the answer's
+# (named companies are checked first; a screened one without recent prices is passed over for the next).
+MAX_SCREENED = 15
+MAX_SCREEN_CHECKS = 20
 # About how long one answer takes with a local model; a question is not started with less left.
 TYPICAL_ANSWER_MIN = 5
 # Notes taken for a question are kept apart from the same model's notes for research, and from
 # other questions': "not about" means not about what that question asks. A follow-up reads
 # for its root question, so the two share notes.
 NOTE_KEY = "#q{root}"
-# "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
-_WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
 "queries": up to {queries} short English news search queries (under 8 words each) likely to find headlines naming such companies. No dates, no words like "latest" or "news". When the question asks which companies fit, make one a search for a page listing them ("list of European chipmakers", "top battery makers").
 "local": when the question names a country or region with its own language, up to {local} searches written in that language, each with its "country" from the list; else empty.
 "market_caps": the company sizes the question asks for, from the list; empty for any size.
-"exclude": sectors or industries the question rules out, a word or two each; empty for none."""
+"exclude": sectors or industries the question rules out, a word or two each; empty for none.
+"industries": up to {industries} industries the companies asked about are in, each one of these names where one fits, else a word or two: {names}. Empty when the question names no industry (e.g. "who supplies Nvidia").
+"regions": the countries or regions the companies must be based in ("Europe", "Germany", "the Nordics"); empty for anywhere."""
 
 PLAN_SCHEMA = {
     "type": "object",
@@ -90,8 +98,10 @@ PLAN_SCHEMA = {
             "query": {"type": "string", "maxLength": MAX_QUERY}}, "required": ["country", "query"]}},
         "market_caps": {"type": "array", "items": {"type": "string", "enum": list(MARKET_CAP_BANDS)}},
         "exclude": {"type": "array", "maxItems": MAX_EXCLUDE, "items": {"type": "string", "maxLength": 40}},
+        "industries": {"type": "array", "maxItems": MAX_INDUSTRIES, "items": {"type": "string", "maxLength": 40}},
+        "regions": {"type": "array", "maxItems": MAX_REGIONS, "items": {"type": "string", "maxLength": 40}},
     },
-    "required": ["queries", "local", "market_caps", "exclude"],
+    "required": ["queries", "local", "market_caps", "exclude", "industries", "regions"],
 }
 
 
@@ -113,6 +123,8 @@ class Plan:
     searches: tuple[Search, ...]
     market_caps: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
+    industries: tuple[str, ...] = ()
+    regions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -198,7 +210,7 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
         note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
             items = await _answer(ctx, repo, answer_id, asked, resolved, searcher or DdgsSearcher(), notes,
-                                  note_key)
+                                  note_key, deadline)
             if q.auto:
                 await auto_add(ctx, q.id, asked, model, note_key, items, lambda text: repo.set_stage(answer_id, text),
                                notes, deadline)
@@ -304,18 +316,23 @@ def sweep_interrupted_answers(ctx: AppContext) -> None:
 
 
 async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: str, resolved: RunModel,
-                  searcher: WebSearcher, notes: list[str], note_key: str) -> list[ShortlistItem]:
+                  searcher: WebSearcher, notes: list[str], note_key: str,
+                  deadline: datetime | None = None) -> list[ShortlistItem]:
     model = resolved.model
 
     def stage(text: str) -> None:
         repo.set_stage(answer_id, text)
 
     stage("planning searches")
-    plan = await _plan(model, asked)
-    repo.set_searches(answer_id, [s.label for s in plan.searches])
     classifications = UniverseRepo(ctx.conn).classifications()
-    exclusions = [e for x in plan.exclude if (e := exclusion(x, classifications))]
+    plan = await _plan(model, asked, classifications["industry"])
+    repo.set_searches(answer_id, [s.label for s in plan.searches])
+    exclusions = [e for x in plan.exclude if (e := classes(x, classifications))]
     notes.extend(_filter_notes(plan, exclusions))
+    filters, not_screened = plan_filters(ctx, list(plan.industries), list(plan.regions), plan.market_caps)
+    notes.extend(not_screened)
+    # The plan's industry words are the question's own: a name matched by its start is held to them.
+    asked_for_fit = " ".join((asked, *(c.text for c in filters.industries)))
     found: list[list[int]] = []
     failed: list[str] = []
     shelf = Shelf(ctx.conn, ctx.clock, lambda ids, _query: found[-1].extend(ids))
@@ -339,27 +356,31 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
         ids = _interleave(found)[:MAX_ITEMS]
         if not ids:
             notes.append("the searches found nothing to read")
-            return []
-        reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, ctx.config.research.contact, model,
-                        f'companies that answer "{asked}"', resolved.context, note_key, lists=True)
-        newest_first = sorted(evidence_of(ctx.conn, ids, note_key),
-                              key=lambda e: (e.published is not None, e.published), reverse=True)
-        await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
-    stage("naming companies")
-    evidence = evidence_of(ctx.conn, ids, note_key)
-    notes.extend(f'{len(names)} compan{"y" if len(names) == 1 else "ies"} from the list page "{e.title}"'
-                 for e in evidence if (names := listed(e.facts)))
-    reply = await model.reply(question_prompt(asked, [item_text(e) for e in evidence]), QUESTION_SCHEMA)
-    # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
-    mentions = parse_mentions(reply, [item_words(e) for e in evidence])
-    if not mentions:
-        notes.append("the model named no company the news shows")
-    # More items behind a name first; the model's own order among equals.
-    ranked = sorted(mentions, key=lambda m: -len(m.headlines))
+        else:
+            reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, ctx.config.research.contact, model,
+                            f'companies that answer "{asked}"', resolved.context, note_key, lists=True)
+            newest_first = sorted(evidence_of(ctx.conn, ids, note_key),
+                                  key=lambda e: (e.published is not None, e.published), reverse=True)
+            await reader.read(newest_first, READ, None, lambda n, total: stage(f"reading {n} of {total}"))
+    ranked: list[Mention] = []
+    evidence: list[Evidence] = []
+    if ids:
+        stage("naming companies")
+        evidence = evidence_of(ctx.conn, ids, note_key)
+        notes.extend(f'{len(names)} compan{"y" if len(names) == 1 else "ies"} from the list page "{e.title}"'
+                     for e in evidence if (names := listed(e.facts)))
+        reply = await model.reply(question_prompt(asked, [item_text(e) for e in evidence]), QUESTION_SCHEMA)
+        # A name must be in the item's own words; an outlet ("Siemens Stiftung News") names no answer.
+        mentions = parse_mentions(reply, [item_words(e) for e in evidence])
+        if not mentions:
+            notes.append("the model named no company the news shows")
+        # More items behind a name first; the model's own order among equals.
+        ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    shortlist = _Shortlist(ctx, plan, exclusions)
-    items = await shortlist.screen(ranked, evidence, asked)
-    if kept := record_links(ctx, _links(shortlist, ranked, evidence, asked), SOURCE_CHAT):
+    shortlist = _Shortlist(ctx, plan, exclusions, filters, deadline)
+    items = await shortlist.screen(ranked, evidence, asked_for_fit, screen_universe(ctx, filters))
+    notes.extend(shortlist.screen_notes)
+    if kept := record_links(ctx, _links(shortlist, ranked, evidence, asked_for_fit), SOURCE_CHAT):
         notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
                      "(shown on their Company pages)")
     return items
@@ -382,9 +403,11 @@ def _named_in(m: Mention, evidence: list[Evidence], asked: str) -> NamedIn:
     return NamedIn(asked, tuple(item_words(evidence[i]) for i in dict.fromkeys((*m.headlines, *m.link_items))))
 
 
-async def _plan(model: ChatModel, asked: str) -> Plan:
+async def _plan(model: ChatModel, asked: str, industries: Iterable[str]) -> Plan:
     """The model's searches and filters; the question itself searched when it plans none."""
-    reply = await model.reply([{"role": "system", "content": PLAN.format(queries=MAX_QUERIES, local=MAX_LOCAL)},
+    system = PLAN.format(queries=MAX_QUERIES, local=MAX_LOCAL, industries=MAX_INDUSTRIES,
+                         names="; ".join(sorted(industries)))
+    reply = await model.reply([{"role": "system", "content": system},
                                {"role": "user", "content": asked}], PLAN_SCHEMA)
     reply = reply if isinstance(reply, dict) else {}
     queries = _unique(q for q in _strings(reply.get("queries")) if len(q) <= MAX_QUERY)[:MAX_QUERIES]
@@ -401,7 +424,9 @@ async def _plan(model: ChatModel, asked: str) -> Plan:
                 + local[:MAX_LOCAL] + [Search("web", q) for q in queries])
     caps = tuple(c for c in MARKET_CAP_BANDS if c in _strings(reply.get("market_caps")))
     exclude = tuple(_unique(_strings(reply.get("exclude"))))[:MAX_EXCLUDE]
-    return Plan(tuple(searches), caps, exclude)
+    industries = tuple(_unique(_strings(reply.get("industries"))))[:MAX_INDUSTRIES]
+    regions = tuple(_unique(_strings(reply.get("regions"))))[:MAX_REGIONS]
+    return Plan(tuple(searches), caps, exclude, industries, regions)
 
 
 def _strings(value: object) -> list[str]:
@@ -417,7 +442,7 @@ def _unique(items) -> list[str]:
     return out
 
 
-def _filter_notes(plan: Plan, exclusions: list[Exclusion]) -> list[str]:
+def _filter_notes(plan: Plan, exclusions: list[Classes]) -> list[str]:
     """What the filters do, and which excludes name nothing the universe holds (they leave nothing out)."""
     notes = []
     if plan.market_caps:
@@ -441,16 +466,25 @@ def _interleave(found: list[list[int]]) -> list[int]:
 
 
 class _Shortlist(Screen):
-    """Screens named companies in rank order. Never-listed and removed companies are left off;
-    watched and discovered ones stay on, marked, with no price check."""
+    """Screens named companies in rank order, then the universe screen's. Never-listed and
+    removed companies are left off; watched and discovered ones stay on, marked, with no price
+    check."""
 
-    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Exclusion]) -> None:
-        super().__init__(ctx, MAX_PRICE_CHECKS)
+    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Classes], filters: Filters,
+                 deadline: datetime | None = None) -> None:
+        super().__init__(ctx, MAX_PRICE_CHECKS + (MAX_SCREEN_CHECKS if filters.usable else 0))
+        self._deadline = deadline
+        self._out_of_time = False
         self._plan = plan
         self._exclusions = exclusions
+        self._filters = filters
+        self.screen_notes: list[str] = []
 
-    async def screen(self, mentions: list[Mention], evidence: list[Evidence], asked: str) -> list[ShortlistItem]:
-        """Shortlisted first, numbered from 1 in rank order, then those left off."""
+    async def screen(self, mentions: list[Mention], evidence: list[Evidence], asked: str,
+                     screening: Screening) -> list[ShortlistItem]:
+        """Shortlisted first, numbered from 1: companies both named and screened, then those only
+        named, in rank order, then those only screened, largest first; then those left off."""
+        screened = {s.profile.company_key: s for s in screening.companies}
         out: list[ShortlistItem] = []
         for m in mentions:
             cited = tuple(evidence[i].id for i in m.headlines)
@@ -460,68 +494,68 @@ class _Shortlist(Screen):
                 if why_not:
                     out.append(ShortlistItem(0, m.name, None, None, None, why, cited, why_not))
                 continue
-            listing, why_not = await self._check(profile)
-            out.append(ShortlistItem(0, m.name, listing, profile.company_key, profile.name, why, cited, why_not))
-        ranked = [i for i in out if i.skipped is None] + [i for i in out if i.skipped]
+            also = screened.pop(profile.company_key, None)
+            listing, why_not = await self._check(profile, also and also.line)
+            out.append(ShortlistItem(0, m.name, listing, profile.company_key, profile.name, why, cited, why_not,
+                                     universe=also and also.evidence))
+        only, passed_over = await self._screened_only(list(screened.values()))
+        on = [i for i in out if i.skipped is None]
+        ranked = ([i for i in on if i.universe] + [i for i in on if not i.universe] + only
+                  + [i for i in out if i.skipped])
+        if screening.matched:
+            shown = sum(1 for i in ranked if i.universe and i.skipped is None)
+            passed = f", {passed_over} passed over without recent prices" if passed_over else ""
+            passed += "; the rest not checked: the time ran out" if self._out_of_time else ""
+            self.screen_notes.append(f"universe screen: {screening.matched} compan"
+                                     f"{'y' if screening.matched == 1 else 'ies'} matched "
+                                     f"({self._filters.describe()}), {shown} shown{passed}")
         return [replace(i, n=n) for n, i in enumerate(ranked, 1)]
 
-    async def _check(self, profile: ListingProfile) -> tuple[str | None, str | None]:
+    async def _screened_only(self, companies: list[Screened]) -> tuple[list[ShortlistItem], int]:
+        """Up to `MAX_SCREENED` of the screen's companies no headline named, and how many were
+        passed over for having no recent prices (they are not listed as left off: no one named
+        them)."""
+        where = f" in {', '.join(self._filters.places)}" if self._filters.places else ""
+        why = f"in the universe's {', '.join(c.text for c in self._filters.industries)}{where}; no news found names it"
+        out: list[ShortlistItem] = []
+        passed_over = 0
+        for s in companies:
+            if len(out) == MAX_SCREENED or not self.checks_left:
+                break
+            if self._deadline and self._ctx.clock.utcnow() >= self._deadline:
+                self._out_of_time = True
+                break
+            profile, _ = self.identify(s.profile.name, symbol=s.line)
+            if profile is None or self.removed(profile) or self._filtered(profile):
+                continue
+            listing, _ = await self._check(profile, s.line)
+            if listing is None:
+                passed_over += 1
+                continue
+            out.append(ShortlistItem(0, profile.name, listing, profile.company_key, profile.name, why, (),
+                                     universe=s.evidence))
+        return out, passed_over
+
+    async def _check(self, profile: ListingProfile, line: str | None = None) -> tuple[str | None, str | None]:
+        """The line to list the company on (`line` when given, else its live one), else why not."""
         if self.removed(profile):
             return None, REMOVED
         if why_not := self._filtered(profile):
             return None, why_not
         if self.watched(profile) or self.listed(profile):
-            return profile.primary_symbol, None
+            return line or profile.primary_symbol, None
         if not self.checks_left:
             return None, "not checked: too many companies to price-check in one answer"
-        return await self.priced_line(profile)
+        return await self.priced_line(profile, line)
 
     def _filtered(self, p: ListingProfile) -> str | None:
         caps = self._plan.market_caps
         if caps and p.market_cap not in caps:
             return f"not the size asked for ({p.market_cap or 'size unknown'})"
         for rule in self._exclusions:
-            if (value := rule.leaves_out(p)) is not None:
+            if (value := rule.holds(p)) is not None:
                 return f"in {value}, which the question leaves out"
         return None
-
-
-@dataclass(frozen=True)
-class Exclusion:
-    """An exclude as the universe's classifications at one level."""
-
-    text: str
-    level: str
-    """A ListingProfile field: industry, industry_group or sector."""
-    values: frozenset[str]
-
-    def leaves_out(self, p: ListingProfile) -> str | None:
-        value = getattr(p, self.level)
-        return value if value in self.values else None
-
-
-def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusion | None:
-    """What an exclude leaves out: the classifications holding every word of it, singular or
-    plural and in everyday words ("utility" finds "Utilities", "chipmakers" finds "Semiconductors");
-    one shared word is not enough ("consumer staples" is not "Consumer Discretionary"). Only the
-    most specific level is used, an exact name before one merely holding the words, so "biotech"
-    leaves out Biotechnology, not the Pharmaceuticals beside it in their combined group, and
-    "media" leaves out Media, not Interactive Media & Services. Short of an exact name, a sector
-    or group whose name starts with the words ("consumer" is both Consumer sectors, "telecom"
-    Telecommunication Services) comes before any name holding them somewhere. None when
-    nothing matches."""
-    words = frozenset(w for word in _words(text) for w in universe_words(word)) - NOT_A_SECTOR
-    wanted = _WHOLE.get(words, words)
-    if not wanted:
-        return None
-    tries = ([(level, lambda v: _words(v) == wanted) for level in CLASSIFICATION_LEVELS]
-             + [(level, lambda v: set(_word_list(v)[:len(wanted)]) == wanted)
-                for level in reversed(CLASSIFICATION_LEVELS[1:])]
-             + [(level, lambda v: wanted <= _words(v)) for level in CLASSIFICATION_LEVELS])
-    for level, matches in tries:
-        if found := frozenset(v for v in classifications.get(level, ()) if matches(v)):
-            return Exclusion(text, level, found)
-    return None
 
 
 def _view(ctx: AppContext, repo: QuestionRepo, q: Question, a: Answer) -> AnswerView:

@@ -14,6 +14,7 @@ from oracle.services.industry_words import universe_words, word_list
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.exchanges import EXCHANGES
 from oracle.universe.listings import legal_form
+from oracle.universe.regions import countries_of, place_of
 
 # Classification words that news uses for anything ("financial results", "capital raise",
 # "AI infrastructure", "energy storage"): matching on them would call any business a fit or a misfit.
@@ -29,24 +30,6 @@ _TOO_COMMON = frozenset({
 _NAMES_ANY_TRADE = frozenset({"technology", "electronic", "media"})
 # Trades names carry that the universe's classifications do not spell.
 _NAMED_TRADES = frozenset({"medical", "therapeutic", "diagnostic", "bioscience", "furniture", "bancorp"})
-EUROPE = frozenset({
-    "Austria", "Belgium", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany",
-    "Greece", "Guernsey", "Hungary", "Iceland", "Ireland", "Isle of Man", "Italy", "Jersey", "Latvia",
-    "Lithuania", "Luxembourg", "Netherlands", "Norway", "Poland", "Portugal", "Spain", "Sweden", "Switzerland",
-    "United Kingdom",
-})
-# How news gives a company its home. Bare "UK" and "US" are left out: "wins UK subsidy".
-_HOMES = {
-    "Europe": ("european", "europe's"), "United States": ("american", "america's", "us-based"),
-    "United Kingdom": ("british", "britain's", "uk-based", "uk's"), "Germany": ("german",),
-    "France": ("french",), "Netherlands": ("dutch",), "Switzerland": ("swiss",), "Sweden": ("swedish",),
-    "Finland": ("finnish",), "Norway": ("norwegian",), "Denmark": ("danish",), "Italy": ("italian",),
-    "Spain": ("spanish",), "Ireland": ("irish",), "Belgium": ("belgian",), "Austria": ("austrian",),
-    "Poland": ("polish",), "Japan": ("japanese",), "China": ("chinese",), "South Korea": ("korean", "korea's"),
-    "Taiwan": ("taiwanese",), "India": ("indian",), "Israel": ("israeli",), "Canada": ("canadian",),
-    "Australia": ("australian",), "Brazil": ("brazilian",),
-}
-_HOME_OF = {form: home for home, forms in _HOMES.items() for form in forms}
 # Words that may stand between a home and the name it qualifies: "German defence group Rheinmetall".
 _DESCRIBING = frozenset({
     "startup", "start", "up", "firm", "company", "group", "maker", "giant", "rival", "unicorn", "business",
@@ -130,7 +113,7 @@ class BusinessFit:
 
 
 def _holds(home: str, country: str) -> bool:
-    return home == country or home == "Europe" and country in EUROPE
+    return country in countries_of(home)
 
 
 def _homes(text: str, name: str) -> list[str]:
@@ -154,7 +137,7 @@ def _homes(text: str, name: str) -> list[str]:
             while after < len(tokens) and tokens[after] in _DESCRIBING:
                 after += 1
             nearby += tokens[after:after + 1]
-        found += [_HOME_OF[t] for t in nearby if t in _HOME_OF and _HOME_OF[t] not in found]
+        found += [h for t in nearby if (h := place_of(t)) and h not in found]
     return found
 
 
