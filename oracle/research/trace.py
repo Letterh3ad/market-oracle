@@ -49,6 +49,8 @@ class Evidence:
     read: str | None = None
     """With no facts, what reading it gave: why it was not read or noted, NOT_ABOUT or NOTHING.
     None when it was never read."""
+    via: str | None = None
+    """The linked company whose planned search found it, in words."""
 
 
 NOT_ABOUT = "not about the company"

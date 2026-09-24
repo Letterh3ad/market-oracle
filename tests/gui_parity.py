@@ -66,6 +66,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "research --as-of": "POST /api/jobs/research",  # Company tab, "Replay as of"
     "research --history": "GET /api/companies/{symbol}/research/history",
     "discover": "POST /api/jobs/discover",  # Watchlist tab, Discovery section "Discover now"
+    "links show": "GET /api/companies/{symbol}/links",  # Company tab, "Linked companies"
+    "links delete": "DELETE /api/companies/{symbol}/links/{link_id}",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",

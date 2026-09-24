@@ -25,7 +25,7 @@ async def show(ctx: AppContext = Depends(get_ctx)) -> dict:
             "symbol": line.symbol, "name": line.name, "why": line.why, "source": line.source, "seed": line.seed,
             "relation": line.relation,
             "added_at": line.added_at,
-            "evidence": [{**asdict(e), "link": shapes.web_link(e.url)} for e in line.evidence],
+            "evidence": [shapes.headline(e) for e in line.evidence],
         } for line in discovered(ctx)],
     }
 

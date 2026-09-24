@@ -24,6 +24,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
+from oracle.services.links_service import SOURCE_DISCOVERY, LinkFound, record_links
 from oracle.services.never_list import is_never, never_company, never_names
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import update_listing
@@ -302,6 +303,9 @@ async def _related(run: _Run, seeds: list[str]) -> None:
         named = await run.named(profile.symbol, _feeds(news_query(profile.name), gdelt_query(profile.name)),
                                 lambda titles: mentions_prompt(profile.name, titles), MENTIONS_SCHEMA, profile.name)
         news = [_Candidate(m.name, m.relation, profile.symbol, ids) for m, ids in named]
+        # Every company the news links to the seed is kept, not only the one added.
+        record_links(run.ctx, [LinkFound(profile.symbol, found.primary_symbol, c.relation, c.evidence)
+                               for c in news if (found := run.screen.resolve(c)[0])], SOURCE_DISCOVERY)
         if await run.screen_all(news + _peers(run.ctx, seed, run.errors)):
             return
 
@@ -405,6 +409,7 @@ class _Screen:
                                    for s in (i.symbol for i in lists.items(w.name)))
         self._listed = self._keys(i.symbol for i in lists.items(DISCOVERED_LIST))
         self._seen: set[str] = set()
+        self._found: dict[str, tuple[ListingProfile | None, str | None]] = {}
         self.added: list[Added] = []
         self.skipped: list[Skipped] = []
 
@@ -415,7 +420,7 @@ class _Screen:
     async def check(self, c: _Candidate) -> None:
         if is_never(c.name, self._never):
             return self._skip(c, "on the never list")
-        profile, why_not = (self._universe.profile(c.symbol), None) if c.symbol else self._lookup(c.name)
+        profile, why_not = self.resolve(c)
         if profile is None:
             return self._skip(c, why_not or "not in the universe under that name")
         if profile.company_key in self._seen:
@@ -446,9 +451,19 @@ class _Screen:
         self._repo.add(listing, profile.company_key, profile.name, c.source, c.seed, c.relation, c.evidence,
                        _now(self._ctx))
         self._listed.add(profile.company_key)
+        if c.relation == "peer":
+            record_links(self._ctx, [LinkFound(c.seed, listing, "peer")], SOURCE_DISCOVERY)
         self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
                                 c.evidence, c.source))
         return None
+
+    def resolve(self, c: _Candidate) -> tuple[ListingProfile | None, str | None]:
+        """The company the candidate means, or why none; a name is looked up once a run."""
+        if c.symbol:
+            return self._universe.profile(c.symbol), None
+        if c.name not in self._found:
+            self._found[c.name] = self._lookup(c.name)
+        return self._found[c.name]
 
     def _lookup(self, name: str) -> tuple[ListingProfile | None, str | None]:
         """The company the name means, or why none: one of its listings named exactly that

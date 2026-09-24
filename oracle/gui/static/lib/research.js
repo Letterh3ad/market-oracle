@@ -63,6 +63,7 @@ function evidenceItem(e) {
   return el("li", { id: `ev-${e.id}` }, el("span", { class: "mono" }, `[a${e.id}] `),
     `${e.published ? e.published.slice(0, 10) : "undated"} ${e.outlet ?? "unknown outlet"}: `, title,
     e.query ? el("span", { class: "dim" }, ` (found by "${e.query}")`) : null,
+    e.via ? el("span", { class: "dim" }, ` via the link to ${e.via}`) : null,
     e.facts.length ? el("ul", null, ...e.facts.map((f) => el("li", null, f))) : null,
     e.read ? el("div", { class: "dim" }, `Read: ${e.read}`) : null,
     e.body ? el("details", null, el("summary", { class: "dim" }, "what it read"),
@@ -210,4 +211,4 @@ function researchSection(symbol) {
   return box;
 }
 
-export { followEvery, researchSection, unvalidatedBadge };
+export { evidenceItem, followEvery, researchSection, unvalidatedBadge };

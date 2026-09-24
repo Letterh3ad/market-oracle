@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.backtest_service import KeptBacktest
+from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
@@ -101,6 +102,11 @@ def _result(j: Job) -> dict | None:
 def web_link(url: str) -> str | None:
     """A link only for a web address: stored-data items have none, and nothing else may run."""
     return url if urlsplit(url).scheme in ("http", "https") else None
+
+
+def headline(e: DiscoveryEvidence) -> dict:
+    """An article behind a discovery or a link."""
+    return {**asdict(e), "link": web_link(e.url)}
 
 
 def schedule(view: ScheduleView) -> dict:

@@ -14,6 +14,8 @@ MAX_QUERY = 100
 # Seeds are always kept; suggestions fill the rest. Each planned search costs a loop step, so
 # the plan takes half of the default 16, leaving the rest for pages, filings and follow-ups.
 MAX_PLANNED = 8
+# Linked companies (stored relations) searched about, strongest first; seeds like the rest.
+MAX_LINKED = 2
 
 NEWS, LOCAL_NEWS, WEB = "news_search", "local_news_search", "web_search"
 
@@ -67,6 +69,8 @@ class Search:
     tool: str
     """The loop tool the search is planned for."""
     query: str
+    via: str | None = None
+    """The linked company it is planned for, in words, so evidence it finds can say so."""
 
 
 def seed_queries(name: str, country: str | None, web: bool) -> list[Search]:
@@ -78,6 +82,12 @@ def seed_queries(name: str, country: str | None, web: bool) -> list[Search]:
     if web:
         seeds.append(Search(WEB, f"{short} press release investor relations"))
     return seeds
+
+
+def link_queries(name: str, linked: list[tuple[str, str]]) -> list[Search]:
+    """One news search per linked company (its name, what the link is) naming both, so the
+    articles found bear on the company researched too."""
+    return [Search(NEWS, f"{short_name(other)} {short_name(name)}", via) for other, via in linked[:MAX_LINKED]]
 
 
 async def suggest(model: ChatModel, context: str, country: str | None) -> list[str]:
@@ -111,7 +121,7 @@ def plan(seeds: list[Search], suggested: list[str], country: str | None) -> list
             added += 1
             search = Search(LOCAL_NEWS if local and not _latin(query) else NEWS, query)
         seen.add(key)
-        out.append(Search(search.tool, query))
+        out.append(Search(search.tool, query, search.via))
     return out
 
 

@@ -7,6 +7,7 @@ from oracle.config import Config, DiscoveryConfig
 from oracle.research.llm import ModelError
 from oracle.services import discovery_service
 from oracle.services.context import open_context
+from oracle.services.links_service import company_links, delete_link
 from oracle.services.discovery_service import (
     discover, discovered, gdelt_query, move_discovered, news_query, remove_discovered,
 )
@@ -272,3 +273,36 @@ async def test_a_moved_company_taken_off_my_list_is_never_rediscovered(ctx):
     run = await discover(ctx, silent())
     assert "removed" in reasons(run)["DENSO Corporation"]
     assert "6902.T" not in {a.symbol for a in run.added}
+
+
+async def test_every_company_the_news_links_to_a_seed_is_kept_as_a_link_with_its_headlines(ctx, news):
+    headlines(news, TOYOTA, "Denso to supply Toyota with new chips", "Toyota and Panasonic expand battery venture",
+              "Tesla cuts prices, pressure on Toyota")
+    run = await discover(ctx, ScriptedModel({"companies": [
+        {"name": "Denso", "relation": "supplier", "headlines": [1]},
+        {"name": "Panasonic", "relation": "partner", "headlines": [2]},
+        {"name": "Tesla", "relation": "competitor", "headlines": [3]},
+    ]}))
+    assert [a.symbol for a in run.added] == ["6902.T"], "one added, both linked"
+    links = {x.symbol: x for x in company_links(ctx, "7203.T")}
+    assert set(links) == {"6902.T", "6752.T"}, "never Tesla"
+    assert links["6902.T"].relation == "supplier" and links["6902.T"].source == "discovery"
+    assert [e.title for e in links["6752.T"].evidence] == ["Toyota and Panasonic expand battery venture"]
+    assert company_links(ctx, "6902.T")[0].relation == "customer"
+
+
+async def test_an_added_peer_is_linked_as_the_same_industry(ctx):
+    await discover(ctx, silent())
+    [link] = company_links(ctx, "7203.T")
+    assert (link.symbol, link.relation, link.evidence) == ("6902.T", "peer", ())
+
+
+async def test_a_deleted_link_is_not_kept_again_from_the_same_news(ctx, news):
+    headlines(news, TOYOTA, "Toyota and Panasonic expand battery venture")
+    reply = {"companies": [{"name": "Panasonic", "relation": "partner", "headlines": [1]}]}
+    await discover(ctx, ScriptedModel(reply))
+    [link] = [x for x in company_links(ctx, "7203.T") if x.symbol == "6752.T"]
+    delete_link(ctx, "7203.T", link.id)
+    remove_discovered(ctx, "6752.T")
+    await discover(ctx, ScriptedModel(reply))
+    assert "6752.T" not in {x.symbol for x in company_links(ctx, "7203.T")}

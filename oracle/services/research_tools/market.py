@@ -8,9 +8,11 @@ from oracle.research.tools import ToolError
 from oracle.services.company_service import FIGURES, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
+from oracle.services.links_service import CompanyLink, company_links
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history
 from oracle.services.research_tools.shelf import symbol
+from oracle.store.universe import UniverseRepo
 from oracle.universe.listings import is_receipt
 
 # Trading days of history behind the "3 months" move, plus the last close.
@@ -81,28 +83,50 @@ class MarketData:
 
 
 class RelatedCompanies:
-    """Peers from the universe: the factor analysts' own choice (same industry group, else
-    sector). The relationship graph (phase 8) replaces this behind the same tool."""
+    """Stored links first (found in the news by discovery, strongest first), then peers from
+    the universe: the factor analysts' own choice (same industry group, else sector). The
+    relationship graph (phase 8) grows behind the same tool."""
 
     name = "related_companies"
-    description = ("companies related to a listing (same industry, else sector), largest first; "
-                   "input: its symbol, or empty for the company researched")
+    description = ("companies linked to a listing in the news (supplier, customer, competitor, partner), then "
+                   "the same industry, else sector, largest first; input: its symbol, or empty for the company "
+                   "researched")
 
-    def __init__(self, ctx: AppContext, listing: str) -> None:
+    def __init__(self, ctx: AppContext, listing: str, as_of: date | None = None) -> None:
         self._ctx = ctx
         self._listing = listing
+        self._as_of = as_of
 
     async def run(self, input: str) -> str:
+        target = symbol(input, self._listing)
         try:
-            choice = choose_peers(self._ctx, symbol(input, self._listing))
+            links = company_links(self._ctx, target, self._as_of)
         except ServiceError as exc:
             raise ToolError(str(exc)) from exc
-        if not choice.rows:
-            return f"No related companies found for {choice.company.name} ({choice.company.symbol})."
-        head = f"{choice.company.name} ({choice.company.symbol}) is related to these by {choice.basis}:"
+        universe = UniverseRepo(self._ctx.conn)
+        company = universe.profile(universe.resolve(target).symbol)
+        about = f"{company.name} ({company.symbol})"
+        linked = ([f"{about} is linked to these (strongest first):", *map(_link_line, links[:MAX_RELATED])]
+                  if links else [])
+        try:
+            choice = choose_peers(self._ctx, target)
+        except ServiceError as exc:
+            if linked:
+                return "\n".join(linked)
+            raise ToolError(str(exc)) from exc
+        keys = {found.company_key for x in links if (found := universe.resolve(x.symbol))}
         # Depositary receipt lines carry their own ISINs, so they repeat a company already
         # listed (Samsung's GDRs); they would crowd out real peers.
-        companies = [r for r in choice.rows if not is_receipt(r.name)]
+        companies = [r for r in choice.rows if not is_receipt(r.name)
+                     and getattr(universe.resolve(r.symbol), "company_key", None) not in keys]
         rows = [f"{r.symbol}: {r.name}" + (f" ({r.market_cap})" if r.market_cap else "")
                 for r in companies[:MAX_RELATED]]
-        return "\n".join([head, *rows])
+        if not rows:
+            return "\n".join(linked) if linked else f"No related companies found for {about}."
+        return "\n".join([*linked, f"{about} is related to these by {choice.basis}:", *rows])
+
+
+def _link_line(link: CompanyLink) -> str:
+    n = len(link.evidence)
+    seen = f"{n} article{'' if n == 1 else 's'}, " if n else ""
+    return f"{link.symbol}: {link.name or link.symbol} ({link.why}; {seen}last seen {link.last_seen[:10]})"

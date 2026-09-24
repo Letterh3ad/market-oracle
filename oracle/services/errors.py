@@ -85,3 +85,7 @@ class CannotRestart(ServiceError):
 
 class NeverListed(ServiceError):
     pass
+
+
+class UnknownLink(ServiceError):
+    pass

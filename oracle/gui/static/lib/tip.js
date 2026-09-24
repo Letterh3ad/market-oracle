@@ -87,6 +87,11 @@ const GLOSSARY = {
     "How much worse than the opening price each simulated order fills, in basis points (hundredths of a " +
     "percent): 10 means 0.1% worse, so a 100.00 share costs 100.10.",
   commission: "A flat fee per simulated trade, in your base currency. 0 means no fee.",
+  linked_companies:
+    "Companies the news ties to this one (a supplier, customer, competitor or partner), found by discovery, " +
+    "or of the same industry when discovery added one for that. Research on this company also searches the news " +
+    "on the two with the most headlines, and its evidence says which link found an article. Delete a wrong " +
+    "link: it is never recorded again.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

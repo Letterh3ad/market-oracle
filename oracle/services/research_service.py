@@ -17,7 +17,7 @@ from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
-from oracle.research.queries import EDITION, Search, plan, seed_queries, suggest
+from oracle.research.queries import EDITION, MAX_LINKED, Search, link_queries, plan, seed_queries, suggest
 from oracle.research.roles import digest, digest_room, write_report
 from oracle.research.tools import Tool
 from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
@@ -30,6 +30,7 @@ from oracle.services.errors import (
 )
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
+from oracle.services.links_service import research_links
 from oracle.services.research_tools import (
     Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
     evidence_entry, market_summary,
@@ -97,9 +98,10 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     profile = UniverseRepo(ctx.conn).profile(listing)
     # Web pages carry no reliable date, so a replay cannot search the web.
     searcher = None if as_of else searcher or DdgsSearcher()
-    queries = plan(seed_queries(profile.name, profile.country, searcher is not None),
-                   await suggest(model, _about(profile, day), profile.country), profile.country)
-    repo.set_queries(run_id, [q.query for q in queries])
+    linked = [(x.name or x.symbol, x.label) for x in research_links(ctx, listing, MAX_LINKED, as_of)]
+    seeds = seed_queries(profile.name, profile.country, searcher is not None) + link_queries(profile.name, linked)
+    queries = plan(seeds, await suggest(model, _about(profile, day), profile.country), profile.country)
+    repo.set_queries(run_id, [(q.query, q.via) for q in queries])
     shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
     contact = ctx.config.research.contact
     gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
@@ -265,7 +267,7 @@ def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
 def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, country: str | None,
            as_of: date | None, searcher: WebSearcher | None, gate: SourceGate, sec: Filings | None) -> list[Tool]:
     tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
-             RelatedCompanies(ctx, listing)]
+             RelatedCompanies(ctx, listing, as_of)]
     if country in EDITION:
         tools.insert(2, LocalNewsSearch(client, shelf, country))
     if sec:
