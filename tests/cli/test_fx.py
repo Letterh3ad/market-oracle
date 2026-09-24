@@ -1,9 +1,11 @@
+from datetime import datetime, timezone
 from functools import partial
 
 import pytest
 
 from oracle.cli import main as cli_main
 from oracle.services.context import open_context
+from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar, summary
@@ -20,7 +22,9 @@ def run(tmp_path, capsys, monkeypatch):
     yahoo.add("AAPL", "USD", "America/New_York", [bar("2026-09-17", 231.0), bar("2026-09-18", 232.0)])
     yahoo.add("GBPUSD=X", "USD", "Europe/London", [bar("2026-09-17", 1.35), bar("2026-09-18", 1.36)])
     web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD")]), yahoo)
-    monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
+    # A fixed day, so the rates stay within their five-day age limit whenever the suite runs.
+    clock = FakeClock(datetime(2026, 9, 21, 21, 0, tzinfo=timezone.utc))
+    monkeypatch.setattr(cli_main, "open_context", partial(open_context, clock=clock, transport=web.transport))
 
     def _run(*argv):
         code = cli_main.main(["--config", str(cfg), *argv])
