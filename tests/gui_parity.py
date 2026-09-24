@@ -103,6 +103,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Ledgers tab, Replay study card.
     "replay create": "POST /api/replay",
     "replay create --from": "POST /api/replay",
+    "replay create --symbols": "POST /api/replay",
+    "replay replace": "POST /api/replay/replace",  # each listing's Replace, before the first replay
     "replay start": "POST /api/replay/start",
     "replay pause": "POST /api/replay/pause",
     "replay status": "GET /api/replay",

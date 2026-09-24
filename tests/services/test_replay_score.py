@@ -61,14 +61,14 @@ def study(ctx):
     """AAA and BBB replayed; CCC's replays not run yet."""
     repo = ReplayRepo(ctx.conn)
     sid = repo.create(NOW, JUN, AUG, json.dumps(LISTINGS),
-                      [(p["symbol"], d) for d in (JUN, JUL, AUG) for p in LISTINGS])
+                      [(p["symbol"], d) for d in (JUN, JUL, AUG) for p in LISTINGS], allowed=1)
     cells = {(c.symbol, c.as_of): c.id for c in repo.cells(sid)}
     at = datetime(2026, 9, 20, 12, 5, tzinfo=timezone.utc)
     for key, verdict in {("AAA", JUN): ("buy", 0.9), ("BBB", JUN): ("sell", 0.7), ("AAA", JUL): ("buy", 0.85),
                          ("BBB", JUL): ("hold", 0.5)}.items():
         repo.mark_done(cells[key], replay_run(ctx, *key, *verdict), at)
     repo.mark_done(cells[("AAA", AUG)], replay_run(ctx, "AAA", AUG), at)
-    repo.mark_failed(cells[("BBB", AUG)], "model down", at, requeue=False)
+    repo.mark_failed(cells[("BBB", AUG)], "model down", at)
     return sid
 
 
@@ -247,7 +247,8 @@ def dense(ctx):
     BarRepo(ctx.conn).upsert(bars("DDD", {d.isoformat(): close(d) for d in days if d.weekday() < 5}), "t")
     listing = [{"symbol": "DDD", "name": "D", "region": "US", "sector": "Energy", "market_cap": "Mega Cap"}]
     as_of = [date(2025, 1, 31), date(2026, 6, 1), date(2026, 6, 3), date(2026, 8, 24)]
-    ReplayRepo(ctx.conn).create(NOW, as_of[0], as_of[-1], json.dumps(listing), [("DDD", d) for d in as_of])
+    ReplayRepo(ctx.conn).create(NOW, as_of[0], as_of[-1], json.dumps(listing), [("DDD", d) for d in as_of],
+                                allowed=1)
 
     def outcomes(day):
         return next(c for c in replay_report(ctx).cells if c.as_of == day).outcomes

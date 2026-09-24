@@ -231,7 +231,7 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str, since
     except AllFailed as exc:
         if exc.no_data:
             _note_no_data(ctx, listing, now.date())
-        raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})") from None
+        raise PriceUnavailable(f"no price data for {listing.symbol} ({exc})", exc.no_data) from None
     health = HealthRepo(ctx.conn)
     if health.clear(listing.symbol):
         UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())

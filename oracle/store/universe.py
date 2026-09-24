@@ -187,11 +187,11 @@ class UniverseRepo:
         )
         return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
-    def largest_in(self, countries: Sequence[str], sector: str, bands: Sequence[str]) -> list[PeerRow]:
+    def largest_in(self, countries: Sequence[str], sector: str, bands: Sequence[str]) -> list[Resolved]:
         """Active equity companies of `sector` based in `countries` within `bands`, by primary
         listing: biggest band first, then the most widely listed, as peers are ranked."""
         rows = self._conn.execute(
-            f"""SELECT p.symbol, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.market_cap, p.currency,
+            f"""SELECT p.symbol, p.company_key, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.currency,
                        (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
                 FROM listings p
                 WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0 AND p.sector = ?
@@ -200,7 +200,7 @@ class UniverseRepo:
                 ORDER BY {_CAP_ORDER}, n DESC, p.symbol""",
             (sector, *countries, *bands),
         )
-        return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
+        return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"]) for r in rows]
 
     def repick_primary(self, company_key: str, dead: Set[str]) -> None:
         """Choose the company's primary listing again, as a refresh would with `dead`."""

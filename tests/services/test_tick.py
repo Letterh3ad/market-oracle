@@ -78,7 +78,7 @@ async def test_a_listing_failing_makes_prices_partial_and_the_rest_still_run(ctx
 async def test_the_prices_stage_keeps_the_replay_study_priced_without_failing_for_it(ctx):
     listing = [{"symbol": "NOBARS", "name": "No Bars", "region": "US", "sector": "x", "market_cap": None}]
     ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
-                                [("NOBARS", date(2026, 6, 1))])
+                                [("NOBARS", date(2026, 6, 1))], allowed=1)
     run = await run_tick(ctx)
     prices = run.stages[0]
     assert prices.state == "ok" and prices.summary.endswith("; replay study: 0 of 1 listings refetched, 1 failed")
@@ -95,7 +95,7 @@ async def test_a_replay_study_price_error_never_fails_or_hides_the_prices_stage(
     monkeypatch.setattr(tick_service, "update_study_prices", broken)
     listing = [{"symbol": "NOBARS", "name": "No Bars", "region": "US", "sector": "x", "market_cap": None}]
     ReplayRepo(ctx.conn).create(NOW, date(2026, 6, 1), date(2026, 6, 1), json.dumps(listing),
-                                [("NOBARS", date(2026, 6, 1))])
+                                [("NOBARS", date(2026, 6, 1))], allowed=1)
     prices = (await run_tick(ctx)).stages[0]
     assert prices.state == "ok" and prices.summary.startswith("1 of 1 listings updated")
     assert prices.summary.endswith("; replay study prices failed: boom")

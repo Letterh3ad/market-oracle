@@ -6,24 +6,25 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 
-from oracle.gui.deps import get_ctx, get_pacer, get_runner
+from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import JobRunner, submit_replay_prices
 from oracle.services.context import AppContext
 from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
-    ReplayPacer, create_study, measured_cutoff, pause_study, retry_failed, start_study, study_status,
+    measured_cutoff, pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
 )
 
 router = APIRouter(prefix="/api/replay")
 
 
 @router.get("")
-async def status(ctx: AppContext = Depends(get_ctx), pacer: ReplayPacer = Depends(get_pacer)) -> dict:
-    """Cheap enough for a headless daily check: counts, what runs, failures, the mean replay time."""
-    s = study_status(ctx, pacer.waiting)
+async def status(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Cheap enough for a headless daily check: counts, what runs, failures, the mean replay
+    time, and the pacer's last poll (an old one means no server is pacing it)."""
+    s = study_status(ctx)
     cutoff = measured_cutoff(ctx)
     return {"study": s.to_json() if s else None, "cutoff": cutoff.isoformat() if cutoff else None}
 
@@ -32,11 +33,27 @@ class Create(BaseModel):
     model_config = ConfigDict(extra="forbid")
     first: date | None = None
     """None: from the model's measured cutoff."""
+    symbols: list[StrictStr] | None = None
+    """None: picked as a spread."""
 
 
-@router.post("")
-async def create(body: Create, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return create_study(ctx, body.first).to_json()
+@router.post("", status_code=202)
+async def create(body: Create, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """A job: each listing's prices are checked (and fetched) before the study is saved."""
+    return shapes.job(submit_create(ctx, runner, body.first, [s.strip() for s in body.symbols or [] if s.strip()]))
+
+
+class Replace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    old: StrictStr
+    new: StrictStr
+
+
+@router.post("/replace", status_code=202)
+async def replace(body: Replace, ctx: AppContext = Depends(get_ctx),
+                  runner: JobRunner = Depends(get_runner)) -> dict:
+    """Before the first replay only; the new listing is checked like a picked one."""
+    return shapes.job(submit_replace(ctx, runner, body.old.strip(), body.new.strip()))
 
 
 @router.post("/start")

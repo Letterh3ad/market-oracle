@@ -207,6 +207,35 @@ class Scheduler:
             due = next_due(due, hhmm, self._tz)
         return Upcoming(due, due + POSTPONE if (kind, due) in self._postponed else due, kind)
 
+    def next_run(self) -> Upcoming | None:
+        """The next run a poll will submit, including one whose time has passed but that the
+        next poll has not reached yet (its `at` is then in the past). Unlike `upcoming`,
+        which moves the banner on once a tick's time passes. None while scheduling or
+        automation is off."""
+        ctx, s = self._ctx, self._ctx.config.schedule
+        if not (s.enabled and ctx.config.automation.enabled):
+            return None
+        now = ctx.clock.utcnow()
+        runs = []
+        for kind, hhmm in self._slots():
+            due = last_due(now, hhmm, self._tz)
+            if self._will_fire(kind, due, now):
+                runs.append(Upcoming(due, self._fire_at(kind, due), kind))
+            else:
+                runs.append(self._upcoming(kind, hhmm, now))
+        return min(runs, key=lambda u: u.at)
+
+    def _will_fire(self, kind: str, due: datetime, now: datetime) -> bool:
+        """Whether a poll will still submit the run due at `due`, as `_fire` decides."""
+        ctx = self._ctx
+        if due < self._floors[kind] or ticked_since(ctx, due, kind) or self._in_flight(kind):
+            return False
+        if due < self._started:  # a catch-up
+            if kind == MIDDAY:
+                return not self._missed(self._fire_at(kind, due), now)
+            return last_tick(ctx) is not None
+        return True
+
     def warning(self) -> Upcoming | None:
         """The upcoming tick or midday pass once it is within `warn_minutes` of firing."""
         minutes = self._ctx.config.schedule.warn_minutes

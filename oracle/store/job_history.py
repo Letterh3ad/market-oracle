@@ -78,6 +78,11 @@ class JobHistoryRepo:
         row = self._conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return _row(row) if row else None
 
+    def pid(self, job_id: int) -> int | None:
+        """The process that queued the job."""
+        row = self._conn.execute("SELECT pid FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        return row[0] if row else None
+
     def latest_per_subject(self) -> list[JobRow]:
         """The newest finished job for each kind and subject, newest first: whether that one
         needs retrying tells the whole story, since anything before it already ran again."""

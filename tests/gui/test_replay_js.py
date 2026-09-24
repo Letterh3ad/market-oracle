@@ -12,7 +12,8 @@ STUDY = {"id": 1, "state": "paused", "paused_reason": None, "created_at": "2026-
                        "market_cap": "Large Cap"}],
          "total": 6, "done": 2, "pending": 3, "retrying": 1, "running": [], "complete": False,
          "failed": [{"id": 4, "symbol": "7203.T", "as_of": "2026-07-01", "error": "model down", "attempts": 2}],
-         "top_failures": [["model down", 2]], "mean_replay_s": 150, "cutoff": None, "waiting": None}
+         "top_failures": [["model down", 2]], "mean_replay_s": 150, "cutoff": None, "waiting": None,
+         "polled_at": "2026-09-24T12:00:05+00:00", "finished": False, "untouched": False}
 
 
 def group(name, n, hit, rel, ret, vs, conf):
@@ -27,7 +28,8 @@ REPORT = {
     "horizons": [
         {"horizon": "1m", "months": 1, "scored": 2, "pending": 0, "unpriced": 0, "hit_rate": 0.5,
          "hit_ci": [0.24, 0.76], "hit_rate_vs_basket": 1.0, "hit_vs_basket_ci": None, "base_rate_up": 0.4,
-         "base_rate_beat_basket": 0.5, "expected_hit_rate": 0.45, "expected_hit_rate_vs_basket": 0.5, "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
+         "base_rate_beat_basket": 0.5, "expected_hit_rate": 0.45, "expected_hit_rate_vs_basket": 0.5,
+         "by_verdict": [group("buy", 2, 0.5, 1.0, 0.012, 0.03, 0.85)],
          "by_band": [*BLANK, group("0.80 and up", 2, 0.5, 1.0, 0.012, 0.03, 0.85)]},
         {"horizon": "3m", "months": 3, "scored": 0, "pending": 2, "unpriced": 0, "hit_rate": None,
          "hit_rate_vs_basket": None, "by_verdict": [], "by_band": []}],
@@ -40,7 +42,9 @@ def run(body: str, study=STUDY, cutoff=None, report=None):
     script = f"""
         {PRELUDE}
         ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }},
-                     "GET /api/replay/report": {{ report: {json.dumps(report)} }} }};
+                     "GET /api/replay/report": {{ report: {json.dumps(report)} }},
+          "POST /api/replay": {{ id: 3, kind: "replay", state: "done", result: {{ left_out: ["UK Energy"] }} }},
+          "POST /api/replay/replace": {{ id: 4, kind: "replay", state: "done", result: {{}} }} }};
         const sent = [];
         const plain = globalThis.fetch;
         globalThis.fetch = async (url, options) => {{
@@ -63,11 +67,17 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
         labelled(node, "First replay day").value = "2026-06-01";
         asked.length = 0;
         button(node, "Create study").fire("click"); await settle();
+        labelled(node, "First replay day").value = "2026-06-01";  // the card reloaded after the job
+        labelled(node, "Replay listings").value = " AAPL, 7203.T ,";
+        button(node, "Create study").fire("click"); await settle();
         console.log(JSON.stringify([asked, sent, node.textContent]));
     """, study=None)
     asked, sent, text = shown
-    assert asked[0] == "POST /api/replay" and sent == [["/api/replay", {"first": "2026-06-01"}]]
+    assert asked[0] == "POST /api/replay"
+    assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
+                    ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
     assert "no model cutoff is measured yet" in text and "press Start" in text
+    assert "Left out, nothing fits: UK Energy." in text
 
 
 def test_a_measured_cutoff_fills_the_first_day():
@@ -81,7 +91,21 @@ def test_a_paused_study_shows_progress_listings_and_failures_with_start():
     assert "2 done, 3 queued, 1 failed of 6 (2026-06-01 to 2026-08-03); 3 min per replay on average." in text
     assert "Listings: AAPL (US, Information Technology), 7203.T (Japan, Consumer Discretionary)." in text
     assert "Nothing runs until you press Start" in text and "2 x model down" in text
-    assert "1 cell waiting for its one automatic retry" in text
+    assert "1 cell waiting for its one automatic retry" in text and "Last checked 2026-09-24 12:00 UTC." in text
+
+
+def test_before_the_first_replay_a_listing_can_be_replaced():
+    shown = run("""
+        labelled(node, "Replace 7203.T with").value = " 6758.T ";
+        node.all((n) => n.tag === "button" && n.textContent === "Replace")[1].fire("click"); await settle();
+        console.log(JSON.stringify(sent));
+    """, study={**STUDY, "untouched": True})
+    assert shown == [["/api/replay/replace", {"old": "7203.T", "new": "6758.T"}]]
+
+
+def test_a_finished_study_with_failures_says_so():
+    done = {**STUDY, "state": "running", "pending": 0, "done": 5, "finished": True}
+    assert "Finished, with failed replays" in run("console.log(JSON.stringify(node.textContent));", study=done)
 
 
 def test_start_pause_and_retry_buttons_send_their_requests():
