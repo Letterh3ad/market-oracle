@@ -2031,3 +2031,26 @@ about the two companies, not an answer to the question. The answer's notes say h
 **Alternatives:** Linking every shortlisted company to the others (invents relations); linking
 them to the question's subject (a question has no company to link to); a second model call per
 answer to extract relations (more model time for something most answers do not state).
+
+## 2026-09-24 - Company chart gets a 1y/2y/5y/All range picker
+**Context:** The Company tab's price chart always fetched `days=365`, ignoring the `/prices`
+route's 5000-day cap.
+**Decision:** A small `chart-range.js` lib holds the pure range table (`1y`/`2y`/`5y`/`All`,
+`All` resolved to the route's cap) so it is unit-testable without the DOM. `company.js` keeps
+the picked range in a module-level variable (default 1y, kept while browsing) and a `<select>`
+next to the chart; changing it re-runs only `drawChart`, not the whole company reload.
+**Alternatives:** A row of toggle buttons (no existing button-group pattern in the codebase to
+match; a `select` matches how other tabs already offer a days/range choice, e.g. `fx.js`).
+
+## 2026-09-24 - Backtest default window caps at 5 years instead of growing unbounded
+**Context:** The Ledgers tab's Backtest form defaulted `from` to a year after the first stored
+day and `to` to the last, so a watchlist with many years of prices got a default window that
+grew without bound instead of "as long as stored bars allow, up to 5 years."
+**Decision:** `loadSpan` now picks `from` as the later of (first stored day + 1 year warmup) and
+(last stored day - 5 years), still falling back to the first day when there is under a year of
+data. The date inputs were already free-text, so a shorter period is still one edit away. The
+CLI's `backtest` command takes `--from`/`--to` as required arguments with no default, so it is
+left alone.
+**Alternatives:** Capping at 5 years from the first day instead of the last (would show a stale
+window on a long-lived list instead of the most recent data); adding a separate period selector
+(the date inputs already do this job).
