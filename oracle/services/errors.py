@@ -51,6 +51,10 @@ class UnknownResearchRun(ServiceError):
     pass
 
 
+class UnknownBacktest(ServiceError):
+    pass
+
+
 class InvalidWatchlistName(ServiceError):
     pass
 

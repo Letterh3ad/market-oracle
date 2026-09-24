@@ -79,6 +79,14 @@ const GLOSSARY = {
   research_replay:
     "Research as if it were that day: only news, filings and prices from by its end are used, and no web " +
     "pages (they carry no reliable date). Backtests research without hindsight. Replays never feed the AI account.",
+  backtest:
+    "A test on the past: the strategy's rules run over stored prices as if it were each day in turn, seeing " +
+    "only prices up to that day. Only the rules on price patterns are tested; company figures and AI research " +
+    "are left out, because only today's are stored. A good past result is no promise.",
+  slippage:
+    "How much worse than the opening price each simulated order fills, in basis points (hundredths of a " +
+    "percent): 10 means 0.1% worse, so a 100.00 share costs 100.10.",
+  commission: "A flat fee per simulated trade, in your base currency. 0 means no fee.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

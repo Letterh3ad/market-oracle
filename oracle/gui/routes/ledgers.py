@@ -131,7 +131,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
 
 def _compare(ctx: AppContext) -> dict:
     c = comparison(ctx)
-    return {**asdict(c), "lines": [{**asdict(line), "return": line.return_} for line in c.lines]}
+    return {**asdict(c), "lines": [shapes.line(line) for line in c.lines]}
 
 
 @router.get("/decisions")
