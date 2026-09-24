@@ -86,6 +86,8 @@ ALLOWED = 2
 OUTAGE_AFTER = 3
 """Failures in a row with the same error that mean an outage (the model or the network), not bad cells."""
 ANY_OUTAGE_AFTER = 5
+MAX_REFUNDS = 2
+"""Outages a cell's failure may be put down to; after that it counts, so a bad cell still ends failed."""
 """Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 BACKOFF = timedelta(minutes=45)
 MAX_BACKOFFS = 4
@@ -469,6 +471,8 @@ class ReplayPacer:
         """The failures in a row since the last replay that ended well: cell and error kind."""
         self._outage_since: datetime | None = None
         """While an outage is waited out, its failures cost no attempt."""
+        self._outage_kind: str | None = None
+        """The error kind of an outage found by its failures alike; None for one found by any five."""
         self._outage_error: str | None = None
         self._backoffs = 0
         self._resume_at: datetime | None = None
@@ -603,19 +607,21 @@ class ReplayPacer:
     def _failed(self, repo: ReplayRepo, study: StudyRow, cell: CellRow, error: str) -> None:
         now = self._ctx.clock.utcnow()
         repo.mark_failed(cell.id, error, now)
-        if self._outage_since:  # the probe after a back-off: the outage goes on
-            repo.refund([cell.id])
-            self._back_off(error, now)
+        kind = _error_kind(error, cell.symbol)
+        if self._outage_since:
+            if self._outage_kind in (None, kind):  # the probe after a back-off: the outage goes on
+                repo.refund([cell.id], MAX_REFUNDS)
+                self._back_off(error, now)
             return
-        self._run.append((cell.id, _error_kind(error, cell.symbol)))
+        self._run.append((cell.id, kind))
         alike = self._run[-OUTAGE_AFTER:]
-        if len(alike) == OUTAGE_AFTER and len({kind for _, kind in alike}) == 1:
-            outage = alike
+        if len(alike) == OUTAGE_AFTER and len({k for _, k in alike}) == 1:
+            outage, self._outage_kind = alike, kind
         elif len(self._run) >= ANY_OUTAGE_AFTER:
-            outage = self._run
+            outage, self._outage_kind = self._run, None
         else:
             return
-        repo.refund([cell_id for cell_id, _ in outage])
+        repo.refund([cell_id for cell_id, _ in outage], MAX_REFUNDS)
         self._run, self._outage_since = [], now
         self._back_off(error, now)
 

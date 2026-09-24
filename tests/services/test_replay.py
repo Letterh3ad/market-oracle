@@ -512,6 +512,37 @@ def research_key(job):
     return symbol, date.fromisoformat(day)
 
 
+async def drive(ctx, pacer, runner, research, bad, polls=80):
+    """Run the study to its end, `bad` listings always failing alike, waiting out each back-off."""
+    for _ in range(polls):
+        job = pacer.check()
+        if study_status(ctx).finished:
+            return
+        if job is None:
+            ctx.clock.advance(LONG_BACKOFF.total_seconds())
+            continue
+        symbol, day = research_key(job)
+        research.finish(symbol, day, "no archive reaches that month" if symbol in bad else None)
+        await runner.wait(job.id)
+        research.gates.clear()
+    raise AssertionError(f"not finished after {polls} polls: {study_status(ctx)}")
+
+
+async def test_cells_that_always_fail_alike_end_failed_and_the_study_finishes(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL", "JPM", "HSBA.L"])
+    await drive(ctx, ReplayPacer(ctx, runner), runner, research, bad={"AAPL", "JPM", "HSBA.L"})
+    s = study_status(ctx)
+    assert (s.finished, s.done, [c.symbol for c in s.failed]) == (True, 0, ["AAPL", "JPM", "HSBA.L"])
+    assert all(c.refunds == 2 for c in cells(ctx))
+
+
+async def test_a_bad_cluster_mid_study_ends_failed_while_the_rest_are_done(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=SYMBOLS[:5])
+    await drive(ctx, ReplayPacer(ctx, runner), runner, research, bad={"AAPL", "JPM", "HSBA.L"})
+    s = study_status(ctx)
+    assert (s.finished, s.done, sorted(c.symbol for c in s.failed)) == (True, 2, ["AAPL", "HSBA.L", "JPM"])
+
+
 async def test_failures_whose_text_varies_still_count_as_one_outage(ctx, runner, research):
     await started(ctx)
     pacer = ReplayPacer(ctx, runner)

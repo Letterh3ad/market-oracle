@@ -36,6 +36,7 @@ class CellRow:
     position: int
     attempts: int
     allowed: int
+    refunds: int
     job_id: int | None
     run_id: int | None
     error: str | None
@@ -44,8 +45,8 @@ class CellRow:
 
 
 _STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting"
-_CELL = ("id, study_id, symbol, as_of, state, position, attempts, allowed, job_id, run_id, error, started_at, "
-         "finished_at")
+_CELL = ("id, study_id, symbol, as_of, state, position, attempts, allowed, refunds, job_id, run_id, error, "
+         "started_at, finished_at")
 
 
 def _when(value: str | None) -> datetime | None:
@@ -53,8 +54,8 @@ def _when(value: str | None) -> datetime | None:
 
 
 def _cell(r) -> CellRow:
-    return CellRow(r[0], r[1], r[2], date.fromisoformat(r[3]), r[4], r[5], r[6], r[7], r[8], r[9], r[10],
-                   _when(r[11]), _when(r[12]))
+    return CellRow(r[0], r[1], r[2], date.fromisoformat(r[3]), r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11],
+                   _when(r[12]), _when(r[13]))
 
 
 class ReplayRepo:
@@ -172,12 +173,13 @@ class ReplayRepo:
                 "WHERE c.study_id = replay_cells.study_id) ELSE position END WHERE id = ?",
                 (error, to_utc_iso(at), PENDING, FAILED, cell_id))
 
-    def refund(self, cell_ids: Sequence[int]) -> None:
+    def refund(self, cell_ids: Sequence[int], most: int) -> None:
         """Take back the attempt each cell's last failure used (an outage, not the cell), and
-        queue it again; its error is kept."""
+        queue it again, keeping its error; a cell given back `most` already keeps the failure."""
         with transaction(self._conn):
-            self._conn.executemany("UPDATE replay_cells SET attempts = MAX(attempts - 1, 0), state = ? WHERE id = ?",
-                                   [(PENDING, i) for i in cell_ids])
+            self._conn.executemany(
+                "UPDATE replay_cells SET attempts = MAX(attempts - 1, 0), state = ?, refunds = refunds + 1 "
+                "WHERE id = ? AND refunds < ?", [(PENDING, i, most) for i in cell_ids])
 
     def back_to_pending(self, cell_id: int) -> None:
         """Cut off before it could finish: no attempt counted, its place kept."""

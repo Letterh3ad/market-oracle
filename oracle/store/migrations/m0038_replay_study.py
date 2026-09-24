@@ -7,6 +7,7 @@ from oracle.store.migrations import run_ddl
 # Replay study (replay-study 02). The picked listings are JSON: fixed at creation, only read
 # whole. A cell's `position` is its place in the queue; an automatic retry moves it to the end.
 # `allowed` is how many attempts a cell may use before it stays failed; Retry raises it.
+# `refunds` counts attempts given back for an outage, so an outage can hide a bad cell only so often.
 # `polled_at` and `waiting` are the pacer's last poll, so a headless check can tell it is alive.
 DDL = """
 CREATE TABLE replay_studies (
@@ -29,6 +30,7 @@ CREATE TABLE replay_cells (
     position    INTEGER NOT NULL,
     attempts    INTEGER NOT NULL DEFAULT 0,
     allowed     INTEGER NOT NULL,
+    refunds     INTEGER NOT NULL DEFAULT 0,
     job_id      INTEGER,
     run_id      INTEGER,
     error       TEXT,
