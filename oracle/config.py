@@ -489,8 +489,10 @@ def without_section(text: str, section: str) -> str:
     return out
 
 
-def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
-    """Return the config and the file it came from, or None when defaults were used."""
+def load_config(path: Path | None, cwd: Path | None = None, strict: bool = False) -> tuple[Config, Path | None]:
+    """Return the config and the file it came from, or None when defaults were used. A slot
+    naming a profile that is gone is dropped with a warning, so an unattended start still
+    runs; `strict` (a change someone is making now) refuses it instead."""
     cwd = cwd or Path.cwd()
     if path is None:
         path = cwd / DEFAULT_CONFIG_NAME
@@ -503,7 +505,7 @@ def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Pat
             raw = tomllib.load(fh)
         except tomllib.TOMLDecodeError as exc:
             raise ConfigError(f"{path.name} is not valid TOML: {exc}") from exc
-    return _with_env_keys(_resolve(_apply(raw), path.parent)), path
+    return _with_env_keys(_resolve(_apply(raw, strict), path.parent)), path
 
 
 def _with_env_keys(config: Config) -> Config:
@@ -526,7 +528,7 @@ def _reject_unknown(raw: dict, cls: type, where: str) -> None:
         raise ConfigError(f"unknown key(s) in {where}: {', '.join(unknown)}")
 
 
-def _apply(raw: dict) -> Config:
+def _apply(raw: dict, strict: bool = False) -> Config:
     _reject_unknown(raw, Config, "oracle.toml")
     if "model_slots" in raw:
         raise ConfigError(f"unknown key(s) in oracle.toml: model_slots (slots go in [models.{SLOTS_TABLE}])")
@@ -578,7 +580,7 @@ def _apply(raw: dict) -> Config:
             values[name] = _llm(value)
             continue
         if name == "models":
-            values["models"], values["model_slots"] = _models(value)
+            values["models"], values["model_slots"] = _models(value, strict)
             continue
         if name == "research":
             values[name] = _research(value)
@@ -814,7 +816,7 @@ PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _models(raw: object) -> tuple[dict[str, ModelProfile], dict[str, str]]:
+def _models(raw: object, strict: bool = False) -> tuple[dict[str, ModelProfile], dict[str, str]]:
     """The profiles and the slots."""
     if not isinstance(raw, dict):
         raise ConfigError("models must be a table of [models.<name>] sections")
@@ -827,20 +829,23 @@ def _models(raw: object) -> tuple[dict[str, ModelProfile], dict[str, str]]:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
     profiles = {name: check_profile(name, table) for name, table in raw.items()}
-    return profiles, check_slots(slots, {DEFAULT_PROFILE, *profiles})
+    return profiles, check_slots(slots, {DEFAULT_PROFILE, *profiles}, strict)
 
 
-def check_slots(raw: object, profiles: set[str]) -> dict[str, str]:
+def check_slots(raw: object, profiles: set[str], strict: bool = True) -> dict[str, str]:
     where = f"models.{SLOTS_TABLE}"
     if not isinstance(raw, dict):
         raise ConfigError(f"{where} must be a table of slot = \"profile\"")
     unknown = sorted(set(raw) - set(SLOTS))
     if unknown:
         raise ConfigError(f"unknown slot(s) in [{where}]: {', '.join(unknown)}; the slots are {', '.join(SLOTS)}")
-    for slot, profile in raw.items():
-        if not (isinstance(profile, str) and profile in profiles):
-            raise ConfigError(f"{where}.{slot} names no profile {profile!r}; the profiles are {', '.join(sorted(profiles))}")
-    return {slot: raw[slot] for slot in SLOTS if slot in raw}
+    dangling = [slot for slot, profile in raw.items() if not (isinstance(profile, str) and profile in profiles)]
+    for slot in dangling:
+        message = f"{where}.{slot} names no profile {raw[slot]!r}; the profiles are {', '.join(sorted(profiles))}"
+        if strict:
+            raise ConfigError(message)
+        log.warning("%s: it runs on %s until fixed", message, DEFAULT_PROFILE)
+    return {slot: raw[slot] for slot in SLOTS if slot in raw and slot not in dangling}
 
 
 def check_profile_name(name: object) -> str:

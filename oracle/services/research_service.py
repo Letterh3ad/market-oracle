@@ -70,7 +70,7 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, profile, model))
+    stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, profile, model, lead="research"))
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
         lead = stages.peek("research")
@@ -95,7 +95,8 @@ class _Stages:
 
     def __init__(self, resolved: dict[str, RunModel]) -> None:
         self._resolved = resolved
-        self._fell: dict[str, set[str]] = {stage: set() for stage in resolved}
+        self._fell: dict[str, set[str]] = {
+            stage: {f"{r.profile} profile ({r.unavailable})"} if r.unavailable else set() for stage, r in resolved.items()}
         self._current: str | None = None
 
     def peek(self, stage: str) -> ChatModel:

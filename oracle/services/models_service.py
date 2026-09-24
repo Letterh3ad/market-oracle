@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 
 from oracle.config import (
     DEFAULT_PROFILE, PROVIDER_KEYS, SLOTS, SLOTS_TABLE, Config, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
@@ -22,7 +22,7 @@ from oracle.services.settings_service import edit_config, reload_live_settings
 
 __all__ = [
     "DEFAULT_PROFILE", "RESEARCH_STAGES", "SLOTS", "ModelTest", "RunModel", "check_model_profile", "delete_model_profile",
-    "model_for", "model_profile_rows", "profile_names", "provider_defaults", "resolve_model", "resolve_stages",
+    "model_for", "model_profile_rows", "provider_defaults", "resolve_model", "resolve_stages",
     "save_model_profile", "slot_profile", "try_model_profile",
 ]
 
@@ -57,6 +57,8 @@ class RunModel:
     model: ChatModel
     context: int
     profile: str = DEFAULT_PROFILE
+    unavailable: str | None = None
+    """Set when this stands in for a slot's profile that could not be built, saying why."""
 
 
 RESEARCH_STAGES = ("queries", "research", "notes", "roles", "verdict")
@@ -75,12 +77,25 @@ def slot_profile(config: Config, slot: str) -> str:
 
 
 def resolve_stages(ctx: AppContext, stages: tuple[str, ...], override: str | None = None,
-                   model: ChatModel | None = None) -> dict[str, RunModel]:
+                   model: ChatModel | None = None, lead: str | None = None) -> dict[str, RunModel]:
     """Each stage's model and context, from its slot or, with `override` (a run's picked
     profile), that profile for every stage. One model per profile, so stages on the same
-    profile share it. `model` (a test's) answers every stage."""
+    profile share it. `model` (a test's) answers every stage. With `lead` (one of `stages`),
+    another stage whose profile cannot be built (its key unset) runs on the lead's instead,
+    saying why, so one bad slot never stops unattended runs; the lead failing raises."""
     names = {stage: override or slot_profile(ctx.config, stage) for stage in stages}
-    built = {name: resolve_model(ctx, name, model) for name in dict.fromkeys(names.values())}
+    built: dict[str, RunModel] = {}
+    if lead:
+        built[names[lead]] = resolve_model(ctx, names[lead], model)
+    for name in dict.fromkeys(names.values()):
+        if name in built:
+            continue
+        try:
+            built[name] = resolve_model(ctx, name, model)
+        except ModelUnavailable as exc:
+            if not lead:
+                raise
+            built[name] = replace(built[names[lead]], unavailable=f"{name} unavailable: {exc}")
     return {stage: built[name] for stage, name in names.items()}
 
 
@@ -91,8 +106,6 @@ def check_model_profile(ctx: AppContext, name: str | None) -> str | None:
     return name
 
 
-def profile_names(config: Config) -> list[str]:
-    return list(profile_tables(config))
 
 
 def model_for(ctx: AppContext, profile: str) -> ChatModel:
@@ -131,7 +144,13 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
         "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
+        "unset_slots": _unset_slots(ctx.config) if name == DEFAULT_PROFILE else [],
     } for name, p in model_profiles(ctx.config).items()]
+
+
+def _unset_slots(config: Config) -> list[str]:
+    """The slots `default` serves by being unset; ai_account unset means the slots, not default."""
+    return [slot for slot in SLOTS if slot not in config.model_slots and slot != "ai_account"]
 
 
 def provider_defaults() -> dict[str, dict]:

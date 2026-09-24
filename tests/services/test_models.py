@@ -112,7 +112,9 @@ def test_a_profile_is_added_edited_and_deleted_in_the_file_and_applies_at_once(t
 def test_a_profile_a_slot_names_is_not_deleted_and_the_slots_are_named(tmp_path):
     slots = '[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n[models.slots]\nnotes = "big"\nverdict = "big"\n'
     with _ctx(tmp_path, slots) as ctx:
-        assert [r["slots"] for r in model_profile_rows(ctx)] == [[], ["notes", "verdict"]]
+        rows = model_profile_rows(ctx)
+        assert [r["slots"] for r in rows] == [[], ["notes", "verdict"]]
+        assert rows[0]["unset_slots"] == ["research", "roles", "queries", "discovery"] and rows[1]["unset_slots"] == []
         with pytest.raises(InvalidQuery, match=r"big is in use by slots notes, verdict"):
             delete_model_profile(ctx, "big")
         assert "big" in load_config(ctx.config_source)[0].models

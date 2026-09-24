@@ -22,9 +22,17 @@ def _list(ctx: AppContext, args: argparse.Namespace) -> int:
         if r["key_env"]:
             key += f" ({r['key_env']})"
         source = "  from [llm]" if r["from_llm"] else ""
-        slots = f"  slots: {', '.join(r['slots'])}" if r["slots"] else ""
+        serves = slots_served(r)
+        slots = f"  slots: {serves}" if serves else ""
         print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}{slots}")
+        if serves and r["key_state"] == "unset":
+            print(f"  warning: {r['key_env']} is not set, so {r['name']} cannot run: its slots run on the research "
+                  "slot's profile instead, and research on it fails")
     return 0
+
+
+def slots_served(r: dict) -> str:
+    return ", ".join([*r["slots"], *(f"{s} (unset)" for s in r["unset_slots"])])
 
 
 def _test(ctx: AppContext, args: argparse.Namespace) -> int:

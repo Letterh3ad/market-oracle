@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
 
+from oracle.config import profile_tables
 from oracle.jobs import pid_alive
 from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
@@ -513,10 +514,15 @@ def retry(ctx: AppContext, runner: JobRunner, job_id: int) -> Job:
 def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
     """Every finished job that ended cancelled, interrupted or failed, still needs it (no
     later run of the same kind and subject succeeded since), is not already queued or
-    running, and is a kind this app can rebuild."""
+    running, and is a kind this app can rebuild on a profile that still exists. The newest
+    run is found by subject alone, whatever profile it ran on: a listing researched since on
+    another profile needs no retry."""
     out = []
+    profiles = profile_tables(ctx.config)
     for row in JobHistoryRepo(ctx.conn).latest_per_subject():
         if row.state not in RETRYABLE_STATES or row.kind not in _RETRY:
+            continue
+        if row.profile is not None and row.profile not in profiles:
             continue
         if any(j.subject == row.subject for j in runner.active(row.kind)):
             continue

@@ -560,6 +560,23 @@ async def test_retry_all_resubmits_every_bad_ending_once(runner, ctx):
     assert sorted((j.kind, j.subject) for j in again) == [("merges", "merges"), ("prices", "*")]
 
 
+async def test_retry_all_skips_a_job_whose_picked_profile_is_gone(runner, ctx):
+    from oracle.services.activity_service import retry, retry_all, retryable
+    from oracle.services.errors import UnknownModelProfile
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    gone = repo.add("ask", "Ask: grid? on big", "7", None, "queued", NOW, 999_999_999, "big")
+    repo.update(gone, "failed", "model down", NOW, NOW)
+    merges = repo.add("merges", "Proposed merges", "merges", None, "queued", NOW, 999_999_999)
+    repo.update(merges, "failed", "boom", NOW, NOW)
+
+    assert [r.id for r in retryable(ctx, runner)] == [merges]
+    assert [j.kind for j in retry_all(ctx, runner)] == ["merges"]
+    with pytest.raises(UnknownModelProfile):
+        retry(ctx, runner, gone)
+
+
 async def test_retry_all_skips_a_subject_since_redone_successfully(runner, ctx):
     from datetime import timedelta
 

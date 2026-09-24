@@ -3,10 +3,10 @@ import pytest
 from oracle.config import SLOTS, ConfigError, check_profile_name, load_config, setting_list
 
 
-def _load(tmp_path, text):
+def _load(tmp_path, text, strict=True):
     path = tmp_path / "oracle.toml"
     path.write_text(text, encoding="utf-8")
-    return load_config(path, cwd=tmp_path)[0]
+    return load_config(path, cwd=tmp_path, strict=strict)[0]
 
 
 BIG = '[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n'
@@ -30,6 +30,14 @@ def test_without_slots_none_are_set(tmp_path):
 def test_an_unknown_slot_or_profile_is_refused(tmp_path, slots, message):
     with pytest.raises(ConfigError, match=message):
         _load(tmp_path, BIG + f"[models.slots]\n{slots}\n")
+
+
+def test_at_start_a_slot_naming_a_missing_profile_runs_on_default_with_a_warning(tmp_path, caplog):
+    config = _load(tmp_path, BIG + '[models.slots]\nnotes = "huge"\nverdict = "big"\n', strict=False)
+    assert config.model_slots == {"verdict": "big"}
+    assert "models.slots.notes names no profile 'huge'" in caplog.text
+    with pytest.raises(ConfigError, match="unknown slot"):
+        _load(tmp_path, BIG + '[models.slots]\nreading = "big"\n', strict=False)
 
 
 def test_slots_is_reserved_as_a_profile_name():

@@ -114,6 +114,25 @@ async def test_a_fallback_is_recorded_on_the_stage_whose_model_fell_back(ctx, mo
                                "scripted reader (notes, verdict) (claude-opus-4-8 answered when it refused)")
 
 
+async def test_a_slot_whose_model_cannot_be_built_runs_on_the_research_profile_and_says_so(ctx, models, monkeypatch):
+    from oracle.services.errors import ModelUnavailable
+
+    lead, reader = models
+    monkeypatch.delenv("ORACLE_TEST_UNSET_KEY", raising=False)
+    keyless = ModelProfile("claude_api", "claude-opus-5", key_env="ORACLE_TEST_UNSET_KEY")
+    ctx.config = replace(ctx.config, models={"claude": keyless})
+    slots(ctx, verdict="claude")
+    run = await research(ctx, "AAPL")
+    verdict = run.stages[-1]
+    assert (verdict.stage, verdict.profile, verdict.model) == ("verdict", "default", "lead")
+    [why] = verdict.fell_back_to
+    assert why.startswith("default profile (claude unavailable: ") and "ORACLE_TEST_UNSET_KEY" in why
+    assert run.report.verdict is not None and why in run.fell_back_to
+    slots(ctx, research="claude")
+    with pytest.raises(ModelUnavailable, match="ORACLE_TEST_UNSET_KEY"):
+        await research(ctx, "AAPL")
+
+
 async def test_a_ticks_research_runs_on_the_ai_account_slot_else_the_slots(ctx, monkeypatch):
     from oracle.services import research_service
 

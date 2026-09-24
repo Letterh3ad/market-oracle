@@ -127,3 +127,13 @@ def test_a_slot_is_a_row_choosing_a_profile_that_applies_at_once(ctx):
         set_setting(ctx, "models.slots", "verdict", "huge")
     set_setting(ctx, "models.slots", "notes", None)
     assert ctx.config.model_slots == {}
+
+
+def test_a_dangling_slot_edited_in_by_hand_is_not_taken_live(ctx):
+    from oracle.services.settings_service import reload_live_settings
+
+    set_setting(ctx, "models.slots", "notes", "default")
+    path = ctx.config_source
+    path.write_text(path.read_text(encoding="utf-8").replace('notes = "default"', 'notes = "huge"'), encoding="utf-8")
+    reload_live_settings(ctx)
+    assert ctx.config.model_slots == {"notes": "default"}, "kept, not dropped to default behind the user's back"

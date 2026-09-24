@@ -147,7 +147,7 @@ def reload_live_settings(ctx: AppContext) -> None:
     if ctx.config_source is None:
         return
     try:
-        loaded = load_config(ctx.config_source)[0]
+        loaded = load_config(ctx.config_source, strict=True)[0]
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
@@ -206,7 +206,7 @@ def _write_settings(path: Path, edit: Callable[[str], str], by_hand: str) -> Non
         with os.fdopen(fd, "wb") as f:
             f.write(updated.replace("\n", eol).encode("utf-8"))
         try:
-            load_config(staged, cwd=path.parent)
+            load_config(staged, cwd=path.parent, strict=True)
         except ConfigError as exc:
             raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
         try:

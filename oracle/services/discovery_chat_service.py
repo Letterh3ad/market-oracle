@@ -29,7 +29,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
-from oracle.services.models_service import RunModel, resolve_stages
+from oracle.services.models_service import RunModel, check_model_profile, resolve_stages
 from oracle.services.research_tools import GdeltSearch, LocalNewsSearch, NewsSearch, Reader, Shelf, WebSearch
 from oracle.services.research_tools.reading import TRY_ANOTHER
 from oracle.store.db import to_utc_iso
@@ -178,6 +178,7 @@ def new_question(ctx: AppContext, text: str, refines: int | None = None) -> Ques
 
 async def ask(ctx: AppContext, text: str, refines: int | None = None, model: ChatModel | None = None,
               searcher: WebSearcher | None = None, profile: str | None = None) -> AnswerView:
+    check_model_profile(ctx, profile)
     return await answer(ctx, new_question(ctx, text, refines).id, model, searcher, profile=profile)
 
 

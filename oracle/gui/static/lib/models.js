@@ -53,6 +53,15 @@ function keyState(p) {
   return p.key_env ? `${p.key_state} (${p.key_env})` : p.key_state;
 }
 
+// The slots a profile serves, those it serves by being unset marked so; a warning when its
+// key is missing, since those stages then run on the research slot's profile.
+function slotsCell(p) {
+  const text = [...p.slots, ...p.unset_slots.map((s) => `${s} (unset)`)].join(", ");
+  if (!text || p.key_state !== "unset") return el("td", { class: "dim small" }, text);
+  return el("td", { class: "warn-text small", title: `${p.key_env} is not set: these stages run on the research ` +
+    "slot's profile instead, and research on it fails" }, `${text}: key unset`);
+}
+
 function pane() {
   return document.getElementById("models-form");
 }
@@ -64,7 +73,7 @@ function draw(listing) {
     el("p", { class: "dim small" }, "Named models a task can run on. The default comes from [llm] until it is " +
       "edited here, which writes [models.default]. Keys are never shown."),
     el("table", { class: "small" },
-      el("thead", null, el("tr", null, ...["name", "provider", "model", "context", "timeout", "key", "", ""]
+      el("thead", null, el("tr", null, ...["name", "provider", "model", "context", "timeout", "key", "slots", "", ""]
         .map((h) => el("th", null, h)))),
       body),
     el("button", { type: "button", class: "small-btn", onclick: () => body.append(formRow(null, listing.providers)) },
@@ -96,6 +105,7 @@ function profileRow(p, providers) {
     el("td", null, String(p.context)),
     el("td", null, `${p.timeout_s}s`),
     el("td", null, keyState(p)),
+    slotsCell(p),
     el("td", null,
       test,
       el("button", { type: "button", class: "small-btn", onclick: () => tr.replaceWith(formRow(p, providers)) }, "Edit"),
@@ -162,6 +172,7 @@ function formRow(p, providers) {
     el("td", null, inputs.context),
     el("td", null, inputs.timeout_s),
     keyCell,
+    el("td"),
     el("td", null,
       el("button", { type: "button", class: "small-btn", onclick: save }, "Save"),
       el("button", { type: "button", class: "small-btn", onclick: load }, "Cancel")),
@@ -176,4 +187,4 @@ async function load() {
   }
 }
 
-export { load, prefill, profileBody };
+export { load, prefill, profileBody, slotsCell };

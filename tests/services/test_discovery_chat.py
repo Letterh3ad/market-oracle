@@ -562,3 +562,11 @@ async def test_an_answer_runs_on_the_discovery_slot_or_on_the_picked_profile(ctx
     assert big.calls and not plain.calls and view.answer.model == "scripted big"
     await ask(ctx, GRID, searcher=FakeSearcher(), profile="default")
     assert plain.calls
+
+
+async def test_an_unknown_picked_profile_saves_no_question(ctx):
+    from oracle.services.errors import UnknownModelProfile
+
+    with pytest.raises(UnknownModelProfile):
+        await ask(ctx, GRID, searcher=FakeSearcher(), profile="huge")
+    assert questions(ctx) == []
