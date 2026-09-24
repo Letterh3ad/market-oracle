@@ -691,6 +691,25 @@ async def test_a_verdict_citing_what_the_budget_left_out_is_rejected_and_the_tri
     assert latest_verdict(ctx, "AAPL") is None
 
 
+async def test_a_profile_edited_mid_run_does_not_resize_the_runs_later_stages(ctx, news, monkeypatch):
+    from dataclasses import replace
+
+    from oracle.services import research_service
+
+    model = report_script(news)
+    model.roles["verdict"] = VERDICT
+    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, context=1024))
+    write_report = research_service.write_report
+
+    async def edited_meanwhile(*args, **kwargs):
+        ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, context=16384))
+        return await write_report(*args, **kwargs)
+
+    monkeypatch.setattr(research_service, "write_report", edited_meanwhile)
+    await research(ctx, "AAPL", model)
+    assert "Reuters" not in verdict_call(model), "the verdict kept the 1024-token budget the run started with"
+
+
 async def test_a_replays_verdict_is_never_the_latest_one(ctx, news):
     from datetime import date
 
@@ -715,26 +734,6 @@ async def test_a_report_saved_before_verdicts_reads_back_as_having_none(ctx, new
     ctx.conn.execute("UPDATE research_reports SET body = ?", (json.dumps(body),))
     old = latest_research(ctx, "AAPL").report
     assert old.verdict is None and old.no_verdict == "written before reports had verdicts" and old.unread == ()
-
-
-def test_the_verdicts_budget_follows_the_configured_model(ctx):
-    from dataclasses import replace
-
-    from oracle.services.research_service import CLAUDE_CONTEXT, context_tokens
-
-    assert context_tokens(ctx) == 16384
-    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
-    assert context_tokens(ctx) == CLAUDE_CONTEXT
-
-
-def test_the_configured_backend_decides_which_model_runs(ctx):
-    from dataclasses import replace
-
-    from oracle.services.research_service import configured_model
-
-    assert (configured_model(ctx).name, configured_model(ctx).model) == ("ollama", "qwen3:4b-instruct-2507-q8_0")
-    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
-    assert (configured_model(ctx).name, configured_model(ctx).model) == ("claude", "claude-opus-5")
 
 
 async def test_a_redirect_into_this_machine_or_the_lan_is_refused_at_each_hop(ctx, pages):

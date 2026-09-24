@@ -59,6 +59,10 @@ class UnknownQuestion(ServiceError):
     pass
 
 
+class UnknownModelProfile(ServiceError):
+    pass
+
+
 class SearchFailed(ServiceError):
     pass
 

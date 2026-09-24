@@ -65,6 +65,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "research": "POST /api/jobs/research",
     "research --as-of": "POST /api/jobs/research",  # Company tab, "Replay as of"
     "research --history": "GET /api/companies/{symbol}/research/history",
+    # Settings > Models; the section also adds, edits and deletes profiles.
+    "models list": "GET /api/models",
+    "models test": "POST /api/models/{name}/test",
     "discover": "POST /api/jobs/discover",  # Watchlist tab, Discovery section "Discover now"
     # Discover tab: Ask, a follow-up's Refine, Rerun, the saved questions, one question's answers,
     # and a shortlist row's Add to discovered (its Watch and Research reuse those routes).

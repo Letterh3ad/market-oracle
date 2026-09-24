@@ -117,7 +117,7 @@ async def test_the_time_cap_stops_it_and_keeps_what_it_added(ctx, monkeypatch):
 
 
 async def test_a_real_run_through_the_stage(ctx, monkeypatch):
-    monkeypatch.setattr(discovery_service, "configured_model", lambda c: ScriptedModel())
+    monkeypatch.setattr(discovery_service, "model_for", lambda c, p: ScriptedModel())
     s = stage(await run_tick(ctx))
     assert s.state in ("ok", "partial") and s.summary.startswith("nothing added")
 

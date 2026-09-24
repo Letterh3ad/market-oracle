@@ -7,11 +7,14 @@ import logging
 import os
 import tempfile
 import tomllib
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from tomlkit.exceptions import TOMLKitError
+
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -21,11 +24,11 @@ from oracle.services.errors import ConfigInUse, InvalidQuery
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "LIVE_SECTIONS", "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation",
+    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation",
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts", "universe", "discovery")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart."""
 
 
@@ -121,6 +124,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
     if (setting.section, setting.key) in BLANK_OFF:
         row["blank_off"] = True
+    if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):
+        row["ignored"] = "ignored: [models.default] replaces it (Settings > Models)"
     return {**row, "value": table.get(setting.key, setting.default)}
 
 
@@ -163,23 +168,29 @@ def _config_path(ctx: AppContext) -> Path:
 
 
 def _save(ctx: AppContext, section: str, values: dict[str, object]) -> Path:
+    return edit_config(ctx, lambda text: with_settings(text, section, values), f"set [{section}] {', '.join(values)}")
+
+
+def edit_config(ctx: AppContext, edit: Callable[[str], str], by_hand: str) -> Path:
+    """Apply `edit` to oracle.toml's text and write it back safely; `by_hand` says what to
+    do instead when the edit cannot be made. Returns the file written."""
     path = _config_path(ctx)
-    _write_settings(path, section, values)
+    _write_settings(path, edit, by_hand)
     ctx.config_source = path
     return path
 
 
-def _write_settings(path: Path, section: str, values: dict[str, object]) -> None:
-    """Change settings in one section in place, keeping the file's line endings. The new
-    file replaces the old only once complete and loadable, so a crash or a bad edit never
-    leaves the user with a truncated or unreadable oracle.toml."""
+def _write_settings(path: Path, edit: Callable[[str], str], by_hand: str) -> None:
+    """Change settings in place, keeping the file's line endings. The new file replaces the
+    old only once complete and loadable, so a crash or a bad edit never leaves the user with
+    a truncated or unreadable oracle.toml."""
     raw = path.read_bytes() if path.is_file() else b""
     eol = "\r\n" if b"\r\n" in raw else "\n"
     try:
-        updated = with_settings(raw.decode("utf-8").replace("\r\n", "\n"), section, values)
-    except ConfigError as exc:
-        keys = ", ".join(values)
-        raise InvalidQuery(f"could not update {path} safely ({exc}); set [{section}] {keys} by hand") from exc
+        updated = edit(raw.decode("utf-8").replace("\r\n", "\n"))
+    # tomlkit raises ValueError for shapes it cannot extend, such as a table inside an inline table.
+    except (ConfigError, TOMLKitError, ValueError) as exc:
+        raise InvalidQuery(f"could not update {path} safely ({exc}); {by_hand} by hand") from exc
     fd, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".new", dir=path.parent)
     staged = Path(name)
     try:

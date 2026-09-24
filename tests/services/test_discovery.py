@@ -257,6 +257,19 @@ async def test_seeds_take_turns_across_runs(ctx):
     assert (first.seeds[0], second.seeds[0]) == ("7203.T", "GM")
 
 
+async def test_a_model_that_cannot_be_built_leaves_the_source_rotation_where_it_was(ctx, monkeypatch):
+    from oracle.config import ModelProfile
+    from oracle.services.errors import ModelUnavailable
+    from oracle.store.meta import MetaRepo
+
+    monkeypatch.delenv("NOT_SET_ANYWHERE", raising=False)
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("claude_api", "m", key_env="NOT_SET_ANYWHERE")})
+    before = MetaRepo(ctx.conn).get(discovery_service._LAST_SOURCE)
+    with pytest.raises(ModelUnavailable, match="NOT_SET_ANYWHERE"):
+        await discover(ctx)
+    assert MetaRepo(ctx.conn).get(discovery_service._LAST_SOURCE) == before
+
+
 async def test_only_one_run_at_a_time(ctx, monkeypatch):
     from oracle.services.errors import JobAlreadyRunning
     from oracle.services.jobs_service import single_flight

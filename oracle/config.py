@@ -223,6 +223,79 @@ class LlmConfig:
     """The model when backend is "claude"; its key comes from ANTHROPIC_API_KEY, never this file."""
 
 
+DEFAULT_PROFILE = "default"
+CLAUDE_CONTEXT = 200_000
+"""Conservative for every Claude model the API can name."""
+
+
+@dataclass(frozen=True)
+class ModelProfile:
+    """One `[models.<name>]` table: a model some task can run on. As parsed, None means
+    unset; model_profiles fills those in from the provider."""
+
+    provider: str
+    model: str
+    base_url: str | None = None
+    """None once resolved: the provider's own endpoint."""
+    context: int | None = None
+    """Tokens the model reads at once; sizes prompts, and Ollama's window."""
+    timeout_s: float | None = None
+    """Per reply."""
+    key_env: str | None = None
+    """The environment variable holding the key."""
+    key: str | None = field(default=None, repr=False)
+    """The key itself, kept in oracle.toml; never shown."""
+
+
+@dataclass(frozen=True)
+class Provider:
+    base_url: str | None
+    context: int
+    fallback_key: str | None
+    """Where the provider looks with no key or key_env; None: it takes no key at all."""
+
+
+PROVIDERS: dict[str, Provider] = {
+    "ollama": Provider(LlmConfig.base_url, LlmConfig.context, None),
+    "claude_api": Provider(None, CLAUDE_CONTEXT, "env / ant login"),
+}
+"""Every provider a profile can name, with what its unset keys mean."""
+PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
+PROVIDER_KEYS = ("base_url", "context")
+"""Keys whose meaning belongs to one provider: a value carried over from another is dropped."""
+
+
+LLM_PROFILE_KEYS = ("backend", "model", "base_url", "timeout_s", "context", "claude_model")
+"""The `[llm]` keys that describe the default profile; `[models.default]` makes them moot."""
+
+
+def model_profiles(config: Config) -> dict[str, ModelProfile]:
+    """Every profile, `default` first, with the provider's defaults filled in."""
+    return {name: resolved(p) for name, p in profile_tables(config).items()}
+
+
+def profile_tables(config: Config) -> dict[str, ModelProfile]:
+    """Every profile as set, `default` first: `[models.default]`, else what `[llm]` sets."""
+    return {DEFAULT_PROFILE: config.models.get(DEFAULT_PROFILE, _from_llm(config.llm)), **config.models}
+
+
+def resolved(p: ModelProfile) -> ModelProfile:
+    spec = PROVIDERS[p.provider]
+    return replace(p, base_url=p.base_url or spec.base_url, context=p.context or spec.context,
+                   timeout_s=p.timeout_s or LlmConfig.timeout_s)
+
+
+def _from_llm(llm: LlmConfig) -> ModelProfile:
+    # Only what differs from the provider's defaults counts as set, so switching the
+    # default's provider in the GUI carries none of the old provider's values over.
+    timeout = llm.timeout_s if llm.timeout_s != LlmConfig.timeout_s else None
+    if llm.backend == "claude":
+        return ModelProfile("claude_api", llm.claude_model, timeout_s=timeout)
+    spec = PROVIDERS["ollama"]
+    return ModelProfile("ollama", llm.model, llm.base_url if llm.base_url != spec.base_url else None,
+                        llm.context if llm.context != spec.context else None, timeout)
+
+
 @dataclass(frozen=True)
 class ResearchConfig:
     contact: str | None = None
@@ -275,6 +348,8 @@ class Config:
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
+    models: dict[str, ModelProfile] = field(default_factory=dict)
+    """The `[models.<name>]` tables only; model_profiles adds the implicit default."""
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
@@ -317,6 +392,8 @@ def setting_list(extra_sources: tuple[str, ...] = ()) -> list[Setting]:
                         for s in fields(SourceConfig)]
         elif f.name == "keys":
             out += [Setting("keys", name, "str", None) for name in KEY_NAMES]
+        elif f.name == "models":
+            continue  # edited as whole profiles, in the Models section
         elif hasattr(value, "__dataclass_fields__"):
             out += [_setting(f.name, s.name, getattr(value, s.name), s.type) for s in fields(value)]
         else:
@@ -375,6 +452,31 @@ def with_settings(text: str, section: str, values: Mapping[str, object]) -> str:
     return tomlkit.dumps(doc)
 
 
+def without_section(text: str, section: str) -> str:
+    """`text` with the `[section]` table ("models.big") removed, everything else kept. By
+    lines, since tomlkit files the comments above the next header under the removed table."""
+    lines = text.splitlines(keepends=True)
+    header = re.compile(r"\s*\[\s*" + r"\s*\.\s*".join(map(re.escape, section.split("."))) + r"\s*\]\s*(#.*)?$")
+    start = next((i for i, line in enumerate(lines) if header.match(line)), None)
+    if start is not None:
+        end = next((i for i in range(start + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+        while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")):
+            end -= 1
+        while end < len(lines) and not lines[end].strip():
+            end += 1
+        lines[start:end] = []
+    out = "".join(lines)
+    try:
+        table = tomllib.loads(out)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"not valid TOML: {exc}") from exc
+    for part in section.split("."):
+        table = table.get(part) if isinstance(table, dict) else None
+    if table is not None:
+        raise ConfigError(f"[{section}] is not a plain table")
+    return out
+
+
 def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Path | None]:
     """Return the config and the file it came from, or None when defaults were used."""
     cwd = cwd or Path.cwd()
@@ -385,7 +487,10 @@ def load_config(path: Path | None, cwd: Path | None = None) -> tuple[Config, Pat
     elif not path.is_file():
         raise ConfigError(f"config file not found: {path}")
     with path.open("rb") as fh:
-        raw = tomllib.load(fh)
+        try:
+            raw = tomllib.load(fh)
+        except tomllib.TOMLDecodeError as exc:
+            raise ConfigError(f"{path.name} is not valid TOML: {exc}") from exc
     return _with_env_keys(_resolve(_apply(raw), path.parent)), path
 
 
@@ -457,6 +562,9 @@ def _apply(raw: dict) -> Config:
             continue
         if name == "llm":
             values[name] = _llm(value)
+            continue
+        if name == "models":
+            values[name] = _models(value)
             continue
         if name == "research":
             values[name] = _research(value)
@@ -686,6 +794,82 @@ def _llm(raw: object) -> LlmConfig:
             raise ConfigError(f"llm.{key} must be {wanted}, got {value!r}")
         out[key] = value
     return LlmConfig(**out)
+
+
+PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
+ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _models(raw: object) -> dict[str, ModelProfile]:
+    if not isinstance(raw, dict):
+        raise ConfigError("models must be a table of [models.<name>] sections")
+    seen: dict[str, str] = {}
+    for name in raw:
+        check_profile_name(name)
+        if name.lower() in seen:
+            raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
+        seen[name.lower()] = name
+    return {name: check_profile(name, table) for name, table in raw.items()}
+
+
+def check_profile_name(name: object) -> str:
+    if not (isinstance(name, str) and PROFILE_NAME.fullmatch(name)):
+        raise ConfigError(f"models: {name!r} is not a profile name (letters, digits, _ and -, up to 40)")
+    return name
+
+
+def check_profile(name: str, raw: object) -> ModelProfile:
+    """`[models.<name>]` as set (None where unset); raises ConfigError naming the bad key."""
+    where = f"models.{name}"
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{where} must be a table")
+    _reject_unknown(raw, ModelProfile, f"[{where}]")
+    for needed in ("provider", "model"):
+        if needed not in raw:
+            raise ConfigError(f"{where} needs a {needed}")
+    provider = raw["provider"]
+    if not isinstance(provider, str) or provider not in PROVIDERS:
+        raise ConfigError(f"{where}.provider must be one of {', '.join(PROVIDERS)}, got {provider!r}")
+    if "key" in raw and "key_env" in raw:
+        raise ConfigError(f"{where} sets key and key_env; keep one")
+    if PROVIDERS[provider].fallback_key is None and ("key" in raw or "key_env" in raw):
+        raise ConfigError(f"{where}: {provider} takes no key; remove key and key_env")
+    p = ModelProfile(**raw)
+    low, high = PROFILE_CONTEXT_RANGE
+    checks = {
+        "model": (_text(p.model), "a model name like qwen3:8b"),
+        "base_url": (p.base_url is None or isinstance(p.base_url, str) and re.match(r"https?://", p.base_url) is not None,
+                     "an http(s) URL"),
+        "context": (p.context is None or _whole(p.context, low, high), f"a whole number of tokens from {low} to {high}"),
+        "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
+                      and p.timeout_s > 0, "a positive number"),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"{where}.{key} must be {wanted}, got {getattr(p, key)!r}")
+    # Neither check echoes the value: it may be a key pasted into the wrong box.
+    if p.key_env is not None and not _env_name(p.key_env):
+        raise ConfigError(f"{where}.key_env must be the name of an environment variable like ANTHROPIC_API_KEY, "
+                          "not a key; put a key itself in key")
+    if p.key is not None and not _text(p.key):
+        raise ConfigError(f"{where}.key must be a non-empty string")
+    return replace(p, timeout_s=None if p.timeout_s is None else float(p.timeout_s),
+                   key=p.key.strip() if p.key else None)
+
+
+KEY_PREFIXES = ("sk-", "sk_", "gsk_", "ghp_", "xai-", "AIza", "AKIA")
+
+
+def _env_name(value: object) -> bool:
+    """A variable name, and nothing that looks like a key: long names mixing cases are keys."""
+    if not (isinstance(value, str) and ENV_NAME.fullmatch(value)) or value.startswith(KEY_PREFIXES):
+        return False
+    mixed = value != value.upper() and value != value.lower()
+    return len(value) <= 64 and not (mixed and len(value) > 24)
+
+
+def _text(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _research(raw: object) -> ResearchConfig:

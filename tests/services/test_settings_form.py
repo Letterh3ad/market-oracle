@@ -89,6 +89,15 @@ def test_a_config_file_another_program_holds_is_a_readable_error_and_is_left_as_
     assert [p.name for p in ctx.config_source.parent.iterdir() if p.suffix == ".new"] == []
 
 
+def test_llm_model_keys_say_they_are_ignored_once_a_default_profile_exists(ctx):
+    from oracle.services.models_service import save_model_profile
+
+    assert "ignored" not in row(ctx, "llm", "model")
+    save_model_profile(ctx, "default", {"provider": "ollama", "model": "gemma3:12b"}, create=False)
+    assert "[models.default] replaces it" in row(ctx, "llm", "model")["ignored"]
+    assert "ignored" not in row(ctx, "llm", "max_steps")
+
+
 def test_a_blank_midday_time_turns_the_midday_pass_off(ctx):
     assert row(ctx, "schedule", "midday_time")["blank_off"] is True and "blank_off" not in row(ctx, "schedule", "time")
     assert set_setting(ctx, "schedule", "midday_time", "")["value"] == ""

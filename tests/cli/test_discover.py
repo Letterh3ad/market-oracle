@@ -8,7 +8,7 @@ from oracle.services import candidate_screen, discovery_chat_service, discovery_
 from oracle.services.context import open_context
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.google_news import FakeGoogleNews
-from tests.fakes.llm import ScriptedModel
+from tests.fakes.llm import ScriptedModel, use_model
 from tests.fakes.web import FakeWeb
 from tests.fakes.web_search import FakeSearcher
 from tests.fakes.yahoo import FakeYahoo, bar
@@ -42,9 +42,9 @@ def run(tmp_path, capsys, monkeypatch, news, chat):
         yahoo.add(s, "USD", "America/New_York", [bar("2026-09-21", 10.0), bar("2026-09-22", 11.0)])
     web = FakeWeb(FakeFinanceDatabase([equity(s, n, **CARS) for s, n in names.items()]), yahoo, news)
     monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=web.transport))
-    monkeypatch.setattr(discovery_service, "configured_model", lambda c: ScriptedModel())
+    monkeypatch.setattr(discovery_service, "model_for", lambda c, p: ScriptedModel())
     monkeypatch.setattr(candidate_screen, "is_stale", lambda last, today: False)
-    monkeypatch.setattr(discovery_chat_service, "configured_model", lambda c: chat)
+    use_model(monkeypatch, discovery_chat_service, chat)
     monkeypatch.setattr(discovery_chat_service, "DdgsSearcher", FakeSearcher)
 
     def _run(*argv):

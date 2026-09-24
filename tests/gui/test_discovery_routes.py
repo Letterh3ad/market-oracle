@@ -14,7 +14,7 @@ from tests.fakes.yahoo import bar
 @pytest.fixture
 async def seeded(loaded, ctx, yahoo, monkeypatch):
     """7203.T watched; Toyota's peers in the fake universe are priced."""
-    monkeypatch.setattr(discovery_service, "configured_model", lambda c: ScriptedModel())
+    monkeypatch.setattr(discovery_service, "model_for", lambda c, p: ScriptedModel())
     for s in ("7203.T", "TM"):
         yahoo.add(s, "JPY", "Asia/Tokyo", [bar("2026-09-21", 10.0), bar("2026-09-22", 11.0)])
     await loaded.post("/api/watchlists/main/items", json={"symbol": "AAPL"})

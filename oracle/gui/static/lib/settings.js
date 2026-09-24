@@ -2,6 +2,7 @@ import { api } from "./api.js";
 import { sendJson } from "./ui.js";
 import { el, showError } from "./dom.js";
 import { offerRestart } from "./control.js";
+import * as models from "./models.js";
 
 // Every oracle.toml key, one row each, saved one at a time. The server checks each change
 // by loading the whole file, so the page only turns inputs into JSON values.
@@ -42,6 +43,7 @@ function read(row, box) {
 }
 
 function state(row) {
+  if (row.ignored) return row.ignored;
   if (!row.secret) return row.live ? "applies now" : "applies after Restart";
   const where = row.set ? "set in oracle.toml" : "not set";
   return row.from_env ? `${where}; ${row.env} in the environment wins` : where;
@@ -49,7 +51,8 @@ function state(row) {
 
 function settingRow(row) {
   const box = input(row);
-  const note = el("span", { class: row.live || row.secret ? "dim small" : "warn-text small" }, state(row));
+  const note = el("span", { class: row.ignored || !(row.live || row.secret) ? "warn-text small" : "dim small" },
+    state(row));
   const label = `${row.section ? `[${row.section}] ` : ""}${row.key}`;
   const save = async (value) => {
     try {
@@ -111,7 +114,11 @@ async function load() {
 // tries again on the next opening.
 function mount() {
   const details = pane().closest("details");
-  details.addEventListener("toggle", () => { if (details.open && !loaded) load(); });
+  details.addEventListener("toggle", () => {
+    if (!details.open) return;
+    models.load();
+    if (!loaded) load();
+  });
 }
 
 export { mount, read };

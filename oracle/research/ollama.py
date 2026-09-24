@@ -43,7 +43,7 @@ class OllamaChat:
                 response = await http.post(f"{self._base}/api/chat", json=payload)
         except httpx.TimeoutException as exc:
             raise ModelError(f"Ollama {self.model} took longer than {self._timeout:.0f}s to answer; "
-                             "raise [llm] timeout_s if the model is still loading") from exc
+                             "raise its timeout_s in Settings > Models if the model is still loading") from exc
         except httpx.TransportError as exc:
             raise ModelError(f"Ollama is not reachable at {self._base} ({exc}): start it with `ollama serve`") from exc
         if response.status_code == 404:
