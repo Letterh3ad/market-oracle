@@ -485,6 +485,27 @@ async def test_retry_one_cell_by_id(ctx):
         retry_failed(ctx, b.id)
 
 
+async def test_a_manual_retry_gives_a_cell_its_outage_refunds_back(ctx):
+    from oracle.services.activity_service import _adopt_replay_cell
+
+    await create_study(ctx, FIRST)
+    repo = ReplayRepo(ctx.conn)
+    a, b, c = cells(ctx)[:3]
+    for cell in (a, b, c):
+        repo.refund([cell.id], 2)
+        repo.refund([cell.id], 2)
+        fail_for_good(ctx, cell)
+    retry_failed(ctx, a.id)
+    assert repo.cell(a.id).refunds == 0 and repo.cell(b.id).refunds == 2
+    retry_failed(ctx)
+    assert repo.cell(b.id).refunds == 0
+    repo.refund([c.id], 2)
+    repo.refund([c.id], 2)
+    fail_for_good(ctx, repo.cell(c.id))
+    _adopt_replay_cell(ctx, SimpleNamespace(id=77, profile=None), c.symbol, c.as_of)
+    assert repo.cell(c.id).refunds == 0
+
+
 async def probe_fails(pacer, runner, research, error):
     job = pacer.check()
     symbol, day = research_key(job)

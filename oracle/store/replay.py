@@ -159,7 +159,7 @@ class ReplayRepo:
         """A replay of the cell started outside the pacer (Activity's Retry): the cell follows
         that job, with room for one more attempt."""
         self._set(cell_id, "state = ?, job_id = ?, started_at = ?, finished_at = NULL, "
-                  "allowed = MAX(allowed, attempts + 1)", RUNNING, job_id, to_utc_iso(at))
+                  "allowed = MAX(allowed, attempts + 1), refunds = 0", RUNNING, job_id, to_utc_iso(at))
 
     def mark_done(self, cell_id: int, run_id: int | None, at: datetime) -> None:
         self._set(cell_id, "state = ?, run_id = ?, error = NULL, attempts = attempts + 1, finished_at = ?",
@@ -197,7 +197,7 @@ class ReplayRepo:
 
     def retry_failed(self, study_id: int, cell_id: int | None = None) -> int:
         """Failed cells (or the one) back to pending at the end of the queue, allowed one more
-        attempt than they have used. The count moved."""
+        attempt than they have used and their outage refunds again. The count moved."""
         with transaction(self._conn):
             end = self._conn.execute("SELECT COALESCE(MAX(position), 0) FROM replay_cells WHERE study_id = ?",
                                      (study_id,)).fetchone()[0]
@@ -205,7 +205,7 @@ class ReplayRepo:
                 "SELECT id FROM replay_cells WHERE study_id = ? AND state = ? AND (? IS NULL OR id = ?) "
                 "ORDER BY position, id", (study_id, FAILED, cell_id, cell_id))]
             self._conn.executemany(
-                "UPDATE replay_cells SET state = ?, allowed = attempts + 1, position = ? WHERE id = ?",
+                "UPDATE replay_cells SET state = ?, allowed = attempts + 1, refunds = 0, position = ? WHERE id = ?",
                 [(PENDING, end + n, i) for n, i in enumerate(ids, start=1)])
         return len(ids)
 
