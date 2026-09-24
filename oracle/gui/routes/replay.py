@@ -3,6 +3,7 @@ these only change what it is allowed to do."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
 from fastapi import APIRouter, Depends
@@ -11,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import JobRunner, submit_replay_prices
-from oracle.services.context import AppContext
+from oracle.services.context import AppContext, worker_context
 from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
     measured_cutoff, pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
@@ -79,9 +80,15 @@ async def retry(body: Retry, ctx: AppContext = Depends(get_ctx)) -> dict:
 
 @router.get("/report")
 async def report(ctx: AppContext = Depends(get_ctx)) -> dict:
-    """The full score from stored bars; it never fetches, so the card can ask on every change."""
-    score = replay_report(ctx)
-    return {"report": score.to_json() if score else None}
+    """The full score from stored bars; it never fetches, so the card can ask on every change.
+    The account's simulation takes a few hundred milliseconds, so it runs on a thread and a
+    connection of its own, leaving the page's other requests free."""
+    def scored() -> dict:
+        with worker_context(ctx) as own:
+            score = replay_report(own)
+            return {"report": score.to_json() if score else None}
+
+    return await asyncio.to_thread(scored)
 
 
 @router.post("/prices", status_code=202)

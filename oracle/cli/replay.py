@@ -7,7 +7,9 @@ import sys
 
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
-from oracle.services.replay_score import Account, Group, HorizonScore, Score, replay_report, update_study_prices
+from oracle.services.replay_score import (
+    Account, Group, HorizonScore, Score, has_study, replay_report, update_study_prices,
+)
 from oracle.services.replay_service import (
     StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
 )
@@ -123,7 +125,7 @@ def print_status(s: StudyStatus) -> None:
 
 
 def _report(ctx: AppContext, args: argparse.Namespace) -> int:
-    if replay_report(ctx) is None:
+    if not has_study(ctx):
         print("null" if args.json else "No replay study yet: `oracle replay create --from YYYY-MM-DD`.")
         return 0
     for o in asyncio.run(update_study_prices(ctx)):
@@ -171,16 +173,17 @@ def print_report(s: Score) -> None:
 
 
 LINE_LABELS = {"ai": "AI", "buy_and_hold": "Buy and hold"}
+"""Every other line carries its own label."""
 
 
 def print_account(a: Account) -> None:
     n = len(a.listings)
     print(f"Account: the verdicts traded as the AI account would, {a.start.isoformat()} to {a.end.isoformat()}, "
           f"{n} listing{'' if n == 1 else 's'}")
-    print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{'costs':>10}")
+    print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
     for line in a.lines:
-        print(f"  {LINE_LABELS.get(line.name, line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
-              f"{line.trades:>8}{line.costs:>10.2f}")
+        print(f"  {LINE_LABELS.get(line.name, line.label or line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
+              f"{line.trades:>8}{line.costs:>14.2f}")
     for line in a.lines:
         print(f"  - {line.caption}")
     if a.left_out:

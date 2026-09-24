@@ -198,11 +198,11 @@ function replaySection() {
   function account(r) {
     const a = r?.account;
     if (!a) return { node: el("div"), draw: () => null };
-    const lines = compareLines(a.lines, `of ${money(a.capital)}`, "Too few days to draw a chart yet.");
+    const lines = compareLines(a.lines, a.currency, "Too few days to draw a chart yet.");
     const node = el("div", null,
       el("h3", null, "Account"),
       el("p", { class: "dim small" }, `The verdicts traded as the AI account would, in memory, ${a.start} to `
-        + `${a.end}, over ${plural(a.listings.length, "listing")}.`),
+        + `${a.end}, over ${plural(a.listings.length, "listing")}, from ${money(a.capital)} ${a.currency}.`),
       lines.node,
       a.left_out.length ? el("p", { class: "warn-text small" }, `Left out: ${a.left_out.join("; ")}.`) : null,
       el("ul", { class: "dim small" }, ...a.notes.map((text) => el("li", null, text))));
