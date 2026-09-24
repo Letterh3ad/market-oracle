@@ -1975,3 +1975,43 @@ matches some sector, industry group or industry the universe holds, and says an 
 not recognised.
 **Alternatives:** Any shared word (too loose); a model-chosen enum of the universe's names (loses
 industries below the group level).
+
+## 2026-09-24 - Stored company links (discovery 07): what is kept, and deletes are per company pair
+**Context:** Ticket 07 keeps the company links discovery finds and feeds research. Only one
+candidate per run is added, but the extraction call names up to 8 related companies.
+**Decision:** m0035 adds `company_links` (symbol, other, relation, source, first/last seen,
+deleted_at; "other is relation of symbol") with `company_link_evidence`, plus
+`research_queries.via`. Discovery's related source records every news-named company that
+resolves (not only the one added), and a peer only when it is the one added (the universe
+already lists every peer; storing ten per seed would bury the evidence-backed links). Themes
+and movers have no seed company, so they record nothing. `links_service.record_links(ctx,
+[LinkFound(symbol, other, relation, evidence)], source)` is the one writer, for the chat (04)
+too: it skips self-links, unknown listings and the never list (Tesla), and any pair the user
+deleted. A delete marks every link between the two companies (any listing, either way round,
+any relation) and none is recorded again, whatever evidence finds it later; a wrong link is
+usually a wrong name resolution, so relation-level deletes would let it back in. So reading
+matches deleting, `company_links` gathers every stored link between the two companies into
+one entry (its relations listed, evidence merged), and drops any company on the never list
+as it stands at reading time, not only at recording.
+**Alternatives:** Deleting one relation only; letting new evidence revive a deleted link
+(the same story reappears daily, so a wrong link would keep coming back); company keys in
+place of symbols (keys change on a universe refresh; symbols are matched across all the
+company's listings instead).
+
+## 2026-09-24 - Research reads linked companies through two planned searches
+**Context:** Research should read its strongest linked companies within the existing plan cap.
+**Decision:** `research_links` picks up to `MAX_LINKED = 2` linked companies with evidence
+(most articles, then newest; one link per company; in a replay only links first seen by its
+day). Each becomes a seed search "<linked short name> <company short name>" (both names, so
+the articles bear on the company researched and the reading stage's "about the company" note
+holds). Seeds are always kept and suggestions fill up to `MAX_PLANNED = 8`, so links take
+suggestion slots, never add loop steps. The search carries `via` (e.g. "DENSO Corporation
+(6902.T), a supplier"), stored with the planned query. `research_evidence.query` (m0035) keeps
+the search that showed each article to that run (an article's own `query` is the first ever,
+often discovery's or another run's), and an evidence item shows the link when that search is
+one of the run's planned link queries. A replay ranks and shows links by evidence published
+by its day only, with last seen capped at its day. `related_companies` lists
+stored links first (why, article count, last seen), then universe peers minus those companies.
+**Alternatives:** A separate reading slot for linked articles (the reader already reads what
+the loop was shown); tagging evidence by the tool call (a model that rewords the query loses
+the tag either way; matching the planned query needs no new plumbing in the tools).

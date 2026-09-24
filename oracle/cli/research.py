@@ -58,6 +58,8 @@ def print_run(r: ResearchRun, max_steps: int) -> None:
         day = e.published.date().isoformat() if e.published else "undated"
         print(f"  [a{e.id}] {day} {e.outlet or 'unknown outlet'}: {e.title}")
         print(f"        {e.url}")
+        if e.via:
+            print(f"        via the link to {e.via}")
         for fact in e.facts:
             _wrapped(f"- {fact}", "        ")
         if e.read:

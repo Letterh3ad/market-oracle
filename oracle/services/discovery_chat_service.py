@@ -250,7 +250,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     notes.extend(_filter_notes(plan, UniverseRepo(ctx.conn).classifications()))
     found: list[list[int]] = []
     failed: list[str] = []
-    shelf = Shelf(ctx.conn, ctx.clock, lambda ids: found[-1].extend(ids))
+    shelf = Shelf(ctx.conn, ctx.clock, lambda ids, _query: found[-1].extend(ids))
     gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
     async with open_client(ctx) as client:
         for n, s in enumerate(plan.searches, 1):

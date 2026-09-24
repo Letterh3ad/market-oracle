@@ -24,6 +24,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NeverListed, ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
+from oracle.services.links_service import SOURCE_DISCOVERY, LinkFound, record_links
 from oracle.services.never_list import never_company
 from oracle.services.peers_service import choose_peers
 from oracle.services.research_service import configured_model
@@ -343,6 +344,9 @@ async def _related(run: _Run, seeds: list[str]) -> None:
         named = await run.named(profile.symbol, _feeds(news_query(profile.name), gdelt_query(profile.name)),
                                 lambda titles: mentions_prompt(profile.name, titles), MENTIONS_SCHEMA, profile.name)
         news = [_Candidate(m.name, m.relation, profile.symbol, ids) for m, ids in named]
+        # Every company the news links to the seed is kept, not only the one added.
+        record_links(run.ctx, [LinkFound(profile.symbol, found.primary_symbol, c.relation, c.evidence)
+                               for c in news if (found := run.screen.resolve(c.name))], SOURCE_DISCOVERY)
         if await run.screen_all(news + _peers(run.ctx, seed, run.errors)):
             return
 
@@ -459,6 +463,8 @@ class _Screen(Screen):
         if why_not := _add_checked(self._ctx, profile, listing, c.source, c.seed, c.relation, c.evidence):
             return self._skip(c, why_not)
         self.now_listed(profile, listing)
+        if c.relation == "peer":
+            record_links(self._ctx, [LinkFound(c.seed, listing, "peer")], SOURCE_DISCOVERY)
         self.added.append(Added(listing, profile.name, c.seed, c.relation, _why(c.source, c.relation, c.seed),
                                 c.evidence, c.source))
         return None

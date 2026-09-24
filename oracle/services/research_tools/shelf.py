@@ -34,7 +34,7 @@ class Shelf:
     """Where tools put what they find: stored once per URL, cut to the as-of date, newest
     first, and shown with the ids findings cite."""
 
-    def __init__(self, conn: sqlite3.Connection, clock: Clock, on_shown: Callable[[list[int]], None],
+    def __init__(self, conn: sqlite3.Connection, clock: Clock, on_shown: Callable[[list[int], str | None], None],
                  as_of: date | None = None) -> None:
         self._articles = ArticleRepo(conn)
         self._clock = clock
@@ -59,9 +59,9 @@ class Shelf:
         self._articles.save_read_failure(article_id, why, False, to_utc_iso(self._clock.utcnow()))
 
     def keep(self, articles: list[Article], source: str, query: str | None = None) -> list[int]:
-        """Store and mark as shown to the run; the ids, in order."""
+        """Store and mark as shown to the run with the query that found them; the ids, in order."""
         ids = self._articles.save(articles, source, to_utc_iso(self._clock.utcnow()), query)
-        self._on_shown(ids)
+        self._on_shown(ids, query)
         return ids
 
 

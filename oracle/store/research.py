@@ -38,10 +38,11 @@ class ResearchRepo:
                 (run_id, step.n, step.thought, step.action, step.input, step.observation),
             )
 
-    def set_queries(self, run_id: int, queries: list[str]) -> None:
+    def set_queries(self, run_id: int, queries: list[tuple[str, str | None]]) -> None:
+        """Each query with the linked company it was planned for, if any."""
         with transaction(self._conn):
-            self._conn.executemany("INSERT INTO research_queries (run_id, n, query) VALUES (?, ?, ?)",
-                                   [(run_id, n, q) for n, q in enumerate(queries)])
+            self._conn.executemany("INSERT INTO research_queries (run_id, n, query, via) VALUES (?, ?, ?, ?)",
+                                   [(run_id, n, q, via) for n, (q, via) in enumerate(queries)])
 
     def save_report(self, run_id: int, symbol: str, report: Report) -> None:
         with transaction(self._conn):
@@ -70,11 +71,12 @@ class ResearchRepo:
                                    (symbol,)).fetchone()
         return datetime.fromisoformat(at) if at else None
 
-    def add_evidence(self, run_id: int, article_ids: list[int]) -> None:
+    def add_evidence(self, run_id: int, article_ids: list[int], query: str | None = None) -> None:
+        """`query`: what first showed them to this run (an article's own `query` is the first ever)."""
         with transaction(self._conn):
             self._conn.executemany(
-                "INSERT OR IGNORE INTO research_evidence (run_id, article_id) VALUES (?, ?)",
-                [(run_id, a) for a in article_ids],
+                "INSERT OR IGNORE INTO research_evidence (run_id, article_id, query) VALUES (?, ?, ?)",
+                [(run_id, a, query) for a in article_ids],
             )
 
     def set_cited(self, run_id: int, article_ids: set[int]) -> None:
@@ -125,7 +127,9 @@ class ResearchRepo:
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
         evidence = self._conn.execute(
-            f"SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, {_READ_COLUMNS} "
+            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, COALESCE(e.query, a.query), "
+            "(SELECT q.via FROM research_queries q WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE "
+            f"AND q.via IS NOT NULL LIMIT 1), {_READ_COLUMNS} "
             f"FROM research_evidence e JOIN articles a ON a.id = e.article_id {_READ_JOINS} WHERE e.run_id = ? "
             "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (note_model(row[2], row[3]), row[0]),
         )
@@ -134,8 +138,8 @@ class ResearchRepo:
         replay = row[9] is not None
         return ResearchRun(*row[:6], RunStatus(row[6]), row[7], row[8], tuple(Step(*s) for s in steps),
                            tuple(Evidence(i, u, t, o, datetime.fromisoformat(p) if p else None, bool(c), b, q,
-                                          *(_reading(*r) if not replay or is_sec(u) else ((), None)))
-                                 for i, u, t, o, p, c, b, q, *r in evidence),
+                                          *(_reading(*r) if not replay or is_sec(u) else ((), None)), via=via)
+                                 for i, u, t, o, p, c, b, q, via, *r in evidence),
                            date.fromisoformat(row[9]) if row[9] else None,
                            tuple(q for (q,) in self._conn.execute(
                                "SELECT query FROM research_queries WHERE run_id = ? ORDER BY n", (row[0],))),

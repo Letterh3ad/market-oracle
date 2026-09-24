@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { lineChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { big, money } from "../lib/fmt.js";
+import { showLinks } from "../lib/links.js";
 import { repaint } from "../lib/repaint.js";
 import { researchSection } from "../lib/research.js";
 import { deadNote, swapSummary } from "../lib/siblings.js";
@@ -187,10 +188,12 @@ async function load(pane, symbol, refresh = false) {
     researchSection(current),
     el("h3", null, "Analysts"), signals(v),
     el("h3", null, "Fundamentals"), fundamentals(v),
+    el("h3", null, tip("Linked companies", "linked_companies")), el("div", { id: "c-links" }),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),
     ...v.credits.map((c) => el("p", { class: "dim small" }, c)),
     v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "",
-  ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current)]));
+  ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current),
+    showLinks(pane.querySelector("#c-links"), current)]));
 }
 
 function render(pane, arg) {

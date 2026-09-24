@@ -12,6 +12,7 @@ from oracle.services.company_service import FIGURES, CompanyView, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.fx_service import credits
+from oracle.services.links_service import CompanyLink, company_links, delete_link
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.research_service import RunStatus, latest_research, report_history, research_run
@@ -77,6 +78,22 @@ async def get_peers(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
         return {**shared, "basis": None, "fell_back": False, "peers": [], "note": str(exc)}
     return {**shared, "basis": choice.basis, "fell_back": choice.fell_back, "note": None,
             "peers": [{"symbol": r.symbol, "name": r.name, "market_cap": r.market_cap} for r in choice.rows]}
+
+
+@router.get("/{symbol}/links")
+async def get_links(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Companies linked to this one in the news (or the same industry), strongest first."""
+    return {"links": [_link(x) for x in company_links(ctx, symbol)]}
+
+
+@router.delete("/{symbol}/links/{link_id}")
+async def remove_link(symbol: str, link_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Every link between the two companies goes, and none is recorded again."""
+    return {"deleted": _link(delete_link(ctx, symbol, link_id))}
+
+
+def _link(x: CompanyLink) -> dict:
+    return {**asdict(x), "why": x.why, "evidence": [shapes.headline(e) for e in x.evidence]}
 
 
 @router.post("/{symbol}/tags")

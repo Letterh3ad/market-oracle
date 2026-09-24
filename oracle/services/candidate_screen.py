@@ -48,6 +48,7 @@ class Screen:
                         if (r := self._universe.resolve(i.symbol))}
         self.on_list = len(self._listed)
         self._seen: set[str] = set()
+        self._found: dict[str, tuple[ListingProfile | None, str | None]] = {}
 
     @property
     def checks_left(self) -> bool:
@@ -58,7 +59,7 @@ class Screen:
         (None, None) for a company already looked at in this pass."""
         if is_never(name, self._never):
             return None, NEVER
-        profile, why_not = (self._universe.profile(symbol), None) if symbol else self._lookup(name)
+        profile, why_not = (self._universe.profile(symbol), None) if symbol else self._looked_up(name)
         if profile is None:
             return None, why_not or "not in the universe under that name"
         if profile.company_key in self._seen:
@@ -72,6 +73,15 @@ class Screen:
 
     def profile(self, symbol: str) -> ListingProfile | None:
         return self._universe.profile(symbol)
+
+    def resolve(self, name: str) -> ListingProfile | None:
+        """The company the name means, with no rule applied and nothing marked as looked at."""
+        return self._looked_up(name)[0]
+
+    def _looked_up(self, name: str) -> tuple[ListingProfile | None, str | None]:
+        if name not in self._found:
+            self._found[name] = self._lookup(name)
+        return self._found[name]
 
     def watched(self, profile: ListingProfile) -> bool:
         """On one of the user's own lists."""

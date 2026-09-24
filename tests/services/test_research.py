@@ -942,3 +942,63 @@ async def test_progress_follows_a_running_runs_steps_and_is_none_once_it_ends(ct
     assert research_progress(ctx, "AAPL") == "writing the report"
     repo.finish(run, RunStatus.DONE, None, None, "2026-09-23T10:01:00+00:00")
     assert research_progress(ctx, "AAPL") is None
+
+
+def link_apple(ctx):
+    """Microsoft (two articles) and Dell (one) linked in the news; HP a peer with none."""
+    from oracle.research.news import Article
+    from oracle.services.links_service import LinkFound, record_links
+    from oracle.store.articles import ArticleRepo
+
+    a, b = ArticleRepo(ctx.conn).save([Article(f"https://old.test/{n}", f"Old {n}", "Wire", utc("2026-09-10"))
+                                       for n in (1, 2)], "google_news", "2026-09-10T00:00:00+00:00")
+    record_links(ctx, [LinkFound("AAPL", "DELL", "customer", (a,)), LinkFound("AAPL", "MSFT", "partner", (a, b)),
+                       LinkFound("AAPL", "HPQ", "peer")], "discovery")
+
+
+async def test_the_strongest_linked_companies_are_searched_within_the_plan_and_their_evidence_says_so(ctx, news):
+    link_apple(ctx)
+    news.results["Microsoft Apple"] = [("https://x.com/1", "Microsoft and Apple sign AI deal", "X", utc("2026-09-20"))]
+    model = ScriptedModel(step("news_search", "Microsoft Apple"), step("final", "Deal [a3]."))
+    model.suggestions = {"queries": [f"Apple idea {n}" for n in range(5)]}
+    run = await research(ctx, "AAPL", model)
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations",
+                           "Microsoft Apple", "Dell Technologies Apple", "Apple idea 0", "Apple idea 1", "Apple idea 2")
+    [deal] = [e for e in articles(run) if e.url == "https://x.com/1"]
+    assert deal.via == "Microsoft (MSFT), a partner"
+    assert latest_research(ctx, "AAPL").evidence == run.evidence
+
+
+async def test_an_article_first_found_elsewhere_still_says_which_link_found_it_in_this_run(ctx, news):
+    link_apple(ctx)
+    story = ("https://x.com/1", "Microsoft and Apple sign AI deal", "X", utc("2026-09-20"))
+    news.results["Apple shares"] = news.results["Microsoft Apple"] = [story]
+    first = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple shares"), step("final", "Done.")))
+    assert articles(first)[0].via is None
+    run = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Microsoft Apple"), step("final", "Done.")))
+    [deal] = articles(run)
+    assert (deal.query, deal.via) == ("Microsoft Apple", "Microsoft (MSFT), a partner")
+    third = await research(ctx, "AAPL", ScriptedModel(step("news_search", "Apple shares"), step("final", "Done.")))
+    assert articles(third)[0].via is None, "no link label from another run's search"
+
+
+async def test_related_companies_lists_stored_links_first_then_peers_not_already_named(ctx):
+    link_apple(ctx)
+    run = await research(ctx, "AAPL", ScriptedModel(step("related_companies"), step("final", "Done.")))
+    lines = run.steps[0].observation.splitlines()
+    assert lines[:4] == ["Apple Inc. (AAPL) is linked to these (strongest first):",
+                         "MSFT: Microsoft (a partner; 2 articles, last seen 2026-09-21)",
+                         "DELL: Dell Technologies (a customer; 1 article, last seen 2026-09-21)",
+                         "HPQ: HP Inc. (in the same industry; last seen 2026-09-21)"]
+    assert lines[4].startswith("Apple Inc. (AAPL) is related to these by industry group")
+    assert not {"DELL: Dell Technologies (Large Cap)", "HPQ: HP Inc. (Large Cap)"} & set(lines)
+
+
+async def test_a_replay_uses_no_link_found_after_its_day(ctx):
+    from datetime import date
+
+    link_apple(ctx)
+    model = ScriptedModel(step("related_companies"), step("final", "Done."))
+    run = await research(ctx, "AAPL", model, as_of=date(2026, 9, 18))
+    assert not any("Microsoft" in q for q in run.queries)
+    assert "linked" not in run.steps[0].observation

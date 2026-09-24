@@ -74,6 +74,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "discover questions": "GET /api/questions",
     "discover show": "GET /api/questions/{question_id}",
     "discover add": "POST /api/questions/answers/{answer_id}/items/{n}/discovered",
+    "links show": "GET /api/companies/{symbol}/links",  # Company tab, "Linked companies"
+    "links delete": "DELETE /api/companies/{symbol}/links/{link_id}",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",
