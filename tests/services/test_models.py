@@ -222,7 +222,7 @@ def test_a_profile_the_file_writes_inline_is_an_edit_by_hand_error(tmp_path):
         assert ctx.config_source.read_bytes() == before
 
 
-OPENAI = '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\nbase_url = "http://llm.test/v1"\n'
+OPENAI = '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\nbase_url = "https://llm.test/v1"\n'
 
 
 async def test_an_openai_compatible_profile_is_built_on_the_apps_transport_and_tested(tmp_path):
@@ -251,12 +251,21 @@ def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeyp
         _, lm, keyed = model_profile_rows(ctx)
         assert (lm["key_state"], lm["key_fallback"], keyed["key_state"]) == ("none", None, "set")
         assert model_for(ctx, "lm")._api_key is None
-        save_model_profile(ctx, "lm", {"provider": "openai_compatible", "model": "m", "base_url": "http://llm.test/v1",
+        save_model_profile(ctx, "lm", {"provider": "openai_compatible", "model": "m", "base_url": "https://llm.test/v1",
                                        "key_env": "LM_KEY"}, create=False)
         assert ctx.config.models["lm"].key_env == "LM_KEY", "a keyed provider keeps the key it is given"
     assert provider_defaults()["openai_compatible"] == {"base_url": None, "base_url_required": True, "context": 16384,
                                                         "timeout_s": 180.0, "keyed": True}
     assert provider_defaults()["ollama"]["base_url_required"] is False
+
+
+def test_a_saved_key_never_follows_a_switch_to_another_provider(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        save_model_profile(ctx, "deep", {"provider": "claude_api", "model": "m", "key": "sk-ant"}, create=True)
+        save_model_profile(ctx, "deep", {"provider": "openai_compatible", "model": "m",
+                                         "base_url": "https://openrouter.ai/api/v1"}, create=False)
+        assert ctx.config.models["deep"].key is None
+        assert model_for(ctx, "deep")._api_key is None
 
 
 def test_switching_to_openai_compatible_without_a_base_url_is_refused(tmp_path):

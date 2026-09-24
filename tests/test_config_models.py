@@ -52,6 +52,11 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
     ('provider = "claude_api"\nmodel = "x"\nkey = ""', r"models.fast.key must be a non-empty string"),
     ('provider = "claude_api"\nmodel = "x"\nkey = "k"\nkey_env = "K"', r"models.fast sets key and key_env"),
     ('provider = "openai_compatible"\nmodel = "x"', r"models.fast needs a base_url: the server's API root"),
+    ('provider = "ollama"\nmodel = "x"\nbase_url = "http://gpu:11434/?a=1"', r"models.fast.base_url must be an http\(s\)"),
+    ('provider = "ollama"\nmodel = "x"\nbase_url = "http://gpu:11434/#a"', r"models.fast.base_url must be an http\(s\)"),
+    ('provider = "ollama"\nmodel = "x"\nbase_url = "http://u:p@gpu:11434"', r"models.fast.base_url must be an http\(s\)"),
+    ('provider = "openai_compatible"\nmodel = "x"\nbase_url = "http://gpu.lan:8000/v1"\nkey_env = "K"',
+     r"models.fast would send its key unencrypted to gpu.lan: use https://"),
     ('provider = "ollama"\nmodel = "x"\ntemperature = 1', r"unknown key\(s\) in \[models.fast\]: temperature"),
 ])
 def test_a_bad_profile_is_refused_naming_the_key(tmp_path, table, message):
@@ -130,4 +135,10 @@ def test_an_openai_compatible_profile_needs_a_base_url_and_may_take_a_key(tmp_pa
     profiles = model_profiles(config)
     assert profiles["lm"] == ModelProfile("openai_compatible", "qwen3-8b", "http://localhost:1234/v1", 16384, 180.0)
     assert profiles["router"].key_env == "OPENROUTER_KEY"
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "[::1]"])
+def test_a_key_may_go_over_plain_http_to_this_machine(tmp_path, host):
+    _load(tmp_path, f'[models.lm]\nprovider = "openai_compatible"\nmodel = "m"\nbase_url = "http://{host}:1234/v1"\n'
+                    'key = "k"\n')
 

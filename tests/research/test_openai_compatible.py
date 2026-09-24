@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from oracle.research.llm import ModelError
-from oracle.research.openai_compatible import OpenAICompatibleChat, chat_url
+from oracle.research.openai_compatible import MAX_REASONING_TOKENS, MAX_REPLY_TOKENS, OpenAICompatibleChat, chat_url
 from tests.fakes.openai import FakeOpenAI
 
 SCHEMA = {"type": "object", "properties": {"ok": {"type": "boolean"}}}
@@ -20,6 +20,7 @@ async def test_a_reply_is_constrained_to_the_closed_schema_and_parsed():
     assert await chat(server).reply(ASK, SCHEMA) == {"ok": True}
     [body] = server.bodies
     assert body["model"] == "local-8b" and body["messages"] == ASK and body["temperature"] == 0
+    assert body["max_tokens"] == MAX_REPLY_TOKENS
     assert body["response_format"] == {"type": "json_schema", "json_schema": {
         "name": "reply", "strict": True, "schema": {**SCHEMA, "additionalProperties": False, "required": ["ok"]}}}
     assert "authorization" not in server.requests[0].headers
@@ -134,6 +135,104 @@ async def test_content_that_is_not_json_is_handed_back_for_the_loop_to_reject():
 ])
 async def test_reasoning_models_answers_are_found_where_they_put_them(message):
     assert await chat(FakeOpenAI({"message": message})).reply(ASK, SCHEMA) == {"ok": True}
+
+
+@pytest.mark.parametrize("choice", [
+    {"message": None},
+    {"message": {"content": {"ok": True}}},
+    {"message": {"content": 7}},
+    {"message": {"content": [{"type": "text", "text": None}]}},
+    {"message": {"content": None, "reasoning_content": {"ok": True}}},
+    {"message": {"content": None, "reasoning": ["x"]}},
+    "not a choice",
+])
+async def test_a_malformed_reply_is_a_model_error_not_a_crash(choice):
+    def handle(request):
+        return httpx.Response(200, json={"choices": [choice]})
+
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle))
+    with pytest.raises(ModelError, match="no usable answer"):
+        await model.reply(ASK, SCHEMA)
+
+
+async def test_a_reply_is_bounded_in_wall_clock_time_not_only_per_read():
+    import asyncio
+
+    class Trickle(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            await asyncio.sleep(10)
+
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 0.05, transport=Trickle())
+    with pytest.raises(ModelError, match="took longer than 0s"):
+        await model.reply(ASK, SCHEMA)
+
+
+async def test_a_reply_is_capped_and_a_model_that_wants_max_completion_tokens_gets_it_from_then_on():
+    server = FakeOpenAI({"ok": True}, {"ok": True}, cap="max_completion_tokens")
+    model = chat(server)
+    await model.reply(ASK, SCHEMA)
+    await model.reply(ASK, SCHEMA)
+    caps = [{k: b[k] for k in ("max_tokens", "max_completion_tokens") if k in b} for b in server.bodies]
+    assert caps == [{"max_tokens": MAX_REPLY_TOKENS}, {"max_completion_tokens": MAX_REASONING_TOKENS},
+                    {"max_completion_tokens": MAX_REASONING_TOKENS}]
+    assert all(b["response_format"]["type"] == "json_schema" for b in server.bodies)
+
+
+async def test_a_server_taking_neither_cap_is_asked_without_one():
+    server = FakeOpenAI({"ok": True}, cap=None)
+    await chat(server).reply(ASK, SCHEMA)
+    assert [("max_tokens" in b, "max_completion_tokens" in b) for b in server.bodies] == [
+        (True, False), (False, True), (False, False)]
+
+
+@pytest.mark.parametrize("error", [
+    {"message": "Input should be a valid string", "input": {"temperature": 0}},
+    {"message": "The prompt mentions temperature too often"},
+])
+async def test_temperature_is_kept_when_the_error_is_not_about_it(error):
+    server = FakeOpenAI({"ok": True})
+    replies = [httpx.Response(400, json={"error": error})]
+
+    def handle(request):
+        return replies.pop(0) if replies else server.handle(request)
+
+    model = OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle))
+    await model.reply(ASK, SCHEMA)
+    assert server.bodies[0]["temperature"] == 0 and server.bodies[0]["response_format"]["type"] == "json_object"
+
+
+async def test_temperature_named_as_the_param_is_dropped():
+    server = FakeOpenAI({"ok": True})
+    replies = [httpx.Response(400, json={"error": {"message": "bad value", "param": "temperature"}})]
+
+    def handle(request):
+        return replies.pop(0) if replies else server.handle(request)
+
+    await OpenAICompatibleChat("m", "http://llm.test/v1", 5.0, transport=httpx.MockTransport(handle)).reply(ASK, SCHEMA)
+    assert "temperature" not in server.bodies[0] and server.bodies[0]["response_format"]["type"] == "json_schema"
+
+
+def test_a_query_on_base_url_stays_out_of_the_path():
+    assert chat_url("http://llm.test/v1?x=1") == "http://llm.test/v1/chat/completions?x=1"
+
+
+async def test_errors_show_base_url_without_credentials_or_query():
+    server = FakeOpenAI()
+    server.down = True
+    with pytest.raises(ModelError) as caught:
+        await chat(server, base="http://user:pw@llm.test/v1?api_key=secret").reply(ASK, SCHEMA)
+    assert "at http://llm.test/v1 " in str(caught.value) and "secret" not in str(caught.value)
+    assert "pw" not in str(caught.value)
+
+
+async def test_only_a_closing_think_tag_drops_everything_before_it():
+    reply = await chat(FakeOpenAI('I think {"ok": false} maybe</think>\n{"ok": true}')).reply(ASK, SCHEMA)
+    assert reply == {"ok": True}
+
+
+async def test_a_refused_key_shows_the_servers_reason():
+    with pytest.raises(ModelError, match="refused the key: check MY_KEY.*Incorrect API key provided"):
+        await chat(FakeOpenAI(key="sk-right"), api_key="sk-wrong", key_source="check MY_KEY").reply(ASK, SCHEMA)
 
 
 async def test_a_refusal_is_no_answer():

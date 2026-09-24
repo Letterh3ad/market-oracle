@@ -76,6 +76,20 @@ def test_a_provider_without_an_endpoint_of_its_own_asks_for_one():
     assert placeholders({**own, "base_url_required": True})["base_url"] == "required, like http://localhost:1234/v1"
 
 
+def test_a_provider_needing_a_base_url_refuses_an_empty_one_before_sending():
+    script = f"""
+        import {{ profileBody }} from {json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())};
+        const needs = {{ base_url_required: true }};
+        let refused;
+        try {{ profileBody({json.dumps(FORM)}, false, needs); }} catch (err) {{ refused = err.message; }}
+        const ok = profileBody({json.dumps({**FORM, "base_url": "http://localhost:1234/v1"})}, false, needs);
+        console.log(JSON.stringify({{ refused, base_url: ok.base_url }}));
+    """
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    assert json.loads(done.stdout) == {"refused": "type a base_url: the server's API root",
+                                       "base_url": "http://localhost:1234/v1"}
+
+
 def test_bad_input_is_refused_before_sending():
     assert body({**FORM, "context": "lots"}) == {"refused": "context: not a number"}
     assert body({**FORM, "key": "k", "key_env": "K"}) == {"refused": "give a key or key_env, not both"}

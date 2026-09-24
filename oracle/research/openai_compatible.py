@@ -1,31 +1,52 @@
 """Any OpenAI-style chat completions server (LM Studio, vLLM, llama.cpp, OpenRouter, OpenAI)
 over plain HTTP. Replies are constrained by a strict json_schema response_format; a server
-that refuses one is asked for a json_object with the schema in the prompt instead, and the
-model remembers that, so later replies do not pay the refusal again. The key goes only to
-base_url: redirects are not followed."""
+that refuses one is asked for a json_object with the schema in the prompt instead. A
+parameter the model refuses (temperature, the output cap) is dropped or swapped. The model
+remembers each of these, so later replies do not pay the refusal again. The key goes only
+to base_url: redirects are not followed."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from oracle.research.llm import ModelError, closed_schema
 
 NO_KEY = "give the model profile a key or key_env in Settings > Models"
+# Answers run to a few hundred tokens (Ollama's 1024 cap has room to spare); 8x that covers a
+# local model thinking in its content. Reasoning models count hidden thinking against the cap,
+# so theirs matches Claude's thinking budget.
+MAX_REPLY_TOKENS = 8192
+MAX_REASONING_TOKENS = 16000
+CAPS = ("max_tokens", "max_completion_tokens", None)
+"""Each output cap tried in turn as the model refuses the one before; None sends none."""
 THINKING = re.compile(r"<think>.*?</think>", re.DOTALL)
 FENCE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+REFUSED = r"(?:unsupported|not supported|does not support|only the default)"
 
 
 def chat_url(base_url: str) -> str:
     """base_url is the API root (`http://host:1234/v1`); a bare host gets `/v1`, and a full
     `/chat/completions` URL is taken as it is."""
-    base = base_url.rstrip("/")
-    if base.endswith("/chat/completions"):
-        return base
-    return f"{base}/v1/chat/completions" if not urlsplit(base).path else f"{base}/chat/completions"
+    parts = urlsplit(base_url)
+    path = parts.path.rstrip("/")
+    if not path.endswith("/chat/completions"):
+        path = f"{path or '/v1'}/chat/completions"
+    return urlunsplit(parts._replace(path=path))
+
+
+def shown_url(url: str) -> str:
+    """The URL without credentials, query or fragment, safe to put in an error."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = f"{host}:{parts.port}" if parts.port else host
+    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
 
 
 class OpenAICompatibleChat:
@@ -36,7 +57,7 @@ class OpenAICompatibleChat:
         """No `api_key`: no Authorization header, as local servers want. `key_source` tells
         the user where to fix a refused key."""
         self.model = model
-        self._base = base_url
+        self._base = shown_url(base_url)
         self._url = chat_url(base_url)
         self._timeout = timeout_s
         self._api_key = api_key
@@ -44,6 +65,8 @@ class OpenAICompatibleChat:
         self._transport = transport
         self._schema_format = True
         self._temperature = True
+        self._cap = 0
+        """Index into CAPS."""
         self.fell_back_to: set[str] = set()
         """Always empty: the server never names a model that answered in this one's place."""
 
@@ -54,9 +77,11 @@ class OpenAICompatibleChat:
             if response.status_code not in (400, 422):
                 break
             problem = _problem(response)
-            # Reasoning models (OpenAI's o-series and gpt-5) take only their default temperature.
-            if self._temperature and "temperature" in problem.lower():
+            cap = CAPS[self._cap]
+            if self._temperature and _refuses(response, "temperature"):
                 self._temperature = False
+            elif cap and _refuses(response, cap):
+                self._cap += 1
             elif self._schema_format:
                 self._schema_format, fell_back_now = False, True
             elif fell_back_now:
@@ -69,11 +94,13 @@ class OpenAICompatibleChat:
         self._check(response)
         try:
             message = response.json()["choices"][0]["message"]
+            if not isinstance(message, dict):
+                raise TypeError(f"message is {type(message).__name__}")
+            if message.get("refusal"):
+                return None
+            return _parsed(_answer(message))
         except (KeyError, IndexError, TypeError, ValueError) as exc:
-            raise ModelError(f"{self._where} gave no usable answer: {exc!r}") from exc
-        if message.get("refusal"):
-            return None
-        return _parsed(_answer(message))
+            raise ModelError(f"{self._where} gave no usable answer: {exc!r}"[:300]) from exc
 
     @property
     def _where(self) -> str:
@@ -91,25 +118,29 @@ class OpenAICompatibleChat:
         if self._temperature:
             # Research reads evidence; sampling would only make reruns disagree.
             payload["temperature"] = 0
+        cap = CAPS[self._cap]
+        if cap:
+            payload[cap] = MAX_REPLY_TOKENS if cap == "max_tokens" else MAX_REASONING_TOKENS
         return payload
 
     async def _post(self, payload: dict) -> httpx.Response:
         headers = {"Authorization": f"Bearer {self._api_key}"} if self._api_key else {}
         try:
             async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as http:
-                return await http.post(self._url, json=payload, headers=headers)
-        except httpx.TimeoutException as exc:
+                # httpx times each read, so a server trickling tokens could outlast timeout_s many times over.
+                return await asyncio.wait_for(http.post(self._url, json=payload, headers=headers), self._timeout)
+        except (httpx.TimeoutException, TimeoutError) as exc:
             raise ModelError(f"{self._where} took longer than {self._timeout:.0f}s to answer; "
                              "raise its timeout_s in Settings > Models if the model is still loading") from exc
         except httpx.TransportError as exc:
-            raise ModelError(f"{self.model} is not reachable at {self._base} ({exc}): start the server "
-                             "or check base_url") from exc
+            raise ModelError(f"{self.model} is not reachable at {self._base} ({type(exc).__name__}): start the "
+                             "server or check base_url") from exc
 
     def _check(self, response: httpx.Response) -> None:
         status = response.status_code
         if status in (401, 403):
-            raise ModelError(f"{self._where} refused the key: {self._key_source}" if self._api_key
-                             else f"{self._where} wants a key: {NO_KEY}")
+            fix = f"refused the key: {self._key_source}" if self._api_key else f"wants a key: {NO_KEY}"
+            raise ModelError(f"{self._where} {fix} ({_problem(response)})")
         if status == 404:
             raise ModelError(f"{self._where} answered HTTP 404 ({_problem(response)}): check the model name, and "
                              "that base_url is the API root, like http://localhost:1234/v1")
@@ -127,23 +158,49 @@ def _with_schema(messages: list[dict], schema: dict) -> list[dict]:
     return [{"role": "system", "content": ask}, *messages]
 
 
-def _problem(response: httpx.Response) -> str:
+def _error(response: httpx.Response) -> dict:
     try:
         error = response.json().get("error")
-        text = error.get("message") if isinstance(error, dict) else error
     except (ValueError, AttributeError):
-        text = None
-    return str(text or response.text or response.reason_phrase)[:200]
+        return {}
+    return error if isinstance(error, dict) else {"message": error} if isinstance(error, str) else {}
+
+
+def _problem(response: httpx.Response) -> str:
+    message = _error(response).get("message")
+    return str(message or response.text or response.reason_phrase)[:200]
+
+
+def _refuses(response: httpx.Response, param: str) -> bool:
+    """Whether the error is about `param`: named as the error's param, or beside a refusal in
+    its message. Never the rest of the body, which may echo the request back."""
+    error = _error(response)
+    if error.get("param") == param:
+        return True
+    message = str(error.get("message") or "").lower()
+    near = r"[^.]{0,60}"
+    return re.search(rf"\b{param}\b{near}{REFUSED}|{REFUSED}{near}\b{param}\b", message) is not None
 
 
 def _answer(message: dict) -> str:
-    """The reply's text. Reasoning models may wrap their thinking in <think> tags, or leave
-    content empty and answer in `reasoning_content` or `reasoning` (vLLM, OpenRouter)."""
+    """The reply's text. Reasoning models may wrap their thinking in <think> tags (or only
+    close one), or leave content empty and answer in `reasoning_content` or `reasoning`."""
     content = message.get("content")
     if isinstance(content, list):
-        content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-    text = THINKING.sub("", content or "").strip()
-    return text or message.get("reasoning_content") or message.get("reasoning") or ""
+        content = "".join(_text(part.get("text"), missing=None) for part in content
+                          if isinstance(part, dict) and part.get("type", "text") == "text")
+    text = THINKING.sub("", _text(content))
+    text = text.rsplit("</think>", 1)[-1].strip()
+    return text or _text(message.get("reasoning_content")) or _text(message.get("reasoning"))
+
+
+def _text(value: object, missing: str | None = "") -> str:
+    """`value` as text; None gives `missing`, or is malformed where `missing` is None."""
+    if value is None and missing is not None:
+        return missing
+    if not isinstance(value, str):
+        raise TypeError(f"expected text, got {type(value).__name__}")
+    return value
 
 
 def _parsed(text: str) -> object:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import re
@@ -7,6 +8,7 @@ import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import tomlkit
 from tomlkit.exceptions import TOMLKitError
@@ -846,8 +848,8 @@ def check_profile(name: str, raw: object) -> ModelProfile:
     low, high = PROFILE_CONTEXT_RANGE
     checks = {
         "model": (_text(p.model), "a model name like qwen3:8b"),
-        "base_url": (p.base_url is None or isinstance(p.base_url, str) and re.match(r"https?://", p.base_url) is not None,
-                     "an http(s) URL"),
+        "base_url": (p.base_url is None or _plain_url(p.base_url),
+                     "an http(s) URL with no user, password, query or fragment"),
         "context": (p.context is None or _whole(p.context, low, high), f"a whole number of tokens from {low} to {high}"),
         "timeout_s": (p.timeout_s is None or isinstance(p.timeout_s, (int, float)) and not isinstance(p.timeout_s, bool)
                       and p.timeout_s > 0, "a positive number"),
@@ -861,6 +863,9 @@ def check_profile(name: str, raw: object) -> ModelProfile:
                           "not a key; put a key itself in key")
     if p.key is not None and not _text(p.key):
         raise ConfigError(f"{where}.key must be a non-empty string")
+    if (p.key or p.key_env) and p.base_url and not _safe_for_keys(p.base_url):
+        raise ConfigError(f"{where} would send its key unencrypted to {urlsplit(p.base_url).hostname}: use https://, "
+                          "or plain http:// only to this machine")
     return replace(p, timeout_s=None if p.timeout_s is None else float(p.timeout_s),
                    key=p.key.strip() if p.key else None)
 
@@ -874,6 +879,29 @@ def _env_name(value: object) -> bool:
         return False
     mixed = value != value.upper() and value != value.lower()
     return len(value) <= 64 and not (mixed and len(value) > 24)
+
+
+def _plain_url(value: object) -> bool:
+    """An http(s) URL a request can be built on, with nothing in it that belongs in a key field."""
+    if not isinstance(value, str):
+        return False
+    try:
+        parts = urlsplit(value)
+        parts.port
+    except ValueError:
+        return False
+    return (parts.scheme in ("http", "https") and bool(parts.hostname) and "@" not in parts.netloc
+            and not parts.query and not parts.fragment and "?" not in value and "#" not in value)
+
+
+def _safe_for_keys(url: str) -> bool:
+    parts = urlsplit(url)
+    if parts.scheme == "https" or parts.hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(parts.hostname or "").is_loopback
+    except ValueError:
+        return False
 
 
 def _text(value: object) -> bool:

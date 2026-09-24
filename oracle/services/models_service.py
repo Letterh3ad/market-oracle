@@ -148,7 +148,8 @@ PROFILE_KEYS = tuple(f.name for f in fields(ModelProfile))
 
 def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], create: bool) -> None:
     """Add (`create`) or replace a profile; keys left out take the provider's defaults. A
-    literal `key` left out (None) is kept unless `key_env` replaces it; "" removes it. On a
+    literal `key` left out (None) is kept unless `key_env` replaces it or the provider
+    changes (one provider's key must never reach another's host); "" removes it. On a
     provider change, values equal to the old provider's (carried over by a form) and keys
     the new provider cannot take are dropped. Editing `default` writes `[models.default]`,
     which then overrides `[llm]`."""
@@ -164,7 +165,7 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
         table = {k: v for k, v in table.items() if k not in PROVIDER_KEYS or v != getattr(old, k)}
     if provider and not provider.keyed:
         table = {k: v for k, v in table.items() if k not in ("key", "key_env")}
-    elif values.get("key") is None and "key_env" not in table and old and old.key:
+    elif values.get("key") is None and "key_env" not in table and old and old.key and old.provider == named:
         table["key"] = old.key
     _checked(check_profile, name, table)
     section = f"models.{name}"
