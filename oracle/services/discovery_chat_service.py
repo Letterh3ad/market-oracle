@@ -297,8 +297,9 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
 
 
 def _links(screen: Screen, mentions: list[Mention], item_ids: list[int]) -> list[LinkFound]:
-    """The links the model says an item states, both companies resolved, with those items as evidence."""
-    return [LinkFound(other.symbol, named.symbol, m.relation, tuple(item_ids[i] for i in m.headlines))
+    """The links the model says an item states, both companies resolved, with the items naming
+    both in one line as evidence."""
+    return [LinkFound(other.primary_symbol, named.primary_symbol, m.relation, tuple(item_ids[i] for i in m.link_items))
             for m in mentions if m.related_to
             and (other := screen.resolve(m.related_to)) and (named := screen.resolve(m.name))]
 

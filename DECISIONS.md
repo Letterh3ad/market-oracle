@@ -2021,11 +2021,12 @@ the tag either way; matching the planned query needs no new plumbing in the tool
 a question, not companies related to a seed: its naming call returned no relation at all.
 **Decision:** The naming schema gets two optional fields per company, `related_to` (another
 company) and `relation` (supplier, customer, competitor or partner; never "other"). The prompt
-asks for them only when a cited item says so. Code keeps the pair only when a cited item names
-the other company too (the same invention check names get), and not the company itself. Both
-names resolve through the screen's plain lookup (no shortlist rules), and
-`record_links(..., source="chat")` applies the never list and deleted pairs, with the cited items
-as evidence. Links are kept whatever the question's filters leave off: the item states a fact
+asks for them only when a cited item says so. Code keeps the pair only when one line of a cited
+item (its title, or one fact bullet) names both companies, and not the company itself; only those
+items are the link's evidence, so an item that never names the other company cannot inflate its
+rank. Both names resolve through the screen's plain lookup (no shortlist rules, but only a
+company's own shares: no funds or depositary receipts), stored as primary listings, and
+`record_links(..., source="chat")` applies the never list and deleted pairs. Links are kept whatever the question's filters leave off: the item states a fact
 about the two companies, not an answer to the question. The answer's notes say how many were kept.
 **Alternatives:** Linking every shortlisted company to the others (invents relations); linking
 them to the question's subject (a question has no company to link to); a second model call per

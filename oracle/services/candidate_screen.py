@@ -75,8 +75,10 @@ class Screen:
         return self._universe.profile(symbol)
 
     def resolve(self, name: str) -> ListingProfile | None:
-        """The company the name means, with no rule applied and nothing marked as looked at."""
-        return self._looked_up(name)[0]
+        """The company's own shares the name means, with no other rule applied and nothing
+        marked as looked at; None for a fund or a depositary receipt."""
+        profile = self._looked_up(name)[0]
+        return profile if profile and profile.type == "equity" and not is_receipt(profile.name) else None
 
     def _looked_up(self, name: str) -> tuple[ListingProfile | None, str | None]:
         if name not in self._found:
