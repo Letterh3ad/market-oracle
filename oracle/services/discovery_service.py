@@ -42,7 +42,7 @@ from oracle.universe.listings import blind_name
 __all__ = [
     "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
     "RELATION_AUTO", "SOURCE_QUESTION", "Skipped", "add_by_hand", "add_checked", "discover", "discovered",
-    "gdelt_query", "list_full", "move_discovered", "mover_query", "mover_searches", "news_query", "remove_discovered",
+    "gdelt_query", "list_full", "question_full", "move_discovered", "mover_query", "mover_searches", "news_query", "remove_discovered",
     "searched_sources", "theme_query", "Validation",
 ]
 
@@ -269,13 +269,22 @@ def add_checked(ctx: AppContext, profile: ListingProfile, listing: str, source: 
     with transaction(ctx.conn):
         if why := _cannot_add(Screen(ctx, 0), profile, ctx.config.discovery.max_total):
             return why
+        cap = ctx.config.discovery.per_question
+        if question_id is not None and (mine := DiscoveryRepo(ctx.conn).on_list_from(question_id)) >= cap:
+            return question_full(mine, cap)
         DiscoveryRepo(ctx.conn).add(listing, profile.company_key, profile.name, source, seed, relation, evidence,
                                     _now(ctx), question_id, validation)
     return None
 
 
 def list_full(on_list: int, cap: int) -> str:
-    return f"the discovered list is full ({on_list} of {cap}): remove some, or raise the limit in Settings"
+    return (f"the discovered list is full ({on_list} of {cap}): remove some, or raise [discovery] max_total in the "
+            "Settings section")
+
+
+def question_full(mine: int, cap: int) -> str:
+    return (f"this question already has {mine} of its {cap} on the discovered list "
+            "(raise [discovery] per_question in the Settings section)")
 
 
 def _why(source: str, relation: str, seed: str) -> str:

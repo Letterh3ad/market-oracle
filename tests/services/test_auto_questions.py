@@ -1,8 +1,9 @@
 """Auto questions: each answer adds the shortlisted companies that pass validation to the
 discovered list, within the caps, and keeps why the rest stayed suggestions."""
 
+import asyncio
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -10,7 +11,9 @@ from oracle.services import tick_service
 from oracle.services.discovery_chat_service import (
     answer, answer_auto_questions, new_question, question, questions, set_auto,
 )
-from oracle.services.discovery_service import discovered
+from oracle.services.discovery_service import add_checked, discovered
+from oracle.services.jobs_service import single_flight
+from oracle.store.universe import UniverseRepo
 from oracle.services.errors import UnknownQuestion
 from oracle.services.paper_service import traded_by
 from oracle.services.tick_service import run_midday
@@ -19,6 +22,7 @@ from oracle.store.discoveries import DISCOVERED_LIST
 from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.web_search import FakeSearcher
 from tests.services.test_discovery_chat import GRID, ctx, gdelt, model, names, pages, web, yahoo  # noqa: F401
+from tests.services.test_tick_discovery import settings as section
 
 # Siemens Energy is named by Reuters, BBC and Handelsblatt; Fluence by BBC and Reuters; RWE by Reuters alone.
 ITEMS = [
@@ -48,8 +52,8 @@ def judged(no=(), answers=1):
 
     def relevance(messages):
         company = messages[1]["content"].split("\nCompany: ", 1)[1].split("\n", 1)[0]
-        return ({"answer": "no", "reason": "Not about grid batteries"} if any(n in company for n in no)
-                else {"answer": "yes", "reason": "Builds grid batteries"})
+        return ({"reason": "Not about grid batteries", "items": [], "answer": "no"} if any(n in company for n in no)
+                else {"reason": "Builds grid batteries", "items": [1], "answer": "yes"})
 
     m.roles = {"relevance_check": relevance}
     return m
@@ -108,7 +112,7 @@ async def test_the_per_question_cap_stops_validation_once_reached(ctx):
     v = by_symbol(view)
     assert v["ENR.DE"].added and not v["FLNC"].checks
     assert v["FLNC"].note == "not validated: this question already has 1 of its 1 on the discovered list " \
-                             "(Settings, per_question)"
+                             "(raise [discovery] per_question in the Settings section)"
     assert len(relevance_calls(m)) == 1 and [d.symbol for d in discovered(ctx)] == ["ENR.DE"]
 
 
@@ -169,8 +173,8 @@ async def test_the_midday_pass_answers_auto_questions_between_discovery_and_rese
     q = await auto_question(ctx)
     m = judged()
 
-    async def answering(c, limit):
-        return await answer_auto_questions(c, limit, m, FakeSearcher())
+    async def answering(c, limit, deadline):
+        return await answer_auto_questions(c, limit, m, FakeSearcher(), deadline)
 
     monkeypatch.setattr(tick_service, "answer_auto_questions", answering)
     monkeypatch.setattr(tick_service, "_discover", _nothing)
@@ -183,3 +187,110 @@ async def test_the_midday_pass_answers_auto_questions_between_discovery_and_rese
 
 async def _nothing(*_, **__):
     return "skipped in this test", None
+
+
+def with_relevance(m, first):
+    """`m` whose relevance check calls `first(ctx)` before its first answer."""
+    judge = m.roles["relevance_check"]
+    calls = []
+
+    def relevance(messages):
+        calls.append(1)
+        if len(calls) == 1 and (raised := first()) is not None:
+            return raised
+        return judge(messages)
+
+    m.roles = {"relevance_check": relevance}
+    return m
+
+
+async def test_a_cancelled_answer_keeps_what_it_added_and_the_validations_so_far(ctx):
+    q = await auto_question(ctx)
+    m = judged()
+    judge = m.roles["relevance_check"]
+    m.roles = {"relevance_check": lambda msg: asyncio.CancelledError() if "Company: Fluence" in msg[1]["content"]
+               else judge(msg)}
+    with pytest.raises(asyncio.CancelledError):
+        await answer(ctx, q.id, m, FakeSearcher())
+    saved = question(ctx, q.id).answers[0]
+    assert (saved.answer.status, saved.answer.error) == ("failed", "cancelled")
+    v = by_symbol(saved)
+    assert v["ENR.DE"].added and v["FLNC"] is None
+    assert "auto: added ENR.DE; 2 stayed suggestions (why is on each)" in saved.answer.notes
+    assert [d.symbol for d in discovered(ctx)] == ["ENR.DE"]
+
+
+async def test_no_company_is_validated_after_the_deadline(ctx):
+    q = await auto_question(ctx)
+    m = with_relevance(judged(), lambda: ctx.clock.advance(600))
+    view = await answer(ctx, q.id, m, FakeSearcher(), deadline=ctx.clock.utcnow() + timedelta(minutes=5))
+    v = by_symbol(view)
+    assert v["ENR.DE"].added and v["FLNC"].note == "not validated: the time for auto questions ran out"
+
+
+async def test_switching_auto_off_mid_answer_adds_nothing_more(ctx):
+    q = await auto_question(ctx)
+    m = with_relevance(judged(), lambda: set_auto(ctx, q.id, False) and None)
+    view = await answer(ctx, q.id, m, FakeSearcher())
+    v = by_symbol(view)
+    assert v["ENR.DE"].note == "passed, not added: auto was switched off for this question" and not v["ENR.DE"].added
+    assert v["FLNC"].note == "not validated: auto was switched off for this question"
+    assert discovered(ctx) == []
+
+
+async def test_the_per_question_cap_is_read_again_where_the_company_is_added(ctx):
+    settings(ctx, per_question=1)
+    q = await auto_question(ctx)
+    await answer(ctx, q.id, judged(), FakeSearcher())
+    universe = UniverseRepo(ctx.conn)
+    why = add_checked(ctx, universe.profile("FLNC"), "FLNC", "question", GRID, "auto", (), q.id)
+    assert why == "this question already has 1 of its 1 on the discovered list " \
+                  "(raise [discovery] per_question in the Settings section)"
+
+
+async def test_a_question_is_not_started_without_time_for_a_typical_answer(ctx):
+    first, second = await auto_question(ctx), await auto_question(ctx)
+    m = with_relevance(judged(answers=2), lambda: ctx.clock.advance(120))
+    run = await answer_auto_questions(ctx, 3, m, FakeSearcher(), ctx.clock.utcnow() + timedelta(minutes=6))
+    assert [v.answer.question_id for v in run.answered] == [first.id]
+    assert run.note == "no time left for another question"
+    assert question(ctx, second.id).answers == ()
+
+
+async def test_a_question_already_being_answered_makes_the_rest_wait(ctx):
+    await auto_question(ctx)
+    m = judged()
+    with single_flight(ctx, "discovery_chat", 60):
+        run = await answer_auto_questions(ctx, 3, m, FakeSearcher())
+    assert run.answered == () and run.note == "another question is being answered: the rest wait"
+
+
+async def test_a_questions_stage_stopped_at_its_hard_limit_still_says_what_it_added(ctx, monkeypatch):
+    await auto_question(ctx)
+
+    async def cut_off(c, limit, deadline):
+        await answer_auto_questions(c, limit, judged(), FakeSearcher(), deadline)
+        raise TimeoutError
+
+    monkeypatch.setattr(tick_service, "answer_auto_questions", cut_off)
+    monkeypatch.setattr(tick_service, "_discover", _nothing)
+    monkeypatch.setattr(tick_service, "_research", _nothing)
+    stage = next(s for s in (await run_midday(ctx)).stages if s.name == "questions")
+    assert stage.summary == "stopped at its time limit, added ENR.DE, FLNC"
+
+
+@pytest.mark.parametrize("name, values, says", [
+    ("discovery", {"enabled": False}, "discovery is off in Settings: nothing asked"),
+    ("automation", {"enabled": False}, "automation is off: nothing asked"),
+])
+async def test_the_questions_stage_keeps_to_discovery_s_switches(ctx, monkeypatch, name, values, says):
+    await auto_question(ctx)
+    section(ctx, name, **values)
+    monkeypatch.setattr(tick_service, "_discover", _nothing)
+    monkeypatch.setattr(tick_service, "_research", _nothing)
+    stage = next(s for s in (await run_midday(ctx)).stages if s.name == "questions")
+    assert stage.summary == says and discovered(ctx) == []
+
+
+def test_the_questions_stage_has_its_own_time_cap():
+    assert tick_service.questions_cap_min(None, 60) == 15 and tick_service.questions_cap_min(None, 30) == 10

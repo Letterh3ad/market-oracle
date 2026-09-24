@@ -121,6 +121,10 @@ class DiscoveryRepo:
                 "INSERT INTO discovery_removed (symbol, company_key, name, removed_at) VALUES (?, ?, ?, ?) "
                 "ON CONFLICT (symbol) DO NOTHING", (symbol, company_key, name, now))
 
+    def removed_rows(self) -> list[tuple[str, str | None, str | None]]:
+        """(symbol, company key, name) of each removal."""
+        return self._conn.execute("SELECT symbol, company_key, name FROM discovery_removed").fetchall()
+
     def removed(self) -> tuple[set[str], set[str]]:
         """(symbols, company keys) the user removed from the discovered list."""
         rows = self._conn.execute("SELECT symbol, company_key FROM discovery_removed").fetchall()

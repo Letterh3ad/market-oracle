@@ -2104,3 +2104,26 @@ auto questions on the nightly tick too (it already has a discovery stage and a l
 queue); fetching filings live during validation (network per candidate; stored filings cover
 companies research already read); an auto flag given at Ask time (one more switch; Rerun after
 switching does the same).
+
+## 2026-09-24 - Auto validation hardened (discovery 05 gate round 1)
+**Context:** The gate found one outlet passing the 2-outlet rule under two spellings, a relevance
+call open to injected headlines, a twin check blind to discovered and removed companies, and a
+cancelled answer losing its validations.
+**Decision:** Outlets are keyed by the site's registered name (`research.web.site_name`: the feed's
+own site, else the link's host, subdomains and suffix dropped; a Google News item with no site
+falls back to its outlet name, filler words dropped), so "Reuters" and uk.reuters.com are one.
+A normalised title counts once. Newswire hosts are one outlet, "company releases"; SEC filings
+are "SEC filings"; at least one counted outlet must be neither. Relevance: items are quoted
+between `<item N>` tags (tags inside an item are stripped), the prompt says they are untrusted
+and never obeyed, the schema asks reason, items, then answer, and only the cited items the
+evidence check counted are shown, so a yes must name at least one of them by a valid number or
+it fails. The twin check covers every list (discovered included) and the removed list, by
+symbol and blind name. An answer saves its shortlist and validations even when it fails or is
+cancelled, and notes what it added. The midday questions stage has its own cap (min(15 min,
+budget/3)): no company is validated after it, no question starts with under 5 minutes (a typical
+answer) left, and a hard stop one typical answer later reports what was added from the list
+itself. Auto is re-read before each validation and each add; `add_checked` re-reads
+`per_question` in its transaction. Exclude fallback: after exact names, a sector or group whose
+name starts with the words (so "consumer" is both Consumer sectors), then any name holding them.
+**Alternatives:** A public-suffix list (a dependency for the few country suffixes seen); counting
+releases as independent when on two wires (every wire copy is the same company speaking).

@@ -121,7 +121,7 @@ def test_a_blank_question_is_refused(run):
 def test_auto_switches_a_question_and_an_auto_answer_says_what_validation_made_of_each(run, news, chat):
     rivals(news, "Rivian and Honda race on electric trucks")
     chat.replies = [naming(("Rivian", "Trucks", [1])), naming(("Rivian", "Trucks", [1]))]
-    chat.roles = {"relevance_check": {"answer": "yes", "reason": "Makes trucks"}}
+    chat.roles = {"relevance_check": {"reason": "Makes trucks", "items": [1], "answer": "yes"}}
     run("discover", "ask", "which carmakers gain from electric trucks?")
     code, out, _ = run("discover", "auto", "1", "on")
     assert code == 0 and "question 1 is on auto" in out

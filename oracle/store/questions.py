@@ -61,7 +61,7 @@ class Answer:
 
 
 _ANSWER = "id, question_id, model, started_at, finished_at, status, stage, error, searches, notes"
-_QUESTION = "SELECT id, text, refines, asked_at, auto FROM discovery_questions"
+_QUESTION = "SELECT q.id, q.text, q.refines, q.asked_at, q.auto FROM discovery_questions q"
 
 
 def _question(row) -> Question:
@@ -79,15 +79,15 @@ class QuestionRepo:
         return Question(cur.lastrowid, text, refines, now)
 
     def get(self, question_id: int) -> Question | None:
-        row = self._conn.execute(f"{_QUESTION} WHERE id = ?", (question_id,)).fetchone()
+        row = self._conn.execute(f"{_QUESTION} WHERE q.id = ?", (question_id,)).fetchone()
         return _question(row) if row else None
 
     def all(self) -> list[Question]:
         """Newest first."""
-        return [_question(r) for r in self._conn.execute(f"{_QUESTION} ORDER BY id DESC")]
+        return [_question(r) for r in self._conn.execute(f"{_QUESTION} ORDER BY q.id DESC")]
 
     def follow_ups(self, question_id: int) -> list[Question]:
-        return [_question(r) for r in self._conn.execute(f"{_QUESTION} WHERE refines = ? ORDER BY id", (question_id,))]
+        return [_question(r) for r in self._conn.execute(f"{_QUESTION} WHERE q.refines = ? ORDER BY q.id", (question_id,))]
 
     def set_auto(self, question_id: int, on: bool) -> None:
         with transaction(self._conn):
@@ -96,8 +96,7 @@ class QuestionRepo:
     def auto(self) -> list[Question]:
         """Auto questions, the one answered longest ago (or never) first."""
         rows = self._conn.execute(
-            "SELECT q.id, q.text, q.refines, q.asked_at, q.auto FROM discovery_questions q "
-            "LEFT JOIN discovery_answers a ON a.question_id = q.id WHERE q.auto GROUP BY q.id "
+            f"{_QUESTION} LEFT JOIN discovery_answers a ON a.question_id = q.id WHERE q.auto GROUP BY q.id "
             "ORDER BY MAX(a.started_at) IS NOT NULL, MAX(a.started_at), q.id")
         return [_question(r) for r in rows]
 

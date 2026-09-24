@@ -131,6 +131,7 @@ def test_an_auto_answer_says_what_validation_made_of_each_company():
 
 def test_the_auto_switch_shows_the_question_s_mode_and_saves_a_change():
     q = {"id": 4, "text": "grid batteries?", "asked": "grid batteries?", "auto": False,
+         "limits": {"per_question": 2, "max_total": 10},
          "chain": [{"id": 4, "text": "grid batteries?"}], "follow_ups": [], "answers": []}
     out = run(f"""
         let changes = 0;
@@ -140,7 +141,9 @@ def test_the_auto_switch_shows_the_question_s_mode_and_saves_a_change():
         box.checked = true;
         box.fire("change");
         await settle();
-        console.log(JSON.stringify({{ before, asked, changes }}));""")
+        console.log(JSON.stringify({{ before, asked, changes, text: view.textContent }}));""")
+    assert "(up to 2 from this question and 10 on the list in all; [discovery] per_question and max_total in the " \
+           "Settings section)" in out["text"]
     assert out["before"] is False and out["asked"] == ["PUT /api/questions/4/auto"] and out["changes"] == 1
 
 

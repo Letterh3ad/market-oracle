@@ -129,11 +129,14 @@ function autoSwitch(q, changed) {
       showError(err.message);
     }
   });
+  const limits = q.limits ? ` (up to ${q.limits.per_question} from this question and ${q.limits.max_total} on the `
+    + "list in all; [discovery] per_question and max_total in the Settings section)" : "";
   return el("label", { class: "small", title: "Each answer (Rerun, or the midday pass) adds shortlisted companies to "
     + "the discovered list only when they pass every check: a live primary line with fresh prices, not on the never "
-    + "or removed list, not another line of a watched company, named by 2 outlets in 90 days, and a separate model "
-    + "check that the news shows it fits the question. The rest stay suggestions with the failed check shown." },
-  box, " Auto: add companies that pass validation to the discovered list (up to the per-question limit in Settings)");
+    + "or removed list, not another line of a company you watch, discovered or removed, named by 2 outlets in 90 "
+    + "days (not only the company's own releases), and a separate model check that the news shows it fits the "
+    + "question. The rest stay suggestions with the failed check shown." },
+  box, ` Auto: add companies that pass validation to the discovered list${limits}`);
 }
 
 // The whole question: what it asks (with what it refines), the newest answer, older ones folded.

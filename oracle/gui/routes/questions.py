@@ -34,7 +34,9 @@ async def listing(ctx: AppContext = Depends(get_ctx)) -> dict:
 async def show(question_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
     """The question with what it refines and its follow-ups, and every answer, newest first."""
     v = question(ctx, question_id)
+    d = ctx.config.discovery
     return {**asdict(v.question), "asked": v.asked, "chain": [asdict(q) for q in v.chain],
+            "limits": {"per_question": d.per_question, "max_total": d.max_total},
             "follow_ups": [asdict(q) for q in v.follow_ups], "answers": [shapes.answer(a) for a in v.answers]}
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
 
 from oracle.net.gate import SourceGate
 from oracle.research.llm import ChatModel, ModelError
@@ -43,7 +44,7 @@ from oracle.universe.listings import MARKET_CAP_BANDS
 __all__ = [
     "AnswerView", "AutoRun", "Line", "Question", "QuestionLine", "QuestionView", "add_to_discovered", "answer",
     "answer_auto_questions", "answer_progress", "ask", "new_question", "question", "questions", "saved_question",
-    "set_auto", "sweep_interrupted_answers",
+    "TYPICAL_ANSWER_MIN", "set_auto", "sweep_interrupted_answers",
 ]
 
 JOB = "discovery_chat"
@@ -58,6 +59,8 @@ MAX_ITEMS = 24
 READ = 4
 MAX_PRICE_CHECKS = 8
 MAX_EXCLUDE = 5
+# About how long one answer takes with a local model; a question is not started with less left.
+TYPICAL_ANSWER_MIN = 5
 # Notes taken for a question are kept apart from the same model's notes for research, and from
 # other questions': "not about" means not about what that question asks. A follow-up reads
 # for its root question, so the two share notes.
@@ -69,7 +72,8 @@ _WORDS = re.compile(r"[a-z0-9]+")
 # Everyday words for what the universe names otherwise, after plurals are folded.
 _ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
             "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
-            "automaker": "automobile", "car": "automobile", "cars": "automobile"}
+            "automaker": "automobile", "car": "automobile", "cars": "automobile", "auto": "automobile",
+            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication"}
 # "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
 _WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}
 
@@ -178,9 +182,10 @@ async def ask(ctx: AppContext, text: str, refines: int | None = None, model: Cha
 
 
 async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = None,
-                 searcher: WebSearcher | None = None) -> AnswerView:
-    """Answer a saved question (again): plan, search, read, name, screen, save. The model
-    failing to answer fails the answer, which stays saved with why."""
+                 searcher: WebSearcher | None = None, deadline: datetime | None = None) -> AnswerView:
+    """Answer a saved question (again): plan, search, read, name, screen, save, and for an auto
+    question validate and add, no company validated after `deadline`. The model failing to answer
+    fails the answer, which stays saved with why and whatever shortlist it had."""
     repo = QuestionRepo(ctx.conn)
     q = _question(repo, question_id)
     asked = _asked(repo, q)
@@ -188,16 +193,17 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
     with single_flight(ctx, JOB, LEASE_S):
         answer_id = repo.start(q.id, _model_label(model), _now(ctx))
         notes: list[str] = []
+        items: list[ShortlistItem] = []
         note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
             items = await _answer(ctx, repo, answer_id, asked, model, searcher or DdgsSearcher(), notes, note_key)
             if q.auto:
-                items, said = await auto_add(ctx, q.id, asked, model, note_key, items,
-                                             lambda text: repo.set_stage(answer_id, text))
-                notes.extend(said)
+                await auto_add(ctx, q.id, asked, model, note_key, items, lambda text: repo.set_stage(answer_id, text),
+                               notes, deadline)
         except BaseException as exc:
             error = "cancelled" if not isinstance(exc, Exception) else str(exc) or type(exc).__name__
-            repo.finish(answer_id, FAILED, error, notes, (), _now(ctx))
+            # Companies already added stay added, so the answer keeps what validation made of them.
+            repo.finish(answer_id, FAILED, error, notes, items, _now(ctx))
             if isinstance(exc, ModelError):
                 raise ModelUnavailable(str(exc)) from exc
             raise
@@ -224,9 +230,10 @@ class AutoRun:
 
 
 async def answer_auto_questions(ctx: AppContext, limit: int, model: ChatModel | None = None,
-                                searcher: WebSearcher | None = None) -> AutoRun:
+                                searcher: WebSearcher | None = None, deadline: datetime | None = None) -> AutoRun:
     """Answer up to `limit` auto questions again, the one answered longest ago first; a failed
-    answer is noted and the next one goes on. Nothing is asked while the discovered list is full."""
+    answer is noted and the next one goes on. Nothing is asked while the discovered list is full,
+    and no question is started unless a typical answer fits before `deadline`."""
     auto = QuestionRepo(ctx.conn).auto()
     if not auto:
         return AutoRun(note="no question is on auto")
@@ -235,8 +242,10 @@ async def answer_auto_questions(ctx: AppContext, limit: int, model: ChatModel | 
         return AutoRun(note=list_full(on_list, cap))
     answered, failed = [], []
     for q in auto[:limit]:
+        if deadline and deadline - ctx.clock.utcnow() < timedelta(minutes=TYPICAL_ANSWER_MIN):
+            return AutoRun(tuple(answered), tuple(failed), "no time left for another question")
         try:
-            answered.append(await answer(ctx, q.id, model, searcher))
+            answered.append(await answer(ctx, q.id, model, searcher, deadline))
         except JobAlreadyRunning:
             return AutoRun(tuple(answered), tuple(failed), "another question is being answered: the rest wait")
         except ServiceError as exc:
@@ -481,22 +490,31 @@ def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusio
     one shared word is not enough ("consumer staples" is not "Consumer Discretionary"). Only the
     most specific level is used, an exact name before one merely holding the words, so "biotech"
     leaves out Biotechnology, not the Pharmaceuticals beside it in their combined group, and
-    "media" leaves out Media, not Interactive Media & Services. None when nothing matches."""
+    "media" leaves out Media, not Interactive Media & Services. Short of an exact name, a sector
+    or group whose name starts with the words ("consumer" is both Consumer sectors, "telecom"
+    Telecommunication Services) comes before any name holding them somewhere. None when
+    nothing matches."""
     words = frozenset(w for word in _words(text) for w in _ALIASES.get(word, word).split()) - _NOT_A_SECTOR
     wanted = _WHOLE.get(words, words)
     if not wanted:
         return None
-    for exact in (True, False):
-        for level in CLASSIFICATION_LEVELS:
-            found = frozenset(v for v in classifications.get(level, ())
-                              if (_words(v) == wanted if exact else wanted <= _words(v)))
-            if found:
-                return Exclusion(text, level, found)
+    tries = ([(level, lambda v: _words(v) == wanted) for level in CLASSIFICATION_LEVELS]
+             + [(level, lambda v: set(_word_list(v)[:len(wanted)]) == wanted)
+                for level in reversed(CLASSIFICATION_LEVELS[1:])]
+             + [(level, lambda v: wanted <= _words(v)) for level in CLASSIFICATION_LEVELS])
+    for level, matches in tries:
+        if found := frozenset(v for v in classifications.get(level, ()) if matches(v)):
+            return Exclusion(text, level, found)
     return None
 
 
 def _words(text: str) -> set[str]:
-    return {_singular(w) for w in _WORDS.findall(text.casefold())}
+    return set(_word_list(text))
+
+
+def _word_list(text: str) -> list[str]:
+    """Words in order, singular, without the ones that name no sector."""
+    return [s for w in _WORDS.findall(text.casefold()) if (s := _singular(w)) not in _NOT_A_SECTOR]
 
 
 def _singular(word: str) -> str:

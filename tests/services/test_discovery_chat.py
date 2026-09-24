@@ -267,6 +267,24 @@ def test_an_exclude_leaves_out_its_most_specific_match_not_the_whole_group(exclu
     assert left_out(exclude, universe, company) == found
 
 
+STAPLES = ("Consumer Staples", "Food, Beverage & Tobacco", "Beverages")
+FINANCE = ("Financials", "Financial Services", "Consumer Finance")
+TELECOM = ("Communication Services", "Telecommunication Services", "Diversified Telecommunication Services")
+EQUIPMENT = ("Information Technology", "Technology Hardware & Equipment", "Communications Equipment")
+
+
+@pytest.mark.parametrize("exclude, universe, company, found", [
+    ("consumer", [STAPLES, FINANCE], STAPLES, "Consumer Staples"),
+    ("consumer", [STAPLES, FINANCE], FINANCE, None),
+    ("telecoms", [TELECOM, EQUIPMENT], TELECOM, "Telecommunication Services"),
+    ("communication", [TELECOM, EQUIPMENT], TELECOM, "Communication Services"),
+    ("communication", [TELECOM, EQUIPMENT], EQUIPMENT, None),
+    ("autos", [PARTS, CARS], CARS, "Automobiles"),
+])
+def test_a_sector_or_group_starting_with_the_words_comes_before_a_name_holding_them(exclude, universe, company, found):
+    assert left_out(exclude, universe, company) == found
+
+
 async def test_a_rerun_says_what_is_new_and_what_is_gone(ctx):
     first = await ask(ctx, GRID, model=model(names(("Siemens Energy", "Wins orders", [1]))), searcher=FakeSearcher())
     again = await answer(ctx, first.answer.question_id,

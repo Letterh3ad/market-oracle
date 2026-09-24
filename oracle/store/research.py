@@ -167,10 +167,11 @@ class ResearchRepo:
 def evidence_of(conn: sqlite3.Connection, article_ids: list[int], note_key: str) -> list[Evidence]:
     """Stored articles as evidence, in the order given, with what `note_key` read in them."""
     rows = conn.execute(
-        f"SELECT a.id, a.url, a.title, a.outlet, a.published_at, a.body, a.query, {_READ_COLUMNS} FROM articles a "
-        f"{_READ_JOINS} WHERE a.id IN ({','.join('?' * len(article_ids))})", (note_key, *article_ids)).fetchall()
+        f"SELECT a.id, a.url, a.title, a.outlet, a.published_at, a.body, a.query, a.site, {_READ_COLUMNS} "
+        f"FROM articles a {_READ_JOINS} WHERE a.id IN ({','.join('?' * len(article_ids))})",
+        (note_key, *article_ids)).fetchall()
     found = {r[0]: Evidence(r[0], r[1], r[2], r[3], datetime.fromisoformat(r[4]) if r[4] else None, False, r[5], r[6],
-                            *_reading(*r[7:])) for r in rows}
+                            *_reading(*r[8:]), site=r[7]) for r in rows}
     return [found[i] for i in article_ids if i in found]
 
 

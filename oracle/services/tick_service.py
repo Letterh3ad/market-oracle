@@ -15,8 +15,8 @@ from datetime import datetime, timedelta
 from oracle.broker.rules import Decision
 from oracle.services.analysis_service import analyse_watched
 from oracle.services.context import AppContext
-from oracle.services.discovery_chat_service import answer_auto_questions
-from oracle.services.discovery_service import DISCOVERED_LIST, DiscoveryRun, discover, discovered
+from oracle.services.discovery_chat_service import TYPICAL_ANSWER_MIN, answer_auto_questions
+from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, DiscoveryRun, discover, discovered
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
@@ -38,6 +38,7 @@ LEASE_S = 3600.0
 DISCOVER_CAP_MIN = 10
 # Auto questions one midday pass answers; each is a whole answer (plan, search, read, name, validate).
 MAX_AUTO_QUESTIONS = 3
+QUESTIONS_CAP_MIN = 15
 
 Say = Callable[[str], None]
 StageRun = Callable[[AppContext, Say], Awaitable[tuple[str, str | None]]]
@@ -113,23 +114,38 @@ async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None, run: 
     return _discovered_summary(run), run.source_errors[0] if run.source_errors else None
 
 
+def questions_cap_min(ctx: AppContext, budget_min: float) -> float:
+    """How long the questions stage may run: at most 15 minutes and a third of the budget."""
+    return min(QUESTIONS_CAP_MIN, budget_min / 3)
+
+
 async def _auto_questions(ctx: AppContext, cap_min: float, run: str) -> tuple[str, str | None]:
-    """Auto questions answered again, adding what passes validation, within `cap_min`."""
+    """Auto questions answered again, adding what passes validation. Each stops validating at
+    `cap_min` and no question starts without time for a typical answer; a hard stop one typical
+    answer later catches a model that hangs."""
     if why := _held_back(ctx, "asked", run):
         return why, None
+    started = ctx.clock.utcnow()
+    deadline = started + timedelta(minutes=cap_min)
     try:
-        async with asyncio.timeout(cap_min * 60):
-            done = await answer_auto_questions(ctx, MAX_AUTO_QUESTIONS)
+        async with asyncio.timeout((cap_min + TYPICAL_ANSWER_MIN) * 60):
+            done = await answer_auto_questions(ctx, MAX_AUTO_QUESTIONS, deadline=deadline)
     except TimeoutError:
-        return "stopped at its time limit", None
+        return f"stopped at its time limit, added {', '.join(_auto_added(ctx, started)) or 'nothing'}", None
     if not done.answered and not done.failed:
         return f"nothing asked: {done.note}", None
-    added = [i.symbol for v in done.answered for i in v.answer.items if i.validation and i.validation.added]
     summary = (f"answered {len(done.answered)} auto question{'' if len(done.answered) == 1 else 's'}, "
-               f"added {', '.join(added) or 'nothing'}")
+               f"added {', '.join(_auto_added(ctx, started)) or 'nothing'}")
     if done.failed:
         summary += f", {len(done.failed)} failed"
     return summary + (f" ({done.note})" if done.note else ""), done.failed[0] if done.failed else None
+
+
+def _auto_added(ctx: AppContext, since: datetime) -> list[str]:
+    """What auto questions put on the discovered list from `since`, read back from the list so a
+    stopped stage still says."""
+    return [d.symbol for d in discovered(ctx) if d.relation == RELATION_AUTO and d.added_at
+            and datetime.fromisoformat(d.added_at) >= since]
 
 
 def _discovered_summary(run: DiscoveryRun) -> str:
@@ -188,7 +204,7 @@ def _midday_stages(started: datetime) -> dict[str, StageRun]:
         return await _discover(ctx, say, discover_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
 
     async def questions_stage(ctx: AppContext, _: Say) -> tuple[str, str | None]:
-        return await _auto_questions(ctx, discover_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
+        return await _auto_questions(ctx, questions_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
 
     async def research_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
         return await _research(ctx, say, budget(ctx) - (ctx.clock.utcnow() - started) / timedelta(minutes=1))
