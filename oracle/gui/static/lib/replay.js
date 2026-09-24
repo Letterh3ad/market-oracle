@@ -119,12 +119,13 @@ function replaySection() {
       el("ul", { class: "small" }, ...s.top_failures.map(([reason, n]) => el("li", null, `${n} x ${reason}`))),
       el("p", { class: "dim small" }, `A failed replay is retried once automatically, later in the queue; after that `
         + `it stays failed until you retry it.${retrying}`),
-      s.failed.length ? el("div", { class: "row" }, press(`Retry failed (${s.failed.length})`, "/api/replay/retry", {}))
-        : null,
-      s.failed.length ? table([["Symbol"], ["As of"], ["Error"], [""]],
-        s.failed.map((c) => el("tr", null, el("td", { class: "mono" }, c.symbol), el("td", null, c.as_of),
-          el("td", { class: "small" }, c.error ?? ""),
-          el("td", null, press("Retry", "/api/replay/retry", { cell_id: c.id })))), "") : null,
+      ...(s.failed.length ? [
+        el("div", { class: "row" }, press(`Retry failed (${s.failed.length})`, "/api/replay/retry", {})),
+        table([["Symbol"], ["As of"], ["Error"], [""]],
+          s.failed.map((c) => el("tr", null, el("td", { class: "mono" }, c.symbol), el("td", null, c.as_of),
+            el("td", { class: "small" }, c.error ?? ""),
+            el("td", null, press("Retry", "/api/replay/retry", { cell_id: c.id })))), ""),
+      ] : []),
     ];
   }
 

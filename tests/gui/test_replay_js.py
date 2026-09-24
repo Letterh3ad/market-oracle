@@ -112,6 +112,12 @@ def test_a_paused_study_shows_progress_listings_and_failures_with_start():
     assert "1 cell waiting for its one automatic retry" in text and "Last checked 2026-09-24 12:00 UTC." in text
 
 
+def test_failures_only_waiting_for_their_retry_render_no_empty_parts():
+    waiting = {**STUDY, "failed": [], "top_failures": [["model down", 1]]}
+    text = run("console.log(JSON.stringify(node.textContent));", study=waiting)
+    assert "1 x model down" in text and "null" not in text and "Retry failed" not in text
+
+
 def test_before_the_first_replay_a_listing_can_be_replaced():
     shown = run("""
         labelled(node, "Replace 7203.T with").value = " 6758.T ";
