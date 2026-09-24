@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from oracle.config import FX_SOURCES
 from oracle.market import registry
+from oracle.market.bars import is_stale
 from oracle.market.fx import OPEN_ER_ATTRIBUTION, FxRate, OpenErFx
 from oracle.market.sources import REFETCH_OVERLAP, AllFailed, first_success
 from oracle.services.context import AppContext
@@ -15,7 +16,8 @@ from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
 
-__all__ = ["FxRate", "FxUpdate", "credits", "fx_history", "update_fx"]
+__all__ = ["FX_SOURCES", "FxLatest", "FxRate", "FxUpdate", "check_sources", "credits", "fx_history", "fx_latest",
+           "update_fx"]
 
 HISTORY_RETRY = timedelta(days=7)
 
@@ -29,6 +31,21 @@ class FxUpdate:
     error: str | None
 
 
+@dataclass(frozen=True)
+class FxLatest:
+    currency: str
+    rate: FxRate | None
+    age_days: int | None
+    stale: bool
+    """No rate, or none for more than a couple of weekdays."""
+
+
+def check_sources(sources: Sequence[str]) -> None:
+    unknown = [n for n in sources if n not in FX_SOURCES]
+    if unknown:
+        raise InvalidQuery(f"unknown FX source {', '.join(unknown)}; known: {', '.join(FX_SOURCES)}")
+
+
 async def update_fx(
     ctx: AppContext,
     sources: Sequence[str] | None = None,
@@ -39,9 +56,7 @@ async def update_fx(
     currency stored prices use. A currency no source covers is reported, not raised, so
     the rest still update. `history=False` fetches recent rates only, for a one-off
     conversion, and leaves full history for a later update."""
-    unknown = [n for n in sources or () if n not in FX_SOURCES]
-    if unknown:
-        raise InvalidQuery(f"unknown FX source {', '.join(unknown)}; known: {', '.join(FX_SOURCES)}")
+    check_sources(sources or ())
     base = ctx.config.base_currency
     repo = FxRepo(ctx.conn, base)
     bars = BarRepo(ctx.conn)
@@ -70,6 +85,19 @@ async def update_fx(
 
 def fx_history(ctx: AppContext, currency: str, days: int | None = None) -> list[FxRate]:
     return FxRepo(ctx.conn, ctx.config.base_currency).history(currency.upper(), days)
+
+
+def fx_latest(ctx: AppContext) -> list[FxLatest]:
+    """Each currency stored prices use, besides the base, with its newest rate."""
+    base = ctx.config.base_currency
+    repo = FxRepo(ctx.conn, base)
+    today = ctx.clock.utcnow().date()
+    out = []
+    for currency in [c for c in BarRepo(ctx.conn).currencies() if c != base]:
+        rate = next(iter(repo.history(currency, 1)), None)
+        out.append(FxLatest(currency, rate, None if rate is None else (today - rate.date).days,
+                            rate is None or is_stale(rate.date, today)))
+    return out
 
 
 def credits(sources: Iterable[str | None]) -> list[str]:

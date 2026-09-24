@@ -23,7 +23,9 @@ OUTPUT_ONLY = Exempt("formats the CLI's output; the page shows it all")
 MANIFEST: dict[str, str | Exempt | Pending] = {
     "status": "GET /api/status",
     "net status": "GET /api/status",
-    "jobs status": Pending("untracked: job lock holders are not shown"),
+    # Activity lists this server's jobs and, under "elsewhere", live locks other processes
+    # hold. Stale locks are left out: they block nothing, the next run takes them over.
+    "jobs status": "GET /api/activity",
     "universe refresh": "POST /api/jobs/universe",
     "universe status": "GET /api/universe/status",
     "universe search": "GET /api/universe/search",
@@ -34,7 +36,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "universe facets": "GET /api/universe/facets/{field}",
     "tag add": "POST /api/companies/{symbol}/tags",
     "tag remove": "DELETE /api/companies/{symbol}/tags/{tag}",
-    "tag list": Pending("untracked: no list of every tag"),
+    # Every tag: the Universe tab's "Your tags" row. One company's: its search result row.
+    "tag list": "GET /api/universe/tags",
     "watch add": "POST /api/watchlists/{name}/items",
     "watch add --list": Pending("gui-parity 06"),
     "watch remove": "DELETE /api/watchlists/{name}/items/{symbol}",
@@ -45,11 +48,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "prices show": "GET /api/companies/{symbol}/prices",
     "prices show --days": "GET /api/companies/{symbol}/prices",
     "prices show --base": OUTPUT_ONLY,
-    "prices sources": Pending("untracked: price source order is not shown"),
-    "fx update": Pending("gui-parity 04"),
-    "fx update --source": Pending("gui-parity 04"),
-    "fx show": Pending("gui-parity 04"),
-    "fx show --days": Pending("gui-parity 04"),
+    "prices sources": "GET /api/status",  # Data sources panel, "Prices are tried in this order"
+    "fx update": "POST /api/jobs/fx",
+    "fx update --source": "POST /api/jobs/fx",
+    "fx show": "GET /api/fx/{currency}",
+    "fx show --days": "GET /api/fx/{currency}",
     "company": "GET /api/companies/{symbol}",
     "analyse": "POST /api/jobs/analyse",
     "peers": "GET /api/companies/{symbol}/peers",

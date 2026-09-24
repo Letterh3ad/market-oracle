@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
@@ -11,6 +12,7 @@ from oracle.services.activity_service import JobRunner
 from oracle.services.app_service import AppControl
 from oracle.services.context import AppContext
 from oracle.services.net_service import source_statuses
+from oracle.services.prices_service import price_sources
 from oracle.services.schedule_service import Scheduler, schedule_status
 from oracle.services.status_service import status
 from oracle.services.tick_service import last_tick
@@ -47,6 +49,8 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
         "schedule": shapes.schedule(schedule_status(ctx)),
         "warning": shapes.upcoming(scheduler.warning()),
         "running_tick": shapes.running_tick(next(iter(runner.active("tick")), None)),
+        # What `oracle prices sources` prints: the order prices are tried in.
+        "price_sources": [asdict(s) for s in price_sources(ctx)],
         "sources": [
             {
                 "source": s.source,

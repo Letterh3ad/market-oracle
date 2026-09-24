@@ -39,3 +39,9 @@ async def test_the_about_block_says_what_oracle_status_prints(ctx, client, capsy
         "currency": printed["currency"], "created": printed["created"], "version": printed["version"],
     }
     assert printed["config"].startswith("defaults")
+
+
+async def test_status_lists_the_price_sources_in_the_order_they_are_tried(client):
+    sources = (await client.get("/api/status")).json()["price_sources"]
+    assert [(s["name"], s["position"], s["enabled"], s["reason"]) for s in sources] == [
+        ("yahoo", 1, True, None), ("eodhd", 2, False, "no key")]

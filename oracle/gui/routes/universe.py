@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
+from oracle.services.tags_service import list_tags
 from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe, universe_status
 
 router = APIRouter(prefix="/api/universe")
@@ -47,3 +48,9 @@ async def options() -> dict:
 @router.get("/facets/{field}")
 async def get_facets(field: str, ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     return [asdict(f) for f in facets(ctx, field)]
+
+
+@router.get("/tags")
+async def tags(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """Every tag with the companies carrying it; `orphaned` ones have left the universe."""
+    return [asdict(t) for t in list_tags(ctx)]

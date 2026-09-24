@@ -104,3 +104,10 @@ async def test_a_second_refresh_joins_the_running_one(client, monkeypatch):
     release.set()
     assert second["id"] == first["id"]
     assert (await wait_job(client, first))["state"] == "done"
+
+
+async def test_every_tag_is_listed_with_its_companies(loaded):
+    await loaded.post("/api/companies/AAPL/tags", json={"tag": "picks"})
+    await loaded.post("/api/companies/KO/tags", json={"tag": "picks"})
+    assert (await loaded.get("/api/universe/tags")).json() == [
+        {"tag": "picks", "symbols": ["AAPL", "KO"], "orphaned": []}]

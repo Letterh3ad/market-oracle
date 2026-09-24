@@ -190,6 +190,23 @@ async function start(pane) {
   }
   renderControls(pane);
   run(pane);
+  showTags(pane);
+}
+
+// Every tag in use, so one can be picked without remembering it.
+async function showTags(pane) {
+  let tags;
+  try { tags = await api("/api/universe/tags"); } catch (err) { showError(err.message); return; }
+  const box = pane.querySelector("#u-tags");
+  if (!box || !tags.length) return;
+  box.replaceChildren(el("span", { class: "dim" }, "Your tags"), ...tags.map((t) => {
+    const count = t.symbols.length + t.orphaned.length;
+    const title = [...t.symbols, ...t.orphaned.map((o) => `${o} (no longer listed)`)].join(", ");
+    return el("button", { type: "button", class: "small-btn", title, onclick: () => {
+      if (!state.tags.includes(t.tag)) state.tags.push(t.tag);
+      searchAgain(pane);
+    } }, `${t.tag} (${count})`);
+  }));
 }
 
 async function render(pane) {
@@ -202,7 +219,7 @@ async function render(pane) {
   pane.replaceChildren(
     el("div", { class: "row" }, box, el("span", { class: "dim" }, "Watch adds to "),
       el("input", { value: state.list, size: "8", "aria-label": "Watchlist", onchange: (e) => { state.list = e.target.value.trim() || "main"; } })),
-    el("div", { id: "u-controls" }), el("div", { id: "u-results" }), el("div", { id: "u-pages" }));
+    el("div", { id: "u-tags", class: "row" }), el("div", { id: "u-controls" }), el("div", { id: "u-results" }), el("div", { id: "u-pages" }));
   pane.prepend(el("div", { class: "row" }, el("span", { id: "u-status-text", class: "dim" }, "Universe ..."),
     refreshButton(pane), tip("", "universe")));
   const u = await showStatus(pane);

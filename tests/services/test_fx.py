@@ -5,7 +5,7 @@ import pytest
 from oracle.config import Config, Keys
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
-from oracle.services.fx_service import fx_history, update_fx
+from oracle.services.fx_service import check_sources, fx_history, fx_latest, update_fx
 from oracle.services.prices_service import price_history_in_base, update_listing
 from oracle.services.universe_service import refresh_universe
 from oracle.store.fx import FxRepo
@@ -262,3 +262,30 @@ async def test_conversion_loads_each_currencys_rates_once(ctx, monkeypatch):
     monkeypatch.setattr(FxRepo, "history", lambda self, cur, limit=None: calls.append(cur) or real(self, cur, limit))
     assert len(price_history_in_base(ctx, "AAPL")) == 3
     assert calls == ["USD"]
+
+
+async def test_latest_lists_each_currency_in_use_even_before_any_rate(ctx):
+    assert [(x.currency, x.rate, x.stale) for x in fx_latest(ctx)] == [
+        ("EUR", None, True), ("TWD", None, True), ("USD", None, True)]
+
+
+async def test_latest_is_each_currencys_newest_rate_with_its_age(ctx, yahoo):
+    yahoo.fail["GBPTWD=X"] = 500
+    await update_fx(ctx)
+    latest = {x.currency: x for x in fx_latest(ctx)}
+    usd, twd = latest["USD"], latest["TWD"]
+    assert (usd.rate.date, usd.rate.units_per_base, usd.rate.source, usd.age_days, usd.stale) == (
+        date(2026, 9, 18), 1.36, "yahoo", 4, False)
+    assert (twd.rate.source, twd.age_days) == ("open_er_api", 0)
+
+
+async def test_a_rate_more_than_two_weekdays_old_is_stale(ctx):
+    await update_fx(ctx)
+    ctx.clock.advance(2 * 86400)
+    assert {x.currency: x.stale for x in fx_latest(ctx)}["USD"]
+
+
+def test_sources_are_checked_by_name():
+    check_sources(["ecb", "yahoo"])
+    with pytest.raises(InvalidQuery, match="known: yahoo"):
+        check_sources(["ecbb"])

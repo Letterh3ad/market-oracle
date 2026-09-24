@@ -8,7 +8,7 @@ import asyncio
 import logging
 import os
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -19,6 +19,7 @@ from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
+from oracle.services.fx_service import check_sources, update_fx
 from oracle.services.research_service import research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
@@ -26,7 +27,7 @@ from oracle.services.universe_service import refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
-           "submit_universe_refresh", "sweep_leftovers"]
+           "submit_fx", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -285,3 +286,11 @@ def submit_universe_refresh(runner: JobRunner) -> Job:
     stage: list[str] = []
     return runner.submit("universe", "Refresh universe", lambda c: refresh_universe(c, on_stage=stage.append),
                          subject="universe", link="#universe", progress=lambda: stage[-1] if stage else None)
+
+
+def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
+    """New rates for every currency stored prices use, from `sources` only when named."""
+    names = list(dict.fromkeys(sources))
+    check_sources(names)
+    return runner.submit("fx", "Update FX" + (f" ({', '.join(names)})" if names else ""),
+                         lambda c: update_fx(c, names or None), subject=",".join(names) or "*")

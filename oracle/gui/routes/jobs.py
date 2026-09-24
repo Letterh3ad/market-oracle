@@ -4,12 +4,12 @@ lists and cancels them."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_prices, submit_research, submit_tick, submit_universe_refresh,
+    JobRunner, submit_analyse, submit_fx, submit_prices, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 
@@ -47,3 +47,10 @@ async def tick(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(g
 async def universe(runner: JobRunner = Depends(get_runner)) -> dict:
     """Download FinanceDatabase (~17 MB) and replace the universe whole."""
     return shapes.job(submit_universe_refresh(runner))
+
+
+@router.post("/fx", status_code=202)
+async def fx(source: list[str] = Query(default=[]), runner: JobRunner = Depends(get_runner)) -> dict:
+    """New exchange rates for every currency stored prices use; `source` (repeatable) picks
+    which sources to ask, else the configured order."""
+    return shapes.job(submit_fx(runner, source))

@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
+from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
@@ -60,8 +61,12 @@ def _analysed(runs: list[WatchedAnalysis]) -> dict:
     ]}
 
 
+def _fx(updates: list[FxUpdate]) -> dict:
+    return {"updates": [asdict(u) for u in updates], "credits": credits(u.source for u in updates)}
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
-_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict}
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx}
 
 
 def _result(j: Job) -> dict | None:
