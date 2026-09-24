@@ -1282,3 +1282,13 @@ nearer 3.
 **Alternatives:** Falling back to the newest valid verdict within the age limit (trades a call
 the latest research no longer supports); ordering by report day (starvation); recording `ai`
 equity from the upgrade (a start the user never chose).
+
+## 2026-09-24 - GUI parity manifest in tests, with untracked gaps pending
+**Context:** gui-parity 01 pins every CLI action to a GUI route. The survey missed three gaps
+(`jobs status`, `tag list`, `prices sources`).
+**Decision:** The manifest is test data (`tests/gui_parity.py`). Routes are checked against
+the app's OpenAPI schema and against the page scripts, so a route with no page control fails
+too. The three missed gaps are `Pending("untracked: ...")` until ticketed. Flags that only
+shape CLI output are exempt as output-only.
+**Alternatives:** A manifest under `oracle/` (the app does not need it); exempting the missed
+gaps (hides real gaps).
