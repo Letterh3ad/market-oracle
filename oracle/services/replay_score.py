@@ -1,7 +1,8 @@
 """How the replay study's verdicts did: each against its listing's price over the next one and
 three months, and against the study's listings held in equal weight over the same months.
 Scoring reads stored bars only, so the status poll can afford it; fetching the missing bars
-is `update_study_prices`, run by the report command, the card's button and the tick."""
+is `update_study_prices`, run by the report command, the card's button and the tick. The full
+report adds the verdicts traded as an account (`replay_account`), which the poll leaves out."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import json
 import math
 from bisect import bisect_right
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta
 
 from oracle.market.bars import Bar
@@ -18,13 +19,14 @@ from oracle.research.trace import VERDICTS
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
+from oracle.services.replay_account import Account, simulate
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.meta import MetaRepo
 from oracle.store.replay import DONE, FAILED, CellRow, ReplayRepo, StudyRow
 from oracle.store.research import ResearchRepo
 
-__all__ = ["LIMITS", "Score", "replay_report", "score_study", "update_study_prices", "wilson"]
+__all__ = ["LIMITS", "Account", "Score", "replay_report", "score_study", "update_study_prices", "wilson"]
 
 HORIZONS: tuple[tuple[str, int], ...] = (("1m", 1), ("3m", 3))
 """Label and months ahead."""
@@ -34,6 +36,8 @@ STALE = timedelta(days=7)
 """A close further than this from the day it stands for is a gap in the bars, not that day's price."""
 SPLIT_RATIOS = (0.5, 2.0)
 """A day-over-day move outside these is taken for a split the stored bars were not re-based for."""
+SIZE_HISTORY = timedelta(days=400)
+"""Bars before the study the account's risk sizes read: a year of trading days, with room."""
 MIN_N = 10
 """Fewer hits and misses than this get no interval: it would span most of 0 to 1."""
 Z95 = 1.96
@@ -190,6 +194,9 @@ class Score:
     """Listings that update could not fetch."""
     cells: tuple[CellScore, ...]
     limits: tuple[str, ...] = LIMITS
+    account: Account | None = None
+    """The verdicts traded as an account; only in the full report (`replay_report`), None
+    before any listing is priced."""
 
     def interim(self) -> Interim:
         def verdict(g: Group) -> InterimVerdict:
@@ -207,7 +214,11 @@ class Score:
                            for h in self.horizons})
 
     def to_json(self) -> dict:
-        return json.loads(json.dumps(asdict(self), default=_iso))
+        out = json.loads(json.dumps(asdict(self), default=_iso))
+        if self.account:
+            for shaped, line in zip(out["account"]["lines"], self.account.lines):
+                shaped["return"] = line.return_
+        return out
 
 
 def _iso(value: date | datetime) -> str:
@@ -225,9 +236,56 @@ def wilson(hits: int, n: int) -> tuple[float, float] | None:
 
 
 def replay_report(ctx: AppContext) -> Score | None:
-    """The current study scored in full, from stored bars."""
+    """The current study scored in full, with its account, from stored bars."""
     study = ReplayRepo(ctx.conn).current()
-    return score_study(ctx, study) if study else None
+    if study is None:
+        return None
+    score = score_study(ctx, study)
+    return replace(score, account=_account(ctx, study, score.cells))
+
+
+def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Account | None:
+    first: dict[str, date] = {}
+    for c in cells:
+        first[c.symbol] = min(first.get(c.symbol, c.as_of), c.as_of)
+    if not first:
+        return None
+    start, repo = min(first.values()), BarRepo(ctx.conn)
+    bars = {s: repo.since(s, start - SIZE_HISTORY) for s in first}
+    end = max((b[-1].date for b in bars.values() if b), default=None)
+    if end is None or end <= start:
+        return None
+    history, left_out = {}, []
+    for p in json.loads(study.listings):
+        s = p["symbol"]
+        if s not in first:
+            continue
+        why = _unpriced(bars[s], first[s], end)
+        if why:
+            left_out.append(f"{s}: {why}")
+        else:
+            history[s] = bars[s]
+    calls: dict[str, list] = {}
+    for c in sorted(cells, key=lambda c: c.as_of):
+        if c.verdict and c.symbol in history:
+            calls.setdefault(c.symbol, []).append((c.as_of, c.verdict, c.confidence))
+    return simulate(ctx, history, {s: first[s] for s in history}, calls, start, end, left_out)
+
+
+def _unpriced(bars: Sequence[Bar], first: date, end: date) -> str | None:
+    """Why the account cannot hold the listing from the first close after its first as-of
+    day to `end`, by the rules a scored window is priced by; None when it can."""
+    span = [b for b in bars if b.date > first]
+    if not span or span[0].date - first > STALE:
+        return "no close within 7 days after its first as-of day"
+    if end - span[-1].date > STALE:
+        return f"no close since {span[-1].date.isoformat()}"
+    if not all(_price(b.close) for b in span):
+        return "a zero or missing close"
+    low, high = SPLIT_RATIOS
+    if any(not low <= b.close / a.close <= high for a, b in zip(span, span[1:])):
+        return "a day-over-day move outside 0.5x to 2x, taken for a split the stored bars were not re-based for"
+    return None
 
 
 async def update_study_prices(ctx: AppContext) -> tuple[ListingOutcome, ...]:

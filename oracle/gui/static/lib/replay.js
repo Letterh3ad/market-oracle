@@ -1,9 +1,9 @@
 // The Ledgers tab's Replay study card: research replayed at past dates over a fixed spread of
 // listings, one replay at a time in the PC's free time. It never starts by itself.
 import { api } from "./api.js";
-import { table } from "./compare.js";
+import { compareLines, table } from "./compare.js";
 import { el } from "./dom.js";
-import { pct } from "./fmt.js";
+import { money, pct } from "./fmt.js";
 import { repaint } from "./repaint.js";
 import { busyButton, followJob, runJob, sendJson } from "./ui.js";
 
@@ -23,6 +23,7 @@ function replaySection() {
   const body = el("div");
   let report = null; // the last score fetched, and the status score it was fetched for
   let reportKey = null;
+  let chart = null;
 
   // Every press reloads the card, so it always shows what the store holds.
   const press = (label, path, payload) => busyButton(label, async () => {
@@ -166,7 +167,7 @@ function replaySection() {
     await load();
   });
 
-  function score(r) {
+  function score(r, accountNode) {
     if (!r) return [];
     const m = r.mix;
     const missing = r.refetch_listings.length
@@ -187,9 +188,25 @@ function replaySection() {
         + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "
         + "listing's own currency, so \"vs basket\" compares against a basket that mixes currencies."),
       el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, `${missing} ${updated}`)),
+      accountNode,
       el("h3", null, "Limits"),
       el("ul", { class: "small" }, ...r.limits.map((line) => el("li", null, line))),
     ];
+  }
+
+  // The chart is drawn once the card is on screen, as it sizes to its box.
+  function account(r) {
+    const a = r?.account;
+    if (!a) return { node: el("div"), draw: () => null };
+    const lines = compareLines(a.lines, `of ${money(a.capital)}`, "Too few days to draw a chart yet.");
+    const node = el("div", null,
+      el("h3", null, "Account"),
+      el("p", { class: "dim small" }, `The verdicts traded as the AI account would, in memory, ${a.start} to `
+        + `${a.end}, over ${plural(a.listings.length, "listing")}.`),
+      lines.node,
+      a.left_out.length ? el("p", { class: "warn-text small" }, `Left out: ${a.left_out.join("; ")}.`) : null,
+      el("ul", { class: "dim small" }, ...a.notes.map((text) => el("li", null, text))));
+    return { node, draw: lines.draw };
   }
 
   // The status poll is cheap; the full report is fetched only when the status's score moved.
@@ -214,9 +231,14 @@ function replaySection() {
     }
     const s = r.study;
     if (s) await loadReport(s);
-    repaint(body, s ? [...study(s), ...score(report), el("details", null, el("summary", null, "New study"),
+    const shown = account(s ? report : null);
+    repaint(body, s ? [...study(s), ...score(report, shown.node), el("details", null,
+      el("summary", null, "New study"),
       el("p", { class: "dim small" }, "The current study is kept; the new one takes its place here, paused."),
-      createForm(r.cutoff, "Create new study"))] : [createForm(r.cutoff, "Create study")]);
+      createForm(r.cutoff, "Create new study"))] : [createForm(r.cutoff, "Create study")], () => {
+      chart?.remove();
+      chart = shown.draw();
+    });
   }
 
   async function start() {

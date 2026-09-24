@@ -7,7 +7,7 @@ import sys
 
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
-from oracle.services.replay_score import Group, HorizonScore, Score, replay_report, update_study_prices
+from oracle.services.replay_score import Account, Group, HorizonScore, Score, replay_report, update_study_prices
 from oracle.services.replay_service import (
     StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
 )
@@ -163,9 +163,30 @@ def print_report(s: Score) -> None:
     checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
     failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
     print(f"  Study prices last checked: {checked}{failed}")
+    if s.account:
+        print_account(s.account)
     print("Limits:")
     for line in s.limits:
         print(f"  - {line}")
+
+
+LINE_LABELS = {"ai": "AI", "buy_and_hold": "Buy and hold"}
+
+
+def print_account(a: Account) -> None:
+    n = len(a.listings)
+    print(f"Account: the verdicts traded as the AI account would, {a.start.isoformat()} to {a.end.isoformat()}, "
+          f"{n} listing{'' if n == 1 else 's'}")
+    print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{'costs':>10}")
+    for line in a.lines:
+        print(f"  {LINE_LABELS.get(line.name, line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
+              f"{line.trades:>8}{line.costs:>10.2f}")
+    for line in a.lines:
+        print(f"  - {line.caption}")
+    if a.left_out:
+        print(f"  Left out: {'; '.join(a.left_out)}")
+    for note in a.notes:
+        print(f"  - {note}")
 
 
 def print_horizon(h: HorizonScore) -> None:

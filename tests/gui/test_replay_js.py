@@ -181,3 +181,28 @@ def test_update_prices_runs_the_job_and_reloads_the_score():
     asked, text = shown
     assert asked[:3] == ["POST /api/replay/prices", "GET /api/replay", "GET /api/replay/report"]
     assert "Prices fetched for 1 of 2 listings; failed: AAPL (no price data)." in text
+
+
+ACCOUNT = {
+    "start": "2026-06-01", "end": "2026-09-23", "capital": 10000.0, "listings": ["AAPL", "7203.T"],
+    "lines": [{"name": "ai", "caption": "The replay verdicts, traded under the AI account's rules and risk sizes.",
+               "points": [["2026-06-01", 0.0], ["2026-09-23", 0.042]], "max_fall": -0.031, "trades": 3,
+               "costs": 12.5, "label": "", "return": 0.042},
+              {"name": "buy_and_hold", "caption": "Buy and hold: equal amounts of the 2 listings.",
+               "points": [["2026-06-02", 0.0], ["2026-09-23", 0.021]], "max_fall": -0.08, "trades": 0,
+               "costs": 0.0, "label": "", "return": 0.021}],
+    "trades": [], "left_out": ["9988.HK: a zero or missing close"],
+    "notes": ["Each listing is indexed in its own currency."],
+}
+
+
+def test_the_account_shows_its_lines_against_buy_and_hold():
+    text = run("console.log(JSON.stringify(node.textContent));", report={**REPORT, "account": ACCOUNT})
+    assert "The verdicts traded as the AI account would, in memory, 2026-06-01 to 2026-09-23, over 2 listings." in text
+    assert "AI+4.20%-3.10%312.50" in text and "Buy and hold+2.10%-8.00%00.00" in text
+    assert "Costs (of 10,000.00)" in text
+    assert "Left out: 9988.HK: a zero or missing close." in text and "indexed in its own currency" in text
+
+
+def test_without_an_account_the_score_shows_alone():
+    assert "The verdicts traded" not in run("console.log(JSON.stringify(node.textContent));", report=REPORT)

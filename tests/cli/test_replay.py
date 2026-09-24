@@ -142,6 +142,18 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
     replay(cfg, "report", "--json")
     body = json.loads(capsys.readouterr().out)
     assert body["verdicts"] == 3 and body["horizons"][0]["horizon"] == "1m" and body["limits"]
+    assert [line["name"] for line in body["account"]["lines"]] == ["ai", "buy_and_hold"]
+
+
+def test_report_prints_the_account_against_buy_and_hold(cfg, capsys, tmp_path, no_fetch):
+    scored_study(tmp_path)
+    replay(cfg, "report")
+    out = capsys.readouterr().out
+    assert "Account: the verdicts traded as the AI account would, 2025-06-02 to 2025-12-31, 2 listings" in out
+    # Two months of bars before the study are too few for a risk size, so nothing is bought.
+    assert "  AI                    +0.00%          +0.00%       0" in out
+    assert "  Buy and hold          +5.50%" in out
+    assert "indexed in its own currency" in out
 
 
 def test_report_fetches_missing_bars_first_and_says_how_it_went(cfg, capsys, tmp_path, monkeypatch):
