@@ -14,7 +14,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.fx_service import credits
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
-from oracle.services.research_service import RunStatus, latest_research, report_history
+from oracle.services.research_service import RunStatus, latest_research, report_history, research_run
 from oracle.services.settings_service import PEERS_RANGE
 from oracle.services.tags_service import add_tag, remove_tag
 
@@ -54,6 +54,17 @@ async def get_research(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     if reported is None or latest is None or latest.id == reported.id:
         return shapes.research_run(latest)
     return shapes.research_run(reported, latest if latest.status == RunStatus.FAILED else None)
+
+
+@router.get("/{symbol}/research/history")
+async def get_research_history(symbol: str, ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """Every run with a report, newest first; open one by its id."""
+    return [shapes.research_summary(r) for r in report_history(ctx, symbol)]
+
+
+@router.get("/{symbol}/research/{run_id}")
+async def get_research_run(symbol: str, run_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
+    return shapes.research_run(research_run(ctx, symbol, run_id))
 
 
 @router.get("/{symbol}/peers")

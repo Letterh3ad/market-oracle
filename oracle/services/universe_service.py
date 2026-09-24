@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -129,7 +129,7 @@ def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
     if found:
         return found
     near = [h.symbol for h in search_universe(ctx, symbol, limit=3, include_delisted=True)]
-    raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "try `oracle universe search`"))
+    raise UnknownSymbol(f"no listing {symbol!r} in the universe; " + hint(near, "search the universe for it"))
 
 
 def _require_loaded(ctx: AppContext) -> None:
@@ -159,7 +159,7 @@ def _canonical_values(repo: UniverseRepo, name: str, values: Sequence[str]) -> t
             near = [known[c] for c in closest(k, known)]
             raise UnknownFilterValue(
                 f"no {name.replace('_', ' ')} {value!r}; "
-                + hint(near, f"see `oracle universe facets {name}`")
+                + hint(near, f"see the {name.replace('_', ' ')} values the universe has")
             )
         out.append(known[k])
     return tuple(out)
@@ -174,7 +174,7 @@ def _canonical_tags(ctx: AppContext, tags: Sequence[str]) -> tuple[str, ...]:
         except ValueError:
             tag = raw
         if tag not in known:
-            raise UnknownFilterValue(f"no tag {raw!r}; " + hint(closest(tag, known), "see `oracle tag list`"))
+            raise UnknownFilterValue(f"no tag {raw!r}; " + hint(closest(tag, known), "see the tag list"))
         out.append(tag)
     return tuple(out)
 
@@ -183,11 +183,13 @@ def _band_key(value: str) -> str:
     return value.casefold().removesuffix(" cap").strip()
 
 
-async def refresh_universe(ctx: AppContext) -> UniverseStatus:
+async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = lambda _: None) -> UniverseStatus:
     """Download FinanceDatabase and swap it in whole: a failure anywhere leaves the
-    previous universe untouched."""
+    previous universe untouched. `on_stage` hears "downloading", then "saving"."""
     with single_flight(ctx, JOB, LEASE_S) as held:
+        on_stage("downloading")
         sha, listings = await _download(ctx)
+        on_stage("saving")
         grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols())
         held.check()
         with transaction(ctx.conn):

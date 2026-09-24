@@ -1,0 +1,89 @@
+import pytest
+
+from oracle.config import Config, load_config, setting_list
+from oracle.services.context import load_settings, open_context
+from oracle.services.errors import ConfigInUse, InvalidQuery
+from oracle.services.settings_service import set_setting, settings_form
+
+START = '# mine\n[schedule]\ntime = "22:30"   # keep this comment\n\n[keys]\neodhd = "secret-value"\n'
+
+
+@pytest.fixture
+def ctx(tmp_path):
+    path = tmp_path / "oracle.toml"
+    path.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"\n' + START, encoding="utf-8")
+    config, source = load_settings(path)
+    with open_context(config, source) as c:
+        yield c
+
+
+def row(ctx, section, key):
+    return next(r for r in settings_form(ctx) if (r["section"], r["key"]) == (section, key))
+
+
+def test_every_key_is_listed_with_its_value_default_meaning_and_whether_it_applies_live(ctx):
+    rows = settings_form(ctx)
+    assert [(r["section"], r["key"]) for r in rows] == [(s.section, s.key) for s in setting_list()]
+    assert all(r["meaning"] for r in rows)
+    peers = row(ctx, "analysts", "peers")
+    assert (peers["value"], peers["default"], peers["kind"], peers["live"]) == (20, 20, "int", True)
+    assert row(ctx, "schedule", "time")["value"] == "22:30" and row(ctx, "schedule", "time")["live"]
+    assert row(ctx, "llm", "model")["live"] is False
+
+
+def test_a_change_is_saved_keeping_comments_and_live_keys_apply_at_once(ctx):
+    path = ctx.config_source
+    assert set_setting(ctx, "schedule", "time", "21:15")["value"] == "21:15"
+    assert ctx.config.schedule.time == "21:15"
+    set_setting(ctx, "llm", "max_steps", 12)
+    assert ctx.config.llm.max_steps == 8, "restart keys wait for Restart"
+    set_setting(ctx, "sources.web", "max_retries", 2)
+    set_setting(ctx, "", "base_currency", "USD")
+    text = path.read_text(encoding="utf-8")
+    assert "# mine" in text and 'time = "21:15"   # keep this comment' in text
+    config = load_config(path)[0]
+    assert (config.llm.max_steps, config.sources["web"].max_retries, config.base_currency) == (12, 2, "USD")
+
+
+def test_a_bad_value_is_refused_with_the_loaders_message_and_nothing_is_written(ctx):
+    before = ctx.config_source.read_bytes()
+    with pytest.raises(InvalidQuery, match=r"llm.max_steps must be a whole number from 1 to 50"):
+        set_setting(ctx, "llm", "max_steps", 0)
+    with pytest.raises(InvalidQuery, match="no setting"):
+        set_setting(ctx, "llm", "nope", 1)
+    assert ctx.config_source.read_bytes() == before
+
+
+def test_secrets_are_never_listed_only_whether_set_and_can_be_replaced_or_cleared(ctx, monkeypatch):
+    monkeypatch.delenv("ORACLE_EODHD_KEY", raising=False)
+    assert "secret-value" not in repr(settings_form(ctx))
+    key = row(ctx, "keys", "eodhd")
+    assert (key["secret"], key["set"], key["from_env"], "value" in key, key["default"]) == (
+        True, True, False, False, None)
+    assert key["env"] == "ORACLE_EODHD_KEY"
+    replaced = set_setting(ctx, "keys", "eodhd", "new-secret")
+    assert "new-secret" not in repr(replaced) and replaced["set"]
+    assert load_config(ctx.config_source)[0].keys.get("eodhd") == "new-secret"
+    assert set_setting(ctx, "keys", "eodhd", None)["set"] is False
+    monkeypatch.setenv("ORACLE_EODHD_KEY", "from-env")
+    assert row(ctx, "keys", "eodhd")["from_env"] is True
+
+
+def test_without_a_config_file_defaults_are_listed_and_a_save_makes_one(tmp_path):
+    with open_context(Config(db_path=tmp_path / "o.db"), None) as ctx:
+        assert row(ctx, "risk", "account")["value"] == 10_000.0
+        set_setting(ctx, "risk", "account", 5000)
+    assert load_config(tmp_path / "oracle.toml")[0].risk.account == 5000.0
+
+
+def test_a_config_file_another_program_holds_is_a_readable_error_and_is_left_as_it_was(ctx, monkeypatch):
+    before = ctx.config_source.read_bytes()
+
+    def locked(src, dst):
+        raise PermissionError(13, "Access is denied", str(dst))
+
+    monkeypatch.setattr("oracle.services.settings_service.os.replace", locked)
+    with pytest.raises(ConfigInUse, match="oracle.toml is open in another program: close it and try again"):
+        set_setting(ctx, "schedule", "time", "21:15")
+    assert ctx.config_source.read_bytes() == before
+    assert [p.name for p in ctx.config_source.parent.iterdir() if p.suffix == ".new"] == []

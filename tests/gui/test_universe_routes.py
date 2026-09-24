@@ -1,3 +1,10 @@
+import asyncio
+import threading
+
+import oracle.gui.routes.universe as universe_routes
+
+from tests.gui.jobs import run_job, wait_job
+
 # Fake universe by market cap band (tests/services/test_universe_filters.py):
 #   Mega AAPL, 005930.KS, KO; Large T, 7203.T; Mid X.TO; Small APLE; none QQQ.L, NONAME.F, SSNLF
 BY_SIZE = ["AAPL", "005930.KS", "KO", "T", "7203.T", "X.TO", "APLE", "QQQ.L", "NONAME.F", "SSNLF"]
@@ -32,7 +39,7 @@ async def test_a_bad_filter_value_says_what_was_meant(loaded):
 
 async def test_searching_before_the_universe_is_loaded_says_how_to_load_it(client):
     response = await client.get("/api/universe/search")
-    assert response.status_code == 409 and "oracle universe refresh" in response.json()["error"]
+    assert response.status_code == 409 and "refresh the universe" in response.json()["error"]
 
 
 async def test_options_name_every_filter_and_sort(client):
@@ -67,3 +74,55 @@ async def test_a_result_is_watched_once_and_the_lists_count_it(loaded):
     assert (first["symbol"], first["added"], again["added"]) == ("KO", True, False)
     lists = (await loaded.get("/api/watchlists")).json()
     assert [(w["name"], w["items"]) for w in lists] == [("main", 1)]
+
+
+async def test_status_before_loading_points_at_the_refresh_button(client):
+    status = (await client.get("/api/status")).json()["universe"]
+    assert "Refresh universe" in status["next"]
+    assert (await client.get("/api/universe/status")).json()["loaded"] is False
+
+
+async def test_refresh_runs_as_a_job_of_its_own_and_shows_what_it_loaded(client):
+    job = await run_job(client, "/api/jobs/universe")
+    assert (job["kind"], job["state"], job["link"]) == ("universe", "done", "#universe")
+    assert job["result"]["loaded"] and job["result"]["listings"] > 0
+    status = (await client.get("/api/universe/status")).json()
+    assert (status["listings"], status["companies"]) == (job["result"]["listings"], job["result"]["companies"])
+    assert status["source_commit"] and status["refreshed_at"] and status["by_type"]["equity"][0] > 0
+
+
+async def test_a_second_refresh_joins_the_running_one(client, monkeypatch):
+    import threading
+
+    from oracle.services import activity_service
+
+    release = threading.Event()  # set from the test, waited on by the job's worker thread
+
+    async def slow(c, on_stage=None):
+        await asyncio.to_thread(release.wait)
+
+    monkeypatch.setattr(activity_service, "refresh_universe", slow)
+    first = (await client.post("/api/jobs/universe")).json()
+    second = (await client.post("/api/jobs/universe")).json()
+    release.set()
+    assert second["id"] == first["id"]
+    assert (await wait_job(client, first))["state"] == "done"
+
+
+async def test_every_tag_is_listed_with_its_companies(loaded):
+    await loaded.post("/api/companies/AAPL/tags", json={"tag": "picks"})
+    await loaded.post("/api/companies/KO/tags", json={"tag": "picks"})
+    assert (await loaded.get("/api/universe/tags")).json() == [
+        {"tag": "picks", "symbols": ["AAPL", "KO"], "orphaned": []}]
+
+
+async def test_status_counts_off_the_event_loop_on_a_connection_of_its_own(loaded, monkeypatch):
+    real, seen = universe_routes.universe_status, []
+
+    def spy(ctx):
+        seen.append(threading.get_ident())
+        return real(ctx)
+
+    monkeypatch.setattr(universe_routes, "universe_status", spy)
+    assert (await loaded.get("/api/universe/status")).json()["loaded"] is True
+    assert seen and seen[0] != threading.get_ident()

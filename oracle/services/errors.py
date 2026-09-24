@@ -10,6 +10,10 @@ class ConfigInvalid(ServiceError):
     pass
 
 
+class ConfigInUse(ServiceError):
+    pass
+
+
 class JobAlreadyRunning(ServiceError):
     pass
 
@@ -20,7 +24,7 @@ class UniverseUnavailable(ServiceError):
 
 class UniverseNotLoaded(ServiceError):
     def __init__(self) -> None:
-        super().__init__("the universe is not loaded yet: run `oracle universe refresh`")
+        super().__init__("the universe is not loaded yet: refresh the universe first")
 
 
 class UnknownFilterValue(ServiceError):
@@ -40,6 +44,10 @@ class UnknownWatchlist(ServiceError):
 
 
 class UnknownJob(ServiceError):
+    pass
+
+
+class UnknownResearchRun(ServiceError):
     pass
 
 

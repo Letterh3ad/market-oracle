@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
+from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
@@ -60,8 +61,12 @@ def _analysed(runs: list[WatchedAnalysis]) -> dict:
     ]}
 
 
+def _fx(updates: list[FxUpdate]) -> dict:
+    return {"updates": [asdict(u) for u in updates], "credits": credits(u.source for u in updates)}
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
-_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick}
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx}
 
 
 def _result(j: Job) -> dict | None:
@@ -85,6 +90,14 @@ def running_tick(j: Job | None) -> dict | None:
 
 def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
+
+
+def research_summary(run: ResearchRun) -> dict:
+    """A history row: enough to pick a report without loading its trace."""
+    v = run.report.verdict
+    return {"id": run.id, "day": run.report.day, "as_of": run.as_of, "status": run.status,
+            "started_at": run.started_at, "model_label": run.model_label,
+            "verdict": v and {"label": v.label, "confidence": v.confidence}, "no_verdict": run.report.no_verdict}
 
 
 def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> dict:

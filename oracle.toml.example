@@ -1,29 +1,29 @@
 # Copy to oracle.toml. Every key is optional; these are the defaults.
 # Relative paths resolve against this file's folder.
 
-db_path = "oracle.db"
+db_path = "oracle.db"   # the database file
 
 # ISO 4217 code. Every price, position and P&L is converted to this.
-base_currency = "GBP"
+base_currency = "GBP"   # every price, position and P&L is shown in this currency
 
 # Per-source request pacing, shared by every oracle process on this database.
 # Override any field of a built-in source, or add a new one (rate_per_second required).
 # Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.1, google_news 0.5, ddgs 0.2, sec_edgar 5.0, web 1.0 (pages research reads),
 # financedatabase 0.5 (GitHub, used by `oracle universe refresh`)
 [sources.gdelt]
-rate_per_second = 0.1   # GDELT asks for one request per 5 seconds and locks out quicker ones
+rate_per_second = 0.1   # requests a second (GDELT asks for one per 5 seconds and locks out quicker ones)
 cooldown_s = 900        # how long a tripped breaker stays open
 max_retries = 1         # retries on 429/5xx before giving up
 
 # Where daily prices come from, tried in order per listing until one has data.
 # Keyed sources are skipped until their key is set below.
 [prices]
-sources = ["yahoo", "eodhd"]
+sources = ["yahoo", "eodhd"]   # price sources, tried in this order
 
 # Where exchange rates into base_currency come from, tried in order per currency.
 # yahoo, ecb and frankfurter have history; open_er_api has today's rate only.
 [fx]
-sources = ["yahoo", "ecb", "frankfurter", "eodhd", "open_er_api"]
+sources = ["yahoo", "ecb", "frankfurter", "eodhd", "open_er_api"]   # FX sources, tried in this order
 
 # Deterministic analysts.
 [analysts]
@@ -32,27 +32,27 @@ peers = 20   # companies a factor score is compared against (5 to 100)
 # Paper-account sizing, in base_currency. A position at target_volatility (yearly swing)
 # gets the full max_position; twice as volatile, half. Shares are 0 to 1.
 [risk]
-account = 10000
-max_position = 0.10
-cash_floor = 0.20
-target_volatility = 0.20
+account = 10000           # paper account size
+max_position = 0.10       # largest share of the account one position may take
+cash_floor = 0.20         # share of the account always kept in cash
+target_volatility = 0.20  # yearly swing at which a position gets the full max_position
 
 # The strategy paper account's rules (sizing comes from [risk]).
 [strategy]
 min_probability = 0.6   # buy only on a buy/strong buy lean at least this likely
-max_positions = 10
+max_positions = 10      # most positions held at once (1 to 50)
 stop_loss = 0.08        # sell a position 8% below its average cost
 
 # `oracle gui`. Localhost only by default: nothing else on the network can reach it.
 [gui]
-host = "127.0.0.1"
-port = 8740
+host = "127.0.0.1"   # the address the GUI listens on
+port = 8740          # 1024 to 65535
 
 # Automatic ticks (prices, FX, fills, analysis, strategy step) while `oracle gui` runs.
 # Weekdays only, at this local time. A run missed while the app was closed runs once
 # on the next start. The GUI's Ticks panel changes these too.
 [schedule]
-enabled = false
+enabled = false   # true: ticks run by themselves on weekdays
 time = "22:30"   # 24-hour, local time
 warn_minutes = 10            # the GUI warns this long before, with Postpone and Skip (0 off, up to 120)
 research_when_idle = false   # true: a tick researches only once the PC has sat idle idle_minutes
@@ -62,7 +62,7 @@ idle_minutes = 15            # 1 to 240; otherwise research waits for the next t
 # research refreshes and discovery). Off: nothing starts on its own; buttons still work.
 # The GUI header's Automation switch changes it too.
 [automation]
-enabled = true
+enabled = true   # false: nothing starts by itself
 
 # The AI paper account: trades each watched listing's latest research verdict under the
 # strategy's rules, limits and starting cash. Unvalidated; off until you turn it on (the
@@ -70,27 +70,27 @@ enabled = true
 # researches watched listings whose report is missing, too old, or behind a price move,
 # most stale first, then runs the AI step.
 [ai_account]
-enabled = false
+enabled = false            # true: the AI account trades research verdicts
 max_verdict_age_days = 7   # an older verdict is never traded, and is researched again (1 to 90)
 move_threshold = 0.05      # research again after the price moved this share since the report
 research_budget_min = 30   # minutes a tick may spend starting research; the rest waits (1 to 480)
 
 # The model research runs on (`oracle research`). Ollama, local: `ollama pull <model>` first.
 [llm]
-backend = "ollama"
+backend = "ollama"   # ollama (local) or claude (paid)
 model = "qwen3:4b-instruct-2507-q8_0"   # fits an 8GB GPU
-base_url = "http://localhost:11434"
+base_url = "http://localhost:11434"   # where Ollama listens
 max_steps = 8        # tool calls a run may make before it must answer
 timeout_s = 180      # per reply; a cold model load is slow
 context = 8192       # tokens of context asked of the model
 # backend = "claude" runs research on Claude instead (paid, per token): the key comes from
 # ANTHROPIC_API_KEY or `ant auth login`, never this file.
-claude_model = "claude-opus-5"
+claude_model = "claude-opus-5"   # the model when backend is "claude"
 
 # Research sources. SEC EDGAR requires a name and email in every request's User-Agent;
 # it is sent to sec.gov only. Unset, the filings tool is skipped.
 [research]
-# contact = "Your Name you@example.com"
+# contact = "Your Name you@example.com"   # name and email for SEC EDGAR requests
 
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.

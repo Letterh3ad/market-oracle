@@ -1282,3 +1282,59 @@ nearer 3.
 **Alternatives:** Falling back to the newest valid verdict within the age limit (trades a call
 the latest research no longer supports); ordering by report day (starvation); recording `ai`
 equity from the upgrade (a start the user never chose).
+
+## 2026-09-24 - GUI parity manifest in tests, with untracked gaps pending
+**Context:** gui-parity 01 pins every CLI action to a GUI route. The survey missed three gaps
+(`jobs status`, `tag list`, `prices sources`).
+**Decision:** The manifest is test data (`tests/gui_parity.py`). Routes are checked against
+the app's OpenAPI schema and against the page scripts, so a route with no page control fails
+too. The three missed gaps are `Pending("untracked: ...")` until ticketed. Flags that only
+shape CLI output are exempt as output-only.
+**Alternatives:** A manifest under `oracle/` (the app does not need it); exempting the missed
+gaps (hides real gaps).
+**Follow-up (2026-09-24):** all three are now mapped (`GET /api/activity`,
+`GET /api/universe/tags`, `GET /api/status`); no `Pending("untracked: ...")` is left.
+
+## 2026-09-24 - One generic settings path over every oracle.toml key
+**Context:** gui-parity 07: every oracle.toml key must be editable in the GUI; there is no
+CLI command to pin in the manifest.
+**Decision:** `GET/PUT /api/settings` over `setting_list()`, walked from `Config`, so a new
+key appears by itself. A save builds the file with `with_settings` and goes through the safe
+writer, which loads it with the real loader first: bad values are refused with the loader's
+message and validation stays in one place. Meanings come from inline comments in
+`oracle.toml.example` (a test requires one per key). `[schedule]`, `[automation]`,
+`[ai_account]` and `[analysts]` apply live (now all reloaded by `reload_live_settings`);
+the rest say "applies after Restart" and offer the header's Restart. `[keys]` values are
+never sent: rows say set/not set and name the environment variable that overrides them.
+The manifest holds `SETTINGS_FORM` routes, checked as served and called by the page.
+**Alternatives:** One setter per key (dozens, validation duplicated); sending masked secrets
+(still leaks length); applying every key live (db and gui changes need a fresh process).
+
+## 2026-09-24 - A replay is a job of its own, subject `SYMBOL@day`
+**Context:** gui-parity: research replays as of a past day run from the Company tab through the
+job runner, which joins a second submit with the same kind and subject.
+**Decision:** A replay's subject is `SYMBOL@YYYY-MM-DD` (label "Replay SYMBOL as of day"), so it
+never joins, or is taken for, a live run of the listing; two presses for the same day join.
+**Alternatives:** The listing as subject (a replay would join a live run and report its result);
+a unique subject per press (duplicate replays of one day).
+
+## 2026-09-24 - Universe refresh and Update FX are runner jobs
+**Context:** gui-parity: both are long network work the GUI must start and show like any other.
+**Decision:** Both go through the job runner and show in Activity. The universe refresh has one
+subject (`universe`), so a second press joins it, with its stage as progress. Update FX
+dedupes the named sources and uses them, joined in order, as the subject (`*` for all), so the
+same source list joins while a different one runs as its own job.
+**Alternatives:** Blocking requests (the page waits minutes, no Activity row); one FX subject
+for every source list (a narrower update would silently join a wider one, or the reverse).
+
+## 2026-09-24 - Messages name the action, not a CLI command
+**Context:** The app ships compiled, so a GUI user has no terminal; services held CLI wording
+with a GUI override (`ServiceError.in_gui`), which put GUI knowledge in the service layer.
+**Decision:** Every message a service, broker or research module raises or stores names the
+action in words both frontends fit ("update its prices first", "refresh the universe first",
+"analyse it first"); `in_gui` is gone. `tests/test_architecture.py` fails on any "`oracle "
+in those packages. CLI help text in `oracle/cli` may still name commands. The GUI's
+unexpected-error message says to try again and then Restart. A locked oracle.toml on save is
+`ConfigInUse` (409): "oracle.toml is open in another program: close it and try again".
+**Alternatives:** Keep `in_gui` (GUI wording in services, every new message needs two); map
+each message per frontend (a table to keep in step with every service message).

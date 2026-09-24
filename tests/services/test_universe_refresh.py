@@ -106,3 +106,9 @@ async def test_refresh_releases_its_lock_after_a_failure(ctx, fdb):
         await refresh_universe(ctx)
     fdb.files["equities.bz2"] = bz2_csv(BASIC)
     assert (await refresh_universe(ctx)).loaded
+
+
+async def test_refresh_names_each_stage_as_it_starts(ctx):
+    stages = []
+    await refresh_universe(ctx, on_stage=stages.append)
+    assert stages == ["downloading", "saving"]

@@ -75,7 +75,7 @@ def test_search_with_no_hits_says_so(run):
 def test_search_before_a_refresh_is_an_error_saying_how_to_load(run):
     code, _, err = run("universe", "search", "apple")
     assert code == 1
-    assert "oracle universe refresh" in err
+    assert "refresh the universe" in err
 
 
 def _symbols(out):

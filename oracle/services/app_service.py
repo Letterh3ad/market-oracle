@@ -127,5 +127,5 @@ class AppControl:
         if self._stopping:
             raise CannotRestart("Oracle is already restarting or shutting down")
         if self.on_exit is None:
-            raise CannotRestart("this server cannot stop itself (it was not started by `oracle gui`)")
+            raise CannotRestart("this server cannot stop itself (it was not started by Market Oracle's launcher)")
         return self.on_exit

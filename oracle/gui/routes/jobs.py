@@ -4,12 +4,14 @@ lists and cancels them."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from datetime import date
+
+from fastapi import APIRouter, Depends, Query
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_prices, submit_research, submit_tick,
+    JobRunner, submit_analyse, submit_fx, submit_prices, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 
@@ -31,13 +33,27 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx),
 
 
 @router.post("/research", status_code=202)
-async def research(symbol: str, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+async def research(symbol: str, as_of: date | None = None, ctx: AppContext = Depends(get_ctx),
+                   runner: JobRunner = Depends(get_runner)) -> dict:
     """One research run (about a minute on the default local model); its report shows on
-    the company page when done."""
-    return shapes.job(submit_research(ctx, runner, symbol))
+    the company page when done. `as_of` replays that day, seeing only what existed by then."""
+    return shapes.job(submit_research(ctx, runner, symbol, as_of))
 
 
 @router.post("/tick", status_code=202)
 async def tick(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """The whole routine once: prices, FX, fills, analysis, strategy step."""
     return shapes.job(submit_tick(ctx, runner))
+
+
+@router.post("/universe", status_code=202)
+async def universe(runner: JobRunner = Depends(get_runner)) -> dict:
+    """Download FinanceDatabase (~17 MB) and replace the universe whole."""
+    return shapes.job(submit_universe_refresh(runner))
+
+
+@router.post("/fx", status_code=202)
+async def fx(source: list[str] = Query(default=[]), runner: JobRunner = Depends(get_runner)) -> dict:
+    """New exchange rates for every currency stored prices use; `source` (repeatable) picks
+    which sources to ask, else the configured order."""
+    return shapes.job(submit_fx(runner, source))

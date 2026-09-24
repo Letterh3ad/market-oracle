@@ -104,7 +104,7 @@ async def test_no_exchange_rate_for_the_fill_day_keeps_it_pending_and_says_why(c
     clock.advance(8 * 86400)
     await update_listing(ctx, "AAPL")
     [done] = fill_pending(ctx)
-    assert done.status == "pending" and "oracle fx update" in done.note
+    assert done.status == "pending" and "update FX rates first" in done.note
 
 
 async def test_unknown_symbols_are_refused(ctx):
@@ -220,7 +220,7 @@ async def test_a_lean_older_than_the_last_bar_is_never_traded(ctx, yahoo, clock)
     seed(ctx, "AAPL", "strong buy", probability=0.9)
     await next_day(ctx, yahoo, clock)
     [d] = strategy_step(ctx)
-    assert (d.action, d.reason) == ("skip", "baseline lean is out of date: run `oracle analyse`")
+    assert (d.action, d.reason) == ("skip", "baseline lean is out of date: analyse it again")
     assert account_view(ctx, "strategy").pending == ()
 
 

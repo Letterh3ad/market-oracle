@@ -7,23 +7,24 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from oracle.services.errors import (
-    CannotRestart, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
+    CannotRestart, ConfigInUse, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
     ServiceError,
-    UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownJob, UnknownSymbol, UnknownWatchlist,
+    UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownJob, UnknownResearchRun, UnknownSymbol,
+    UnknownWatchlist,
 )
 
 log = logging.getLogger(__name__)
 
 # Most specific first: the first matching class wins. Anything else a service raises is 400.
 STATUS = (
-    ((UnknownSymbol, UnknownWatchlist, UnknownJob), 404),
+    ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun), 404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
-    ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart), 409),
+    ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart, ConfigInUse), 409),
     ((PriceUnavailable, UniverseUnavailable), 502),
     # The local model is a service of this machine, not an upstream: unavailable, not a bad gateway.
     ((ModelUnavailable,), 503),
 )
-UNEXPECTED = "something went wrong inside Market Oracle: see the terminal running `oracle gui`"
+UNEXPECTED = "something went wrong inside Market Oracle: try again, and if it keeps happening press Restart"
 
 
 def install_error_handlers(app: FastAPI) -> None:

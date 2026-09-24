@@ -396,7 +396,7 @@ async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, mo
     from oracle.services import activity_service
     from oracle.services.activity_service import submit_research
 
-    async def unusable(c, listing):
+    async def unusable(c, listing, as_of=None):
         return SimpleNamespace(status=RunStatus.FAILED, error="the model's answers were unusable")
 
     monkeypatch.setattr(activity_service, "research", unusable)

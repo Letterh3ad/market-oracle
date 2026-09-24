@@ -83,7 +83,7 @@ async def test_an_unknown_symbol_is_refused_with_suggestions(ctx):
 
 
 async def test_a_listing_without_prices_says_how_to_get_them(ctx):
-    with pytest.raises(NoPrices, match="oracle prices update MSFT"):
+    with pytest.raises(NoPrices, match="no prices stored for MSFT: update its prices first"):
         await analyse(ctx, "MSFT")
 
 
@@ -119,7 +119,7 @@ async def test_risk_sizes_in_base_currency_and_compares_with_other_watched_listi
 
 async def test_risk_without_exchange_rates_says_how_to_get_them(ctx):
     skipped = {k.analyst: k.reason for k in (await analyse(ctx, "AAPL")).skipped}
-    assert "oracle fx update" in skipped["risk"]
+    assert "update FX rates first" in skipped["risk"]
 
 
 async def test_analysing_the_watchlist_reports_each_failure_and_carries_on(ctx):
@@ -127,7 +127,7 @@ async def test_analysing_the_watchlist_reports_each_failure_and_carries_on(ctx):
     watch(ctx, "AAPL")
     runs = {r.symbol: r for r in await analyse_watched(ctx)}
     assert runs["AAPL"].analysis is not None and runs["AAPL"].error is None
-    assert runs["MSFT"].analysis is None and "prices update" in runs["MSFT"].error
+    assert runs["MSFT"].analysis is None and "update its prices" in runs["MSFT"].error
 
 
 async def test_latest_signals_read_without_requests_and_mark_stale_ones(ctx, yahoo, clock, web):

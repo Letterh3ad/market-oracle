@@ -1,6 +1,7 @@
 import { el, clearError } from "./lib/dom.js";
 import * as control from "./lib/control.js";
 import * as status from "./lib/status.js";
+import * as settings from "./lib/settings.js";
 import universeTab from "./tabs/universe.js";
 import watchlistTab from "./tabs/watchlist.js";
 import companyTab from "./tabs/company.js";
@@ -37,4 +38,5 @@ document.getElementById("error-close").addEventListener("click", clearError);
 window.addEventListener("hashchange", () => selectTab(location.hash.slice(1)));
 status.start();
 control.mount();
+settings.mount();
 selectTab(location.hash.slice(1));

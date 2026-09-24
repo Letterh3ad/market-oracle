@@ -3,6 +3,7 @@ import { el, showError } from "./dom.js";
 import { tip } from "./tip.js";
 import * as control from "./control.js";
 import * as tick from "./tick.js";
+import * as fx from "./fx.js";
 
 // The header line, the ticks panel and the sources panel, refreshed every 30 seconds.
 async function refresh() {
@@ -32,6 +33,10 @@ async function refresh() {
       el("td", null, s.reason || ""),
       el("td", { class: "num" }, `${s.rate_per_second}/s`),
       el("td", { class: "num" }, String(s.requests_last_hour)))));
+  document.getElementById("price-sources").replaceChildren(...status.price_sources.map((s) =>
+    el("tr", { class: s.enabled ? null : "dim" },
+      el("td", { class: "num" }, s.position == null ? "-" : String(s.position)), el("td", null, s.name),
+      el("td", null, s.enabled ? "on" : `off (${s.reason})`))));
 }
 
 function start() {
@@ -41,6 +46,7 @@ function start() {
     el("th", null, tip("Source", "source")), el("th", null, tip("State", "source_state")),
     el("th", null, "Why"), el("th", null, tip("Allowed", "source_rate")),
     el("th", null, tip("Last hour", "requests_last_hour"))));
+  fx.mount(document.getElementById("fx-panel"));
   refresh();
   setInterval(refresh, 30_000);
 }

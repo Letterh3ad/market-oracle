@@ -49,3 +49,18 @@ async def test_a_listing_gone_from_the_universe_is_flagged_not_an_error(ctx, wat
         ctx.conn.execute("DELETE FROM listings WHERE symbol = 'AAPL'")
     [item] = (await watching.get("/api/watchlists/main")).json()["items"]
     assert item["missing"] and item["next"] == "remove it, or refresh the universe later"
+
+
+async def test_a_new_list_is_created_then_a_listing_added_to_it(priced):
+    created = await priced.post("/api/watchlists", json={"name": "Dividends"})
+    assert created.json() == {"name": "Dividends", "created": True}
+    assert [w["name"] for w in (await priced.get("/api/watchlists")).json()] == ["Dividends"]
+    await priced.post("/api/watchlists/Dividends/items", json={"symbol": "AAPL"})
+    [item] = (await priced.get("/api/watchlists/dividends")).json()["items"]
+    assert item["symbol"] == "AAPL" and (await priced.get("/api/watchlists/main")).json()["items"] == []
+
+
+async def test_a_list_name_too_long_is_refused(priced):
+    response = await priced.post("/api/watchlists", json={"name": "x" * 41})
+    assert response.status_code == 400 and "at most 40" in response.json()["error"]
+    assert (await priced.get("/api/watchlists")).json() == []

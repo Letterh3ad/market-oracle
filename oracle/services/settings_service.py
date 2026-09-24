@@ -11,18 +11,22 @@ from dataclasses import replace
 from pathlib import Path
 
 from oracle.config import (
-    DEFAULT_CONFIG_NAME, PEERS_RANGE, AutomationConfig, ConfigError, check_ai_account, check_peers, check_schedule,
-    check_schedule_time, load_config, with_settings,
+    DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, Setting, check_ai_account,
+    check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config, setting_list,
+    with_settings,
 )
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery
+from oracle.services.errors import ConfigInUse, InvalidQuery
 
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_peer_count",
-    "set_schedule", "set_tick_warning",
+    "LIVE_SECTIONS", "PEERS_RANGE", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation",
+    "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
+
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts")
+"""Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart."""
 
 
 def set_peer_count(ctx: AppContext, count: int) -> Path:
@@ -82,10 +86,50 @@ def set_ai_research(ctx: AppContext, max_age_days: int, move_threshold: float, b
     return path
 
 
+def settings_form(ctx: AppContext) -> list[dict]:
+    """Every oracle.toml key: its value in the file (else the default), default, meaning
+    from oracle.toml.example, and whether it applies live. Secrets say only whether they
+    are set, and whether the environment sets them (which wins over the file)."""
+    raw = _read_raw(_config_path(ctx))
+    meanings = example_meanings(EXAMPLE_PATH.read_text(encoding="utf-8")) if EXAMPLE_PATH.is_file() else {}
+    return [_row(s, raw, meanings) for s in setting_list(tuple(raw.get("sources", {})))]
+
+
+def set_setting(ctx: AppContext, section: str, key: str, value: object) -> dict:
+    """Save one key (None removes it, so the default applies) once the whole file still
+    loads, refusing with the loader's message otherwise. Live sections apply at once."""
+    raw = _read_raw(_config_path(ctx))
+    if not any((s.section, s.key) == (section, key) for s in setting_list(tuple(raw.get("sources", {})))):
+        raise InvalidQuery(f"no setting [{section}] {key}")
+    _save(ctx, section, {key: value})
+    if section in LIVE_SECTIONS:
+        reload_live_settings(ctx)
+    return next(r for r in settings_form(ctx) if (r["section"], r["key"]) == (section, key))
+
+
+def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
+    table = raw
+    for part in filter(None, setting.section.split(".")):
+        table = table.get(part, {})
+    row = {"section": setting.section, "key": setting.key, "kind": setting.kind, "default": setting.default,
+           "meaning": setting.meaning_in(meanings) or "", "live": setting.section in LIVE_SECTIONS,
+           "secret": setting.secret}
+    if setting.secret:
+        env = key_env_var(setting.key)
+        return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
+    return {**row, "value": table.get(setting.key, setting.default)}
+
+
+def _read_raw(path: Path) -> dict:
+    try:
+        return tomllib.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    except tomllib.TOMLDecodeError as exc:
+        raise InvalidQuery(f"{path} is not valid TOML ({exc}); fix it by hand") from exc
+
+
 def reload_live_settings(ctx: AppContext) -> None:
-    """Take `[schedule]`, `[automation]` and `[ai_account]` from oracle.toml as they are now, so the CLI in
-    another process reaches a running GUI. A file that no longer loads keeps the current
-    settings."""
+    """Take the LIVE_SECTIONS from oracle.toml as they are now, so the CLI in another
+    process reaches a running GUI. A file that no longer loads keeps the current settings."""
     if ctx.config_source is None:
         return
     try:
@@ -93,8 +137,7 @@ def reload_live_settings(ctx: AppContext) -> None:
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
-    ctx.config = replace(ctx.config, schedule=loaded.schedule, automation=loaded.automation,
-                         ai_account=loaded.ai_account)
+    ctx.config = replace(ctx.config, **{section: getattr(loaded, section) for section in LIVE_SECTIONS})
 
 
 def _check(check, value):
@@ -104,8 +147,12 @@ def _check(check, value):
         raise InvalidQuery(str(exc)) from exc
 
 
+def _config_path(ctx: AppContext) -> Path:
+    return ctx.config_source or Path.cwd() / DEFAULT_CONFIG_NAME
+
+
 def _save(ctx: AppContext, section: str, values: dict[str, object]) -> Path:
-    path = ctx.config_source or Path.cwd() / DEFAULT_CONFIG_NAME
+    path = _config_path(ctx)
     _write_settings(path, section, values)
     ctx.config_source = path
     return path
@@ -131,6 +178,10 @@ def _write_settings(path: Path, section: str, values: dict[str, object]) -> None
             load_config(staged, cwd=path.parent)
         except ConfigError as exc:
             raise InvalidQuery(f"{path} would not load after the change ({exc}); it was left as it was") from exc
-        os.replace(staged, path)
+        try:
+            os.replace(staged, path)
+        except OSError as exc:
+            # Windows refuses to replace a file another program (an editor, Excel) has open.
+            raise ConfigInUse(f"{path.name} is open in another program: close it and try again") from exc
     finally:
         staged.unlink(missing_ok=True)

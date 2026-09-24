@@ -90,3 +90,24 @@ def test_checker_catches_a_frontend_reaching_config_directly(tmp_path):
     bad = tmp_path / "bad.py"
     bad.write_text("from oracle.config import load_config\n")
     assert frontend_violations(bad) == {"oracle.config"}
+
+
+# The app ships compiled, so a message a service raises or stores must name the action, not a command.
+NEUTRAL_MESSAGE_PACKAGES = ("services", "broker", "research")
+
+
+@pytest.mark.parametrize("package", NEUTRAL_MESSAGE_PACKAGES)
+def test_no_message_below_the_frontends_names_a_cli_command(package):
+    offenders = [
+        f"{path.relative_to(SOURCE_ROOT)}:{n}"
+        for path in sorted((SOURCE_ROOT / package).rglob("*.py"))
+        for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if "`oracle " in line
+    ]
+    assert offenders == []
+
+
+def test_service_errors_carry_one_message_for_every_frontend():
+    from oracle.services.errors import ServiceError
+
+    assert not hasattr(ServiceError, "in_gui")
