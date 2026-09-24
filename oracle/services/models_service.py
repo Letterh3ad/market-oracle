@@ -9,9 +9,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from oracle.config import (
-    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROFILE_KEYS_IN_FILE, PROVIDER_KEYS, PROVIDERS, SLOTS, SLOTS_TABLE,
-    URLLESS_PROVIDERS, Config, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name, model_profiles,
-    profile_tables, with_settings, without_section,
+    ALLOW_CLAUDE_CODE, DEFAULT_CLAIMED_CUTOFF, DEFAULT_PROFILE, PROFILE_KEYS_IN_FILE, PROVIDER_KEYS, PROVIDERS, SLOTS,
+    SLOTS_TABLE, URLLESS_PROVIDERS, Config, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
+    claimed_cutoff, model_profiles, profile_tables, with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
 from oracle.research.claude_code import ClaudeCodeChat
@@ -161,11 +161,12 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
     tables = profile_tables(ctx.config)
     rows = [{
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
-        "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
+        "timeout_s": p.timeout_s, "claimed_cutoff": claimed_cutoff(p).isoformat(), "key_env": p.key_env,
+        "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "unusable": p.unusable,
         "from_llm": name not in ctx.config.models,
         "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
-        "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
+        "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s", "claimed_cutoff")},
         "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
         "unset_slots": _unset_slots(ctx.config) if name == DEFAULT_PROFILE else [],
         "unavailable": _unavailable(ctx, p),
@@ -204,7 +205,8 @@ def provider_defaults(ctx: AppContext) -> dict[str, dict]:
     """Each provider offered, with what its unset keys mean and whether it takes a key or a
     URL. claude_code is offered only when `[models] allow_claude_code` is set."""
     return {name: {"base_url": spec.base_url, "base_url_required": spec.base_url_required, "context": spec.context,
-                   "timeout_s": LlmConfig.timeout_s, "keyed": spec.keyed, "url": spec.url}
+                   "timeout_s": LlmConfig.timeout_s, "keyed": spec.keyed, "url": spec.url,
+                   "claimed_cutoff": DEFAULT_CLAIMED_CUTOFF.isoformat()}
             for name, spec in PROVIDERS.items() if name != "claude_code" or ctx.config.allow_claude_code}
 
 

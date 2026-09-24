@@ -171,7 +171,7 @@ def test_the_wilson_interval_and_none_under_ten():
 def test_the_status_carries_a_small_interim_score(ctx, study):
     score = study_status(ctx).to_json()["score"]
     assert set(score) == {"verdicts", "no_verdict", "buy_share", "mean_confidence", "prices_checked_at",
-                          "price_failures", "horizons", "note"}
+                          "price_failures", "horizons", "excluded", "note"}
     assert (score["verdicts"], score["no_verdict"], score["buy_share"]) == (4, 1, 0.5)
     assert (score["prices_checked_at"], score["price_failures"]) == (None, []) and "limits" in score["note"]
     one = score["horizons"]["1m"]

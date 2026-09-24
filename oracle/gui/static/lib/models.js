@@ -6,10 +6,10 @@ import { el, showError } from "./dom.js";
 // An edit replaces the whole profile; the key is never sent to the page, so an empty key
 // box keeps the saved one.
 
-const FIELDS = ["model", "base_url", "context", "timeout_s", "key_env", "key"];
+const FIELDS = ["model", "base_url", "context", "timeout_s", "claimed_cutoff", "key_env", "key"];
 const PROVIDER_FIELDS = ["base_url", "context"];
 // What an edit form shows for a provider the server no longer offers (claude_code turned off).
-const OFF = { base_url: null, context: "", timeout_s: "", keyed: false, url: false };
+const OFF = { base_url: null, context: "", timeout_s: "", claimed_cutoff: "", keyed: false, url: false };
 
 // Form values (strings) to the JSON the server takes: empty means the provider's default.
 function profileBody(fields, create, defaults = {}) {
@@ -24,9 +24,13 @@ function profileBody(fields, create, defaults = {}) {
   const body = {
     provider: fields.provider, model: text(fields.model), base_url: text(fields.base_url),
     context: number(fields.context, "context"), timeout_s: number(fields.timeout_s, "timeout_s"),
-    key_env: text(fields.key_env), key: fields.clear_key ? "" : text(fields.key),
+    claimed_cutoff: text(fields.claimed_cutoff), key_env: text(fields.key_env),
+    key: fields.clear_key ? "" : text(fields.key),
   };
   if (!body.model) throw new Error("type a model name");
+  if (body.claimed_cutoff && !/^\d{4}-\d{2}-\d{2}$/.test(body.claimed_cutoff)) {
+    throw new Error("claimed cutoff: a day like 2025-05-20");
+  }
   if (defaults.base_url_required && !body.base_url) throw new Error("type a base_url: the server's API root");
   if (body.key && body.key_env) throw new Error("give a key or key_env, not both");
   if (create) {
@@ -39,10 +43,10 @@ function profileBody(fields, create, defaults = {}) {
 // An edit form's boxes: only what the profile sets, so a default never gets written as a
 // value (and carried to another provider). Defaults show as placeholders instead.
 function prefill(p) {
-  if (!p) return { model: "", base_url: "", context: "", timeout_s: "", key_env: "" };
+  if (!p) return { model: "", base_url: "", context: "", timeout_s: "", claimed_cutoff: "", key_env: "" };
   const set = (k) => (p.set[k] ?? "") === "" ? "" : String(p.set[k]);
   return { model: p.model, base_url: set("base_url"), context: set("context"), timeout_s: set("timeout_s"),
-    key_env: p.key_env ?? "" };
+    claimed_cutoff: set("claimed_cutoff"), key_env: p.key_env ?? "" };
 }
 
 // The provider-bound boxes after a switch to `provider`: empty, since another provider's
@@ -56,7 +60,8 @@ function switchedValues(p, provider) {
 function placeholders(defaults) {
   const base = defaults.base_url_required ? "required, like http://localhost:1234/v1"
     : `default: ${defaults.base_url ?? "provider's own endpoint"}`;
-  return { base_url: base, context: `default: ${defaults.context}`, timeout_s: `default: ${defaults.timeout_s}` };
+  return { base_url: base, context: `default: ${defaults.context}`, timeout_s: `default: ${defaults.timeout_s}`,
+    claimed_cutoff: `default: ${defaults.claimed_cutoff}` };
 }
 
 function keyState(p) {
@@ -85,8 +90,9 @@ function draw(listing) {
     el("p", { class: "dim small" }, "Named models a task can run on. The default comes from [llm] until it is " +
       "edited here, which writes [models.default]. Keys are never shown."),
     el("table", { class: "small" },
-      el("thead", null, el("tr", null, ...["name", "provider", "model", "context", "timeout", "key", "slots", "", ""]
-        .map((h) => el("th", null, h)))),
+      el("thead", null, el("tr", null,
+        ...["name", "provider", "model", "context", "timeout", "claimed cutoff", "key", "slots", "", ""]
+          .map((h) => el("th", null, h)))),
       body),
     el("button", { type: "button", class: "small-btn", onclick: () => body.append(formRow(null, listing.providers)) },
       "Add profile"));
@@ -118,6 +124,7 @@ function profileRow(p, providers) {
     el("td", { class: "mono" }, p.model),
     el("td", null, String(p.context)),
     el("td", null, `${p.timeout_s}s`),
+    el("td", { title: "The model's stated training cutoff: a cutoff probe never measures earlier" }, p.claimed_cutoff),
     el("td", null, keyState(p)),
     slotsCell(p),
     el("td", null,
@@ -191,6 +198,7 @@ function formRow(p, providers) {
     el("td", null, inputs.model, inputs.base_url),
     el("td", null, inputs.context),
     el("td", null, inputs.timeout_s),
+    el("td", null, inputs.claimed_cutoff),
     keyCell,
     el("td"),
     el("td", null,

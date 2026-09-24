@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, Query
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_ask, submit_backtest, submit_discover, submit_fx, submit_merges, submit_midday,
-    submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    JobRunner, submit_analyse, submit_ask, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
+    submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -102,3 +102,11 @@ async def backtest(start: date, end: date, watchlist: str = DEFAULT_LIST, slippa
     """Replay the strategy's rules over the list's stored prices from `start` to `end`, against
     buying and holding; the result is kept (`/api/backtests`). Bad days are refused now."""
     return shapes.job(submit_backtest(ctx, runner, watchlist, start, end, slippage_bps, commission))
+
+
+@router.post("/cutoff-probe", status_code=202)
+async def cutoff_probe(model: str | None = None, ctx: AppContext = Depends(get_ctx),
+                       runner: JobRunner = Depends(get_runner)) -> dict:
+    """Ask the research slot's model (or `model`) dated questions and keep its measured cutoff
+    (`/api/replay/cutoff`); an unknown profile is refused now."""
+    return shapes.job(submit_cutoff_probe(ctx, runner, model or None))

@@ -2,6 +2,7 @@
 // listings, one replay at a time in the PC's free time. It never starts by itself.
 import { api } from "./api.js";
 import { compareLines, table } from "./compare.js";
+import { cutoffSection } from "./cutoff_probe.js";
 import { el } from "./dom.js";
 import { money, pct } from "./fmt.js";
 import { repaint } from "./repaint.js";
@@ -48,23 +49,24 @@ function replaySection() {
     await load();
   });
 
-  function createForm(cutoff, label) {
-    const first = el("input", { type: "date", "aria-label": "First replay day", value: cutoff ?? "" });
-    if (cutoff) first.setAttribute("min", cutoff);
+  // `r`: the status's cutoff, the first day after it, and why no study can start, if none can.
+  function createForm(r, label) {
+    const first = el("input", { type: "date", "aria-label": "First replay day", value: r.replay_from ?? "" });
+    if (r.replay_from) first.setAttribute("min", r.replay_from);
     const symbols = el("input", { size: "36", placeholder: "blank: a spread picked for you",
       "aria-label": "Replay listings" });
     const create = job(label, "/api/replay", () => ({ first: first.value || null,
       symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean) }),
     (r) => "Created, paused: press Start when you want it to run."
       + (r.left_out?.length ? ` Left out, nothing fits: ${r.left_out.join("; ")}.` : ""));
-    const where = cutoff ? `the model's measured cutoff is ${cutoff}; no replay may start before it`
-      : "no model cutoff is measured yet, so pick the first day yourself: after what the model can know";
+    const where = r.cutoff_note ? `Creating is refused for now: ${r.cutoff_note}`
+      : `The measured cutoff is ${r.cutoff}: the first replay day must be after it, from ${r.replay_from}.`;
     return el("div", null,
       el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", create),
       el("p", { class: "dim small" }, "One replay per listing on its first trading day of each month, up to a month "
         + "ago so each has an outcome. About 20 listings spread over regions and sectors, each on its home market "
         + "with prices from the first day to now (fetched while creating, a minute or two), picked once and kept. "
-        + `Its ${where}.`));
+        + where));
   }
 
   function progress(s) {
@@ -77,9 +79,12 @@ function replaySection() {
     const mean = s.mean_replay_s == null ? "no replay finished yet" : `${minutes(s.mean_replay_s)} per replay on average`;
     const polled = s.polled_at ? `Last checked ${clock(s.polled_at)} UTC.`
       : "Not checked yet: replays are paced by the running app.";
+    const stages = Object.entries(s.stages ?? {}).map(([stage, profile]) => `${stage} on ${profile}`).join(", ");
     return [
       el("p", null, `${s.done} done, ${s.pending} queued, ${s.failed.length} failed of ${s.total} `
         + `(${s.first_day} to ${s.last_day}); ${mean}.`),
+      ...(stages ? [el("p", { class: "dim small" }, `Stage models, fixed when the study was created: ${stages}.`
+        + (s.cutoff ? ` Measured cutoff: ${s.cutoff}.` : ""))] : []),
       el("p", { class: s.state === "paused" && s.paused_reason ? "warn-text small" : "small" }, current),
       el("p", { class: "dim small" }, polled),
     ];
@@ -183,6 +188,8 @@ function replaySection() {
         + `${r.to_run} still to run, of ${r.total} replays. Verdict mix: ${m.buy} buy, ${m.hold} hold, ${m.sell} sell `
         + `(${share(m.buy_share)} buys), mean confidence ${m.mean_confidence == null ? "n/a"
           : m.mean_confidence.toFixed(2)}.`),
+      ...(r.excluded ? [el("p", { class: "warn-text small" }, `${plural(r.excluded, "replay")} excluded: on or `
+        + "before the current cutoff.")] : []),
       ...r.horizons.flatMap(horizon),
       el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
         + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "
@@ -235,16 +242,19 @@ function replaySection() {
     repaint(body, s ? [...study(s), ...score(report, shown.node), el("details", null,
       el("summary", null, "New study"),
       el("p", { class: "dim small" }, "The current study is kept; the new one takes its place here, paused."),
-      createForm(r.cutoff, "Create new study"))] : [createForm(r.cutoff, "Create study")], () => {
+      createForm(r, "Create new study"))] : [createForm(r, "Create study")], () => {
       chart?.remove();
       chart = shown.draw();
     });
   }
 
+  // A finished probe moves the cutoff, so the create form reloads with it.
+  const cutoff = cutoffSection(load);
+
   async function start() {
     if (started) return;
     started = true;
-    await load();
+    await Promise.all([load(), cutoff.start()]);
     timer = setInterval(() => { if (node.isConnected) load(); else clearInterval(timer); }, POLL_MS);
   }
 
@@ -252,7 +262,7 @@ function replaySection() {
     el("h2", null, "Replay study"),
     el("p", { class: "dim small" }, "Research replayed at past dates, seeing only what existed then, to measure "
       + "whether its verdicts beat what prices did next. Each replay is a normal research job in the Activity tab."),
-    body, note);
+    cutoff.node, body, note);
   return { node, start };
 }
 

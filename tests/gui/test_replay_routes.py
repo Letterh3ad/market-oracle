@@ -1,14 +1,16 @@
 import pytest
 
 from oracle.store.replay import ReplayRepo
+from tests.fakes.cutoff import EARLY, store_probe
 from tests.gui.conftest import DAYS
 from tests.gui.jobs import run_job, wait_job
 from tests.fakes.yahoo import bar
 
 
 @pytest.fixture
-async def listed(loaded, yahoo):
-    """A year of prices for three listings of the fake universe, not yet fetched."""
+async def listed(ctx, loaded, yahoo):
+    """A year of prices for three listings of the fake universe, not yet fetched, and a probed model."""
+    store_probe(ctx.conn, ctx.config)
     for symbol in ("AAPL", "7203.T", "KO"):
         yahoo.add(symbol, "USD", "America/New_York", [bar(d.isoformat(), 10.0) for d in DAYS])
     return loaded
@@ -20,8 +22,13 @@ async def create(client, **body) -> dict:
     return await wait_job(client, r.json())
 
 
-async def test_no_study_yet(loaded):
-    assert (await loaded.get("/api/replay")).json() == {"study": None, "cutoff": None}
+async def test_no_study_yet(ctx, loaded):
+    body = (await loaded.get("/api/replay")).json()
+    assert (body["study"], body["cutoff"], body["replay_from"]) == (None, None, None)
+    assert "probe default first" in body["cutoff_note"]
+    store_probe(ctx.conn, ctx.config)
+    assert (await loaded.get("/api/replay")).json() == {"study": None, "cutoff": EARLY.isoformat(),
+                                                        "replay_from": "2025-06-01", "cutoff_note": None}
 
 
 async def test_create_is_a_job_then_paused_until_start_then_pause(listed):
@@ -51,9 +58,9 @@ async def test_a_listing_without_prices_fails_the_job_with_the_reason(listed):
     assert job["state"] == "failed" and "no price data for 005930.KS" in job["error"]
 
 
-async def test_create_without_a_day_or_cutoff_is_refused_at_once(loaded):
+async def test_create_before_the_model_is_probed_is_refused_at_once(loaded):
     r = await loaded.post("/api/replay", json={})
-    assert r.status_code == 400 and "--from" in r.json()["error"]
+    assert r.status_code == 400 and "probe default first" in r.json()["error"]
 
 
 async def test_start_without_a_study_is_refused(loaded):

@@ -11,8 +11,8 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import (
-    activity, backtests, companies, discovery, fx, jobs, ledgers, models, questions, replay, schedule as tick_schedule,
-    settings, status, universe, watchlists,
+    activity, backtests, companies, cutoff, discovery, fx, jobs, ledgers, models, questions, replay,
+    schedule as tick_schedule, settings, status, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
@@ -81,6 +81,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(ledgers.router)
     app.include_router(backtests.router)
     app.include_router(replay.router)
+    app.include_router(cutoff.router)
     # Under a prefix, not a catch-all at "/", which would shadow the API.
     app.mount("/static", _Static(directory=STATIC_DIR), name="static")
 

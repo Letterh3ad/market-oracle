@@ -19,6 +19,7 @@ from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
+from oracle.services.cutoff_service import check_replay_from, probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
@@ -41,8 +42,9 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_discover", "submit_prices", "submit_replay_prices", "submit_midday", "submit_rerun", "submit_research",
-           "submit_tick", "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
+           "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -449,6 +451,16 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
                          subject=subject, link="#ledgers")
 
 
+def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
+    """Ask `profile`'s model, or each unprobed model a replay runs on, the dated questions and keep
+    their measured cutoffs; an unknown profile is refused now."""
+    replay_cutoff(ctx, profile)
+    stage: list[str] = []
+    return runner.submit("probe", "Probe model cutoff" + _on(profile),
+                         lambda c: probe_replay_models(c, profile, on_progress=stage.append), subject="cutoff",
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, profile=profile)
+
+
 # One resubmit per kind, rebuilding the call from what a finished job (live or from history,
 # both `Job` and `JobRow` carry kind/subject/label) stored about itself. A kind missing here
 # cannot be retried: nothing kept enough to rebuild its call.
@@ -456,22 +468,43 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if "@" in subject:
         symbol, day = subject.split("@", 1)
+        if why := _refused_replay(ctx, job):
+            raise InvalidQuery(why)
         again = submit_research(ctx, runner, symbol, date.fromisoformat(day), job.profile)
         _adopt_replay_cell(ctx, again, symbol, date.fromisoformat(day))
         return again
     return submit_research(ctx, runner, subject, profile=job.profile)
 
 
-def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
-    """A retried replay of a study cell that failed or waits for its retry counts for that
-    cell, so the study never runs it a second time."""
+def _study_cell(ctx: AppContext, job, symbol: str, day: date):
+    """The current study's cell a replay job stands for; a run on a picked profile is not one."""
     if job.profile is not None:
-        return  # the study replays on the slots; a run on a picked profile is another experiment
+        return None
     repo = ReplayRepo(ctx.conn)
     study = repo.current()
-    cell = repo.cell_at(study.id, symbol, day) if study else None
+    return repo.cell_at(study.id, symbol, day) if study else None
+
+
+def _refused_replay(ctx: AppContext, job) -> str | None:
+    """Why a replay job of a study cell may not run again: its day is now on or before the
+    cutoff, or the cutoff allows none."""
+    symbol, day = (job.subject or "").split("@", 1)
+    if _study_cell(ctx, job, symbol, date.fromisoformat(day)) is None:
+        return None
+    try:
+        check_replay_from(ctx, date.fromisoformat(day))
+    except InvalidQuery as exc:
+        return str(exc)
+    return None
+
+
+def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
+    """A retried replay of a study cell that failed or waits for its retry counts for that
+    cell, so the study never runs it a second time. The study replays on the slots, so a run on
+    a picked profile is another experiment."""
+    cell = _study_cell(ctx, job, symbol, day)
     if cell and cell.state in (PENDING, FAILED):
-        repo.adopt(cell.id, job.id, ctx.clock.utcnow())
+        ReplayRepo(ctx.conn).adopt(cell.id, job.id, ctx.clock.utcnow())
 
 
 def _retry_prices(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -519,10 +552,14 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
                            float(commission))
 
 
+def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_cutoff_probe(ctx, runner, job.profile)
+
+
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
-    "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices,
+    "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
 }
 
 
@@ -553,6 +590,8 @@ def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
         if row.profile is not None and row.profile not in profiles:
             continue
         if any(j.subject == row.subject for j in runner.active(row.kind)):
+            continue
+        if row.kind == "research" and "@" in (row.subject or "") and _refused_replay(ctx, row):
             continue
         out.append(row)
     return out

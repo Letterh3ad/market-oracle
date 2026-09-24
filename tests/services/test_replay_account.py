@@ -20,6 +20,7 @@ from oracle.store.meta import MetaRepo
 from oracle.store.replay import ReplayRepo
 from oracle.universe.listings import Listing
 from tests.fakes.clock import FakeClock
+from tests.fakes.cutoff import store_probe
 from tests.services.test_replay_score import replay_run
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
@@ -265,3 +266,16 @@ def test_fills_pay_stamp_duty_on_lse_buys_and_the_fx_spread_outside_the_base_cur
     assert lines(account)["ai"].costs == pytest.approx(sum(t.costs for t in account.trades))
     assert any("0.2% FX spread" in n and "0.5% stamp duty on LSE buys" in n for n in account.notes)
     assert not any("No stored exchange rate" in n for n in account.notes)
+
+
+def test_replays_on_or_before_the_cutoff_are_left_out_of_the_account_as_of_the_score(ctx):
+    make_study(ctx, {**all_buy(), ("AAA", JUL): ("sell", 0.8)})
+    store_probe(ctx.conn, ctx.config, date(2026, 6, 15))  # a re-probe found the model knows June
+    s = replay_report(ctx)
+    assert s.excluded == 2
+    account = s.account
+    # The June buys are gone, so the July sell finds nothing held; both lines start from July.
+    assert account.start == JUL
+    assert [(t.symbol, t.side.value, t.day) for t in account.trades] == [("BBB", "buy", date(2026, 7, 2)),
+                                                                       ("AAA", "buy", date(2026, 8, 4))]
+    assert min(d for d, _ in lines(account)["buy_and_hold"].points) == JUL

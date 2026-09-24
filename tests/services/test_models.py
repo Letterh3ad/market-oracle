@@ -73,7 +73,7 @@ def test_rows_show_each_profile_and_whether_its_key_is_set_never_the_key(tmp_pat
     assert (default["key_state"], deep["key_state"], lit["key_state"], gone["key_state"]) == (
         "none", "set", "set", "unset")
     assert (default["key_fallback"], deep["key_fallback"]) == (None, "env / ant login")
-    assert default["set"] == {"base_url": None, "context": None, "timeout_s": None}
+    assert default["set"] == {"base_url": None, "context": None, "timeout_s": None, "claimed_cutoff": None}
     assert (deep["key_env"], lit["key_env"], deep["from_llm"]) == ("MY_CLAUDE", None, False)
 
 
@@ -198,7 +198,7 @@ def test_a_claude_profile_with_no_key_uses_the_providers_own_lookup(tmp_path):
     with _ctx(tmp_path, '[models.deep]\nprovider = "claude_api"\nmodel = "claude-opus-5"\ncontext = 100000\n') as ctx:
         [_, deep] = model_profile_rows(ctx)
     assert deep["key_state"] == "fallback" and deep["key_fallback"] == "env / ant login"
-    assert deep["set"] == {"base_url": None, "context": 100000, "timeout_s": None}
+    assert deep["set"] == {"base_url": None, "context": 100000, "timeout_s": None, "claimed_cutoff": None}
 
 
 def test_switching_the_defaults_provider_carries_none_of_the_old_providers_values_over(tmp_path):
@@ -290,7 +290,8 @@ def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeyp
                                        "key_env": "LM_KEY"}, create=False)
         assert ctx.config.models["lm"].key_env == "LM_KEY", "a keyed provider keeps the key it is given"
         assert provider_defaults(ctx)["openai_compatible"] == {
-            "base_url": None, "base_url_required": True, "context": 16384, "timeout_s": 180.0, "keyed": True, "url": True}
+            "base_url": None, "base_url_required": True, "context": 16384, "timeout_s": 180.0, "keyed": True,
+            "url": True, "claimed_cutoff": "2025-05-20"}
         assert provider_defaults(ctx)["ollama"]["base_url_required"] is False
 
 
@@ -347,7 +348,7 @@ def test_claude_code_is_offered_only_when_the_flag_allows_it(tmp_path):
     with _ctx(tmp_path, ALLOWED) as ctx:
         assert provider_defaults(ctx)["claude_code"] == {
             "base_url": None, "base_url_required": False, "context": CLAUDE_CONTEXT, "timeout_s": 180.0, "keyed": False,
-            "url": False}
+            "url": False, "claimed_cutoff": "2025-05-20"}
         assert provider_defaults(ctx)["ollama"]["url"] is True
 
 

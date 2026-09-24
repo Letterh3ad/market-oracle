@@ -5,6 +5,7 @@ import asyncio
 import json
 import sys
 
+from oracle.cli import cutoff
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
 from oracle.services.replay_score import (
@@ -21,7 +22,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="replay_command", required=True)
     create = sub.add_parser("create", help="pick the listings and dates; the study starts paused")
     create.add_argument("--from", dest="first", type=iso_day, default=None, metavar="YYYY-MM-DD",
-                        help="the first replay day (default: the model's measured cutoff)")
+                        help="the first replay day (default: the day after the measured cutoff)")
     create.add_argument("--symbols", type=_symbols, default=None, metavar="A,B,...",
                         help="these listings instead of the picked spread")
     create.set_defaults(handler=_create)
@@ -41,6 +42,7 @@ def register(parser: argparse.ArgumentParser) -> None:
                                            "first")
     report.add_argument("--json", action="store_true", help="print the report as JSON")
     report.set_defaults(handler=_report)
+    cutoff.add_commands(sub)
 
 
 def _symbols(text: str) -> list[str]:
@@ -105,6 +107,10 @@ def print_status(s: StudyStatus) -> None:
     print(f"  {s.done} done, {s.pending} queued ({s.retrying} to retry), {len(s.running)} running, "
           f"{len(s.failed)} failed of {s.total}")
     print(f"  listings: {', '.join(p.symbol for p in s.listings)}")
+    if s.stages:
+        print(f"  stage models: {', '.join(f'{stage} on {name}' for stage, name in s.stages.items())}")
+    if s.cutoff:
+        print(f"  measured cutoff: {s.cutoff.isoformat()}")
     mean = f"{s.mean_replay_s / 60:.1f} min" if s.mean_replay_s is not None else "none finished yet"
     print(f"  mean replay time: {mean}")
     if s.polled_at:
@@ -154,6 +160,8 @@ def print_report(s: Score) -> None:
           f"(as of {s.today.isoformat()})")
     print(f"  {s.verdicts} verdicts, {s.no_verdict} without a verdict, {s.failed} failed, {s.to_run} still to run, "
           f"of {s.total} replays")
+    if s.excluded:
+        print(f"  {s.excluded} replay{'' if s.excluded == 1 else 's'} excluded: on or before the current cutoff")
     m = s.mix
     confidence = "n/a" if m.mean_confidence is None else f"{m.mean_confidence:.2f}"
     print(f"  Verdict mix: {m.buy} buy, {m.hold} hold, {m.sell} sell ({_pct(m.buy_share)} buys), "

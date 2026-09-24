@@ -20,6 +20,8 @@ class Profile(BaseModel):
     base_url: StrictStr | None = None
     context: StrictInt | None = None
     timeout_s: StrictInt | StrictFloat | None = None
+    claimed_cutoff: StrictStr | None = None
+    """YYYY-MM-DD; None: the default."""
     key_env: StrictStr | None = None
     key: StrictStr | None = None
     """None keeps the saved key, "" removes it."""

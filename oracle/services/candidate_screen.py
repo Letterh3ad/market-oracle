@@ -1,13 +1,16 @@
 """From a company name to a listing that may be suggested or added, decided in code: the one
-company the name means, the never list on every listing, the user's removals, what is already
-watched, and a live line with recent prices. Discovery runs and questions both screen this way."""
+company the name means (a match by the start of its name only when its business fits the news),
+the never list on every listing, the user's removals, what is already watched, and a live line
+with recent prices. Discovery runs and questions both screen this way."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 from oracle.market.bars import is_stale
 from oracle.research.mentions import same_company
+from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
 from oracle.services.never_list import is_never, never_company, never_names
@@ -48,18 +51,21 @@ class Screen:
                         if (r := self._universe.resolve(i.symbol))}
         self.on_list = len(self._listed)
         self._seen: set[str] = set()
-        self._found: dict[str, tuple[ListingProfile | None, str | None]] = {}
+        self._found: dict[str, _Match] = {}
+        self._fit = BusinessFit(self._universe)
 
     @property
     def checks_left(self) -> bool:
         return self.checks < self._max_checks
 
-    def identify(self, name: str, symbol: str | None = None) -> tuple[ListingProfile | None, str | None]:
+    def identify(self, name: str, symbol: str | None = None,
+                 named_in: NamedIn | None = None) -> tuple[ListingProfile | None, str | None]:
         """The company's own shares the name (or `symbol`, when known) means, else why not.
-        (None, None) for a company already looked at in this pass."""
+        A name matched only by its start is refused when what it was `named_in` shows another
+        business. (None, None) for a company already looked at in this pass."""
         if is_never(name, self._never):
             return None, NEVER
-        profile, why_not = (self._universe.profile(symbol), None) if symbol else self._looked_up(name)
+        profile, why_not = (self._universe.profile(symbol), None) if symbol else self._matched(name, named_in)
         if profile is None:
             return None, why_not or "not in the universe under that name"
         if profile.company_key in self._seen:
@@ -74,16 +80,21 @@ class Screen:
     def profile(self, symbol: str) -> ListingProfile | None:
         return self._universe.profile(symbol)
 
-    def resolve(self, name: str) -> ListingProfile | None:
+    def resolve(self, name: str, named_in: NamedIn | None = None) -> ListingProfile | None:
         """The company's own shares the name means, with no other rule applied and nothing
         marked as looked at; None for a fund or a depositary receipt."""
-        profile = self._looked_up(name)[0]
+        profile = self._matched(name, named_in)[0]
         return profile if profile and profile.type == "equity" and not is_receipt(profile.name) else None
 
-    def _looked_up(self, name: str) -> tuple[ListingProfile | None, str | None]:
+    def _matched(self, name: str, named_in: NamedIn | None) -> tuple[ListingProfile | None, str | None]:
+        """The company the name means, or why none. Exact names and symbols are taken as they
+        are; a name matched by its start must fit what it was named in."""
         if name not in self._found:
             self._found[name] = self._lookup(name)
-        return self._found[name]
+        found = self._found[name]
+        if found.profile and found.by_start and named_in and (why := self._fit.misfit(found.profile, name, named_in)):
+            return None, why
+        return found.profile, found.why_not
 
     def watched(self, profile: ListingProfile) -> bool:
         """On one of the user's own lists."""
@@ -118,7 +129,7 @@ class Screen:
             return None, f"its prices are out of date (last {update.last_date})"
         return listing, None
 
-    def _lookup(self, name: str) -> tuple[ListingProfile | None, str | None]:
+    def _lookup(self, name: str) -> _Match:
         """The company the name means, or why none: one of its listings named exactly that
         (legal forms aside, biggest first as the search ranks them), else the one company
         whose name starts with it, else (when several do) the one clearly biggest by market
@@ -132,17 +143,18 @@ class Screen:
         exact = [h for h in hits if want in names[h.symbol]]
         leading = {h.company_key: h for h in hits if any(same_company(n, want) for n in names[h.symbol])}
         if exact:
-            return self._universe.profile(exact[0].symbol), None
+            return _Match(self._universe.profile(exact[0].symbol))
         if len(want) >= MIN_LEADING_NAME and len(leading) == 1:
-            return self._universe.profile(next(iter(leading.values())).symbol), None
+            return _Match(self._universe.profile(next(iter(leading.values())).symbol), by_start=True)
         if len(want) >= MIN_LEADING_NAME and len(leading) > 1 and (biggest := _clearly_biggest(leading.values())):
-            return self._universe.profile(biggest.symbol), None
+            return _Match(self._universe.profile(biggest.symbol), by_start=True)
         symbol_as_written = name.strip()
         if symbol_as_written.isupper() and (by_symbol := self._universe.profile(symbol_as_written)) is not None:
-            return by_symbol, None
+            return _Match(by_symbol)
         if not leading:
-            return None, None
-        return None, "too short a name to tell which company" if len(want) < MIN_LEADING_NAME else "ambiguous name"
+            return _Match(None)
+        return _Match(None, "too short a name to tell which company" if len(want) < MIN_LEADING_NAME
+                      else "ambiguous name")
 
     def live_line(self, profile: ListingProfile) -> str | None:
         """The primary line (home or most liquid), else its best live sibling."""
@@ -154,6 +166,14 @@ class Screen:
 
     def _keys(self, symbols) -> set[str]:
         return {r.company_key for s in symbols if (r := self._universe.resolve(s))}
+
+
+@dataclass(frozen=True)
+class _Match:
+    profile: ListingProfile | None
+    why_not: str | None = None
+    by_start: bool = False
+    """Found by the start of its name, not the whole of it or its symbol."""
 
 
 def _clearly_biggest(hits: Iterable[SearchHit]) -> SearchHit | None:
