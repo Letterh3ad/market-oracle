@@ -83,7 +83,9 @@ function replaySection() {
     const mean = s.mean_replay_s == null ? "no replay finished yet" : `${minutes(s.mean_replay_s)} per replay on average`;
     const polled = s.polled_at ? `Last checked ${clock(s.polled_at)} UTC.`
       : "Not checked yet: replays are paced by the running app.";
-    const stages = Object.entries(s.stages ?? {}).map(([stage, profile]) => `${stage} on ${profile}`).join(", ");
+    const models = s.stage_models ?? {};
+    const stages = Object.entries(s.stages ?? {})
+      .map(([stage, profile]) => `${stage} on ${profile}${models[stage] ? ` (${models[stage]})` : ""}`).join(", ");
     return [
       el("p", null, `${s.done} done, ${s.pending} queued, ${s.failed.length} failed of ${s.total} `
         + `(${s.first_day} to ${s.last_day}); ${mean}.`),

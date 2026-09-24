@@ -113,7 +113,9 @@ def print_status(s: StudyStatus) -> None:
           f"{len(s.failed)} failed of {s.total}")
     print(f"  listings: {', '.join(p.symbol for p in s.listings)}")
     if s.stages:
-        print(f"  stage models: {', '.join(f'{stage} on {name}' for stage, name in s.stages.items())}")
+        shown = [f"{stage} on {name}" + (f" ({s.stage_models[stage]})" if stage in s.stage_models else "")
+                 for stage, name in s.stages.items()]
+        print(f"  stage models: {', '.join(shown)}")
     if s.cutoff:
         print(f"  measured cutoff: {s.cutoff.isoformat()}")
     mean = f"{s.mean_replay_s / 60:.1f} min" if s.mean_replay_s is not None else "none finished yet"

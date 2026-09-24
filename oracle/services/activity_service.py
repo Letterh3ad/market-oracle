@@ -19,7 +19,7 @@ from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
-from oracle.services.cutoff_service import check_replay_from, probe_replay_models, replay_cutoff
+from oracle.services.cutoff_service import cannot_run, check_replay_from, probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
@@ -486,11 +486,14 @@ def _study_cell(ctx: AppContext, job, symbol: str, day: date):
 
 
 def _refused_replay(ctx: AppContext, job) -> str | None:
-    """Why a replay job of a study cell may not run again: its day is now on or before the
-    cutoff, or the cutoff allows none."""
+    """Why a replay job of a study cell may not run again: the study's models changed, its day
+    is now on or before the cutoff, or the cutoff allows none."""
     symbol, day = (job.subject or "").split("@", 1)
     if _study_cell(ctx, job, symbol, date.fromisoformat(day)) is None:
         return None
+    why, _ = cannot_run(ctx, ReplayRepo(ctx.conn).current().stages)
+    if why:
+        return why
     try:
         check_replay_from(ctx, date.fromisoformat(day))
     except InvalidQuery as exc:

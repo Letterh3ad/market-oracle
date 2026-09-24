@@ -16,7 +16,10 @@ from datetime import date, datetime, timedelta
 from oracle.jobs import pid_alive
 from oracle.services.activity_service import Job, JobRunner, submit_research
 from oracle.services.context import AppContext
-from oracle.services.cutoff_service import ReplayCutoff, check_replay_from, month_back, replay_cutoff, replay_profiles
+from oracle.services.cutoff_service import (
+    ReplayCutoff, check_replay_from, month_back, pin_stages, pinned_cutoff, pins, replay_cutoff,
+)
+from oracle.services.cutoff_service import cannot_run as _cannot_run
 from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError, UnknownSymbol
 from oracle.services.jobs_service import held_elsewhere
 from oracle.services.never_list import never_company
@@ -165,6 +168,8 @@ class StudyStatus:
     score: Interim | None = None
     stages: dict[str, str] = field(default_factory=dict)
     """Each research stage and the profile the study runs it on, fixed at creation."""
+    stage_models: dict[str, str] = field(default_factory=dict)
+    """Each research stage's provider and model, fixed at creation; empty in older studies."""
 
     @property
     def finished(self) -> bool:
@@ -339,7 +344,7 @@ async def create_study(ctx: AppContext, first: date | None = None, symbols: list
     _window(ctx, first)  # a replay may have started while prices were fetched
     cells = replay_cells(ctx, [p.symbol for p in picked], first, last)
     ReplayRepo(ctx.conn).create(ctx.clock.utcnow(), min(d for _, d in cells), max(d for _, d in cells),
-                                _listings_json(picked), cells, ALLOWED, json.dumps(replay_profiles(ctx)))
+                                _listings_json(picked), cells, ALLOWED, pin_stages(ctx))
     return replace(_require_status(ctx), left_out=tuple(left_out))
 
 
@@ -432,7 +437,7 @@ def retry_failed(ctx: AppContext, cell_id: int | None = None) -> int:
     before the current cutoff, which the model may know."""
     study = _require(ctx)
     repo = ReplayRepo(ctx.conn)
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     failed = [c for c in repo.cells(study.id, FAILED) if cell_id is None or c.id == cell_id]
     if cell_id is not None and not failed:
         raise InvalidQuery(f"cell {cell_id} is not a failed cell of the current replay study")
@@ -443,15 +448,8 @@ def retry_failed(ctx: AppContext, cell_id: int | None = None) -> int:
 
 
 def cannot_run(ctx: AppContext, study: StudyRow) -> tuple[str | None, ReplayCutoff]:
-    """Why the study may not replay now (its stage models changed since it was created, a model
-    is unprobed, or the cutoff leaves no day), and the replay cutoff as it stands."""
-    rc = replay_cutoff(ctx)
-    was = json.loads(study.stages) if study.stages else rc.stages
-    if changed := [f"{stage} {was.get(stage)} to {name}" for stage, name in rc.stages.items()
-                   if was.get(stage) != name]:
-        return ("the replay models changed since the study was created: " + ", ".join(changed)
-                + "; point the slots back, or create a new study"), rc
-    return rc.note, rc
+    """Why the study may not replay now, and the replay cutoff as it stands."""
+    return _cannot_run(ctx, study.stages)
 
 
 def study_status(ctx: AppContext) -> StudyStatus | None:
@@ -465,14 +463,16 @@ def study_status(ctx: AppContext) -> StudyStatus | None:
                                 if c.started_at else 0.0) for c in repo.cells(study.id, RUNNING))
     failed = tuple(FailedCell(c.id, c.symbol, c.as_of, c.error, c.attempts) for c in repo.cells(study.id, FAILED))
     durations = repo.durations(study.id, RECENT_REPLAYS)
+    pinned = pins(study.stages)
     return StudyStatus(
         study.id, study.state, study.paused_reason, study.created_at, study.first_day, study.last_day,
         tuple(Picked(**p) for p in json.loads(study.listings)), sum(counts.values()), counts.get(DONE, 0),
         counts.get(PENDING, 0), repo.retrying(study.id), running, failed,
         tuple(repo.failure_reasons(study.id, TOP_FAILURES)),
-        sum(durations) / len(durations) if durations else None, replay_cutoff(ctx).cutoff,
+        sum(durations) / len(durations) if durations else None, pinned_cutoff(ctx, study.stages),
         study.waiting if study.state == RUNNING else None, study.polled_at, repo.untouched(study.id),
-        score=score_study(ctx, study).interim(), stages=json.loads(study.stages) if study.stages else {})
+        score=score_study(ctx, study).interim(), stages={stage: p.profile for stage, p in pinned.items()},
+        stage_models={stage: f"{p.provider} {p.model}" for stage, p in pinned.items() if p.model})
 
 
 def _require(ctx: AppContext) -> StudyRow:

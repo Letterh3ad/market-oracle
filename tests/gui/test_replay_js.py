@@ -238,9 +238,10 @@ def test_without_an_account_the_score_shows_alone():
 
 
 def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_of_the_score():
-    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "cutoff": "2026-06-30"}
+    study = {**STUDY, "stages": {"research": "default", "verdict": "big"}, "stage_models": {"research": "ollama q3"},
+             "cutoff": "2026-06-30"}
     text = run("console.log(JSON.stringify(node.textContent));", study=study, report={**REPORT, "excluded": 2})
-    assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
+    assert ("Stage models, fixed when the study was created: research on default (ollama q3), verdict on big. "
             "Measured cutoff: 2026-06-30.") in text
     assert "2 replays excluded: on or before the current cutoff." in text
 

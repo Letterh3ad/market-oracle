@@ -64,7 +64,7 @@ def test_create_start_pause_and_status(cfg, capsys):
     out = capsys.readouterr().out
     assert "Replay study 1, 2026-06-01" in out and ": paused" in out and "listings: AAPL, JPM" in out
     assert "has not polled yet" in out
-    assert "stage models: queries on default, research on default" in out and "measured cutoff: 2025-05-31" in out
+    assert "stage models: queries on default (ollama " in out and "), research on default (ollama " in out and "measured cutoff: 2025-05-31" in out
 
 
 def test_create_picks_a_mid_small_half_too_unless_bands_says_large(cfg, capsys):

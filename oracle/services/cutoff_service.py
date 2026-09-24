@@ -4,6 +4,7 @@ events, so replays never start on a day any of them may already know the outcome
 from __future__ import annotations
 
 import calendar
+import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, fields
 from datetime import date, timedelta
@@ -17,9 +18,9 @@ from oracle.services.errors import InvalidQuery, ModelUnavailable, UnknownModelP
 from oracle.services.models_service import RESEARCH_STAGES, resolve_model, slot_profile
 from oracle.store.cutoff import AnswerRow, CutoffRepo, ProbeRow
 
-__all__ = ["VERSION", "CutoffProbe", "ModelFacts", "ReplayCutoff", "Unprobed", "check_replay_from", "measured_cutoff",
-           "month_back", "probe_cutoff", "probe_replay_models", "profile_model", "replay_cutoff", "replay_profiles",
-           "stored_probe"]
+__all__ = ["VERSION", "CutoffProbe", "ModelFacts", "Pin", "ReplayCutoff", "Unprobed", "cannot_run",
+           "check_replay_from", "measured_cutoff", "month_back", "pin_stages", "pinned_cutoff", "pins", "probe_cutoff",
+           "probe_replay_models", "profile_model", "replay_cutoff", "replay_profiles", "stored_probe"]
 
 TRIES = 2
 """Asks per question: a cold local model can fail its first reply while it loads."""
@@ -221,3 +222,71 @@ def month_back(day: date) -> date:
     """The same day a month earlier, or that month's last day when it is shorter."""
     year, month = (day.year - 1, 12) if day.month == 1 else (day.year, day.month - 1)
     return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
+@dataclass(frozen=True)
+class Pin:
+    """The profile a study ran a stage on, and the model it named then (None in studies from
+    before models were pinned, which compare by profile name)."""
+
+    profile: str
+    provider: str | None = None
+    model: str | None = None
+
+    def __str__(self) -> str:
+        return f"{self.profile} ({self.provider} {self.model})" if self.model else self.profile
+
+
+def pin_stages(ctx: AppContext) -> str:
+    """JSON for a new study: each stage's profile and the provider and model it names now."""
+    rc = replay_cutoff(ctx)
+    return json.dumps({stage: [name, rc.facts[name].provider, rc.facts[name].model]
+                       for stage, name in rc.stages.items()})
+
+
+def pins(raw: str | None) -> dict[str, Pin]:
+    """A study's stages as stored: `{stage: [profile, provider, model]}`, or once `{stage: profile}`."""
+    stored = json.loads(raw) if raw else {}
+    return {stage: Pin(v) if isinstance(v, str) else Pin(*v) for stage, v in stored.items()}
+
+
+def cannot_run(ctx: AppContext, raw: str | None) -> tuple[str | None, ReplayCutoff]:
+    """Why a study with these pinned stages may not replay now (a stage's model changed, a
+    model is unprobed, or the cutoff leaves no day), and the replay cutoff as it stands. A
+    profile renamed but naming the same model is no change; the same name on another model is."""
+    rc = replay_cutoff(ctx)
+    was = pins(raw) if raw else {stage: Pin(name) for stage, name in rc.stages.items()}
+    changed = []
+    for stage, name in rc.stages.items():
+        pin, now = was.get(stage), rc.facts[name]
+        if pin is not None and pin.model:
+            if (pin.provider, pin.model) != (now.provider, now.model):
+                changed.append(f"{stage} {pin} to {Pin(name, now.provider, now.model)}")
+        elif pin is None or pin.profile != name:
+            changed.append(f"{stage} {pin} to {name}")
+    if changed:
+        return ("the replay models changed since the study was created: " + ", ".join(changed)
+                + "; point the slots back, or create a new study"), rc
+    return rc.note, rc
+
+
+def pinned_cutoff(ctx: AppContext, raw: str | None) -> date | None:
+    """The latest cutoff of the models a study pinned (a claim raised since still counts); the
+    slots' when a pinned model is not probed or its profile is gone."""
+    specs = model_profiles(ctx.config)
+    models = set()
+    for pin in pins(raw).values():
+        if pin.model:
+            models.add((pin.provider, pin.model))
+        elif pin.profile in specs:
+            models.add((specs[pin.profile].provider, specs[pin.profile].model))
+        else:
+            return replay_cutoff(ctx).cutoff
+    cutoffs = []
+    for provider, model in models:
+        probe = CutoffRepo(ctx.conn).get(provider, model)
+        if probe is None:
+            return replay_cutoff(ctx).cutoff
+        claims = [claimed_cutoff(p) for p in specs.values() if (p.provider, p.model) == (provider, model)]
+        cutoffs.append(max([probe.cutoff, probe.claimed, *claims]))
+    return max(cutoffs) if cutoffs else replay_cutoff(ctx).cutoff

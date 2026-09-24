@@ -17,7 +17,7 @@ from datetime import date, datetime, timedelta
 from oracle.market.bars import Bar
 from oracle.research.trace import VERDICTS
 from oracle.services.context import AppContext
-from oracle.services.cutoff_service import replay_cutoff
+from oracle.services.cutoff_service import pinned_cutoff
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
 from oracle.services.replay_account import Account, simulate
@@ -252,7 +252,8 @@ class Score:
     def interim(self) -> Interim:
         return Interim(self.verdicts, self.no_verdict, self.mix.buy_share, self.mix.mean_confidence,
                        self.prices_checked_at, self.price_failures, _interim_horizons(self.horizons), self.excluded,
-                       price_backoff=self.price_backoff, by_size={z.size: InterimSize(z.label, len(z.listings), z.verdicts, z.mix.buy_share,
+                       price_backoff=self.price_backoff,
+                       by_size={z.size: InterimSize(z.label, len(z.listings), z.verdicts, z.mix.buy_share,
                                                     _interim_horizons(z.horizons)) for z in self.by_size})
 
     def to_json(self) -> dict:
@@ -309,7 +310,7 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
              only: set[str] | None = None) -> Account | None:
     """The study's account, or over `only` those listings."""
     # Days the model may know the outcome of are left out whole, so neither line starts there.
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     cells = [c for c in cells if not (cutoff and c.as_of <= cutoff) and (only is None or c.symbol in only)]
     first: dict[str, date] = {}
     for c in cells:
@@ -440,7 +441,7 @@ def score_study(ctx: AppContext, study: StudyRow) -> Score:
                for d in days for h, _ in HORIZONS}
     windows = {(s, d, h): _outcome(moves[(s, d, h)], h, baskets[(d, h)])
                for s in symbols for d in days for h, _ in HORIZONS}
-    cutoff = replay_cutoff(ctx).cutoff
+    cutoff = pinned_cutoff(ctx, study.stages)
     counted = {c.id for c in cells if c.state == DONE and not (cutoff and c.as_of <= cutoff)}
     calls = ResearchRepo(ctx.conn).verdicts([c.run_id for c in cells if c.id in counted and c.run_id is not None])
     scored = tuple(_cell(c, calls.get(c.run_id) if c.id in counted else None, windows) for c in cells)
