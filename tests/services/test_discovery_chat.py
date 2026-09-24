@@ -118,7 +118,7 @@ def skipped(view):
 
 
 def naming_call(m):
-    return next(c for c in m.calls if "companies" in c[1]["properties"])
+    return next(c for c in m.calls if "companies" in c[1]["properties"] and "why" in str(c[1]))
 
 
 async def test_a_question_comes_back_as_a_ranked_shortlist_with_why_and_evidence_never_tesla(ctx, yahoo):

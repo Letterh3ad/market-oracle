@@ -2,7 +2,8 @@
 model call notes up to three facts from each. The company's own reports go first: SEC filings
 for a US listing, else a results or annual report page the run's web searches found. Texts
 and notes are stored, so no article is fetched or noted twice by the same model. A replay
-reads filings alone: today's copy of an article may not be what was there on its day."""
+reads filings alone: today's copy of an article may not be what was there on its day. Reading
+for a question, list pages go first, and their notes keep the companies they list."""
 
 from __future__ import annotations
 
@@ -58,15 +59,21 @@ _REPORT = re.compile(
     r"geschäftsbericht|quartalsbericht|halbjahresbericht|rapport (?:annuel|financier)|résultats|"
     r"jaarverslag|årsredovisning|årsrapport|informe anual|relazione finanziaria|決算|"
     r"有価証券報告書|실적", re.I)
+# Titles or addresses of a page listing or ranking companies.
+_LIST = re.compile(
+    r"\blist of\b|/wiki/list_of_|\btop \d+\b|\b\d+ (?:biggest|largest|best|leading|top)\b|\branked\b|\branking\b|"
+    r"\b(?:top|biggest|largest|leading)(?: \w+){0,4} (?:companies|stocks|firms|makers|manufacturers|suppliers|"
+    r"producers|players)\b", re.I)
 
 
 class Reader:
     def __init__(self, conn: sqlite3.Connection, clock: Clock, client: RateLimitedClient,
                  searcher: WebSearcher | None, gate: SourceGate, contact: str | None, model: ChatModel,
-                 company: str, context_tokens: int, note_key: str | None = None) -> None:
+                 company: str, context_tokens: int, note_key: str | None = None, lists: bool = False) -> None:
         """`searcher` None: Google News links are left unresolved (a replay has no web search).
         `note_key` keeps notes apart from the model's research notes, for reading asked about
-        something other than one company."""
+        something other than one company. `lists`: read list pages first and keep the companies
+        they list (reading for a question)."""
         self._articles = ArticleRepo(conn)
         self._clock = clock
         self._client = client
@@ -77,6 +84,7 @@ class Reader:
         self._key = note_key or note_model(model.name, model.model)
         self._company = company
         self._context = context_tokens
+        self._lists = lists
 
     async def read(self, evidence: Iterable[Evidence], limit: int, as_of: date | None,
                    progress: Callable[[int, int], None], filings: dict[int, str] | None = None) -> None:
@@ -87,7 +95,7 @@ class Reader:
         # Other filings the loop listed are older or minor, and untrimmed would take article slots.
         evidence = [e for e in evidence if e.id in filings or not (as_of or edgar.is_sec(e.url))]
         state = self._articles.reading([e.id for e in evidence], self._key)
-        first = list(filings) or [e.id for e in evidence if report_page(e)]
+        first = list(filings) or [e.id for e in evidence if (list_page if self._lists else report_page)(e)]
         todo = pick(evidence, {i for i, r in state.items() if r.settled}, limit, as_of, first)
         for n, e in enumerate(todo, 1):
             progress(n, len(todo))
@@ -182,7 +190,7 @@ class Reader:
     async def _note(self, e: Evidence, text: str) -> None:
         heading = evidence_line(e.id, e.published, e.outlet, e.title)
         try:
-            note = await take_note(self._model, self._company, heading, text, self._context)
+            note = await take_note(self._model, self._company, heading, text, self._context, self._lists)
         except ModelError as exc:
             self._articles.save_note(e.id, self._key, None, f"the model could not note it: {exc}", self._now(),
                                      attempt=False)
@@ -223,6 +231,13 @@ def report_page(e: Evidence) -> bool:
     path = urlsplit(e.url).path.lower()
     return (e.published is None and e.body is None and not path.endswith(".pdf")
             and bool(_REPORT.search(f"{e.title} {path}")))
+
+
+def list_page(e: Evidence) -> bool:
+    """Whether an article looks like a list or ranking of companies, by its title or address. A
+    PDF cannot be read."""
+    path = urlsplit(e.url).path
+    return not path.lower().endswith(".pdf") and bool(_LIST.search(f"{e.title} {path}"))
 
 
 def from_outlet(url: str, site: str | None, outlet: str | None) -> bool:

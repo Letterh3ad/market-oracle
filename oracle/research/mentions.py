@@ -7,6 +7,7 @@ import re
 from dataclasses import dataclass
 
 from oracle.research.citations import strip_citations
+from oracle.research.notes import LISTS
 from oracle.research.trace import Evidence
 from oracle.universe.listings import blind_name, normalise_name
 
@@ -14,6 +15,9 @@ RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
 LINKS = RELATIONS[:-1]
 """Relations a news item can state between two companies it names."""
 MAX_COMPANIES = 8
+# A question's items may hold a list page's companies. Kept under what a 4B model's 1024-token
+# reply holds with a why line each.
+MAX_ANSWERS = 12
 MAX_NAME = 80
 MAX_WHY = 200
 # The numbers of the items a line rests on travel with it; written into the line they are noise.
@@ -21,7 +25,7 @@ MAX_WHY = 200
 _ITEM_REFS = re.compile(r"\s*[\[(]\s*(\d+(?:\s*,\s*\d+)*)\s*[\])]")
 
 
-def _schema(relation: bool, why: bool = False, link: bool = False) -> dict:
+def _schema(relation: bool, why: bool = False, link: bool = False, most: int = MAX_COMPANIES) -> dict:
     item = {"name": {"type": "string", "maxLength": MAX_NAME},
             "headlines": {"type": "array", "maxItems": 5, "items": {"type": "integer"}}}
     if relation:
@@ -33,7 +37,7 @@ def _schema(relation: bool, why: bool = False, link: bool = False) -> dict:
                 "relation": {"type": "string", "enum": list(LINKS)}} if link else {}
     return {
         "type": "object",
-        "properties": {"companies": {"type": "array", "maxItems": MAX_COMPANIES, "items": {
+        "properties": {"companies": {"type": "array", "maxItems": most, "items": {
             "type": "object", "properties": item | optional, "required": list(item)}}},
         "required": ["companies"],
     }
@@ -42,7 +46,7 @@ def _schema(relation: bool, why: bool = False, link: bool = False) -> dict:
 MENTIONS_SCHEMA = _schema(relation=True)
 TOPIC_SCHEMA = _schema(relation=False)
 """For headlines about a topic, not a company: nothing to relate to."""
-QUESTION_SCHEMA = _schema(relation=False, why=True, link=True)
+QUESTION_SCHEMA = _schema(relation=False, why=True, link=True, most=MAX_ANSWERS)
 """For news items found for a question: each company with one line on why it answers it, and
 another company an item states it supplies, buys from, competes or partners with, if any."""
 
@@ -80,10 +84,11 @@ def topic_prompt(topic: str, headlines: list[str]) -> list[dict]:
 
 def question_prompt(question: str, items: list[str]) -> list[dict]:
     system = (f"You answer an investor's question from numbered news items. The question: {question}\n"
-              f"List the listed companies the items show answer it, best first, at most {MAX_COMPANIES}: each "
+              f"List the listed companies the items show answer it, best first, at most {MAX_ANSWERS}: each "
               "company's usual name as written in an item, one short line on why it fits (from the items only), "
-              "and the numbers of the items that show it. When one of those items says the company is a "
-              "supplier, customer, competitor or partner of another company it names, also give that "
+              f"and the numbers of the items that show it. An item's \"{LISTS.strip()}\" line names the companies "
+              "a list or ranking page gives: each is named in that item. When one of those items says the company "
+              "is a supplier, customer, competitor or partner of another company it names, also give that "
               "company's name as \"related_to\" and the \"relation\"; otherwise leave both out. Leave out people, "
               "places, regulators, funds, indexes and news outlets. Name only companies that an item names; an "
               "empty list is a fine answer.")
@@ -134,9 +139,11 @@ def _related(item: dict, key: str, cited: dict[int, str]) -> tuple[str, tuple[in
     other_key = blind_name(other)
     if not other_key or same_company(other_key, key):
         return "", ()
+    # A list page's line names companies side by side; it states nothing between them.
     both = tuple(i for i, text in cited.items()
                  if any(f" {key} " in line and f" {other_key} " in line
-                        for line in (f" {normalise_name(x)} " for x in text.splitlines())))
+                        for line in (f" {normalise_name(x)} " for x in text.splitlines()
+                                     if not x.strip().removeprefix("- ").startswith(LISTS))))
     return (other, both) if both else ("", ())
 
 
