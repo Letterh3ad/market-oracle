@@ -217,6 +217,72 @@ async def test_analysing_the_watchlist_runs_in_one_process_at_a_time(ctx):
     assert await analyse_watched(ctx) == []
 
 
+async def test_analysing_the_watchlist_also_covers_a_held_but_unwatched_listing(ctx):
+    """Held listings are priced off every list too (`update_watched`); without this fix
+    their lean would never refresh once unwatched, and a sell lean could never apply."""
+    from oracle.broker.orders import Side
+    from oracle.services.paper_service import account_view
+    from oracle.services.watch_service import unwatch
+    from oracle.store.paper import FillRow, PaperRepo
+
+    watch(ctx, "AAPL")
+    repo = PaperRepo(ctx.conn)
+    order = repo.add_order("strategy", "AAPL", Side.BUY, 1000.0, None, "2026-09-01T20:00:00Z", DAYS[0], "strategy")
+    repo.record_fill(FillRow(order.id, "strategy", "AAPL", Side.BUY, DAYS[0], 10, 100.0, "USD", 1.0, -1000.0,
+                             0.0, 0.0, 0.0, 0.0))
+    assert [p.symbol for p in account_view(ctx, "strategy").positions] == ["AAPL"]
+    unwatch(ctx, "AAPL")
+    runs = {r.symbol: r for r in await analyse_watched(ctx)}
+    assert "AAPL" in runs and runs["AAPL"].error is None
+
+
+async def test_a_held_but_unwatched_listings_lean_refreshes_and_a_new_sell_lean_sells_it(ctx, yahoo, clock):
+    """MSFT (no sector in `web`) keeps the baseline lean to technicals alone, so a real
+    price crash, not a hand-seeded lean, is what flips it to sell."""
+    from dataclasses import replace
+
+    from oracle.broker.orders import Side
+    from oracle.services.fx_service import update_fx
+    from oracle.services.paper_service import account_view, strategy_step
+    from oracle.services.watch_service import unwatch
+    from oracle.store.leans import LeanRepo
+    from oracle.store.paper import FillRow, PaperRepo
+
+    # A stop this loose leaves only the sell lean able to exit the crashed position, so the
+    # test proves the lean applies rather than just the always-available stop.
+    ctx.config = replace(ctx.config, strategy=replace(ctx.config.strategy, stop_loss=0.99))
+    closes = geometric(300, 0.001)
+    yahoo.add("MSFT", "USD", "America/New_York", [bar(d.isoformat(), c) for d, c in zip(DAYS, closes)])
+    await update_listing(ctx, "MSFT")
+    await update_fx(ctx)
+
+    watch(ctx, "MSFT")
+    repo = PaperRepo(ctx.conn)
+    order = repo.add_order("strategy", "MSFT", Side.BUY, 1000.0, None, "2026-09-01T20:00:00Z", DAYS[0], "strategy")
+    repo.record_fill(FillRow(order.id, "strategy", "MSFT", Side.BUY, DAYS[0], 10, 100.0, "USD", 1.0, -1000.0,
+                             0.0, 0.0, 0.0, 0.0))
+    await analyse(ctx, "MSFT")
+    unwatch(ctx, "MSFT")
+
+    crash_days = weekdays(331, date(2025, 7, 1))[300:331]
+    for d, c in zip(crash_days, geometric(31, -0.04, start=closes[-1])):
+        yahoo.series["MSFT"].bars.append(bar(d.isoformat(), c))
+        yahoo.series["GBPUSD=X"].bars.append(bar(d.isoformat(), 1.25))
+    clock.advance(((crash_days[-1] - NOW.date()).days + 1) * 86400)  # so the fake source serves the new bars
+    await update_listing(ctx, "MSFT")
+    await update_fx(ctx)
+
+    runs = {r.symbol: r for r in await analyse_watched(ctx)}
+    assert "MSFT" in runs, "a held-but-unwatched listing is still analysed"
+    lean = LeanRepo(ctx.conn).latest("MSFT")
+    assert lean.as_of == crash_days[-1], "the lean is refreshed to the newest bar, not left stale"
+    assert lean.label in ("sell", "strong sell"), lean
+
+    [d] = [d for d in strategy_step(ctx) if d.symbol == "MSFT"]
+    assert d.action == "sell" and "lean" in d.reason
+    assert account_view(ctx, "strategy").pending, "queued as an ordinary sell lean, not just the stop"
+
+
 async def test_watch_lines_carry_the_baseline_lean_and_flag_it_once_a_newer_bar_arrives(ctx, yahoo, clock):
     from oracle.services.watch_service import show_watchlist
 

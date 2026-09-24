@@ -1,9 +1,10 @@
-"""The daily routine as one run: prices, FX, fills, analysis, AI research, strategy step, AI
-step. Each stage runs even when an earlier one failed, since each works from whatever is
-stored."""
+"""The daily routine as one run: prices, FX, fills, analysis, discovery, AI research, strategy
+step, AI step. Each stage runs even when an earlier one failed, since each works from
+whatever is stored."""
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable
@@ -13,21 +14,26 @@ from datetime import datetime
 from oracle.broker.rules import Decision
 from oracle.services.analysis_service import analyse_watched
 from oracle.services.context import AppContext
-from oracle.services.errors import ServiceError
+from oracle.services.discovery_service import DISCOVERED_LIST, DiscoveryRun, discover, discovered
+from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import ai_step, fill_pending, strategy_step
+from oracle.services.paper_service import ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
-from oracle.services.research_service import UNVALIDATED_TAG, refresh_research
+from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
 from oracle.store.ticks import INTERRUPTED, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
 
-__all__ = ["STAGES", "Stage", "TickRun", "last_tick", "record_skipped", "run_tick", "ticked_since"]
+__all__ = [
+    "STAGES", "Stage", "TickRun", "discover_cap_min", "discovery_line", "last_tick", "record_skipped", "run_tick",
+    "ticked_since",
+]
 
 log = logging.getLogger(__name__)
 
 JOB = "tick"
 LEASE_S = 3600.0
+DISCOVER_CAP_MIN = 10
 
 Say = Callable[[str], None]
 StageRun = Callable[[AppContext, Say], Awaitable[tuple[str, str | None]]]
@@ -67,7 +73,44 @@ async def _analyse(ctx: AppContext, _: Say) -> tuple[str, str | None]:
 
 
 async def _step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
-    return _decided(ctx, strategy_step(ctx)), None
+    return _decided(ctx, "strategy", strategy_step(ctx)), None
+
+
+def discover_cap_min(ctx: AppContext) -> float:
+    """How long the discover stage may run: it delays research, so at most 10 minutes and
+    never more than a third of the research budget."""
+    return min(DISCOVER_CAP_MIN, ctx.config.ai_account.research_budget_min / 3)
+
+
+async def _discover(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+    if not ctx.config.discovery.enabled:
+        return "discovery is off in Settings: nothing discovered", None
+    if not ctx.config.automation.enabled:
+        return "automation is off: nothing discovered", None
+    if pc_in_use(ctx):
+        return "PC in use: discovery waits for the next tick", None
+    before = {d.symbol for d in discovered(ctx)}
+    try:
+        async with asyncio.timeout(discover_cap_min(ctx) * 60):
+            run = await discover(ctx)
+    except TimeoutError:
+        added = [f"{d.symbol} {d.name} ({d.why})" for d in discovered(ctx) if d.symbol not in before]
+        return "stopped at its time limit; " + (f"added {'; '.join(added)}" if added else "nothing added"), None
+    except JobAlreadyRunning:
+        return "a discovery run is already going (Discover now): nothing more this tick", None
+    return _discovered_summary(run), run.source_errors[0] if run.source_errors else None
+
+
+def _discovered_summary(run: DiscoveryRun) -> str:
+    if run.added:
+        return "added " + "; ".join(f"{a.symbol} {a.name} ({a.why})" for a in run.added)
+    if run.note:
+        return f"nothing added: {run.note}"
+    where = f"nothing added from {', '.join(run.seeds)}"
+    if not run.skipped:
+        return f"{where}: no companies found"
+    reasons = Counter(s.reason for s in run.skipped).most_common()
+    return f"{where}: {len(run.skipped)} passed over ({', '.join(f'{n} {why}' for why, n in reasons)})"
 
 
 async def _research(ctx: AppContext, say: Say) -> tuple[str, str | None]:
@@ -89,18 +132,18 @@ async def _ai_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     decisions = ai_step(ctx)
     if decisions is None:
         return f"{OFF}: nothing traded", None
-    return f"{_decided(ctx, decisions)} {UNVALIDATED_TAG}", None
+    return f"{_decided(ctx, 'ai', decisions)} {UNVALIDATED_TAG}", None
 
 
-def _decided(ctx: AppContext, decisions: list[Decision]) -> str:
+def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
     counts = Counter(d.action.value for d in decisions)
     # The rules say nothing about a listing they leave as it is.
-    unchanged = len(set(WatchlistRepo(ctx.conn).all_symbols()) - {d.symbol for d in decisions})
+    unchanged = len(set(traded_by(ctx, account)) - {d.symbol for d in decisions})
     return ", ".join(f"{counts[a]} {a}" for a in ("buy", "sell", "skip")) + f", {unchanged} no change"
 
 
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
-                               "research": _research, "step": _step, "ai_step": _ai_step}
+                               "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
 OFF = "AI account off"
 
 
@@ -154,6 +197,20 @@ def record_skipped(ctx: AppContext, trigger: str, note: str, at: datetime | None
 def ticked_since(ctx: AppContext, at: datetime) -> bool:
     """Whether any tick (skipped ones too) finished at or after `at`."""
     return TickRepo(ctx.conn).finished_since(at)
+
+
+def discovery_line(ctx: AppContext) -> str:
+    """What discovery holds, which account trades it, and what the last tick's run did."""
+    n = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST))
+    d = ctx.config.discovery
+    trades = ("traded by the AI account" if d.ai_trades
+              else "researched but not traded (the AI account's switch for them is in Settings)")
+    line = (f"Discovery: {n} discovered compan{'y' if n == 1 else 'ies'}, {trades}; the strategy account and buy "
+            "and hold keep to your own picks.")
+    if not d.enabled:
+        line += " Ticks do not discover: it is off in Settings."
+    last = next((s for run in TickRepo(ctx.conn).recent() for s in run.stages if s.name == "discover"), None)
+    return line + (f" Last tick: {last.summary}." if last else "")
 
 
 def last_tick(ctx: AppContext) -> TickRun | None:

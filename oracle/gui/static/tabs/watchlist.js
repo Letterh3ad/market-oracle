@@ -6,6 +6,7 @@ import { busyButton, runJob, sendJson } from "../lib/ui.js";
 import { deadNote, swapSummary } from "../lib/siblings.js";
 import { repaint } from "../lib/repaint.js";
 import { fillPicker } from "../lib/watchlists.js";
+import { discoverySection } from "../lib/discovery.js";
 
 const MARK = { bullish: "+", bearish: "-", neutral: "=" };
 const SHORT = { technicals: "tech", volatility: "vol", quality: "qual", growth: "grow" };
@@ -129,7 +130,8 @@ function render(pane) {
       jobButton("Analyse", "/api/jobs/analyse", analyseSummary, pane),
       el("span", { class: "dim small" }, "Both run for every watched listing, on all lists.")),
     el("div", { id: "w-result", class: "result" }),
-    el("div", { id: "w-table" }), el("div", { id: "w-credits" }));
+    el("div", { id: "w-table" }), el("div", { id: "w-credits" }),
+    discoverySection(() => { if (pane.querySelector("#w-table")) load(pane); }));
   load(pane);
 }
 

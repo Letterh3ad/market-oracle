@@ -18,6 +18,7 @@ from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
+from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
@@ -30,9 +31,9 @@ from oracle.services.universe_service import proposed_merges, refresh_universe, 
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
-           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_backtest",
-           "submit_prices", "submit_research", "submit_tick", "submit_fx", "submit_merges",
-           "submit_universe_refresh", "sweep_leftovers"]
+           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse",
+           "submit_backtest", "submit_discover", "submit_prices", "submit_research", "submit_tick", "submit_fx",
+           "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -360,6 +361,11 @@ def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
                          lambda c: update_fx(c, names or None), subject=",".join(names) or "*")
 
 
+def submit_discover(runner: JobRunner) -> Job:
+    """One discovery run: related companies, themes or market movers, onto the discovered list."""
+    return runner.submit("discover", "Discover companies", discover, subject="discover", link="#watchlist")
+
+
 BACKTEST_SEP = "|"
 """Between the parts of a backtest job's subject, which a retry rebuilds the request from."""
 
@@ -380,7 +386,6 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
                                  repr(float(commission))])
     return runner.submit("backtest", f"Backtest {name}, {start.isoformat()} to {end.isoformat()}", work,
                          subject=subject, link="#ledgers")
-
 
 
 # One resubmit per kind, rebuilding the call from what a finished job (live or from history,
@@ -415,6 +420,10 @@ def _retry_merges(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_merges(runner)
 
 
+def _retry_discover(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_discover(runner)
+
+
 def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
     sources = [] if job.subject in (None, "*", "") else job.subject.split(",")
     return submit_fx(runner, sources)
@@ -429,7 +438,8 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
-    "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "backtest": _retry_backtest,
+    "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
+    "backtest": _retry_backtest,
 }
 
 

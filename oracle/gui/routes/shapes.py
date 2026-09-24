@@ -89,13 +89,18 @@ def backtest(k: KeptBacktest) -> dict:
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
-            "backtest": backtest_summary}
+            "discover": asdict, "backtest": backtest_summary}
 
 
 def _result(j: Job) -> dict | None:
     """None for a job an earlier server ran: only its outcome was kept, not its result."""
     shape = _RESULTS.get(j.kind)
     return shape(j.result) if shape and j.result is not None else None
+
+
+def web_link(url: str) -> str | None:
+    """A link only for a web address: stored-data items have none, and nothing else may run."""
+    return url if urlsplit(url).scheme in ("http", "https") else None
 
 
 def schedule(view: ScheduleView) -> dict:
@@ -141,8 +146,7 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
             "verdict": report.verdict and asdict(report.verdict), "no_verdict": report.no_verdict,
             "did_not_read": report.did_not_read,
         },
-        # A link only for a web address: stored-data items have none, and nothing else may run.
-        "evidence": [{**asdict(e), "link": e.url if urlsplit(e.url).scheme in ("http", "https") else None}
+        "evidence": [{**asdict(e), "link": web_link(e.url)}
                      for e in run.evidence],
         "steps": [asdict(s) for s in run.steps],
     }}

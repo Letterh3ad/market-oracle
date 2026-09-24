@@ -8,9 +8,11 @@ from oracle.config import CompareConfig, Config
 from oracle.jobs import JobLock
 from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning
+from oracle.services.fx_service import update_fx
+from oracle.services.paper_service import fill_pending, place_buy
 from oracle.services.prices_service import update_listing, update_watched
 from oracle.services.universe_service import refresh_universe
-from oracle.services.watch_service import show_watchlist, watch
+from oracle.services.watch_service import show_watchlist, unwatch, watch
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, bz2_csv, equity, etf
 from tests.fakes.web import FakeWeb
@@ -124,6 +126,41 @@ async def test_a_benchmark_not_in_the_universe_is_skipped_not_failed(ctx):
     assert (nope.added, nope.error, nope.skipped) == (0, None, "not in the universe: benchmark skipped")
     # A missing benchmark is not a failure: it never blocks the tick or the rest of the run.
     assert run.failed == []
+
+
+async def _hold_ko_then_delist(ctx, yahoo, fdb):
+    """KO bought and filled on the strategy account, then removed from the universe while
+    still held and unwatched: a listing that has left the universe entirely, not just its
+    lists."""
+    watch(ctx, "KO")
+    place_buy(ctx, "KO", 1000.0, "strategy")
+    yahoo.series["KO"].bars.append(bar("2026-09-23", 62.0))
+    yahoo.series["GBPUSD=X"].bars.append(bar("2026-09-23", 1.25))
+    await update_listing(ctx, "KO")
+    await update_fx(ctx)
+    fill_pending(ctx)
+    unwatch(ctx, "KO")
+    fdb.sha = "def456"
+    fdb.files["equities.bz2"] = bz2_csv([r for r in UNIVERSE if r["symbol"] != "KO"])
+    await refresh_universe(ctx)
+
+
+async def test_a_held_listing_gone_from_the_universe_is_skipped_with_a_note(ctx, yahoo, fdb, web):
+    await _hold_ko_then_delist(ctx, yahoo, fdb)
+    before = len(chart_calls(web, "KO"))
+    run = await update_watched(ctx)
+    [ko] = [o for o in run.listings if o.symbol == "KO"]
+    assert (ko.added, ko.error, ko.skipped) == (0, None, "held, but no longer in the universe: not priced")
+    assert len(chart_calls(web, "KO")) == before, "gone from the universe: never fetched"
+
+
+async def test_a_held_benchmark_gone_from_the_universe_says_both(ctx, yahoo, fdb, web):
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("KO",)))
+    await _hold_ko_then_delist(ctx, yahoo, fdb)
+    run = await update_watched(ctx)
+    [ko] = [o for o in run.listings if o.symbol == "KO"]
+    assert (ko.added, ko.error, ko.skipped) == (
+        0, None, "held and a benchmark, but no longer in the universe: not priced")
 
 
 def show_watchlist_symbols(ctx) -> set[str]:

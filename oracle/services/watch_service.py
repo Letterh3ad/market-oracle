@@ -7,11 +7,13 @@ from oracle.broker.rules import Lean
 from oracle.market.bars import is_stale
 from oracle.services.analysis_service import StoredSignal, latest_lean, latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidSwap, InvalidWatchlistName, UnknownWatchlist
+from oracle.services.errors import InvalidSwap, InvalidWatchlistName, NeverListed, UnknownWatchlist
+from oracle.services.never_list import never_company, refuse_never
 from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import Sibling, live_siblings, resolve_symbol
-from oracle.store.db import to_utc_iso
+from oracle.store.db import to_utc_iso, transaction
+from oracle.store.discoveries import DISCOVERED_LIST, DiscoveryRepo
 from oracle.store.health import HealthRepo
 from oracle.store.paper import PaperRepo
 from oracle.store.universe import UniverseRepo
@@ -19,7 +21,8 @@ from oracle.store.watchlists import WatchItem, WatchlistRepo, WatchlistSummary
 
 __all__ = [
     "DEFAULT_LIST", "Sibling", "Swapped", "WatchLine", "Watched", "WatchlistSummary",
-    "create_watchlist", "show_watchlist", "swap", "unwatch", "watch", "watchlist_symbols", "watchlists",
+    "create_watchlist", "discovered_only", "own_picks", "show_watchlist", "swap", "unwatch", "watch",
+    "watchlist_symbols", "watchlists",
 ]
 
 DEFAULT_LIST = "main"
@@ -69,9 +72,14 @@ class WatchLine(WatchItem):
 
 
 def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watched:
-    """Watch one listing (not the company's others: a listing is what gets priced)."""
+    """Watch one listing (not the company's others: a listing is what gets priced). Never a
+    company on the user's never list, and on the discovered list never one on `[discovery] never`."""
     name = _name(watchlist)
     listing = resolve_symbol(ctx, symbol)
+    refuse_never(ctx, listing.symbol)
+    if name.casefold() == DISCOVERED_LIST and (company := never_company(ctx, listing.symbol, user=True)):
+        raise NeverListed(f"{company} is on the discovery never list ([discovery] never in Settings): "
+                          "it is never put on the discovered list")
     stored, added = WatchlistRepo(ctx.conn).add(name, listing.symbol, to_utc_iso(ctx.clock.utcnow()))
     return Watched(listing.symbol, listing.name, stored, added)
 
@@ -80,6 +88,7 @@ def swap(ctx: AppContext, old: str, new: str) -> Swapped:
     """Watch `new` instead of `old` on every list holding `old`, where `new` is another
     live listing of the same company."""
     was, to = resolve_symbol(ctx, old), resolve_symbol(ctx, new)
+    refuse_never(ctx, to.symbol)
     if was.symbol == to.symbol:
         raise InvalidSwap(f"{to.symbol} is the same listing")
     members = {x.symbol: x for x in UniverseRepo(ctx.conn).company_listings(was.company_key)}
@@ -101,8 +110,19 @@ def create_watchlist(ctx: AppContext, watchlist: str) -> tuple[str, bool]:
 
 
 def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool:
-    """False when it was not on the list. Works on symbols gone from the universe."""
-    return WatchlistRepo(ctx.conn).remove(_name(watchlist), symbol.strip())
+    """False when it was not on the list. Works on symbols gone from the universe. A company
+    taken off the discovered list, or off any list after being moved there from it, is
+    remembered, so discovery never adds it again."""
+    name, symbol = _name(watchlist), symbol.strip()
+    with transaction(ctx.conn):
+        removed = WatchlistRepo(ctx.conn).remove(name, symbol)
+        discoveries = DiscoveryRepo(ctx.conn)
+        moved = (was := discoveries.latest(symbol)) is not None and was.moved_at is not None
+        if removed and (name.casefold() == DISCOVERED_LIST or moved):
+            found = UniverseRepo(ctx.conn).resolve(symbol)
+            discoveries.remember_removed(found.symbol if found else symbol, found and found.company_key,
+                                         found and found.name, to_utc_iso(ctx.clock.utcnow()))
+    return removed
 
 
 def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[WatchLine]:
@@ -131,6 +151,17 @@ def _existing(repo: WatchlistRepo, name: str) -> str:
 
 def watchlists(ctx: AppContext) -> list[WatchlistSummary]:
     return WatchlistRepo(ctx.conn).summaries()
+
+
+def own_picks(ctx: AppContext) -> list[str]:
+    """Listings on the user's own lists; one also discovered still counts as theirs."""
+    return WatchlistRepo(ctx.conn).symbols_outside(DISCOVERED_LIST)
+
+
+def discovered_only(ctx: AppContext) -> list[str]:
+    """Listings only the discovered list holds."""
+    repo = WatchlistRepo(ctx.conn)
+    return sorted(set(repo.all_symbols()) - set(repo.symbols_outside(DISCOVERED_LIST)))
 
 
 def _with_price(ctx: AppContext, item: WatchItem) -> WatchLine:

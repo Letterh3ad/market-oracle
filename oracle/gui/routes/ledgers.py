@@ -15,6 +15,7 @@ from oracle.services.paper_service import (
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.settings_service import set_ai_account, set_ai_research
+from oracle.services.tick_service import discovery_line
 
 router = APIRouter(prefix="/api/ledgers")
 WAITING = "waiting for the next opening price after it was placed"
@@ -125,6 +126,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
             "stop_loss": ctx.config.strategy.stop_loss,
         },
         "ai_account": asdict(ctx.config.ai_account),
+        "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }
 

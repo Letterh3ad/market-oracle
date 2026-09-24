@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
-from oracle.gui.routes import activity, backtests, companies, fx, jobs, ledgers, schedule as tick_schedule, settings, status, universe, watchlists
+from oracle.gui.routes import activity, backtests, companies, discovery, fx, jobs, ledgers, schedule as tick_schedule, settings, status, universe, watchlists
 from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
@@ -65,6 +65,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(fx.router)
     app.include_router(companies.router)
     app.include_router(watchlists.router)
+    app.include_router(discovery.router)
     app.include_router(jobs.router)
     app.include_router(settings.router)
     app.include_router(tick_schedule.router)

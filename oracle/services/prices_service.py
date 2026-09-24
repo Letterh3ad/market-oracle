@@ -20,13 +20,14 @@ from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
 from oracle.store.health import HealthRepo, ListingHealth
+from oracle.store.paper import PaperRepo
 from oracle.store.universe import Resolved, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "benchmark_history_in_base", "day_change", "listing_health", "price_history", "price_history_in_base",
-    "price_sources", "update_listing", "update_watched",
+    "benchmark_history_in_base", "day_change", "held_unwatched", "listing_health", "price_history",
+    "price_history_in_base", "price_sources", "update_listing", "update_watched",
 ]
 
 JOB = "prices_update"
@@ -86,6 +87,12 @@ class WatchedUpdate:
         return [o for o in self.listings if o.error is not None]
 
 
+def held_unwatched(ctx: AppContext, watched: Sequence[str]) -> list[str]:
+    """Symbols some paper account holds but that are not among `watched`, so a held
+    listing is never dropped from pricing or analysis just because it left every list."""
+    return [s for s in PaperRepo(ctx.conn).held_symbols() if s not in watched]
+
+
 async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
     """Fetch new daily bars for one listing from the first configured source that has
     them. Nothing is stored unless a source succeeds."""
@@ -94,22 +101,28 @@ async def update_listing(ctx: AppContext, symbol: str) -> PriceUpdate:
 
 
 async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
-    """Every watched listing and configured benchmark once, then (with `fx`) the FX their
-    currencies need, in one process at a time. A watched listing that fails is reported as a
-    failure; a benchmark not in the universe is skipped with a note instead (it is nobody's
-    watchlist entry gone missing, just an index that is not set up yet). Either way the rest
-    carry on."""
-    with single_flight(ctx, JOB, LEASE_S) as held:
+    """Every watched listing, every listing a paper account holds and every configured
+    benchmark once, then (with `fx`) the FX their currencies need, in one process at a time.
+    Held listings are priced off every list too, so a stop can still sell them. A watched
+    listing that fails is reported as a failure; a held one or a benchmark not in the
+    universe is skipped with a note instead (nobody's watchlist entry gone missing). Either
+    way the rest carry on."""
+    with single_flight(ctx, JOB, LEASE_S) as lease:
         outcomes = []
         health = HealthRepo(ctx.conn)
         watched = WatchlistRepo(ctx.conn).all_symbols()
         universe = UniverseRepo(ctx.conn)
-        benchmarks = [s for s in ctx.config.compare.benchmarks if s not in watched]
+        held = held_unwatched(ctx, watched)
+        benchmarks = [s for s in ctx.config.compare.benchmarks if s not in watched and s not in held]
+        also_benchmark = set(held) & set(ctx.config.compare.benchmarks)
+        unlisted = {s: ("held and a benchmark, but no longer in the universe: not priced" if s in also_benchmark
+                        else "held, but no longer in the universe: not priced") for s in held}
+        unlisted |= {s: "not in the universe: benchmark skipped" for s in benchmarks}
         async with open_client(ctx) as client:
-            for symbol in watched + benchmarks:
-                held.check()
-                if symbol in benchmarks and universe.resolve(symbol) is None:
-                    outcomes.append(ListingOutcome(symbol, 0, None, None, "not in the universe: benchmark skipped"))
+            for symbol in watched + held + benchmarks:
+                lease.check()
+                if symbol in unlisted and universe.resolve(symbol) is None:
+                    outcomes.append(ListingOutcome(symbol, 0, None, None, unlisted[symbol]))
                     continue
                 if (h := health.get(symbol)).dead:
                     outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
@@ -120,7 +133,7 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
                     outcomes.append(ListingOutcome(symbol, 0, None, str(exc)))
                 else:
                     outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
-        held.check()
+        lease.check()
         rates = await update_fx(ctx) if fx and any(o.skipped is None for o in outcomes) else []
     return WatchedUpdate(tuple(outcomes), tuple(rates))
 

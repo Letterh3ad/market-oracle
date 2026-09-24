@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from oracle.config import Config
+from oracle.config import Config, DiscoveryConfig
 from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
@@ -30,7 +30,9 @@ def yahoo():
 async def ctx(tmp_path, yahoo):
     web = FakeWeb(FakeFinanceDatabase([equity("AAPL", "Apple Inc.", currency="USD"),
                                        equity("NOBARS", "No Bars", currency="USD")]), yahoo)
-    with open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport) as c:
+    # Discovery off: its news searches have no fake here, and it has its own tests.
+    config = Config(db_path=tmp_path / "o.db", discovery=DiscoveryConfig(enabled=False))
+    with open_context(config, None, FakeClock(NOW), web.transport) as c:
         await refresh_universe(c)
         watch(c, "AAPL")
         yield c
@@ -43,7 +45,7 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "research", "step", "ai_step"]
+        "prices", "fx", "fill", "analyse", "discover", "research", "step", "ai_step"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]

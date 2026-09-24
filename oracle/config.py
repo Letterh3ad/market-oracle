@@ -152,6 +152,34 @@ RESEARCH_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
+class DiscoveryConfig:
+    """Finding companies beyond the watchlists and adding them to the `discovered` list."""
+
+    enabled: bool = True
+    per_tick: int = 1
+    """Companies one run may add."""
+    max_total: int = 10
+    """The discovered list never holds more."""
+    never: tuple[str, ...] = ("Tesla",)
+    """Company names never discovered, put on the discovered list or bought from it, matched
+    as whole words on every listing's name. Tesla is never watched or traded whatever this says."""
+    ai_trades: bool = True
+    """The AI account trades discovered listings' verdicts; off, it leaves them alone."""
+    themes: tuple[str, ...] = ()
+    """Short topics searched in the news ("AI chips"); none, and the theme source is skipped."""
+    search_related: bool = True
+    """Look beside the watched companies: same industry, or named with them in the news."""
+    search_themes: bool = True
+    search_movers: bool = True
+    """Look in news of market movers across the watched listings' countries."""
+
+
+PER_TICK_RANGE = (1, 20)
+MAX_TOTAL_RANGE = (1, 500)
+MAX_THEME = 60
+
+
+@dataclass(frozen=True)
 class UniverseConfig:
     suffix_blind_grouping: bool = False
     """Join companies whose names differ only in legal forms (plc, Inc., AG); applied at the
@@ -231,6 +259,7 @@ class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     automation: AutomationConfig = field(default_factory=AutomationConfig)
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
@@ -409,6 +438,9 @@ def _apply(raw: dict) -> Config:
         if name == "ai_account":
             values[name] = _ai_account(value)
             continue
+        if name == "discovery":
+            values[name] = _discovery(value)
+            continue
         if name == "llm":
             values[name] = _llm(value)
             continue
@@ -539,6 +571,29 @@ def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
         if not ok:
             raise ConfigError(f"ai_account.{key} must be {wanted}, got {getattr(ai, key)!r}")
     return replace(ai, move_threshold=float(ai.move_threshold))
+
+
+def _discovery(raw: object) -> DiscoveryConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("discovery must be a [discovery] table")
+    _reject_unknown(raw, DiscoveryConfig, "[discovery]")
+    d = replace(DiscoveryConfig(), **raw)
+    never, themes = d.never, d.themes
+    checks = {
+        **{key: (isinstance(getattr(d, key), bool), "true or false") for key in (
+            "enabled", "ai_trades", "search_related", "search_themes", "search_movers")},
+        "per_tick": (_whole(d.per_tick, *PER_TICK_RANGE), "a whole number from {} to {}".format(*PER_TICK_RANGE)),
+        "max_total": (_whole(d.max_total, *MAX_TOTAL_RANGE), "a whole number from {} to {}".format(*MAX_TOTAL_RANGE)),
+        "never": (isinstance(never, (list, tuple)) and all(isinstance(n, str) and n.strip() for n in never),
+                  'a list of company names like ["Tesla"]'),
+        "themes": (isinstance(themes, (list, tuple))
+                   and all(isinstance(t, str) and 0 < len(t.strip()) <= MAX_THEME for t in themes),
+                   f'a list of short topics like ["AI chips", "defence"], each at most {MAX_THEME} characters'),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"discovery.{key} must be {wanted}, got {getattr(d, key)!r}")
+    return replace(d, never=tuple(n.strip() for n in never), themes=tuple(dict.fromkeys(t.strip() for t in themes)))
 
 
 def _schedule(raw: object) -> ScheduleConfig:

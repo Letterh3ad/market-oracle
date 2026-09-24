@@ -15,8 +15,10 @@ from oracle.market.fx import RateSeries, pick_rate
 from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
+from oracle.services.never_list import never_company, refuse_never
 from oracle.services.prices_service import benchmark_history_in_base, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
+from oracle.services.watch_service import discovered_only, own_picks
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.fx import FxRepo
@@ -25,14 +27,14 @@ from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision
 from oracle.store.research import ResearchRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
-from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "NEVER_BUY", "UNVALIDATED", "AccountScore", "AccountView", "Action",
+    "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
     "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
-    "strategy_rules", "strategy_step",
+    "strategy_rules", "strategy_step", "traded_by",
 ]
 
 ACCOUNTS = ("strategy", "ai", "manual")
@@ -41,6 +43,9 @@ TRADERS = ("strategy", "ai")
 GONE = "no longer in the universe"
 AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
           "or set [ai_account] enabled = true in oracle.toml")
+DISCOVERED_OFF = ("discovered, and the AI account does not trade discovered companies: turn it on in Settings "
+                  "([discovery] ai_trades)")
+NEVER_BUY = "on the never list: never bought"
 
 
 @dataclass(frozen=True)
@@ -141,6 +146,7 @@ def place_buy(ctx: AppContext, symbol: str, cash: float, account: str = "manual"
     if not (math.isfinite(cash) and cash > 0):
         raise InvalidQuery(f"a buy must spend more than nothing, not {cash:,.2f}")
     listing = resolve_symbol(ctx, symbol).symbol
+    refuse_never(ctx, listing)
     now = ctx.clock.utcnow()
     return PaperRepo(ctx.conn).add_order(account, listing, Side.BUY, cash, None, to_utc_iso(now), now.date(), source)
 
@@ -179,8 +185,7 @@ def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> st
 def strategy_step(ctx: AppContext) -> list[Decision]:
     """Run the strategy rules over every watched listing's latest lean and queue the
     resulting orders on the strategy account. Every decision, skips included, is logged."""
-    watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), watched)
+    found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), traded_by(ctx, "strategy"))
     return _step(ctx, "strategy", found, skips, {})
 
 
@@ -190,9 +195,22 @@ def ai_step(ctx: AppContext) -> list[Decision] | None:
     is off. Every decision is logged with the research run its verdict came from."""
     if not ctx.config.ai_account.enabled:
         return None
-    watched = WatchlistRepo(ctx.conn).all_symbols()
-    found, skips, runs = _usable_verdicts(ctx, watched)
+    traded = traded_by(ctx, "ai")
+    found, skips, runs = _usable_verdicts(ctx, traded)
+    skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
     return _step(ctx, "ai", found, skips, runs)
+
+
+def traded_by(ctx: AppContext, account: str) -> list[str]:
+    """The listings a trading account decides over. The strategy account keeps to the
+    user's own picks, so its record stays a fair test of the rules on them; the AI account
+    adds discovered ones while `[discovery] ai_trades` is on. Whatever the account holds
+    stays in, off every list or not, so a position is never stranded: the rules only ever
+    buy what is not held, so a held listing can be sold but never added to."""
+    listed = own_picks(ctx)
+    if account == "ai" and ctx.config.discovery.ai_trades:
+        listed += discovered_only(ctx)
+    return sorted(set(listed) | set(PaperRepo(ctx.conn).held_symbols(account)))
 
 
 def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
@@ -201,6 +219,9 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
     every decision; `reports` maps a listing to the research run behind its decision."""
     view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
+    barred = _never_bought(ctx, [s for s in found if s not in holdings])
+    found = {s: lean for s, lean in found.items() if s not in barred}
+    unusable = unusable + [Decision(s, Action.SKIP, None, NEVER_BUY) for s in barred]
     sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
@@ -220,6 +241,13 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
                                 reports.get(d.symbol), d.needs_research)])
     return decisions
+
+
+def _never_bought(ctx: AppContext, symbols: list[str]) -> set[str]:
+    """The user's rule bars a company everywhere; `[discovery] never` only what discovery
+    alone brought in."""
+    discovered = set(discovered_only(ctx))
+    return {s for s in symbols if never_company(ctx, s, user=s in discovered)}
 
 
 def strategy_rules(ctx: AppContext) -> Rules:
@@ -341,7 +369,7 @@ def comparison(ctx: AppContext) -> Comparison:
         lines += [_benchmark_line(ctx, s, None) for s in ctx.config.compare.benchmarks]
         return Comparison(None, tuple(lines), (), notes)
     closes = {}
-    for symbol in WatchlistRepo(ctx.conn).all_symbols():
+    for symbol in own_picks(ctx):
         try:
             closes[symbol] = [(c.bar.date, c.close_base) for c in price_history_in_base(ctx, symbol)]
         except UnknownSymbol:
@@ -356,6 +384,9 @@ def comparison(ctx: AppContext) -> Comparison:
     notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
     if left_out:
         notes.append(f"Left out of buy and hold, no prices from {start.isoformat()} on: {', '.join(left_out)}.")
+    if found := discovered_only(ctx):
+        notes.append(f"Buy and hold measures your own picks, so the discovered listings are left out: "
+                     f"{', '.join(found)}.")
     return Comparison(start, tuple(lines), tuple(left_out), tuple(notes))
 
 
@@ -420,6 +451,10 @@ def account_view(ctx: AppContext, account: str) -> AccountView:
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
+    # A never rule set after the order was placed (or a discovery-only one, for a discovered
+    # symbol) still blocks it before it spends real-looking cash.
+    if order.side == Side.BUY and never_company(ctx, order.symbol, user=order.symbol in discovered_only(ctx)):
+        return _reject(repo, order, "on the never list")
     profile = UniverseRepo(ctx.conn).profile(order.symbol)
     if profile is None and order.side == Side.BUY:
         # Its exchange, and so any stamp duty, is unknown.

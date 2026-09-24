@@ -97,6 +97,12 @@ class WatchlistRepo:
         """Every watched symbol once, whichever lists hold it."""
         return [r[0] for r in self._conn.execute("SELECT DISTINCT symbol FROM watchlist_items ORDER BY symbol")]
 
+    def symbols_outside(self, watchlist: str) -> list[str]:
+        """Every symbol some other list holds, once."""
+        return [r[0] for r in self._conn.execute(
+            "SELECT DISTINCT symbol FROM watchlist_items WHERE watchlist != ? COLLATE NOCASE ORDER BY symbol",
+            (watchlist,))]
+
     def summaries(self) -> list[WatchlistSummary]:
         rows = self._conn.execute(
             """SELECT w.name, COUNT(i.symbol), COUNT(i.symbol) - COUNT(l.symbol)

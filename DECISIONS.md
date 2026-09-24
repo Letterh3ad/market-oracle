@@ -1619,6 +1619,110 @@ and its flags `Pending` on ticket 02.
 **Alternatives:** Full history per day (quadratic: minutes for a few years); the IBKR fee table
 and FX spread the paper accounts use (the spec asks for commission and slippage only, default
 free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+## 2026-09-24 - Discovery, related source: news first, then universe peers, bounded per run
+**Context:** Discovery ticket 01: find companies related to the watched ones and add them to a
+`discovered` watchlist unattended, with a small local model and shared rate gates.
+**Decision:** Each run takes watched listings (outside `discovered`) as seeds in turn, at most
+3 a run, starting after the last run's seed. Per seed: one Google News and one GDELT search,
+then one bounded-JSON model call over up to 20 headlines naming companies with a relation and
+the headline numbers; then the universe peers (same industry group, else sector, largest
+first, up to 10). News candidates come first, as they are what is happening now. A name is
+kept only if a headline it cites holds it (legal forms aside), so invented names add nothing.
+Names resolve in code: a universe search for the name without legal forms, equities only,
+exact name on any of the company's listings first, else one starting with it, largest first;
+the listing added is the company's primary line (home or most liquid), else its best live
+sibling. Then prices are fetched (the configured sources, Yahoo first) and must be recent. A
+run price-checks at most 6 candidates. A failed search or model call is noted and the run goes
+on. Runs are single-flight across processes.
+**Alternatives:** Asking the model for tickers (small models invent them); peers only (never
+finds suppliers or customers); searching every watched company each run (slow through the
+gates, and one failing source would stall the lot).
+
+## 2026-09-24 - Discovery: Tesla is never added whatever the setting says
+**Context:** The user's rule is never to watch or trade any Tesla listing. `[discovery] never`
+defaults to ["Tesla"], but a settings edit could empty it.
+**Decision:** "Tesla" is always on the never list in code, beside whatever `never` holds.
+Names match as whole words, case and punctuation aside, against the model's name, the
+company's name and every one of its listings' names.
+**Alternatives:** Trusting the setting alone (one edit away from breaking the rule); matching
+substrings (would refuse unrelated names containing the letters).
+
+## 2026-09-24 - Discovery: removals remembered by symbol and company; "Discover now" ignores enabled
+**Context:** A company the user removes must never come back, and the Watchlist tab can remove
+items from the `discovered` list as well as the Discovery section can.
+**Decision:** Any removal from the `discovered` list (Discovery's Remove, the Watchlist row's
+Remove, `oracle watch remove --list discovered`) is recorded in `discovery_removed` with the
+symbol and company key; a candidate matching either, or any listing symbol of its company, is
+skipped. "Move to my watchlist" puts it on `main` and takes it off `discovered` without
+counting as a removal; its reasons are kept. `[discovery] enabled` governs automatic runs
+(the tick stage, ticket 03); a button press or `oracle discover` always runs. The discovered
+list counts as watched everywhere today (prices, analysis, research, and both paper
+accounts) until ticket 03 decides what the strategy account trades. Migration m0033 (m0032 is
+on the deep-research branch).
+**Alternatives:** Flagging removals on the provenance row (misses listings added by hand);
+refusing manual runs when disabled (a button that does nothing is confusing).
+
+## 2026-09-24 - Discovery in the tick: a stage before research, capped in time
+**Context:** Ticket 03 runs discovery unattended. It uses the network and the model, and it
+delays research, which has its own budget.
+**Decision:** A `discover` stage between `analyse` and `research`, run only with
+`[discovery] enabled` and `[automation] enabled`, and held like research while the PC is in
+use (`research_when_idle`). It may run for at most 10 minutes and never more than a third of
+`research_budget_min` (fixed, not a setting); at the limit it is cancelled and the summary
+lists what it had already added. A failed source makes the stage partial, a crash fails only
+the stage, and "Discover now" already running is left to finish. The stage summary is plain
+words ("added 6902.T DENSO Corporation (same industry as 7203.T)", or why nothing was added),
+and the Ledgers AI panel shows a one-line account of discovery with the last tick's result.
+`stale_research` puts the user's own picks before discovered listings, so the tick and
+"Research all stale" both research them first.
+**Alternatives:** A separate `[discovery] budget_min` setting (one more knob for little gain);
+deducting discovery time from the research budget (would couple the two stages).
+
+## 2026-09-24 - Discovered listings: the AI account trades them, the strategy account and buy-and-hold do not
+**Context:** The comparison between the strategy and AI accounts should stay fair, and
+buy-and-hold is there to benchmark the user's hand-picked list.
+**Decision:** Prices, FX, analysis and research cover every watched listing, discovered ones
+included. The strategy account decides only over the user's own picks (a listing on any
+list besides `discovered`); a discovered listing it already holds stays in so it can still be
+sold. The AI account trades discovered listings while `[discovery] ai_trades` (default true,
+in the Settings form) is on; off, each is logged as a skip with the reason and the setting,
+and a held one can still be sold. Buy-and-hold holds only the user's own picks and names the
+discovered ones it leaves out in a note.
+**Alternatives:** The strategy account trading discovered listings too (the comparison would
+then partly measure discovery, not research); buy-and-hold of everything watched (its
+benchmark would move whenever discovery adds a company).
+
+## 2026-09-24 - Discovery sources: related, themes and movers take turns, switched one by one
+**Context:** Ticket 02 adds themes the user names and market-mover news beside the related
+source, each with its own switch, and a failed source must not waste the run.
+**Decision:** `[discovery] themes` is a list of short topics (at most 60 characters each,
+trimmed, repeats dropped), edited in the Settings form like `never` (comma separated; a blank
+box leaves none, which skips the source). Switches are three booleans, `search_related`,
+`search_themes`, `search_movers` (default true), so the form shows checkboxes. The sources
+take turns in that order, the turn kept in meta: a run starts with the source whose turn it
+is, and when that source fails or adds nothing the next one gets the run, so one run may try
+all three. Themes need nothing watched; related and movers do. Movers search three kinds of
+news (biggest risers and fallers, unusual trading volume, results surprises) in each country
+the user's own watched listings are in, most watched first, two searches a run, rotating;
+themes likewise two a run. Themes and movers use one bounded-JSON call per search that names
+companies without a relation (`TOPIC_SCHEMA`), then the same resolution, never list, skips and
+price check as related. Provenance stores source `theme` or `mover`, the theme or the search
+("the biggest risers and fallers (Japan)") as seed, and the kind as relation; no migration.
+**Alternatives:** A `sources` list setting (a typed list is easier to get wrong than three
+checkboxes); a switch for themes beside a blank list (kept: a user can keep their themes and
+pause them); strict turns where a failed source ends the run (a holiday run would add nothing
+whenever a feed is down); movers from price data instead of news (needs prices for listings
+not yet watched, many requests per run).
+
+## 2026-09-24 - The Discovery section says what it searches and whether the AI account trades it
+**Context:** Ticket 03 left the Watchlist tab silent on `[discovery] ai_trades`.
+**Decision:** Above the discovered list a line names the sources on (with the themes) and
+says "The AI account trades these after research." or "The AI account researches these but
+does not trade them." from the setting. The tick's empty summary now reads "no companies
+found", since not every source is about related companies.
+**Alternatives:** A switch in the section itself (Settings already holds it, one place to
+change it).
+
 
 ## 2026-09-24 - Retry for cancelled, interrupted and failed jobs
 **Context:** A restart cancelled 8 queued research jobs at once with no way to redo them
@@ -1707,3 +1811,53 @@ label living on `Line` (would break the cli/gui-only-imports-services layering, 
 the label logic between the CLI and the GUI); a static per-symbol colour map in `ledgers.js`
 instead of assigning by position (would silently run out of colours, or collide, once a user
 configures a third benchmark).
+
+## 2026-09-24 - Held positions are never stranded; one never-list check everywhere
+**Context:** Review of discovery found a listing removed from every list (discovered, or the
+user's own `main`) while an account held it dropped out of both pricing and the accounts'
+decisions, so a stop could never fire on fresh prices. Main already had this for removed
+watched listings. The never list was only enforced inside discovery runs.
+**Decision:** `traded_by` is the listed picks plus whatever the account holds; the rules
+only buy what is not held, so a held listing can be sold but never added to.
+`update_watched` also prices every listing any paper account holds (held but gone from the
+universe is skipped with a note, like a benchmark). A new `oracle.services.never_list`
+holds `ALWAYS_NEVER` (Tesla) and one company-wide check over every listing's name:
+`watch()` refuses Tesla on every list and `[discovery] never` names on the discovered list;
+`place_buy` refuses Tesla on every account; both trading accounts skip a buy of Tesla
+anywhere, or of a `[discovery] never` company that only the discovered list holds. A company
+moved from discovered to the user's list and later removed is remembered as removed.
+Discovery's name lookup takes a leading-name match only when exactly one company matches,
+never for names under 4 characters, and falls back to an exact symbol ("Meta" is META).
+**Alternatives:** Pricing held listings through a hidden watchlist (would leak into every
+list view); refusing the whole never check in `decide` (the broker layer has no universe).
+
+## 2026-09-24 - Discovery follow-ups left open
+**Context:** Items from the discovery review not fixed now.
+**Decision:** Recorded as follow-ups: (B4) headline injection, where a crafted headline
+names a company to get it discovered, is bounded by `per_tick`, by the rule that a name must
+appear in a headline it cites, and by the code-side universe and price checks, but not
+removed; (B6) the price checks store bars for candidates later rejected, which costs a
+little database space and nothing else. B5 (CDR, BDR and CEDEAR receipts not filtered) was a
+one-line regex widening and is fixed.
+**Alternatives:** Fixing B4 with a second model pass (costly, and still model-judged);
+checking prices without storing (would need a separate fetch path).
+
+## 2026-09-24 - Held-but-unwatched listings are analysed too; AI-held unlisted ones are
+stop-only
+**Context:** `update_watched` already prices every listing a paper account holds, off every
+list. `analyse_watched` did not: it only ran over the watchlist, so an unwatched-but-held
+listing's lean went stale the moment a new bar arrived, and `_usable_leans`/`_usable_verdicts`
+refuse a stale lean, leaving the stop as the only exit.
+**Decision:** `analyse_watched` now covers watched listings plus `held_unwatched` (the same
+helper `update_watched` uses, moved into `prices_service` for both to share). Separately, for
+a listing a paper account holds that has left the universe entirely (not just its lists):
+the strategy account trades on baseline leans and would still sell it on a sell lean once
+`analyse_watched` reaches it, same as any held-but-listed symbol. The AI account is
+different: `ai_step` decides from the newest live research verdict (`_usable_verdicts`), not
+from a lean, and `_usable_verdicts` skips a symbol outright when it fails to resolve in the
+universe (reason `GONE`), so no verdict-based sell decision is ever produced for it. An
+AI-held listing gone from the universe therefore only ever exits on the stop; a sell verdict
+can never apply to it, because none is looked up. This is left as is (a listing gone from the
+universe has nothing left to research a verdict against).
+**Alternatives:** Having `ai_step` fall back to the baseline lean for a delisted symbol
+(would trade the AI account on baseline in a rule it otherwise never uses).
