@@ -81,7 +81,7 @@ def slots_cell(profile: dict) -> dict:
 def test_the_slots_a_profile_serves_show_unset_ones_marked_and_warn_when_its_key_is_unset():
     default = {"slots": ["notes"], "unset_slots": ["research", "roles"], "key_state": "none"}
     assert slots_cell(default) == {"text": "notes, research (unset), roles (unset)", "cls": "dim small"}
-    keyless = {"slots": ["verdict"], "unset_slots": [], "key_state": "unset", "key_env": "MY_KEY",
+    keyless = {"slots": ["verdict"], "unset_slots": [], "key_state": "unset", "unavailable": "MY_KEY is not set",
                "if_unset": ["verdict runs on the research slot's profile"]}
     assert slots_cell(keyless) == {"text": "verdict: key unset", "cls": "warn-text small",
                                    "title": "MY_KEY is not set: verdict runs on the research slot's profile"}

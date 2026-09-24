@@ -31,7 +31,7 @@ __all__ = [
 LIVE_SECTIONS = ("schedule", "automation", "ai_account", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
-LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots")
+LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
 """The Config fields those sections load into."""
 
 

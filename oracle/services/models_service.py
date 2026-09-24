@@ -9,10 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields, replace
 
 from oracle.config import (
-    DEFAULT_PROFILE, PROVIDER_KEYS, SLOTS, SLOTS_TABLE, Config, PROVIDERS, ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name,
-    model_profiles, profile_tables, with_settings, without_section,
+    ALLOW_CLAUDE_CODE, DEFAULT_PROFILE, PROVIDER_KEYS, PROVIDERS, SLOTS, SLOTS_TABLE, URLLESS_PROVIDERS, Config,
+    ConfigError, LlmConfig, ModelProfile, check_profile, check_profile_name, model_profiles, profile_tables,
+    with_settings, without_section,
 )
 from oracle.research.claude import ClaudeChat
+from oracle.research.claude_code import ClaudeCodeChat
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.services.context import AppContext
@@ -32,7 +34,15 @@ BUILDERS: dict[str, Builder] = {
     "ollama": lambda ctx, name, p: OllamaChat(p.model, p.base_url, p.timeout_s, p.context, transport=ctx.transport),
     "claude_api": lambda ctx, name, p: ClaudeChat(p.model, p.timeout_s, api_key=_key(name, p), base_url=p.base_url,
                                                   **({"key_source": _key_source(name, p)} if p.key or p.key_env else {})),
+    "claude_code": lambda ctx, name, p: ClaudeCodeChat(_allowed(ctx, name, p).model, p.timeout_s),
 }
+
+
+def _allowed(ctx: AppContext, name: str, p: ModelProfile) -> ModelProfile:
+    # The loader refuses such a profile already; this covers a config built another way.
+    if not ctx.config.allow_claude_code:
+        raise ModelUnavailable(f"model profile {name}: claude_code is off; set {ALLOW_CLAUDE_CODE} = true under [models]")
+    return p
 
 MODEL_JOBS = ("research", "discovery", "discovery_chat")
 """Jobs that keep the model busy; a test beside one would only queue behind it."""
@@ -68,6 +78,8 @@ RESEARCH_STAGES = ("queries", "research", "notes", "roles", "verdict")
 def resolve_model(ctx: AppContext, profile: str, model: ChatModel | None = None) -> RunModel:
     """The named profile's model (or `model`, which a test or caller supplies) and its context."""
     p = _profile(ctx, profile)
+    if p.provider == "claude_code":
+        _allowed(ctx, profile, p)  # even with `model` given: an off profile never stands in for a stage
     return RunModel(model or BUILDERS[p.provider](ctx, profile, p), p.context, profile)
 
 
@@ -136,15 +148,26 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
     """Every profile, default first: its resolved values, the ones actually set (`set`,
     None where the provider's default applies), and its key only as a state."""
     tables = profile_tables(ctx.config)
-    return [{
+    rows = [{
         "name": name, "provider": p.provider, "model": p.model, "base_url": p.base_url, "context": p.context,
         "timeout_s": p.timeout_s, "key_env": p.key_env, "key_state": _key_state(p),
         "key_fallback": PROVIDERS[p.provider].fallback_key, "from_llm": name not in ctx.config.models,
+        "off": p.provider == "claude_code" and not ctx.config.allow_claude_code,
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
         "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
         "unset_slots": _unset_slots(ctx.config) if name == DEFAULT_PROFILE else [],
-        "if_unset": [if_unavailable(slot) for slot in _served(ctx.config, name)] if _key_state(p) == "unset" else [],
+        "unavailable": _unavailable(ctx, p),
     } for name, p in model_profiles(ctx.config).items()]
+    for r in rows:
+        r["if_unset"] = [if_unavailable(slot) for slot in _served(ctx.config, r["name"])] if r["unavailable"] else []
+    return rows
+
+
+def _unavailable(ctx: AppContext, p: ModelProfile) -> str | None:
+    """Why the profile cannot be built now, if it cannot."""
+    if p.provider == "claude_code" and not ctx.config.allow_claude_code:
+        return f"claude_code is off ({ALLOW_CLAUDE_CODE} is not set)"
+    return f"{p.key_env} is not set" if _key_state(p) == "unset" else None
 
 
 def if_unavailable(slot: str) -> str:
@@ -163,10 +186,12 @@ def _unset_slots(config: Config) -> list[str]:
     return [slot for slot in SLOTS if slot not in config.model_slots and slot != "ai_account"]
 
 
-def provider_defaults() -> dict[str, dict]:
-    """Each provider with what its unset keys mean, and whether it takes a key."""
+def provider_defaults(ctx: AppContext) -> dict[str, dict]:
+    """Each provider offered, with what its unset keys mean and whether it takes a key or a
+    URL. claude_code is offered only when `[models] allow_claude_code` is set."""
     return {name: {"base_url": spec.base_url, "context": spec.context, "timeout_s": LlmConfig.timeout_s,
-                   "keyed": spec.fallback_key is not None} for name, spec in PROVIDERS.items()}
+                   "keyed": spec.fallback_key is not None, "url": name not in URLLESS_PROVIDERS}
+            for name, spec in PROVIDERS.items() if name != "claude_code" or ctx.config.allow_claude_code}
 
 
 def _key_state(p: ModelProfile) -> str:
@@ -215,6 +240,10 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
     provider = PROVIDERS.get(named) if isinstance(named, str) else None
     if old and provider and table["provider"] != old.provider:
         table = {k: v for k, v in table.items() if k not in PROVIDER_KEYS or v != getattr(old, k)}
+    if named == "claude_code" and not ctx.config.allow_claude_code:
+        raise InvalidQuery(f"claude_code is off: set {ALLOW_CLAUDE_CODE} = true under [models] in oracle.toml")
+    if named in URLLESS_PROVIDERS:
+        table.pop("base_url", None)
     if provider and provider.fallback_key is None:
         table = {k: v for k, v in table.items() if k not in ("key", "key_env")}
     elif values.get("key") is None and "key_env" not in table and old and old.key:

@@ -149,6 +149,29 @@ async def test_a_tick_whose_ai_account_profile_cannot_be_built_researches_on_the
     assert run.model_label.startswith("scripted lead; queries, research, notes, roles, verdict on default (claude unavailable: ")
 
 
+async def test_a_slot_naming_an_off_claude_code_profile_is_unavailable_and_never_built(ctx, models, monkeypatch):
+    from oracle.services import models_service
+
+    lead, reader = models
+    built = []
+    monkeypatch.setitem(models_service.BUILDERS, "claude_code", lambda *a: built.append(a) or reader)
+    monkeypatch.setattr("oracle.services.research_service.stale_research", lambda c: ["AAPL"])
+    use_models(monkeypatch, {"default": lead, "sub": reader}.get)
+    ctx.config = replace(ctx.config, models={"sub": ModelProfile("claude_code", "sonnet")}, allow_claude_code=False)
+    slots(ctx, notes="sub", ai_account="sub")
+    done = await refresh_research(ctx)
+    run = latest_research(ctx, "AAPL")
+    assert done.researched == ["AAPL"] and built == [] and reader.calls == []
+    assert {s.profile for s in run.stages} == {"default"}
+    assert all("claude_code is off" in s.unavailable for s in run.stages)
+    slots(ctx, notes="sub")
+    lead.replies = [step("news_search", "Apple"), step("final", "Again [a1].")]
+    run = await research(ctx, "AAPL")
+    notes = run.stages[2]
+    assert (notes.stage, notes.profile) == ("notes", "default") and "sub unavailable" in notes.unavailable
+    assert built == [] and reader.calls == []
+
+
 async def test_a_ticks_research_runs_on_the_ai_account_slot_else_the_slots(ctx, monkeypatch):
     from oracle.services import research_service
 

@@ -126,6 +126,20 @@ claude_model = "claude-opus-5"   # the model when backend is "claude"
 # (default 180), and one of key_env (the environment variable holding the key) or key
 # (the key itself; never shown). claude_api with neither uses ANTHROPIC_API_KEY or
 # `ant auth login`. `oracle models list` shows them; `oracle models test NAME` checks one.
+#
+# provider = "claude_code" runs your own logged-in `claude -p` CLI (your Claude
+# subscription), one process per reply, with no tools. It is off unless the line below is
+# set by hand here (an off profile still loads, listed as off), and only a task or run that
+# names the profile uses it. model is what
+# the CLI takes (sonnet, opus or a full id); no key or base_url. If `claude` is not on the
+# PATH the app runs with, set ORACLE_CLAUDE_BIN to its path.
+# [models]
+# allow_claude_code = true
+#
+# [models.sub]
+# provider = "claude_code"
+# model = "sonnet"
+#
 # [models.big]
 # provider = "ollama"
 # model = "qwen3:8b"
