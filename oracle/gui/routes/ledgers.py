@@ -5,8 +5,9 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 
-from oracle.gui.deps import get_ctx
+from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
+from oracle.services.activity_service import JobRunner, queue_stale_research, stale_research_jobs
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
@@ -90,6 +91,21 @@ async def put_ai_research(body: AiResearch, ctx: AppContext = Depends(get_ctx)) 
     """How ticks keep the AI account's research fresh."""
     set_ai_research(ctx, body.max_verdict_age_days, body.move_threshold, body.research_budget_min)
     return asdict(ctx.config.ai_account)
+
+
+@router.get("/ai/stale")
+async def get_stale(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """The watched listings a tick would research now, and those already queued."""
+    stale = stale_research_jobs(ctx, runner)
+    return {"due": stale.due, "waiting": stale.waiting}
+
+
+@router.post("/ai/research-stale", status_code=202)
+async def research_stale(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue research on every due listing not already queued; they run one after another."""
+    done = queue_stale_research(ctx, runner)
+    return {"queued": [shapes.job(j) for j in done.jobs], "waiting": done.waiting,
+            "refused": [list(r) for r in done.refused]}
 
 
 @router.get("")

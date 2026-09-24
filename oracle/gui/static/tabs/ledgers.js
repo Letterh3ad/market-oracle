@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { lineChart, linesChart } from "../lib/chart.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
+import { researchButton, staleButton } from "../lib/ledger_research.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, sendJson } from "../lib/ui.js";
@@ -10,6 +11,7 @@ let charts = [];
 let pane = null;
 let root = null; // this tab's container: a late answer repaints only while it is on screen
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
+const showLines = (lines) => { lastResult = lines; refresh(); };
 
 function metrics(a, base) {
   const row = (label, key, value, cls = "") => el("tr", null,
@@ -130,7 +132,7 @@ function sellButton(p) {
   } }, "Sell");
 }
 
-function column(a, base, rules, ai) {
+function column(a, base, rules, ai, stale) {
   const manual = a.name === "manual";
   const gain = (p) => (p.value == null ? null : p.value - p.cost);
   const heads = [["Symbol"], ["Shares", null, 1], [`Cost (${base})`, "position_cost", 1],
@@ -157,7 +159,7 @@ function column(a, base, rules, ai) {
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
-    a.name === "ai" ? aiResearch(ai) : null,
+    a.name === "ai" ? aiResearch(ai) : null, a.name === "ai" ? staleButton(stale, showLines) : null,
     metrics(a, base), manual ? trading(base) : null,
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,
@@ -221,13 +223,16 @@ function drawCharts(accounts) {
   }
 }
 
-function decisions(rows, base, empty) {
+// `due`: listings still stale now, so an old line whose listing was researched since offers no button.
+function decisions(rows, base, empty, due = new Set()) {
+  const offer = (d) => d.needs_research && due.has(d.symbol);
   return table([["Day"], ["Symbol"], ["Did"], ["Why"]],
     rows.map((d) => el("tr", null, el("td", null, d.day), el("td", null, companyLink(d.symbol)),
       el("td", { class: d.action === "buy" ? "up" : d.action === "sell" ? "down" : "dim" },
         d.action + (d.cash != null ? ` ${money(d.cash)} ${base}` : "")),
       el("td", { class: "small" }, d.reason,
-        d.report_id != null ? el("span", { class: "dim" }, ` (research run ${d.report_id})`) : null))),
+        d.report_id != null ? el("span", { class: "dim" }, ` (research run ${d.report_id})`) : null,
+        offer(d) ? " " : null, offer(d) ? researchButton(d.symbol, showLines) : null))),
     empty);
 }
 
@@ -269,10 +274,10 @@ async function render(target) {
   const mine = el("div", null, el("p", { class: "dim" }, "Loading..."));
   root = mine;
   pane.replaceChildren(mine);
-  let body, log, aiLog;
+  let body, log, aiLog, stale;
   try {
-    [body, log, aiLog] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
-      api("/api/ledgers/decisions?account=ai")]);
+    [body, log, aiLog, stale] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
+      api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale")]);
   } catch (err) {
     if (pane.contains(mine)) mine.replaceChildren(el("p", { class: "dim" }, `Could not load the ledgers: ${err.message}`));
     return;
@@ -282,11 +287,12 @@ async function render(target) {
   mine.replaceChildren(
     jobs(base),
     comparison(body.compare, base),
-    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account))),
+    el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
-      ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures."));
+      ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
+      new Set(stale.due)));
   drawCharts(body.accounts);
   drawComparison(body.compare);
 }

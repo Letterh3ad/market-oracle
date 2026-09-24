@@ -19,9 +19,10 @@ router = APIRouter(prefix="/api/activity")
 
 @router.get("")
 async def activity(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
-    """This server's jobs, plus work another process holds (a CLI run), which only it can stop."""
+    """This server's running and queued jobs, plus work another process holds (a CLI run),
+    which only it can stop. Finished jobs come from `/finished`."""
     return {
-        "jobs": [shapes.job(j) for j in runner.jobs()],
+        "jobs": [shapes.job(j) for j in runner.current()],
         "elsewhere": [{"job": s.job.replace("_", " "), "pid": s.pid, "host": s.host, "age_s": s.age_s}
                       for s in held_elsewhere(ctx)],
     }
@@ -33,6 +34,11 @@ async def finished(page: int = Query(1, ge=1), q: str = "", runner: JobRunner = 
     found = runner.finished_page(page, q)
     return {"items": [shapes.job(j) for j in found.items], "page": found.page, "pages": found.pages,
             "total": found.total}
+
+
+@router.get("/finished/count")
+async def finished_count(q: str = "", runner: JobRunner = Depends(get_runner)) -> dict:
+    return {"total": runner.finished_count(q)}
 
 
 @router.get("/{job_id}")

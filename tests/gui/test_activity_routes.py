@@ -42,44 +42,35 @@ async def test_work_another_process_holds_is_listed_read_only(ctx, client):
     assert (held["job"], held["pid"]) == ("prices update", other)
 
 
-async def test_jobs_an_earlier_server_finished_are_listed_without_their_results(ctx, client):
-    from datetime import datetime, timezone
-
-    from oracle.store.job_history import JobHistoryRepo
-
-    repo = JobHistoryRepo(ctx.conn)
-    at = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc)
-    for kind in ("prices", "analyse", "tick"):
-        repo.update(repo.add(kind, kind, None, None, "queued", at, 1), "done", None, at, at)
-    listed = (await client.get("/api/activity")).json()["jobs"]
+async def test_jobs_an_earlier_server_finished_are_listed_without_their_results(finish_job, client):
+    for n, kind in enumerate(("prices", "analyse", "tick")):
+        finish_job(n, kind)
+    listed = (await client.get("/api/activity/finished")).json()["items"]
     assert [(j["kind"], j["state"], j["result"]) for j in listed] == [
         ("tick", "done", None), ("analyse", "done", None), ("prices", "done", None)]
 
 
-def _finish(ctx, n, label):
-    from datetime import datetime, timedelta, timezone
-
-    from oracle.store.job_history import JobHistoryRepo
-
-    repo = JobHistoryRepo(ctx.conn)
-    at = datetime(2026, 9, 23, 20, 0, tzinfo=timezone.utc) + timedelta(minutes=n)
-    repo.update(repo.add("prices", label, None, None, "queued", at, 1), "done", None, at, at)
-
-
-async def test_finished_jobs_come_a_page_at_a_time(ctx, client):
+async def test_finished_jobs_come_a_page_at_a_time_and_stay_out_of_the_live_list(finish_job, client):
     for n in range(25):
-        _finish(ctx, n, f"Job {n}")
+        finish_job(n)
     body = (await client.get("/api/activity/finished", params={"page": 2})).json()
     assert (body["page"], body["pages"], body["total"]) == (2, 2, 25)
     assert [j["label"] for j in body["items"]] == [f"Job {n}" for n in range(4, -1, -1)]
-    assert len((await client.get("/api/activity")).json()["jobs"]) == 20
+    assert (await client.get("/api/activity")).json() == {"jobs": [], "elsewhere": []}
 
 
-async def test_finished_jobs_can_be_searched(ctx, client):
-    _finish(ctx, 1, "Research MSFT")
-    _finish(ctx, 2, "Research AAPL")
+async def test_finished_jobs_can_be_searched(finish_job, client):
+    finish_job(1, label="Research MSFT")
+    finish_job(2, label="Research AAPL")
     body = (await client.get("/api/activity/finished", params={"q": "msft"})).json()
     assert [j["label"] for j in body["items"]] == ["Research MSFT"] and body["total"] == 1
+
+
+async def test_finished_jobs_can_be_counted_alone(finish_job, client):
+    finish_job(1, label="Research MSFT")
+    finish_job(2, label="Research AAPL")
+    assert (await client.get("/api/activity/finished/count")).json() == {"total": 2}
+    assert (await client.get("/api/activity/finished/count", params={"q": "aapl"})).json() == {"total": 1}
 
 
 async def test_a_search_matching_nothing_is_an_empty_page(client):

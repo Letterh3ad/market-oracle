@@ -20,20 +20,23 @@ from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, a
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
-from oracle.services.research_service import check_as_of, research, research_progress, sweep_interrupted
+from oracle.services.research_service import (
+    check_as_of, research, research_progress, stale_research, sweep_interrupted,
+)
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
-__all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
-           "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+__all__ = ["FinishedPage", "Job", "JobRunner", "StaleQueued", "StaleResearch", "queue_stale_research",
+           "stale_research_jobs", "submit_analyse", "submit_prices", "submit_research", "submit_tick", "submit_fx",
+           "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
 RECENT = 50
 """Finished jobs kept in memory, so their results can still be shown."""
-PAGE = 20
+PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
 
@@ -105,21 +108,22 @@ class JobRunner:
             self._workers[kind] = asyncio.create_task(self._drain(kind))
         return job
 
-    def jobs(self) -> list[Job]:
-        """Running, then queued in order, then the last finished (earlier servers' too),
-        newest first."""
-        queued = self._queued()
-        return [*self._running.values(), *sorted(queued, key=lambda j: j.id), *self.finished_page(1).items]
+    def current(self) -> list[Job]:
+        """Running, then queued in order; finished jobs come a page at a time from `finished_page`."""
+        return [*self._running.values(), *sorted(self._queued(), key=lambda j: j.id)]
 
     def finished_page(self, page: int, search: str = "") -> FinishedPage:
         """One page of finished jobs (earlier servers' too), newest first; a page past the
         end is the last one."""
-        total = self._history.count_finished(search)
-        pages = max(1, -(-total // PAGE))
+        total = self.finished_count(search)
+        pages = max(1, -(-total // PAGE_SIZE))
         page = min(max(1, page), pages)
         here = {j.id: j for j in self._finished}
-        rows = self._history.finished(PAGE, (page - 1) * PAGE, search)
+        rows = self._history.finished(PAGE_SIZE, (page - 1) * PAGE_SIZE, search)
         return FinishedPage([here.get(r.id) or _from_row(r) for r in rows], page, pages, total)
+
+    def finished_count(self, search: str = "") -> int:
+        return self._history.count_finished(search)
 
     def get(self, job_id: int) -> Job | None:
         live = [*self._running.values(), *self._queued(), *self._finished]
@@ -248,6 +252,46 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date
         subject, label = listing, f"Research {listing}"
     return runner.submit("research", label, work, subject=subject,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
+
+
+@dataclass(frozen=True)
+class StaleResearch:
+    due: list[str]
+    """Every listing a tick would research now, in its order."""
+    waiting: list[str]
+    """Those already queued or running here."""
+
+    @property
+    def to_queue(self) -> list[str]:
+        return [s for s in self.due if s not in self.waiting]
+
+
+@dataclass(frozen=True)
+class StaleQueued:
+    jobs: list[Job]
+    waiting: list[str]
+    refused: list[tuple[str, str]]
+    """Listing and why it could not be queued."""
+
+
+def stale_research_jobs(ctx: AppContext, runner: JobRunner) -> StaleResearch:
+    """The listings due for research by the tick's rule, and which of them are already queued."""
+    due = stale_research(ctx)
+    active = {j.subject for j in runner.active("research")}
+    return StaleResearch(due, [s for s in due if s in active])
+
+
+def queue_stale_research(ctx: AppContext, runner: JobRunner) -> StaleQueued:
+    """One research job per due listing not already queued, back to back, with no time budget:
+    someone asked for them all."""
+    stale = stale_research_jobs(ctx, runner)
+    jobs, refused = [], []
+    for symbol in stale.to_queue:
+        try:
+            jobs.append(submit_research(ctx, runner, symbol))
+        except ServiceError as exc:
+            refused.append((symbol, str(exc)))
+    return StaleQueued(jobs, stale.waiting, refused)
 
 
 def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:

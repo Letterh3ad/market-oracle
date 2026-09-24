@@ -1493,3 +1493,20 @@ resultats and kessan in Japanese script) and is not a PDF takes the same 2 first
 without trimming.
 **Alternatives:** A dedicated investor-relations search in the stage (another ddgs call per
 run, and the seed already makes one); reading PDFs (out of scope for this ticket).
+
+## 2026-09-24 - Research stale listings from the Ledgers tab
+**Context:** The AI account skips listings with "no verdict yet" or a verdict too old, and the
+user wanted to act on that from the Ledgers tab rather than wait for a tick or open each company.
+**Decision:** `stale_research(ctx)` is the tick's due rule (missing, no valid verdict, too old,
+or behind a price move; same order), shared by `refresh_research` and a new "Research all
+stale (n)" button. The button queues one research job per due listing through
+`submit_research`, with no time budget, skipping listings already queued or running here; n
+counts only what it would queue. AI decisions carry a stored `needs_research` flag (migration
+m0031, older rows backfilled from their reason text) and the page shows a "Research" button
+beside such a line only while the listing is still stale, so a line from before its research
+offers none. No CLI command: the parity manifest maps CLI to GUI only, and `oracle tick`
+already researches stale listings.
+**Alternatives:** Matching the reason text in JS (breaks on rewording); computing the flag at
+read time from the current due list (would also flag buys behind a price move, which the
+reason does not say); queueing one batch job for all listings (one cancel for all, and a
+listing already queued by its own button would run twice).

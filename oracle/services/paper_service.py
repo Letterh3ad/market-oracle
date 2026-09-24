@@ -216,7 +216,7 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
             order = place_sell(ctx, d.symbol, None, account, source=account)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
-                                reports.get(d.symbol))])
+                                reports.get(d.symbol), d.needs_research)])
     return decisions
 
 
@@ -250,14 +250,15 @@ def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lea
             skips.append(Decision(symbol, Action.SKIP, None, GONE))
             continue
         if run is None:
-            skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it"))
+            skips.append(Decision(symbol, Action.SKIP, None, "no verdict yet: run research on it", needs_research=True))
             continue
         runs[symbol] = run.id
         if (v := run.report.verdict) is None:
             skips.append(Decision(symbol, Action.SKIP, None, f"no verdict: {run.report.no_verdict}"))
         elif (today - run.report.day).days > max_age:
             skips.append(Decision(symbol, Action.SKIP, None, f"the verdict is from {run.report.day.isoformat()}, older "
-                                                             f"than {max_age} days: run research on it again"))
+                                                             f"than {max_age} days: run research on it again",
+                                  needs_research=True))
         else:
             found[symbol] = Lean(symbol, run.report.day, v.label, v.confidence, "ai")
     return found, skips, runs

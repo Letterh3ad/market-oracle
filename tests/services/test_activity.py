@@ -90,19 +90,20 @@ async def test_progress_is_read_while_running(runner):
     assert job.progress() is None
 
 
-async def test_listing_puts_running_first_then_queued_in_order_then_finished_newest_first(runner, ctx):
+async def test_current_work_is_running_first_then_queued_in_order_and_finished_is_paged_apart(runner, ctx):
     gates = [Gate(n, []) for n in "abcd"]
     jobs = [runner.submit("research", f"Research {g.name}", g) for g in gates]
     gates[0].open.set()
     await runner.wait(jobs[0].id)
     await settle()
-    assert [j.label for j in runner.jobs()] == ["Research b", "Research c", "Research d", "Research a"]
+    assert [j.label for j in runner.current()] == ["Research b", "Research c", "Research d"]
+    assert [j.label for j in runner.finished_page(1).items] == ["Research a"]
 
 
 async def test_the_same_subject_already_waiting_is_not_queued_twice(runner):
     first = runner.submit("research", "Research A", Gate("a", []), subject="AAPL")
     again = runner.submit("research", "Research A", Gate("a2", []), subject="AAPL")
-    assert again is first and len(runner.jobs()) == 1
+    assert again is first and len(runner.current()) == 1
 
 
 async def test_cancelling_a_queued_job_means_it_never_runs(runner):
@@ -195,7 +196,7 @@ async def test_a_due_tick_runs_as_a_job_listed_in_activity(runner, ctx):
     ctx.clock.advance(31 * 60)
     run = await scheduler.check()
     assert run.trigger == "scheduled"
-    assert [(j.label, j.state) for j in runner.jobs()] == [("Tick (scheduled)", "done")]
+    assert [(j.label, j.state) for j in runner.finished_page(1).items] == [("Tick (scheduled)", "done")]
 
 
 async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gated_stages):
@@ -231,7 +232,7 @@ async def test_finished_jobs_survive_a_restart(ctx, runner):
     await runner.wait(job.id)
     await runner.stop()
     later = JobRunner(ctx)
-    [kept] = later.jobs()
+    [kept] = later.finished_page(1).items
     assert (kept.id, kept.label, kept.state, kept.link) == (job.id, "Research A", "done", "#company/A")
     assert later.get(job.id).finished_at == job.finished_at
     await later.stop()
@@ -249,7 +250,7 @@ async def test_a_starting_server_sweeps_jobs_a_stopped_server_left_queued_or_run
     queued = repo.add("research", "Research B", None, None, "queued", NOW, DEAD_PID)
     sweep_leftovers(ctx)
     runner = JobRunner(ctx)
-    states = {j.id: (j.state, j.error) for j in runner.jobs()}
+    states = {j.id: (j.state, j.error) for j in runner.finished_page(1).items}
     assert states[running] == ("interrupted", "interrupted: app closed")
     assert states[queued] == ("cancelled", "not run: app closed")
     await runner.stop()
@@ -279,37 +280,31 @@ async def test_a_job_running_when_the_server_stops_is_interrupted_not_cancelled(
     assert (waiting.state, waiting.error) == ("cancelled", "not run: app closed")
 
 
-def finish(ctx, n, kind="prices", label=None, state="done", error=None):
-    from datetime import timedelta
-
-    from oracle.store.job_history import JobHistoryRepo
-
-    repo = JobHistoryRepo(ctx.conn)
-    at = NOW + timedelta(minutes=n)
-    job_id = repo.add(kind, label or f"Job {n}", None, None, "queued", at, DEAD_PID)
-    repo.update(job_id, state, error, at, at)
-    return job_id
-
-
-async def test_activity_lists_only_the_first_page_of_finished(ctx, runner):
+async def test_current_work_leaves_finished_jobs_out(finish_job, runner):
     for n in range(25):
-        finish(ctx, n)
-    listed = runner.jobs()
-    assert len(listed) == 20 and listed[0].label == "Job 24"
+        finish_job(n)
+    runner.submit("research", "Research A", Gate("a", []))
+    assert [j.label for j in runner.current()] == ["Research A"]
 
 
-async def test_finished_pages_run_newest_first_with_totals(ctx, runner):
+async def test_the_finished_count_follows_the_search(finish_job, runner):
+    finish_job(1, label="Research MSFT")
+    finish_job(2, label="Research AAPL")
+    assert (runner.finished_count(), runner.finished_count("msft")) == (2, 1)
+
+
+async def test_finished_pages_run_newest_first_with_totals(finish_job, runner):
     for n in range(45):
-        finish(ctx, n)
+        finish_job(n)
     first, last = runner.finished_page(1), runner.finished_page(3)
     assert (first.page, first.pages, first.total) == (1, 3, 45)
     assert [j.label for j in first.items][:2] == ["Job 44", "Job 43"] and len(first.items) == 20
     assert [j.label for j in last.items] == [f"Job {n}" for n in range(4, -1, -1)]
 
 
-async def test_a_page_past_the_end_shows_the_last_page(ctx, runner):
+async def test_a_page_past_the_end_shows_the_last_page(finish_job, runner):
     for n in range(3):
-        finish(ctx, n)
+        finish_job(n)
     beyond = runner.finished_page(9)
     assert (beyond.page, beyond.pages, len(beyond.items)) == (1, 1, 3)
 
@@ -319,10 +314,10 @@ async def test_no_finished_jobs_is_one_empty_page(runner):
     assert (empty.items, empty.page, empty.pages, empty.total) == ([], 1, 1, 0)
 
 
-async def test_search_matches_label_kind_state_and_error_ignoring_case(ctx, runner):
-    finish(ctx, 1, "research", "Research MSFT")
-    finish(ctx, 2, "prices", "Update prices (watchlists)", "failed", "yahoo said no")
-    finish(ctx, 3, "tick", "Tick (manual)", "cancelled", "cancelled")
+async def test_search_matches_label_kind_state_and_error_ignoring_case(finish_job, runner):
+    finish_job(1, "research", "Research MSFT")
+    finish_job(2, "prices", "Update prices (watchlists)", "failed", "yahoo said no")
+    finish_job(3, "tick", "Tick (manual)", "cancelled", "cancelled")
     labels = lambda q: [j.label for j in runner.finished_page(1, q).items]
     assert labels("msft") == ["Research MSFT"]
     assert labels("TICK") == ["Tick (manual)"]
@@ -332,9 +327,9 @@ async def test_search_matches_label_kind_state_and_error_ignoring_case(ctx, runn
     assert runner.finished_page(1, "nothing like it").total == 0
 
 
-async def test_search_treats_like_wildcards_literally(ctx, runner):
-    finish(ctx, 1, label="Job 100%")
-    finish(ctx, 2, label="Job_2")
+async def test_search_treats_like_wildcards_literally(finish_job, runner):
+    finish_job(1, label="Job 100%")
+    finish_job(2, label="Job_2")
     assert [j.label for j in runner.finished_page(1, "%").items] == ["Job 100%"]
     assert [j.label for j in runner.finished_page(1, "_").items] == ["Job_2"]
 

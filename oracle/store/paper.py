@@ -127,9 +127,10 @@ class LoggedDecision:
     order_id: int | None
     report_id: int | None = None
     """The research run whose verdict the AI account acted on."""
+    needs_research: bool = False
 
 
-_DECISION = "account, day, symbol, action, cash, reason, order_id, report_id"
+_DECISION = "account, day, symbol, action, cash, reason, order_id, report_id, needs_research"
 
 
 class DecisionRepo:
@@ -139,9 +140,9 @@ class DecisionRepo:
     def log(self, rows: list[LoggedDecision]) -> None:
         with transaction(self._conn):
             self._conn.executemany(
-                f"INSERT INTO strategy_decisions ({_DECISION}) VALUES ({', '.join('?' * 8)})",
-                [(r.account, r.day.isoformat(), r.symbol, r.action, r.cash, r.reason, r.order_id, r.report_id)
-                 for r in rows],
+                f"INSERT INTO strategy_decisions ({_DECISION}) VALUES ({', '.join('?' * 9)})",
+                [(r.account, r.day.isoformat(), r.symbol, r.action, r.cash, r.reason, r.order_id, r.report_id,
+                  r.needs_research) for r in rows],
             )
 
     def recent(self, account: str, limit: int = 50) -> list[LoggedDecision]:
@@ -149,4 +150,4 @@ class DecisionRepo:
         rows = self._conn.execute(
             f"SELECT {_DECISION} FROM strategy_decisions WHERE account = ? ORDER BY id DESC LIMIT ?", (account, limit),
         )
-        return [LoggedDecision(r[0], date.fromisoformat(r[1]), r[2], Action(r[3]), *r[4:]) for r in rows]
+        return [LoggedDecision(r[0], date.fromisoformat(r[1]), r[2], Action(r[3]), *r[4:8], bool(r[8])) for r in rows]

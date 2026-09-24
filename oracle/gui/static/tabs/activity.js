@@ -32,7 +32,7 @@ function cancelButton(j, box) {
     } catch (err) {
       showError(`cancel: ${err.message}`);
     }
-    loadNow(box);
+    loadRunningAndQueued(box);
   } }, "Cancel");
   return button;
 }
@@ -55,7 +55,7 @@ function table(jobs, box) {
     el("tbody", null, ...jobs.map((j) => row(j, box))));
 }
 
-async function loadNow(box) {
+async function loadRunningAndQueued(box) {
   let jobs, elsewhere;
   try {
     ({ jobs, elsewhere } = await api("/api/activity"));
@@ -64,7 +64,7 @@ async function loadNow(box) {
     return;
   }
   if (!box.isConnected) return;
-  const active = [...jobs.filter((j) => j.state === "running" || j.state === "queued"), ...elsewhere.map((e) => ({
+  const active = [...jobs, ...elsewhere.map((e) => ({
     label: `${e.job} (pid ${e.pid} on ${e.host})`, state: "running elsewhere",
     error: "started outside this app window, e.g. from the command line; stop it there",
   }))];
@@ -91,6 +91,7 @@ function remember(open) {
 
 // The Finished section is built once; refreshes replace only its list and pager, so the
 // search box keeps its text and focus and the page the user is on stays put.
+// `q` is the search last sent: the poll never sends what is still being typed.
 function finishedSection() {
   const state = { page: 1, q: "", asked: 0 };
   const count = el("span", { class: "dim small" });
@@ -100,8 +101,10 @@ function finishedSection() {
   const search = el("input", { type: "search", placeholder: "Search by job, kind or outcome (e.g. failed, MSFT)",
     size: "40", oninput: () => {
       clearTimeout(typing);
-      state.page = 1;
-      typing = setTimeout(load, 250);
+      typing = setTimeout(() => {
+        state.q = search.value.trim();
+        go(1);
+      }, 250);
     } });
   const details = el("details", { ontoggle: () => { remember(details.open); if (details.open) load(); } },
     el("summary", null, el("h3", { style: "display: inline" }, "Finished "), count),
@@ -113,8 +116,18 @@ function finishedSection() {
     load();
   }
 
+  async function loadCount() {
+    const asked = state.asked;
+    let found;
+    try {
+      found = await api(`/api/activity/finished/count?q=${encodeURIComponent(state.q)}`);
+    } catch {
+      return; // the count is a courtesy; the next poll tries again
+    }
+    if (asked === state.asked) count.textContent = `(${found.total})`;
+  }
+
   async function load() {
-    state.q = search.value.trim();
     const asked = ++state.asked;
     let found;
     try {
@@ -137,7 +150,9 @@ function finishedSection() {
     ] : []));
   }
 
-  return { node: details, refresh: () => { if (details.open) load(); } };
+  // A later page is left alone: new jobs would shift its rows under the reader.
+  const refresh = () => (details.open && state.page === 1 ? load() : loadCount());
+  return { node: details, refresh };
 }
 
 // Refreshes every 2 seconds while the tab is on screen.
@@ -148,9 +163,10 @@ function render(pane) {
   pane.replaceChildren(el("h2", null, "Activity"),
     el("p", { class: "dim small" }, "Everything the app is working on: research runs one at a time, in the order asked."),
     el("h3", null, "Now and next"), box, finished.node);
-  const load = () => { loadNow(box); finished.refresh(); };
+  const load = () => { loadRunningAndQueued(box); finished.refresh(); };
   load();
   timer = setInterval(() => (box.isConnected ? load() : clearInterval(timer)), 2000);
 }
 
+export { finishedSection };
 export default { id: "activity", label: "Activity", render };
