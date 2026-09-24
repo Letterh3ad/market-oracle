@@ -46,10 +46,13 @@ def test_a_us_listing_seeds_no_local_query_and_without_the_web_no_press_release_
 
 def test_the_plan_keeps_every_seed_and_fills_up_to_the_cap_with_new_suggestions():
     seeds = seed_queries("Sony Group", "Japan", web=True)
-    planned = plan(seeds, ["sony SHARES", "", "x" * 150, "PlayStation 6 launch", "Sony tariffs", "Sony pictures"],
-                   "Japan")
-    assert len(planned) == MAX_PLANNED
-    assert planned == [*seeds, Search(NEWS, "PlayStation 6 launch"), Search(NEWS, "Sony tariffs")]
+    ideas = ["sony SHARES", "", "x" * 150, "PlayStation 6 launch", "Sony tariffs", "Sony pictures", "Sony chips",
+             "Sony music"]
+    planned = plan(seeds, ideas, "Japan")
+    assert len(planned) == MAX_PLANNED == 8
+    assert planned == [*seeds, *(Search(NEWS, q) for q in ideas[3:7])]
+    us = plan(seed_queries("Apple Inc.", "United States", web=True), [f"Apple idea {n}" for n in range(9)], None)
+    assert len(us) == MAX_PLANNED, "a US listing's 3 seeds take 5 suggestions"
 
 
 def test_a_suggestion_in_the_local_script_goes_to_the_local_edition_where_there_is_one():

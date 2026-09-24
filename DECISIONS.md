@@ -1510,3 +1510,42 @@ already researches stale listings.
 read time from the current due list (would also flag buys behind a price move, which the
 reason does not say); queueing one batch job for all listings (one cancel for all, and a
 listing already queued by its own button would run twice).
+
+## 2026-09-24 - Deep defaults: 16 steps, 16k context, 12 articles, 120-minute budget
+**Context:** Deep research ticket 04: every run reads, searches local and press sources and
+reads filings, so the depth numbers become settings with deep defaults.
+**Decision:** `[llm] max_steps` 8 to 16, `[llm] context` 8192 to 16384, new
+`[research] read_articles` 12 (1 to 30; replaces the `READ_ARTICLES` constant),
+`[ai_account] research_budget_min` 30 to 120. All are in the Settings form through the
+example file's hints. `MAX_PLANNED` 6 to 8 and `MAX_SUGGESTED` 4 to 5: the plan takes half the
+16 steps for every listing (US: 3 seeds + 5 suggestions; Japan: 4 + 4), leaving 8 for pages,
+filings and follow-ups.
+**Alternatives:** Keeping the plan at 6 (10 free steps the 4B model rarely uses; see the live
+run below); a plan of 12 (too few steps left for reading a page the model found).
+
+## 2026-09-24 - Tick time moves to 22:00 with the 120-minute budget
+**Context:** At 120 minutes, a tick at 22:30 could still be researching when Tokyo opens at
+01:00 UK time.
+**Decision:** The user agreed to schedule the tick at 22:00 once the budget is 120, so
+research ends by 00:00 to 00:30. `[schedule] time` keeps its code default "22:30"; the user's
+own `oracle.toml` sets the time. Their `oracle.toml` also sets `research_budget_min = 30`
+explicitly, which overrides the new default until they change it.
+**Alternatives:** Changing the code default to 22:00 (every install, not only this user's
+Tokyo concern).
+
+## 2026-09-24 - Timed live run at the deep defaults
+**Context:** The budget must cover ~25 to 30 watched listings over a night or two.
+**Decision:** Keep the defaults. One `oracle research MSFT` on a copy of the real DB, local
+Ollama `qwen3:4b-instruct-2507-q8_0` at 16384 context on an RTX 5060 Laptop (8GB): 135 s end to
+end. The GPU was otherwise idle (the live GUI was not researching then), so contention would
+add to this. Ollama loaded at context 16384 with 5.4GB for the model, 6.7GB used in all, no
+errors or fallbacks. Loop: 9 steps (the 8 planned searches, then the answer; no `read_page`),
+about 30 s. Reading: 12 picked (2 filings first, then 10 news), about 60 s: both filings read
+(the 10-K trimmed to 3,613 characters, an 8-K to 1,383), 3 news pages read, 5 Google News
+links not resolved (Fortune, pluang, IBD, Benzinga, Yahoo Finance: no search result on the
+outlet's site), 2 resolved but answered 403 (TheStreet, Seeking Alpha). 5 notes (one "not
+about the company"), about 3 s each; an unresolved link costs about 5 s of search. Roles and
+verdict about 40 s. At ~2.3 min a run, 120 minutes covers ~50 listings; even at twice that
+(all 12 readable, GPU shared with the GUI) it covers ~25 in one night.
+**Alternatives:** Fewer articles or steps (not needed at these timings); a 32k context (does
+not fit 8GB).

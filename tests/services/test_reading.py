@@ -1,5 +1,6 @@
 """The reading stage: after the loop, the run reads the articles it was shown and notes facts."""
 
+from dataclasses import replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -41,14 +42,16 @@ def fetched(pages) -> list[str]:
     return [str(r.url) for r in pages.requests]
 
 
+def reading(ctx, n: int) -> None:
+    ctx.config = replace(ctx.config, research=replace(ctx.config.research, read_articles=n))
+
+
 def by_id(run, article_id: int) -> Evidence:
     return next(e for e in run.evidence if e.id == article_id)
 
 
-async def test_articles_are_read_newest_first_one_per_outlet_before_repeats(ctx, news, pages, monkeypatch):
-    import oracle.services.research_service as service
-
-    monkeypatch.setattr(service, "READ_ARTICLES", 3)
+async def test_articles_are_read_newest_first_one_per_outlet_before_repeats(ctx, news, pages):
+    reading(ctx, 3)
     news.results["Apple"] = [story(1, "Reuters", "2026-09-20"), story(2, "Reuters", "2026-09-19"),
                              story(3, "BBC", "2026-09-18"), story(4, "FT", "2026-09-17")]
     for url, *_ in news.results["Apple"]:
@@ -268,11 +271,8 @@ def noted_texts(model) -> list[str]:
     return [c[0][1]["content"] for c in note_calls(model)]
 
 
-async def test_a_us_listings_filings_are_read_first_trimmed_to_what_bears_on_the_price(ctx, news, pages, sec,
-                                                                                         monkeypatch):
-    import oracle.services.research_service as service
-
-    monkeypatch.setattr(service, "READ_ARTICLES", 3)
+async def test_a_us_listings_filings_are_read_first_trimmed_to_what_bears_on_the_price(ctx, news, pages, sec):
+    reading(ctx, 3)
     with_contact(ctx)
     sec_documents(sec)
     news.results["Apple"] = [story(1, "Reuters", "2026-09-20"), story(2, "BBC", "2026-09-19")]
@@ -344,11 +344,8 @@ async def test_a_filing_with_no_headings_is_read_from_its_start_and_sec_trouble_
     assert run.status == "done"
 
 
-async def test_a_listing_abroad_reads_a_results_page_its_web_search_found_before_news(ctx, news, pages, searcher,
-                                                                                        monkeypatch):
-    import oracle.services.research_service as service
-
-    monkeypatch.setattr(service, "READ_ARTICLES", 2)
+async def test_a_listing_abroad_reads_a_results_page_its_web_search_found_before_news(ctx, news, pages, searcher):
+    reading(ctx, 2)
     news.results["Sony"] = [story(1, "Reuters", "2026-09-20"), story(2, "BBC", "2026-09-19")]
     searcher.results["Sony results"] = [
         WebResult("https://www.sony.com/en/ir/library/presen/er/pdf/26q1_sonypre.pdf", "Q1 FY2026 Results (PDF)", ""),

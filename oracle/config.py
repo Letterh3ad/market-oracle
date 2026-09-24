@@ -131,7 +131,7 @@ class AiAccountConfig:
     """An older verdict is never traded, and a tick researches the listing again."""
     move_threshold: float = 0.05
     """A tick researches a listing again once its price moved this share since the report."""
-    research_budget_min: int = 30
+    research_budget_min: int = 120
     """How long a tick may spend starting research runs; the rest waits for the next tick."""
 
 
@@ -159,11 +159,11 @@ class LlmConfig:
     model: str = "qwen3:4b-instruct-2507-q8_0"
     """Measured in the stalker: fits an 8GB GPU with room for Laya."""
     base_url: str = "http://localhost:11434"
-    max_steps: int = 8
+    max_steps: int = 16
     """Tool calls a run may make before it must answer."""
     timeout_s: float = 180.0
     """Per reply; a cold model load on 8GB is slow."""
-    context: int = 8192
+    context: int = 16384
     """Tokens of context asked of the model; Ollama's own default is too small for a run."""
     claude_model: str = "claude-opus-5"
     """The model when backend is "claude"; its key comes from ANTHROPIC_API_KEY, never this file."""
@@ -173,6 +173,11 @@ class LlmConfig:
 class ResearchConfig:
     contact: str | None = None
     """Name and email for SEC's User-Agent rule; sent to sec.gov only. Unset, EDGAR is skipped."""
+    read_articles: int = 12
+    """Articles a run reads and notes after its searches, beyond those already noted."""
+
+
+READ_ARTICLES_RANGE = (1, 30)
 
 
 # Shares of the account: above 0 and below 1 (a 100% cash floor would forbid trading).
@@ -581,7 +586,11 @@ def _research(raw: object) -> ResearchConfig:
     contact = raw.get("contact")
     if contact is not None and not (isinstance(contact, str) and re.search(r"\S+@\S+\.\S+", contact)):
         raise ConfigError(f'research.contact must be a name and email like "Jo Bloggs jo@example.com", got {contact!r}')
-    return ResearchConfig(contact=contact.strip() if contact else None)
+    read = raw.get("read_articles", ResearchConfig.read_articles)
+    if not _whole(read, *READ_ARTICLES_RANGE):
+        raise ConfigError("research.read_articles must be a whole number from {} to {}, got {!r}".format(
+            *READ_ARTICLES_RANGE, read))
+    return ResearchConfig(contact=contact.strip() if contact else None, read_articles=read)
 
 
 def _keys(raw: object) -> Keys:

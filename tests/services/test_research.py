@@ -446,7 +446,8 @@ async def test_a_run_starts_from_seed_queries_and_the_models_suggestions(ctx):
                                      "Apple tariffs", "Apple CEO John Ternus", "Apple services growth", "Apple AI"]}
     run = await research(ctx, "AAPL", model)
     assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations",
-                           "Apple iPhone 18 demand", "Apple tariffs", "Apple CEO John Ternus")
+                           "Apple iPhone 18 demand", "Apple tariffs", "Apple CEO John Ternus", "Apple services growth",
+                           "Apple AI")
     task = model.calls[1][0][1]["content"]
     assert "Start with these searches" in task and "- news_search: Apple CEO John Ternus" in task
     assert "- web_search: Apple press release investor relations" in task
@@ -721,7 +722,7 @@ def test_the_verdicts_budget_follows_the_configured_model(ctx):
 
     from oracle.services.research_service import CLAUDE_CONTEXT, context_tokens
 
-    assert context_tokens(ctx) == 8192
+    assert context_tokens(ctx) == 16384
     ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, backend="claude"))
     assert context_tokens(ctx) == CLAUDE_CONTEXT
 

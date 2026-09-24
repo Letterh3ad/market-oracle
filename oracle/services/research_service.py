@@ -57,8 +57,6 @@ UNUSABLE = "the model's answers were unusable"
 LEASE_S = 3600.0
 # Conservative for every Claude model the backend can name.
 CLAUDE_CONTEXT = 200_000
-# Articles read and noted per run, beyond those already noted.
-READ_ARTICLES = 12
 
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
@@ -110,7 +108,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         reader = Reader(ctx.conn, ctx.clock, client, searcher, SourceGate(ctx.conn, ctx.clock, ctx.config.sources),
                         contact, model, f"{profile.name} ({profile.symbol})", context_tokens(ctx))
         filings = await Filings(client, ctx.conn, ctx.clock, shelf, listing, contact).to_read(day) if contact else {}
-        await reader.read(repo.get(run_id).evidence, READ_ARTICLES, as_of,
+        await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
                           lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
         repo.set_stage(run_id, None)
     findings, cited = keep_citations(outcome.findings, shown)

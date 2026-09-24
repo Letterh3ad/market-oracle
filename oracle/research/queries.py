@@ -9,11 +9,11 @@ from dataclasses import dataclass
 
 from oracle.research.llm import ChatModel
 
-MAX_SUGGESTED = 4
+MAX_SUGGESTED = 5
 MAX_QUERY = 100
 # Seeds are always kept; suggestions fill the rest. Each planned search costs a loop step, so
-# the plan stays at what an English-speaking listing had before local and press seeds.
-MAX_PLANNED = 6
+# the plan takes half of the default 16, leaving the rest for pages, filings and follow-ups.
+MAX_PLANNED = 8
 
 NEWS, LOCAL_NEWS, WEB = "news_search", "local_news_search", "web_search"
 

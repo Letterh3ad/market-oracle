@@ -69,7 +69,7 @@ async def test_the_strategy_rules_shown_are_the_configured_ones(ctx, loaded):
 async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdicts(ctx, priced):
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
     assert (await priced.get("/api/ledgers")).json()["ai_account"] == {
-        "enabled": False, "max_verdict_age_days": 7, "move_threshold": 0.05, "research_budget_min": 30}
+        "enabled": False, "max_verdict_age_days": 7, "move_threshold": 0.05, "research_budget_min": 120}
     off = (await priced.post("/api/ledgers/ai/step")).json()
     assert off["decisions"] == [] and off["off"].startswith("the AI account is off")
     assert (await priced.put("/api/ledgers/ai", json={"enabled": True})).json() == {"enabled": True}
