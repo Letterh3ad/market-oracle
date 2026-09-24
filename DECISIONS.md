@@ -1443,3 +1443,45 @@ and its flags `Pending` on ticket 02.
 **Alternatives:** Full history per day (quadratic: minutes for a few years); the IBKR fee table
 and FX spread the paper accounts use (the spec asks for commission and slippage only, default
 free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+## 2026-09-24 - Discovery, related source: news first, then universe peers, bounded per run
+**Context:** Discovery ticket 01: find companies related to the watched ones and add them to a
+`discovered` watchlist unattended, with a small local model and shared rate gates.
+**Decision:** Each run takes watched listings (outside `discovered`) as seeds in turn, at most
+3 a run, starting after the last run's seed. Per seed: one Google News and one GDELT search,
+then one bounded-JSON model call over up to 20 headlines naming companies with a relation and
+the headline numbers; then the universe peers (same industry group, else sector, largest
+first, up to 10). News candidates come first, as they are what is happening now. A name is
+kept only if a headline it cites holds it (legal forms aside), so invented names add nothing.
+Names resolve in code: a universe search for the name without legal forms, equities only,
+exact name on any of the company's listings first, else one starting with it, largest first;
+the listing added is the company's primary line (home or most liquid), else its best live
+sibling. Then prices are fetched (the configured sources, Yahoo first) and must be recent. A
+run price-checks at most 6 candidates. A failed search or model call is noted and the run goes
+on. Runs are single-flight across processes.
+**Alternatives:** Asking the model for tickers (small models invent them); peers only (never
+finds suppliers or customers); searching every watched company each run (slow through the
+gates, and one failing source would stall the lot).
+
+## 2026-09-24 - Discovery: Tesla is never added whatever the setting says
+**Context:** The user's rule is never to watch or trade any Tesla listing. `[discovery] never`
+defaults to ["Tesla"], but a settings edit could empty it.
+**Decision:** "Tesla" is always on the never list in code, beside whatever `never` holds.
+Names match as whole words, case and punctuation aside, against the model's name, the
+company's name and every one of its listings' names.
+**Alternatives:** Trusting the setting alone (one edit away from breaking the rule); matching
+substrings (would refuse unrelated names containing the letters).
+
+## 2026-09-24 - Discovery: removals remembered by symbol and company; "Discover now" ignores enabled
+**Context:** A company the user removes must never come back, and the Watchlist tab can remove
+items from the `discovered` list as well as the Discovery section can.
+**Decision:** Any removal from the `discovered` list (Discovery's Remove, the Watchlist row's
+Remove, `oracle watch remove --list discovered`) is recorded in `discovery_removed` with the
+symbol and company key; a candidate matching either, or any listing symbol of its company, is
+skipped. "Move to my watchlist" puts it on `main` and takes it off `discovered` without
+counting as a removal; its reasons are kept. `[discovery] enabled` governs automatic runs
+(the tick stage, ticket 03); a button press or `oracle discover` always runs. The discovered
+list counts as watched everywhere today (prices, analysis, research, and both paper
+accounts) until ticket 03 decides what the strategy account trades. Migration m0033 (m0032 is
+on the deep-research branch).
+**Alternatives:** Flagging removals on the provenance row (misses listings added by hand);
+refusing manual runs when disabled (a button that does nothing is confusing).

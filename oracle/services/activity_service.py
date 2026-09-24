@@ -17,6 +17,7 @@ from oracle.jobs import pid_alive
 from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
+from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
@@ -30,7 +31,7 @@ from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "StaleQueued", "StaleResearch", "queue_stale_research",
            "stale_research_jobs", "submit_analyse", "submit_prices", "submit_research", "submit_tick", "submit_fx",
-           "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+           "submit_discover", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -353,3 +354,8 @@ def submit_fx(runner: JobRunner, sources: Sequence[str] = ()) -> Job:
     check_sources(names)
     return runner.submit("fx", "Update FX" + (f" ({', '.join(names)})" if names else ""),
                          lambda c: update_fx(c, names or None), subject=",".join(names) or "*")
+
+
+def submit_discover(runner: JobRunner) -> Job:
+    """One discovery run: companies related to the watched ones, onto the discovered list."""
+    return runner.submit("discover", "Discover companies", discover, subject="discover", link="#watchlist")

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_fx, submit_merges, submit_prices, submit_research, submit_tick, submit_universe_refresh,
+    JobRunner, submit_analyse, submit_discover, submit_fx, submit_merges, submit_prices, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 
@@ -63,3 +63,9 @@ async def fx(source: list[str] = Query(default=[]), runner: JobRunner = Depends(
     """New exchange rates for every currency stored prices use; `source` (repeatable) picks
     which sources to ask, else the configured order."""
     return shapes.job(submit_fx(runner, source))
+
+
+@router.post("/discover", status_code=202)
+async def discover(runner: JobRunner = Depends(get_runner)) -> dict:
+    """Companies related to the watched ones, checked and added to the discovered list."""
+    return shapes.job(submit_discover(runner))

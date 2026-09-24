@@ -140,6 +140,23 @@ RESEARCH_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
+class DiscoveryConfig:
+    """Finding companies beyond the watchlists and adding them to the `discovered` list."""
+
+    enabled: bool = True
+    per_tick: int = 1
+    """Companies one run may add."""
+    max_total: int = 10
+    """The discovered list never holds more."""
+    never: tuple[str, ...] = ("Tesla",)
+    """Company names never added, matched as whole words on every listing's name."""
+
+
+PER_TICK_RANGE = (1, 20)
+MAX_TOTAL_RANGE = (1, 500)
+
+
+@dataclass(frozen=True)
 class UniverseConfig:
     suffix_blind_grouping: bool = False
     """Join companies whose names differ only in legal forms (plc, Inc., AG); applied at the
@@ -213,6 +230,7 @@ class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     automation: AutomationConfig = field(default_factory=AutomationConfig)
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
+    discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
@@ -388,6 +406,9 @@ def _apply(raw: dict) -> Config:
         if name == "ai_account":
             values[name] = _ai_account(value)
             continue
+        if name == "discovery":
+            values[name] = _discovery(value)
+            continue
         if name == "llm":
             values[name] = _llm(value)
             continue
@@ -508,6 +529,25 @@ def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
         if not ok:
             raise ConfigError(f"ai_account.{key} must be {wanted}, got {getattr(ai, key)!r}")
     return replace(ai, move_threshold=float(ai.move_threshold))
+
+
+def _discovery(raw: object) -> DiscoveryConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("discovery must be a [discovery] table")
+    _reject_unknown(raw, DiscoveryConfig, "[discovery]")
+    d = replace(DiscoveryConfig(), **raw)
+    never = d.never
+    checks = {
+        "enabled": (isinstance(d.enabled, bool), "true or false"),
+        "per_tick": (_whole(d.per_tick, *PER_TICK_RANGE), "a whole number from {} to {}".format(*PER_TICK_RANGE)),
+        "max_total": (_whole(d.max_total, *MAX_TOTAL_RANGE), "a whole number from {} to {}".format(*MAX_TOTAL_RANGE)),
+        "never": (isinstance(never, (list, tuple)) and all(isinstance(n, str) and n.strip() for n in never),
+                  'a list of company names like ["Tesla"]'),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"discovery.{key} must be {wanted}, got {getattr(d, key)!r}")
+    return replace(d, never=tuple(n.strip() for n in never))
 
 
 def _schedule(raw: object) -> ScheduleConfig:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import date
 
 from oracle.research.tools import ToolError
@@ -12,12 +11,12 @@ from oracle.services.errors import ServiceError
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history
 from oracle.services.research_tools.shelf import symbol
+from oracle.universe.listings import is_receipt
 
 # Trading days of history behind the "3 months" move, plus the last close.
 RECENT_BARS = 64
 # Enough to see who competes without crowding out the evidence.
 MAX_RELATED = 10
-_RECEIPT = re.compile(r"\b[AG]DRS?\b", re.IGNORECASE)
 
 
 async def market_summary(ctx: AppContext, listing: str, as_of: date | None = None) -> str:
@@ -103,7 +102,7 @@ class RelatedCompanies:
         head = f"{choice.company.name} ({choice.company.symbol}) is related to these by {choice.basis}:"
         # Depositary receipt lines carry their own ISINs, so they repeat a company already
         # listed (Samsung's GDRs); they would crowd out real peers.
-        companies = [r for r in choice.rows if not _RECEIPT.search(r.name)]
+        companies = [r for r in choice.rows if not is_receipt(r.name)]
         rows = [f"{r.symbol}: {r.name}" + (f" ({r.market_cap})" if r.market_cap else "")
                 for r in companies[:MAX_RELATED]]
         return "\n".join([head, *rows])

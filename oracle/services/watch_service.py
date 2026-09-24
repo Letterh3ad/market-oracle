@@ -11,7 +11,8 @@ from oracle.services.errors import InvalidSwap, InvalidWatchlistName, UnknownWat
 from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import Sibling, live_siblings, resolve_symbol
-from oracle.store.db import to_utc_iso
+from oracle.store.db import to_utc_iso, transaction
+from oracle.store.discoveries import DISCOVERED_LIST, DiscoveryRepo
 from oracle.store.health import HealthRepo
 from oracle.store.paper import PaperRepo
 from oracle.store.universe import UniverseRepo
@@ -101,8 +102,16 @@ def create_watchlist(ctx: AppContext, watchlist: str) -> tuple[str, bool]:
 
 
 def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool:
-    """False when it was not on the list. Works on symbols gone from the universe."""
-    return WatchlistRepo(ctx.conn).remove(_name(watchlist), symbol.strip())
+    """False when it was not on the list. Works on symbols gone from the universe. A company
+    taken off the discovered list is remembered, so discovery never adds it again."""
+    name, symbol = _name(watchlist), symbol.strip()
+    with transaction(ctx.conn):
+        removed = WatchlistRepo(ctx.conn).remove(name, symbol)
+        if removed and name.casefold() == DISCOVERED_LIST:
+            found = UniverseRepo(ctx.conn).resolve(symbol)
+            DiscoveryRepo(ctx.conn).remember_removed(found.symbol if found else symbol, found and found.company_key,
+                                                     found and found.name, to_utc_iso(ctx.clock.utcnow()))
+    return removed
 
 
 def show_watchlist(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[WatchLine]:
