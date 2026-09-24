@@ -2220,3 +2220,36 @@ The pacer polls every 10 s in the GUI server, stores each poll's time and wait r
 **Context:** Replay study 03: score each replay verdict against what the price did next, cheaply enough for the status poll.
 **Decision:** A forward return runs from the listing's first close strictly after the as-of day (a replay reads that day's news to 24:00 UTC, after most closes) to its last close on or before the first weekday on or after the same day 1 or 3 calendar months later, in the listing's currency, using adjusted closes only when both ends have one (else plain closes). Either close more than 7 days from the day it stands for is a gap, so unpriced (exactly 7 is a price); so is a zero or missing close between them, and any day-over-day close move outside 0.5x to 2x, taken for a split the stored bars were not re-based for (real days reach about 0.77). A horizon is pending while its end is today or later; unpriced once it has passed without covering bars. The basket is the equal-weight mean of every study listing's return from the same day over the same horizon, with its count; under half the study's listings priced, it and the relative results are unpriced. A verdict's relative return is its return minus the basket's. Hits are buys that rose and sells that fell (flat is a miss); holds count in the mix and mean returns but call no direction. Every hit rate carries a Wilson 95% interval from 10 calls (None below), and each horizon has base rates over the same (listing, day) windows as the scored buys and sells (the queue runs oldest first, so all windows would compare different months): the share that rose and that beat the basket, plus the hit rate that call mix would expect by chance (buy share times the rise rate plus sell share times its complement). Confidence bands are under 0.60, 0.60 to 0.80 and 0.80 and up, over buys and sells only, with returns as called (a sell's sign flipped). Scoring reads stored bars and verdicts only (the verdict via `json_extract` on the report body) and is recomputed on every call, about 60 ms for a full 300-cell study, with no cache to invalidate. Fetching is `update_study_prices`: `oracle replay report` (before it scores), the card's Update prices (a `replay_prices` job) and every tick's prices stage (so the interim stays current unattended; any error there, even an unexpected one, only adds a note to the stage summary). It refetches, over one client and skipping dead listings, the whole study window (the first as-of day less a week, via `update_listings(since=)`) of every study listing, watched or not, with a window closed on or after its last whole-window fetch day (kept per study in meta), so each window reads closes on one split and dividend basis: incremental updates can add bars on a newer basis, and a 3:2 split passes the ratio guard. A suspect split or missing bars therefore heal on the next check; once a whole fetch after the window's close still cannot price it, it stays unpriced without refetching daily. Rather than hide failures behind an "updated" time, the score carries `prices_checked_at` (every check, fetches or not) and `price_failures` (the listings the last check could not fetch). The status JSON carries a small `score` block: verdicts, no-verdict count, buy share, mean confidence, `prices_checked_at`, `price_failures`, a note pointing at the limits, and per horizon scored, pending, unpriced, hit rates with intervals, base rates, expected hit rates and per verdict n, raw mean return and mean as called. The stated limits are one constant printed with every report.
 **Alternatives:** The as-of day's own close (look-ahead for Asian listings and after-hours news). Trading-day offsets (21 and 63 bars; calendar months match how the study picks its dates). A cached score keyed on cells and bars (invalidation for 60 ms saved). Incremental fetches (mix split bases across fetches). Pricing study listings in the pacer (it is being reworked; the tick already runs unattended daily). A benchmark index for the basket (another currency and universe; the study's own listings are what the verdicts chose among). Counting holds as hits when the move is small (needs an arbitrary threshold).
+
+## 2026-09-24 - A name matched by its start must fit the question; one GDELT search per answer
+**Context:** Discovery 03. "Olix" (a UK chip startup) matched OliX Pharmaceuticals (Korea) by the
+start of its name, and 3 of an answer's 4 GDELT searches failed on 429 and the open circuit. Gate
+round 1: judging the sector by headline words refused many true matches ("Micron stock rises after
+bank upgrade", "Toyota picks Rockwell for car plant automation"), and any nationality word was
+taken as a home ("Micron wins UK subsidy").
+**Decision:** `candidate_screen` records how a name matched. Exact names and symbols are kept as
+they are; a match by the start of the name (one company, or the clearly biggest) goes through
+`business_fit`, given the question (or theme, or mover search) and the items citing the name.
+Home: a nationality counts only when it qualifies the name itself ("German startup Olix", "UK-based
+Olix", "Europe's Olix", "Olix, the German ..."), with only describing words between; bare "UK" and
+"US" never count. A home that does not hold the company's country refuses the match, except for a
+US line on an OTC venue or carrying a foreign legal form (the universe often calls those US).
+Sector: only the question's own words count, never the headlines' (they name partners' and
+customers' trades); a watched company's related news asks nothing, so it gets no sector check.
+Words of the universe's classifications give sectors (plurals folded, aliases: chip, chipmaker,
+drug, defence, "semiconducter"); words news uses for anything ("financial", "capital", "energy",
+"it") are left out. A sector the question does not ask about never refuses alone: it also takes
+an industry word in the rest of the listing's name that the question and news never use
+("Pharmaceuticals" against chips, or a trade the classifications do not spell: medical,
+therapeutics, furniture; "Technology", "Electronic" and "Media" say nothing). Size is no sign:
+small caps serve the end markets questions name (car battery makers, bank payments). Reason: "a
+different business: OliX Pharmaceuticals,Inc is in Pharmaceuticals, Biotechnology & Life Sciences,
+but the question is about "semiconducter"". After a comma, a home counts only past a determiner
+("Micron, Korean rival SK Hynix" is another company's home).
+Refused names show under "left off" (GUI, `oracle discover show`) and in a run's skipped list;
+links go through the same check. The chat plan searches GDELT for its first query only; every
+query goes to Google News and the web.
+**Alternatives:** Headline words as a sector signal (refused cross-industry partners, worst in
+related discovery); the sector alone (the universe's sectors are sometimes wrong: Rheinmetall as
+Consumer Discretionary, Arista as Financials); a model call per fuzzy match (slow on a 4B model);
+moving the extra GDELT searches to Google News (each query is there already).
