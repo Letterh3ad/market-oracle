@@ -60,6 +60,12 @@ Called over HTTP, not redistributed.
 |---|---|---|---|
 | Research roles: fundamental, technical and news analysts, a bull/bear debate, a risk check | TradingAgents (TauricResearch) | Apache-2.0 | `oracle/research/roles.py`; structure only, prompts written fresh, no text copied |
 
+## Test fixtures
+
+| File | From | License | Where |
+|---|---|---|---|
+| Hand-trimmed 10-Q, 10-K and 8-K main documents | SEC EDGAR filings (Apple Inc.), prose cut and edited | Public filings with the SEC; no copyright claimed on the trimmed structure | `tests/fixtures/edgar/` |
+
 ## Dev dependencies
 
 | Package | License |

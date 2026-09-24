@@ -14,8 +14,8 @@ class ScriptedModel:
         self.suggestions: object = {"queries": []}
         """The answer to the query-suggestion call, which comes before the loop's steps."""
         self.roles: dict[str, object] = {}
-        """Role name -> its answer (an exception is raised), for the report calls after the loop; others
-        answer `blank`."""
+        """Role name -> its answer (an exception is raised; a callable is called with the messages), for the
+        calls after the loop; others answer `blank`."""
         self.calls: list[tuple[list[dict], dict]] = []
         self.fell_back_to: set[str] = set()
         self.falls_back_to: str | None = None
@@ -29,6 +29,8 @@ class ScriptedModel:
             return self.suggestions
         if role := _role(messages):
             answer = self.roles[role] if role in self.roles else blank(schema)
+            if callable(answer):
+                answer = answer(messages)
             if isinstance(answer, BaseException):
                 raise answer
             return answer

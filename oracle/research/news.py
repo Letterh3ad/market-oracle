@@ -9,9 +9,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
+from oracle.research.web import domain
+
 GOOGLE_NEWS = "https://news.google.com/rss/search"
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_RECORDS = 50
+ENGLISH_EDITION = ("en-GB", "GB", "GB:en")
 
 
 class FeedUnreadable(ValueError):
@@ -29,6 +32,8 @@ class Article:
     """A search snippet, shown with the article but not stored."""
     body: str | None = field(default=None, compare=False)
     """Stored text, for evidence written by Market Oracle itself."""
+    site: str | None = field(default=None, compare=False)
+    """The outlet's own domain, where the feed names it beside a redirect link."""
 
 
 def end_of(day: date) -> datetime:
@@ -36,10 +41,13 @@ def end_of(day: date) -> datetime:
     return datetime.combine(day + timedelta(days=1), datetime.min.time(), timezone.utc)
 
 
-def google_news_params(query: str, as_of: date | None = None) -> dict:
+def google_news_params(query: str, as_of: date | None = None,
+                       edition: tuple[str, str, str] = ENGLISH_EDITION) -> dict:
+    """`edition` is Google's (hl, gl, ceid): the language and country searched."""
     # Google's `before:` narrows the search; results are still filtered on their dates.
     q = f"{query} before:{(as_of + timedelta(days=1)).isoformat()}" if as_of else query
-    return {"q": q, "hl": "en-GB", "gl": "GB", "ceid": "GB:en"}
+    hl, gl, ceid = edition
+    return {"q": q, "hl": hl, "gl": gl, "ceid": ceid}
 
 
 def gdelt_params(query: str, as_of: date | None = None) -> dict:
@@ -88,7 +96,9 @@ def parse_google_news(xml: str) -> list[Article]:
         outlet = (item.findtext("source") or "").strip() or None
         if outlet and title.endswith(f" - {outlet}"):
             title = title[: -len(outlet) - 3].rstrip()
-        out.append(Article(url, title, outlet, _rfc2822(item.findtext("pubDate"))))
+        source = item.find("source")
+        site = domain(source.get("url", "")) if source is not None else ""
+        out.append(Article(url, title, outlet, _rfc2822(item.findtext("pubDate")), site=site or None))
     return out
 
 

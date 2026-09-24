@@ -6,15 +6,17 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from datetime import date, datetime
-from urllib.parse import urlsplit
 
 import httpx
 
 from oracle.clock import Clock
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
+from oracle.research.budget import cut
 from oracle.research.news import Article, end_of
 from oracle.research.tools import ToolError
+from oracle.research.trace import NOT_ABOUT, Evidence
+from oracle.research.web import domain
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
 
@@ -22,6 +24,10 @@ from oracle.store.db import to_utc_iso
 MAX_ARTICLES = 8
 MAX_TITLE = 140
 MAX_SNIPPET = 100
+
+
+class Unavailable(ToolError):
+    """A passing failure (the network, a rate limit, an open breaker): worth trying again later."""
 
 
 class Shelf:
@@ -45,6 +51,13 @@ class Shelf:
             return f"No articles found for {query!r}."
         return "\n".join(_line(i, a) for i, a in zip(self.keep(newest, source, query), newest))
 
+    def keep_text(self, article_id: int, url: str, text: str) -> None:
+        """What reading an article gave, so no later reading fetches it again."""
+        self._articles.save_text(article_id, url, text, to_utc_iso(self._clock.utcnow()))
+
+    def keep_unreadable(self, article_id: int, why: str) -> None:
+        self._articles.save_read_failure(article_id, why, False, to_utc_iso(self._clock.utcnow()))
+
     def keep(self, articles: list[Article], source: str, query: str | None = None) -> list[int]:
         """Store and mark as shown to the run; the ids, in order."""
         ids = self._articles.save(articles, source, to_utc_iso(self._clock.utcnow()), query)
@@ -58,18 +71,17 @@ def evidence_line(article_id: int, published: datetime | None, outlet: str | Non
     return f"[a{article_id}] {day} {outlet or 'unknown outlet'}: {cut(title, MAX_TITLE)}"
 
 
+def evidence_entry(e: Evidence) -> str:
+    """An evidence line with the facts read from the article under it, each citing it."""
+    line = evidence_line(e.id, e.published, e.outlet, e.title)
+    if e.read == NOT_ABOUT:
+        return f"{line} (read: {NOT_ABOUT})"
+    return line + "".join(f"\n  - {f} [a{e.id}]" for f in e.facts)
+
+
 def _line(article_id: int, a: Article) -> str:
     line = evidence_line(article_id, a.published, a.outlet, a.title)
     return f"{line} | {cut(a.summary, MAX_SNIPPET)}" if a.summary else line
-
-
-def cut(text: str, limit: int) -> str:
-    return text if len(text) <= limit else text[: limit - 1] + "…"
-
-
-def domain(url: str) -> str:
-    host = urlsplit(url).hostname or ""
-    return host[4:] if host.startswith("www.") else host
 
 
 def symbol(input: str, default: str) -> str:
@@ -86,13 +98,17 @@ def query(input: str) -> str:
 
 async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *, params: dict | None = None,
                 headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = True,
-                accept: tuple[int, ...] = (200,)) -> httpx.Response:
+                accept: tuple[int, ...] = (200,), count_403: bool = True) -> httpx.Response:
     """A GET through the gate whose failures read as tool errors the model can act on."""
     try:
         resp = await client.get(source, url, params=params, headers=headers, max_bytes=max_bytes,
-                                follow_redirects=follow_redirects)
+                                follow_redirects=follow_redirects, count_403=count_403)
     except (CircuitOpen, RequestFailed) as exc:
-        raise ToolError(f"{label} unavailable ({exc}); try another tool") from exc
+        raise Unavailable(f"{label} unavailable ({exc}); try another tool") from exc
+    # An address httpx cannot encode (an IDNA label, a control character) or a body it cannot
+    # decode: the same next time, so not passing.
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError) as exc:
+        raise ToolError(f"{label} could not be read ({type(exc).__name__}: {exc})") from exc
     if resp.status_code not in accept:
         raise ToolError(f"{label} answered HTTP {resp.status_code}")
     return resp

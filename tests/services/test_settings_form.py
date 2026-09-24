@@ -36,7 +36,7 @@ def test_a_change_is_saved_keeping_comments_and_live_keys_apply_at_once(ctx):
     assert set_setting(ctx, "schedule", "time", "21:15")["value"] == "21:15"
     assert ctx.config.schedule.time == "21:15"
     set_setting(ctx, "llm", "max_steps", 12)
-    assert ctx.config.llm.max_steps == 8, "restart keys wait for Restart"
+    assert ctx.config.llm.max_steps == 16, "restart keys wait for Restart"
     set_setting(ctx, "sources.web", "max_retries", 2)
     set_setting(ctx, "", "base_currency", "USD")
     text = path.read_text(encoding="utf-8")

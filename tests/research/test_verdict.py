@@ -61,6 +61,22 @@ def test_observations_behind_cited_evidence_come_before_the_rest():
     assert f.unread == ("1 step observation", "1 uncited item")
 
 
+def test_evidence_with_facts_is_left_out_after_headlines_and_step_observations():
+    from dataclasses import replace
+
+    facts = "\n  - Revenue rose 8% [a{0}]"
+    base = material(uncited=3, steps=(Step(1, "", "news_search", "Pears", "[a12] undated X: Title 12"),))
+    lines = {**base.evidence_lines, 2: base.evidence_lines[2] + facts.format(2),
+             11: base.evidence_lines[11] + facts.format(11)}
+    m = replace(base, evidence_lines=lines, read=frozenset({2, 11}))
+    full = fit(m, 100_000).text
+    assert full.index("[a2] undated") < full.index("[a1] undated")  # cited: the read one first
+    assert full.index("Other evidence read:\n[a11] undated X: Title 11\n  - Revenue rose 8% [a11]") < full.index(
+        "Other evidence shown:")
+    f = fit(m, len(full.split("\n\nOther evidence shown:")[0]))
+    assert "Revenue rose 8% [a11]" in f.text and f.unread == ("1 step observation", "2 uncited items")
+
+
 def test_the_budget_is_three_quarters_of_the_models_context_less_the_reply_and_the_prompt():
     # Numbers and URLs run nearer 3 characters a token than 4.
     assert budget(8192, "s" * 100) == (8192 - 1024) * 3 - 100

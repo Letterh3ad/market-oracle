@@ -14,6 +14,10 @@ def cited(ids) -> str:
     return " ".join(f"[a{i}]" for i in ids)
 
 
+def strip_citations(text: str) -> str:
+    return _CITE.sub("", text)
+
+
 def keep_citations(findings: str, shown: set[int]) -> tuple[str, set[int]]:
     """The findings with citations of anything not shown removed, and the ids kept."""
     kept: set[int] = set()
