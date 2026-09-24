@@ -95,6 +95,19 @@ def test_ask_prints_a_shortlist_with_why_evidence_and_what_was_left_off(run, new
     assert "oracle discover add 1 RANK" in out
 
 
+def test_ask_prints_what_the_universe_screen_found_each_company_by(run, news, chat):
+    rivals(news, "Rivian races on electric trucks")
+    chat.suggestions = {**chat.suggestions, "industries": ["carmakers"], "regions": ["US"]}
+    chat.replies = [naming(("Rivian", "Electric truck maker", [1]))]
+    code, out, _ = run("discover", "ask", "which US carmakers gain from electric trucks?")
+    assert code == 0
+    assert " 1. RIVN  Rivian Automotive, Inc." in out
+    assert out.count("universe: Automobiles & Components, United States, Large Cap") == 5, "RIVN, F, GM, HMC, STLA"
+    assert "in the universe's carmakers in US; no news found names it" in out
+    assert "Tesla" not in out
+    assert "note: universe screen: 5 companies matched (carmakers; US), 5 shown" in out
+
+
 def test_a_follow_up_a_rerun_listing_showing_and_adding(run, news, chat):
     rivals(news, "Rivian and Honda race on electric trucks")
     chat.replies = [naming(("Rivian", "Trucks", [1])), naming(("Honda", "Hybrids", [1])),

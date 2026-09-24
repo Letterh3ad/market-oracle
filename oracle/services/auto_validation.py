@@ -35,6 +35,7 @@ RESOLVED, LINE, PRICES, NEVER, REMOVED_CHECK, RECEIPT, EVIDENCE, RELEVANCE = (
     "resolved", "line", "prices", "never list", "removed", "receipt", "evidence", "relevance")
 CHECKS = (RESOLVED, LINE, PRICES, NEVER, REMOVED_CHECK, RECEIPT, EVIDENCE, RELEVANCE)
 """In the order they run."""
+UNIVERSE_ALONE = "a universe match alone is not evidence; auto adds need news naming it"
 EVIDENCE_DAYS = 90
 MIN_OUTLETS = 2
 MAX_REASON = 200
@@ -106,6 +107,11 @@ class Validator:
     def _line(self, item: ShortlistItem, p: ListingProfile) -> Check:
         if item.symbol.upper() in {p.primary_symbol.upper(), (self._screen.live_line(p) or "").upper()}:
             return Check(LINE, True, f"{item.symbol} is its primary or most liquid live line")
+        # The universe screen lists a company on its home line in the region asked (a main board
+        # in the country's own currency), which may not be its primary: Paris for STMicro, not New York.
+        if item.universe and self._screen.is_home_line(p, item.symbol):
+            return Check(LINE, True, f"{item.symbol} is its line on a main board in the region asked, "
+                                     "in the home currency")
         return Check(LINE, False, f"{item.symbol} is not its primary or most liquid live line")
 
     def _prices(self, item: ShortlistItem) -> Check:
@@ -232,7 +238,9 @@ async def auto_add(ctx: AppContext, question_id: int, asked: str, model: ChatMod
             item = items[n]
             stage(f"validating {count} of {len(tried)}")
             on_list, mine = len(lists.items(DISCOVERED_LIST)), discoveries.on_list_from(question_id)
-            if not questions.get(question_id).auto:
+            if not item.evidence:
+                validation = Validation(note=f"not validated: {UNIVERSE_ALONE}")
+            elif not questions.get(question_id).auto:
                 validation = Validation(note="not validated: auto was switched off for this question")
             elif deadline and ctx.clock.utcnow() >= deadline:
                 validation = Validation(note="not validated: the time for auto questions ran out")

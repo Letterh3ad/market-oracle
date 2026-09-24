@@ -202,6 +202,52 @@ class UniverseRepo:
         )
         return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"]) for r in rows]
 
+    def screen(self, classes: Sequence[tuple[str, Set[str]]], countries: Set[str] | None, bands: Sequence[str],
+               untrusted_exchanges: Sequence[str] = ()) -> list[ListingProfile]:
+        """Active equity companies, by primary listing, in any of `classes` ((level, values)),
+        based in `countries` (anywhere when None; also when their primary is on one of
+        `untrusted_exchanges`, where the universe's country may be wrong), within `bands` (any
+        when empty): biggest band first, then the most widely listed, as peers are ranked."""
+        where, params = ["p.is_primary", "p.type = 'equity'", "p.delisted = 0"], []
+        matches = []
+        for level, values in classes:
+            if level not in CLASSIFICATION_LEVELS:
+                raise ValueError(f"not a classification level: {level!r}")
+            matches.append(f"p.{level} IN ({', '.join('?' * len(values))})")
+            params += sorted(values)
+        where.append(f"({' OR '.join(matches) or '0'})")
+        if countries is not None:
+            where.append(f"(p.country IN ({', '.join('?' * len(countries))}) "
+                         f"OR p.exchange IN ({', '.join('?' * len(untrusted_exchanges)) or 'NULL'}))")
+            params += [*sorted(countries), *untrusted_exchanges]
+        if bands:
+            where.append(f"p.market_cap IN ({', '.join('?' * len(bands))})")
+            params += bands
+        rows = self._conn.execute(
+            f"""SELECT p.symbol, p.symbol AS primary_symbol, p.currency AS primary_currency, p.company_key,
+                       COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, p.country, p.sector,
+                       p.industry_group, p.industry, p.category, p.family, p.exchange,
+                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0)
+                         AS listings,
+                       p.website, p.summary, p.market_cap
+                FROM listings p WHERE {" AND ".join(where)}
+                ORDER BY p.market_cap IS NULL, {_CAP_ORDER}, listings DESC, p.symbol""", params)
+        return [ListingProfile(**dict(r)) for r in rows]
+
+    def listings_of(self, company_keys: Iterable[str]) -> dict[str, list[Listing]]:
+        """`company_listings` for many companies at once."""
+        keys = list(dict.fromkeys(company_keys))
+        out: dict[str, list[Listing]] = {k: [] for k in keys}
+        for at in range(0, len(keys), 500):
+            chunk = keys[at:at + 500]
+            for r in self._conn.execute(
+                    "SELECT symbol, name, type, country, exchange, delisted, currency, company_key FROM listings "
+                    f"WHERE company_key IN ({', '.join('?' * len(chunk))})", chunk):
+                out[r["company_key"]].append(
+                    Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"],
+                            delisted=bool(r["delisted"]), currency=r["currency"], company_key=r["company_key"]))
+        return out
+
     def repick_primary(self, company_key: str, dead: Set[str]) -> None:
         """Choose the company's primary listing again, as a refresh would with `dead`."""
         rows = self.company_listings(company_key)
@@ -215,14 +261,7 @@ class UniverseRepo:
 
     def company_listings(self, company_key: str) -> list[Listing]:
         """What ranking a company's listings needs, with the currency to show."""
-        return [
-            Listing(r["symbol"], r["name"], r["type"], r["country"], r["exchange"], delisted=bool(r["delisted"]),
-                    currency=r["currency"], company_key=company_key)
-            for r in self._conn.execute(
-                "SELECT symbol, name, type, country, exchange, delisted, currency FROM listings WHERE company_key = ?",
-                (company_key,),
-            )
-        ]
+        return self.listings_of([company_key])[company_key]
 
     def grouping_rows(self) -> list[Listing]:
         """Every listing with what grouping reads, and its stored company and primary mark."""

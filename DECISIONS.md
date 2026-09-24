@@ -2244,3 +2244,48 @@ moving the extra GDELT searches to Google News (each query is there already).
 **Decision:** The listings come from the universe, not the watchlist: 20 fixed (region, sector) slots (US 5, UK 5, Europe 4, Japan 3, other Asia 2, emerging 1, covering tech, financials, health, energy, consumer, industrials and materials). Each slot ranks companies based in the region by band (Mega, then Large, then Mid Cap), then how widely listed, then symbol, as peers are ranked, and takes the company's own line on its region's main board (exchange tier 1 or 2 in a region country) in the region's currency, so a New York ADR (TSM), a Berlin line (DKI.BE) or a UK company listed only in New York (LIN) never stands in. Skipped: the never list (Tesla always, `[discovery] never` too), depositary receipts and dead listings. Creating fetches each candidate's prices through the prices service and requires bars from the first replay day to within 10 days of today, so a delisted company or one with no data is passed over; up to 4 candidates are tried per slot, and every slot left unfilled is listed in the job result and the CLI. A price source that does not answer refuses the create, rather than quietly changing the spread. Creating is therefore a job (the CLI prints its progress). `--symbols` (the card's listings field) replaces the pick, and `replace OLD NEW` swaps one listing before the first replay, both held to the same checks except the slot. The pick is saved as JSON with the study. Each cell's day is its listing's first stored bar in the month, so a local holiday is never a replay day, from the first day to a calendar month before today; the first day is `--from` or the measured cutoff (`measured_cutoff`, None until ticket 01 stores one; a `--from` before it is refused). Cells queue oldest month first, so early results have their longest outcomes. A study is created paused and only `start` lets the pacer run; creating another is refused while any replay runs (older studies are kept, the newest is the one shown).
 The pacer polls every 10 s in the GUI server, stores each poll's time and wait reason (so a headless check can tell it is alive), and submits one replay at a time as an automatic research job (slots model) only when: the study is running, automation is on, no back-off is in force, no job is queued or running here, no job lock is held by another process, no scheduled run is due within the longest of the last 10 replays (5 min before any) plus 10 min, counting one whose time has passed that the scheduler's next poll has yet to submit (`Scheduler.next_run`), and `research_when_idle` does not say the PC is in use. A running replay gives way when a tick or midday pass is a minute away or other model work (research, tick, ask, discover) is queued or running: the pacer cancels it and its cell goes back to pending without counting an attempt. A cell gets two attempts (the second later in the queue), then stays failed until Retry, which allows one more without rewriting the count. Three failures in a row with the same error kind (the text before the first colon, without the symbol, quoted text, hex addresses and numbers), or five in a row whatever their text, mean an outage: those attempts are given back and the pacer backs off 45 minutes, then tries one replay. While the outage lasts, a failed probe with the outage's error (any error, for one found by five) costs no attempt and backs off again, while one with a new error costs its cell the attempt but still backs off (five of those in a row are an outage of any error); a cell's attempts are given back at most twice (`refunds`), after which its failures count, so cells that are bad rather than unlucky still end failed and the study finishes. Back-offs run every 45 minutes four times and then every 2 hours, never pausing the study; `waiting` says since when, how many back-offs and the last error. A replay running over 3 times the longest recent one (at least 45 minutes) is stopped and counted as a failure, so a hung one never sits until the next tick. An Activity Retry is taken for its cell only on the slots model the study replays on. A replay cut off by a restart goes back to pending; one another live server still runs is left alone. One cancelled in Activity goes back to pending and pauses the study, so the next poll does not undo the cancel; one cancelled by turning automation off does not pause it (the pacer holds until automation is back). Activity's Retry on a replay of a failed or waiting cell runs it for that cell. `finished` (nothing left to run) and `complete` (every cell done) are reported apart.
 **Alternatives:** A hand-kept ticker list (goes stale when the universe changes symbols). Taking the primary listing as it is (the real universe offered ADRs, Berlin lines and a New York line for a UK slot). Picking without fetching prices (seven of twenty real picks had no bars at all). The first weekday of each month (falls on Labor Day, May Day and other local holidays). Pausing after repeated outages (would stop the study for the rest of a trip). The mean replay time for the tick margin (about half the replays run longer). Waiting on each job inside the poll (a poll-and-settle loop keeps the store the single source, so a restart needs no special case).
+
+## 2026-09-24 - The universe screen answers "which companies" questions (discovery 01)
+**Context:** Three live questions named 11 companies and matched 1: headlines favour famous names
+and startups, so real listed mid caps that fit a question's industry, region and size never came up.
+**Decision:** The chat plan also returns `industries` (up to 3, offered the universe's industry names
+in the prompt) and `regions` (up to 5). Industries map onto the universe's classifications with the
+exclude matcher, now `industry_words.classes` (the most specific level); regions and countries
+through one table, `oracle/universe/regions.py` (regions, nationality words, each country's
+currency), which also replaces 03's Europe and nationality tables in `business_fit`. A word naming
+nothing is dropped with a note. A screen needs an industry: a region or a size alone would list any
+big company there. `universe_screen` takes active primary equity companies in any of the
+classifications, based in the countries asked (or with a US OTC primary, where the universe's
+country is often wrong), within the plan's bands, biggest band first then most widely listed; it
+drops never-listed companies (any line's name), depositary receipts and companies with no live home
+line. The home line is the replay picker's rule, moved to `regions.home_line` and used by both: the
+best-ranked line on a main board (tier 1 or 2) in the country's own currency, inside the countries
+asked (STMicro is STM.PA for Europe, not its New York primary). Replay's per-region currency sets
+became per-country currencies; its slot regions stay its own (`STUDY_REGIONS`: Europe there leaves
+out the UK). In the shortlist, companies both named and screened rank first and carry both kinds of
+evidence, then those only named, then those only screened, up to 15, with their own budget of 20
+price checks; one without recent prices is passed over for the next and only counted. The evidence
+line ("universe: Semiconductors & Semiconductor Equipment, Netherlands, Mega Cap") is stored per
+item (m0039) and shown on the Discover tab and in `oracle discover show`; a note says how many
+matched and how many are shown. The recognised industry words join the question in `NamedIn.asked`,
+so 03's sector check holds a name matched by its start to them. Auto: a company only the screen found
+is never validated or added ("a universe match alone is not evidence"); a named one on its screened
+home line passes the line check. When nothing screens, answers work as before, and the screen runs
+even when the news finds nothing.
+**Alternatives:** Screening lines rather than companies (each line carries the company's same wrong
+sector, so nothing gained); trusting the universe's country alone (US OTC lines hide Rheinmetall);
+the primary line as it is (New York ADR-like lines and OTC lines of foreign companies); listing
+screened companies without prices as left off (no one named them: noise); a screen on region or size
+alone; letting auto add on a universe match (DECISIONS 05 wants outlet evidence).
+
+## 2026-09-24 - Universe screen follow-ups left open
+**Context:** Found while building discovery 01 on the live universe.
+**Decision:** Recorded, not fixed: wrong sectors hide companies from the screen (Rheinmetall is
+Consumer Discretionary / Specialty Retail on every line, so a defence question misses it); the
+universe keeps acquired companies (Dialog Semiconductor, Meggitt), which the price check passes over;
+the plan's region is still not enforced on news-named companies; words below the universe's
+industries ("robotics", "batteries", "solar") screen nothing unless the model picks a listed name;
+NXP's Europe line is Xetra (VNX.DE), as it has none in Amsterdam; a company split in two by the
+universe with its home line carrying no currency (Prysmian: PRY.MI apart from AEU.F) has no home line.
+**Alternatives:** A sector override table (hand upkeep); a company-level country vote across lines
+(every Rheinmetall line says United States).

@@ -14,7 +14,6 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta
 
 from oracle.jobs import pid_alive
-from oracle.market.bars import major_unit
 from oracle.services.activity_service import Job, JobRunner, submit_research
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError, UnknownSymbol
@@ -30,15 +29,16 @@ from oracle.store.job_history import NOT_RUN, JobHistoryRepo
 from oracle.store.replay import DONE, FAILED, PAUSED, PENDING, RUNNING, CellRow, ReplayRepo, StudyRow
 from oracle.store.research import ResearchRepo
 from oracle.store.universe import UniverseRepo
-from oracle.universe.exchanges import EXCHANGES, exchange_country
-from oracle.universe.listings import Listing, is_receipt, rank_listings
+from oracle.universe.listings import Listing, is_receipt
+from oracle.universe.regions import home_country, home_line
 
 __all__ = ["Picked", "ReplayPacer", "StudyStatus", "create_study", "measured_cutoff", "pause_study", "pick_listings",
            "replace_listing", "retry_failed", "start_study", "study_status", "submit_create", "submit_replace"]
 
 log = logging.getLogger(__name__)
 
-REGIONS: dict[str, tuple[str, ...]] = {
+# The study's own spread: Europe here leaves out the UK, which has slots of its own.
+STUDY_REGIONS: dict[str, tuple[str, ...]] = {
     "US": ("United States",),
     "UK": ("United Kingdom",),
     "Europe": ("Germany", "France", "Netherlands", "Switzerland", "Spain", "Italy", "Sweden", "Denmark", "Belgium",
@@ -47,16 +47,6 @@ REGIONS: dict[str, tuple[str, ...]] = {
     "Asia": ("South Korea", "Taiwan", "Hong Kong", "Singapore"),
     "Emerging": ("India", "Brazil", "Mexico", "South Africa", "Indonesia"),
 }
-CURRENCIES: dict[str, frozenset[str]] = {
-    "US": frozenset({"USD"}),
-    "UK": frozenset({"GBP"}),
-    "Europe": frozenset({"EUR", "CHF", "SEK", "DKK", "NOK"}),
-    "Japan": frozenset({"JPY"}),
-    "Asia": frozenset({"KRW", "TWD", "HKD", "SGD"}),
-    "Emerging": frozenset({"INR", "BRL", "MXN", "ZAR", "IDR"}),
-}
-"""A region's line trades in one of these, so a New York ADR or a Berlin line never stands in."""
-MAIN_BOARD_TIER = 2
 _IT, _FIN, _HEALTH, _ENERGY = "Information Technology", "Financials", "Health Care", "Energy"
 _DISC, _STAPLES, _IND, _MAT = "Consumer Discretionary", "Consumer Staples", "Industrials", "Materials"
 SLOTS: tuple[tuple[str, str], ...] = (
@@ -210,11 +200,8 @@ def replay_cells(ctx: AppContext, symbols: list[str], first: date, last: date) -
 
 def _region_of(listing: Listing) -> str | None:
     """The region whose main board and currency the line trades on."""
-    tier = EXCHANGES.get(listing.exchange or "", (None, 9))[1]
-    if listing.delisted or tier > MAIN_BOARD_TIER or not listing.currency:
-        return None
-    country, currency = exchange_country(listing.exchange), major_unit(listing.currency)[0]
-    return next((r for r, countries in REGIONS.items() if country in countries and currency in CURRENCIES[r]), None)
+    country = home_country(listing)
+    return next((r for r, countries in STUDY_REGIONS.items() if country in countries), None)
 
 
 async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | None:
@@ -256,11 +243,10 @@ async def pick_listings(ctx: AppContext, first: date,
     for region, sector in SLOTS:
         tries = 0
         filled = False
-        for company in universe.largest_in(REGIONS[region], sector, BANDS):
+        for company in universe.largest_in(STUDY_REGIONS[region], sector, BANDS):
             if tries == TRIES_PER_SLOT:
                 break
-            line = next((x for x in rank_listings(universe.company_listings(company.company_key), dead)
-                         if _region_of(x) == region and x.symbol.upper() not in dead), None)
+            line = home_line(universe.company_listings(company.company_key), STUDY_REGIONS[region], dead)
             if (line is None or any(p.symbol == line.symbol for p in picked) or is_receipt(line.name)
                     or never_company(ctx, line.symbol, user=True)):
                 continue

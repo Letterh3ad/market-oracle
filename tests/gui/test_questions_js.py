@@ -112,6 +112,16 @@ CHECKS = [{"name": "resolved", "passed": True, "detail": "matched"},
           {"name": "evidence", "passed": False, "detail": "only 1 outlet (wire) named it"}]
 
 
+def test_a_screened_company_shows_what_the_universe_found_it_by():
+    universe = "universe: Semiconductors & Semiconductor Equipment, Netherlands, Mega Cap"
+    shortlist = [item(1, "ENR.DE", "Siemens Energy", universe=universe),
+                 {**item(2, "ASML.AS", "ASML", universe=universe), "evidence": []},
+                 item(3, "FLNC", "Fluence", universe=None)]
+    out = run(f"""const card = m.answerCard({json.dumps({**ANSWER, "shortlist": shortlist})});
+        console.log(JSON.stringify({{ text: card.textContent }}));""")
+    assert out["text"].count(universe) == 2
+
+
 def test_an_auto_answer_says_what_validation_made_of_each_company():
     shortlist = [item(1, "ENR.DE", "Siemens Energy", validation={"checks": CHECKS[:1], "added": True, "note": None}),
                  item(2, "FLNC", "Fluence", validation={"checks": CHECKS, "added": False, "note": None}),

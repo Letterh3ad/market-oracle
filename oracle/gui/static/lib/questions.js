@@ -90,7 +90,8 @@ function shortlistTable(a, changed) {
     el("tbody", null, ...a.shortlist.map((i) => el("tr", null,
       el("td", { class: "num" }, String(i.n)),
       el("td", { class: "name" }, companyLink(i.symbol), " ", i.company ?? i.name, ...marks(i)),
-      el("td", null, i.why, validationLine(i.validation), evidence(i.evidence)),
+      el("td", null, i.why, i.universe ? el("p", { class: "dim small" }, i.universe) : null,
+        validationLine(i.validation), evidence(i.evidence)),
       el("td", null, ...buttons(i, a.id, changed))))));
 }
 
