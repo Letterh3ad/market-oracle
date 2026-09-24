@@ -16,7 +16,7 @@ from oracle.analysts.risk import risk as risk_signal
 from oracle.analysts.signals import AnalystSignal
 from oracle.analysts.technicals import price_signals
 from oracle.broker.baseline import baseline_lean
-from oracle.broker.fills import COSTS, Costs, Fill, buy_fill, sell_fill
+from oracle.broker.fills import Costs, Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side
 from oracle.broker.rules import BUY_LABELS, Decision, Lean, Position, Rules, decide
 from oracle.market.bars import Bar
@@ -32,9 +32,11 @@ LeanSource = Callable[[str, Sequence[Bar]], Lean | None]
 
 @dataclass(frozen=True)
 class Venue:
-    """Where a listing trades, for the paper accounts' fee table and stamp duty."""
+    """Where a listing trades, for the paper accounts' fee table and stamp duty, and its size band
+    for their slippage."""
     country: str
     exchange: str
+    band: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,9 +81,9 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
     """`history` is each listing's bars, oldest first, with that day's rate. `risk` holds
     the risk analyst's settings; its `account` is the starting cash. `commission` is a flat
     fee per trade in the base currency. `lean` defaults to the technicals baseline. With
-    `venues`, every fill pays the paper accounts' costs instead (`fills.COSTS` and the fee
-    table for the listing's venue, dearest without one), and `slippage` and `commission`
-    are not used."""
+    `venues`, every fill pays the paper accounts' costs instead (`fills.costs_for` the
+    listing's size band and the fee table for its venue, dearest without one), and
+    `slippage` and `commission` are not used."""
     lean = lean or technicals_lean
     capital = risk["account"]
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
@@ -175,7 +177,8 @@ def _charges(symbol: str, p: Priced, venues: Mapping[str, Venue] | None, slippag
              commission: float) -> tuple[Costs, Venue]:
     if venues is None:
         return Costs(slippage=slippage, fx_spread=0.0, stamp_duty=0.0, commission=commission * p.rate), Venue("", "")
-    return COSTS, venues.get(symbol, Venue("", ""))
+    venue = venues.get(symbol, Venue("", ""))
+    return costs_for(venue.band), venue
 
 
 def _fill(order: _Order, p: Priced, price: float, cash: float, held: Mapping[str, list],

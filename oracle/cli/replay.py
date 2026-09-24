@@ -8,11 +8,12 @@ import sys
 from oracle.cli import cutoff
 from oracle.cli.common import iso_day
 from oracle.services.context import AppContext
+from oracle.services.paper_service import Line
 from oracle.services.replay_score import (
     Account, Group, HorizonScore, Score, has_study, replay_report, update_study_prices,
 )
 from oracle.services.replay_service import (
-    StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
+    MIX, PICKS, StudyStatus, create_study, pause_study, replace_listing, retry_failed, start_study, study_status,
 )
 
 
@@ -24,7 +25,10 @@ def register(parser: argparse.ArgumentParser) -> None:
     create.add_argument("--from", dest="first", type=iso_day, default=None, metavar="YYYY-MM-DD",
                         help="the first replay day (default: the day after the measured cutoff)")
     create.add_argument("--symbols", type=_symbols, default=None, metavar="A,B,...",
-                        help="these listings instead of the picked spread")
+                        help="these listings instead of the picked large half")
+    create.add_argument("--bands", choices=tuple(PICKS), default=MIX,
+                        help="large: one Mega or Large Cap per slot; mid-small: one Mid Cap, else Small Cap; "
+                             "mix (default): both, about half each")
     create.set_defaults(handler=_create)
     replace = sub.add_parser("replace", help="swap one listing before the study's first replay")
     replace.add_argument("old", help="the listing to drop")
@@ -50,8 +54,9 @@ def _symbols(text: str) -> list[str]:
 
 
 def _create(ctx: AppContext, args: argparse.Namespace) -> int:
-    print("Checking each listing's prices (fetching what is missing); this takes a minute or two.")
-    s = asyncio.run(create_study(ctx, args.first, args.symbols, print))
+    print("Checking each listing's prices (fetching what is missing); this takes a few minutes, and a mix checks "
+          "about twice as many listings as one size.")
+    s = asyncio.run(create_study(ctx, args.first, args.symbols, print, args.bands))
     print(f"Created replay study {s.id}: {len(s.listings)} listings, {s.total} replays from "
           f"{s.first_day.isoformat()} to {s.last_day.isoformat()}. It is paused: `oracle replay start` runs it.")
     print_listings(s)
@@ -173,6 +178,8 @@ def print_report(s: Score) -> None:
     checked = f"{s.prices_checked_at:%Y-%m-%d %H:%M} UTC" if s.prices_checked_at else "never"
     failed = f"; failed: {', '.join(s.price_failures)}" if s.price_failures else ""
     print(f"  Study prices last checked: {checked}{failed}")
+    if s.by_size:
+        print_sizes(s)
     if s.account:
         print_account(s.account)
     print("Limits:")
@@ -190,7 +197,7 @@ def print_account(a: Account) -> None:
           f"{n} listing{'' if n == 1 else 's'}")
     print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
     for line in a.lines:
-        print(f"  {LINE_LABELS.get(line.name, line.label or line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
+        print(f"  {_line_label(line):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
               f"{line.trades:>8}{line.costs:>14,.2f}")
     for line in a.lines:
         print(f"  - {line.caption}")
@@ -198,6 +205,33 @@ def print_account(a: Account) -> None:
         print(f"  Left out: {'; '.join(a.left_out)}")
     for note in a.notes:
         print(f"  - {note}")
+
+
+def print_sizes(s: Score) -> None:
+    """The study's headline numbers beside each size's, the comparison the size mix is for."""
+    rows = [("All", s.horizons, s.account), *((z.label, z.horizons, z.account) for z in s.by_size)]
+    print("By size, against the whole study's basket: "
+          + "; ".join(f"{z.label} {', '.join(z.listings)}" for z in s.by_size))
+    for n, h in enumerate(s.horizons):
+        name = f"{h.months} month{'' if h.months == 1 else 's'}"
+        print(f"  {name:<16}{'calls':>8}{'hit':>8}{'no-skill':>10}{'hit rel':>10}{'no-skill rel':>14}"
+              f"{'mean as called':>16}")
+        for label, horizons, _ in rows:
+            x = horizons[n]
+            calls = sum(g.n for g in x.by_band)
+            print(f"    {label:<14}{calls:>8}{_pct(x.hit_rate):>8}{_pct(x.expected_hit_rate):>10}"
+                  f"{_pct(x.hit_rate_vs_basket):>10}{_pct(x.expected_hit_rate_vs_basket):>14}"
+                  f"{_pct(x.mean_as_called, True):>16}")
+    if s.account:
+        columns = [(line.name, _line_label(line), max(len(_line_label(line)), 8) + 2) for line in s.account.lines]
+        print(f"  {'Account return':<16}" + "".join(f"{label:>{width}}" for _, label, width in columns))
+        for label, _, account in rows:
+            returns = {line.name: line.return_ for line in account.lines} if account else {}
+            print(f"    {label:<14}" + "".join(f"{_pct(returns.get(name), True):>{width}}" for name, _, width in columns))
+
+
+def _line_label(line: Line) -> str:
+    return LINE_LABELS.get(line.name, line.label or line.name)
 
 
 def print_horizon(h: HorizonScore) -> None:

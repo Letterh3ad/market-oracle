@@ -180,3 +180,18 @@ def test_venues_charge_the_paper_accounts_full_costs():
     fill = buy_fill(-usd.cash + 1e-9, open_price=bar.close, rate=1.25, country="United States", exchange="NMS",
                     costs=COSTS)
     assert usd.costs == pytest.approx(fill.fee / 1.25 + fill.slippage + fill.fx) and fill.fx > 0
+
+
+def test_venues_charge_slippage_by_the_listings_size_band():
+    def buy(symbol, window):
+        return Lean(symbol, window[-1].date, "buy", 0.9, "test")
+
+    def first_price(band):
+        bars = rising(400, "SMALL")
+        r = replay({"SMALL": priced(bars)}, bars[300].date, bars[-1].date, rules=RULES, risk=RISK, slippage=0.0,
+                   commission=0.0, lean=buy, fill_at="close", venues={"SMALL": Venue("United States", "NMS", band)})
+        return r.trades[0].price / next(b for b in bars if b.date == r.trades[0].day).close
+
+    assert first_price("Small Cap") == pytest.approx(1.005)
+    assert first_price("Mid Cap") == pytest.approx(1.0025)
+    assert first_price(None) == pytest.approx(1.001)

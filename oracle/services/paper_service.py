@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
-from oracle.broker.fills import COSTS, Fill, buy_fill, sell_fill
+from oracle.broker.fills import Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
 from oracle.market.fx import RateSeries, pick_rate
@@ -475,19 +475,20 @@ def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | N
     else:
         exchange = profile.exchange or ""
         country = exchange_country(exchange) or profile.country or ""
+    costs = costs_for(profile.market_cap if profile else None)
     if order.side == Side.SELL:
         held = _held_shares(repo, order.account, order.symbol)
         shares = order.shares if order.shares is not None else held
         if not 0 < shares <= held:
             return _reject(repo, order, f"only {held} shares held")
-        fill = sell_fill(shares, open_price=bar.open, rate=rate, country=country, costs=COSTS)
+        fill = sell_fill(shares, open_price=bar.open, rate=rate, country=country, costs=costs)
         repo.record_fill(_row(order, bar.date, bar.currency, rate, fill))
         return FillOutcome(order, Status.FILLED, None)
     cash = _cash(ctx, repo, order.account)
     if order.cash > cash:
         return _reject(repo, order, f"not enough cash: {order.cash:,.2f} asked, {cash:,.2f} available")
     fill = buy_fill(order.cash, open_price=bar.open, rate=rate, country=country, exchange=exchange,
-                    costs=COSTS)
+                    costs=costs)
     if fill.shares == 0:
         return _reject(repo, order, f"{order.cash:,.2f} buys no whole share at {bar.open:,.2f} {bar.currency} after costs")
     repo.record_fill(_row(order, bar.date, bar.currency, rate, fill))

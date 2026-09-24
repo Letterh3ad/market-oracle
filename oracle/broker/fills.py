@@ -5,7 +5,9 @@ Deliberately pessimistic: a paper record should not flatter the strategy."""
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from oracle.universe.listings import MARKET_CAP_BANDS
 
 # IBKR fixed-plan approximations, charged in the listing's currency.
 US_PER_SHARE, US_MIN, US_CAP = 0.005, 1.0, 0.01
@@ -31,6 +33,14 @@ class Costs:
 
 
 COSTS = Costs()
+SLIPPAGE_BY_BAND: dict[str, float] = dict(zip(MARKET_CAP_BANDS, (0.001, 0.001, 0.0025, 0.005, 0.01, 0.02)))
+"""Slippage by market-cap band: thinner books cost more to cross. A listing of no known band
+pays COSTS.slippage."""
+
+
+def costs_for(band: str | None) -> Costs:
+    """The paper costs of a listing in `band` (a MARKET_CAP_BANDS name, or None)."""
+    return replace(COSTS, slippage=SLIPPAGE_BY_BAND.get(band or "", COSTS.slippage))
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,7 @@ from __future__ import annotations
 import bz2
 import csv
 import io
+from dataclasses import replace
 
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
@@ -48,7 +49,23 @@ async def download(client: RateLimitedClient, sha: str, name: str) -> bytes:
 
 
 def parse_equities(data: bytes) -> list[Listing]:
-    return _listings(_rows(data, "equities.bz2", EQUITY_COLUMNS), "equity")
+    return with_missing_home_lines(_listings(_rows(data, "equities.bz2", EQUITY_COLUMNS), "equity"))
+
+
+MISSING_HOME_LINES: dict[str, tuple[str, str, str, str]] = {
+    # FinanceDatabase has TSMC's New York ADR and European quotes, but no Taipei line.
+    "2330.TW": ("TSM", "TAI", "TWD", "Taiwan Stock Exchange"),
+}
+"""Home lines FinanceDatabase lacks: symbol -> (a line of the same company it has, exchange,
+currency, market). Added as copies of that line, so they group with it."""
+
+
+def with_missing_home_lines(listings: list[Listing]) -> list[Listing]:
+    """`listings` plus each MISSING_HOME_LINES line it lacks whose company it has."""
+    by_symbol = {x.symbol: x for x in listings}
+    return listings + [replace(by_symbol[source], symbol=symbol, exchange=exchange, currency=currency, market=market)
+                       for symbol, (source, exchange, currency, market) in MISSING_HOME_LINES.items()
+                       if symbol not in by_symbol and source in by_symbol]
 
 
 def parse_etfs(data: bytes) -> list[Listing]:
