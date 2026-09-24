@@ -691,6 +691,25 @@ async def test_a_verdict_citing_what_the_budget_left_out_is_rejected_and_the_tri
     assert latest_verdict(ctx, "AAPL") is None
 
 
+async def test_a_profile_edited_mid_run_does_not_resize_the_runs_later_stages(ctx, news, monkeypatch):
+    from dataclasses import replace
+
+    from oracle.services import research_service
+
+    model = report_script(news)
+    model.roles["verdict"] = VERDICT
+    ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, context=1024))
+    write_report = research_service.write_report
+
+    async def edited_meanwhile(*args, **kwargs):
+        ctx.config = replace(ctx.config, llm=replace(ctx.config.llm, context=16384))
+        return await write_report(*args, **kwargs)
+
+    monkeypatch.setattr(research_service, "write_report", edited_meanwhile)
+    await research(ctx, "AAPL", model)
+    assert "Reuters" not in verdict_call(model), "the verdict kept the 1024-token budget the run started with"
+
+
 async def test_a_replays_verdict_is_never_the_latest_one(ctx, news):
     from datetime import date
 

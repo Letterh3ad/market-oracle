@@ -8,7 +8,7 @@ from oracle.services import discovery_chat_service
 from oracle.services.context import open_context
 from tests.fakes.financedatabase import UNIVERSE, FakeFinanceDatabase
 from tests.fakes.google_news import FakeGoogleNews
-from tests.fakes.llm import ScriptedModel
+from tests.fakes.llm import ScriptedModel, use_model
 from tests.fakes.web import FakeWeb
 from tests.fakes.web_search import FakeSearcher
 from tests.fakes.yahoo import bar
@@ -38,7 +38,7 @@ def ctx(tmp_path, yahoo, clock, news):
 def model(monkeypatch):
     m = ScriptedModel()
     m.suggestions = {"queries": ["summer demand"], "local": [], "market_caps": [], "exclude": []}
-    monkeypatch.setattr(discovery_chat_service, "model_for", lambda c, p: m)
+    use_model(monkeypatch, discovery_chat_service, m)
     monkeypatch.setattr(discovery_chat_service, "DdgsSearcher", FakeSearcher)
     return m
 

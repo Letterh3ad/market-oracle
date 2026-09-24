@@ -29,7 +29,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import research_links
-from oracle.services.models_service import DEFAULT_PROFILE, context_tokens, model_for
+from oracle.services.models_service import DEFAULT_PROFILE, resolve_model
 from oracle.services.research_tools import (
     Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
     evidence_entry, market_summary,
@@ -66,13 +66,14 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    model = model or model_for(ctx, DEFAULT_PROFILE)
+    resolved = resolve_model(ctx, DEFAULT_PROFILE, model)
+    model = resolved.model
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
         model.fell_back_to.clear()
         run_id = repo.start(listing, model.name, model.model, _now(ctx), as_of)
         try:
-            await _run(ctx, repo, run_id, listing, model, as_of or today, as_of, searcher)
+            await _run(ctx, repo, run_id, listing, model, resolved.context, as_of or today, as_of, searcher)
         except BaseException as exc:
             _record_failure(ctx, repo, run_id, model, exc)
             if isinstance(exc, ModelError):
@@ -84,8 +85,8 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
         return repo.get(run_id)
 
 
-async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, model: ChatModel, day: date,
-               as_of: date | None, searcher: WebSearcher | None) -> None:
+async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, model: ChatModel, context: int,
+               day: date, as_of: date | None, searcher: WebSearcher | None) -> None:
     shown: set[int] = set()
 
     def on_shown(ids: list[int], query: str | None) -> None:
@@ -109,7 +110,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
         reader = Reader(ctx.conn, ctx.clock, client, searcher, gate, contact, model,
-                        f"{profile.name} ({profile.symbol})", context_tokens(ctx, DEFAULT_PROFILE))
+                        f"{profile.name} ({profile.symbol})", context)
         filings = await sec.to_read(day) if sec else {}
         await reader.read(repo.get(run_id).evidence, ctx.config.research.read_articles, as_of,
                           lambda n, total: repo.set_stage(run_id, f"reading {n} of {total}"), filings)
@@ -122,7 +123,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
     read = frozenset(e.id for e in evidence if e.facts)
     digest_text = digest(statistics, [lines[e.id] for e in evidence if e.id in read],
                          [lines[e.id] for e in evidence if e.id not in read], findings,
-                         digest_room(context_tokens(ctx, DEFAULT_PROFILE)))
+                         digest_room(context))
     report = await write_report(model, digest_text, shown, day)
     if not report.usable:
         with transaction(ctx.conn):
@@ -130,7 +131,7 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
             repo.finish(run_id, RunStatus.FAILED, findings, UNUSABLE, _now(ctx), model.fell_back_to)
         return
     material = Material(statistics, data_id, findings, report, evidence, run.steps, lines, read)
-    report = await add_verdict(model, report, material, context_tokens(ctx, DEFAULT_PROFILE))
+    report = await add_verdict(model, report, material, context)
     # One transaction, so a run never ends up failed beside a half-saved report.
     with transaction(ctx.conn):
         repo.save_report(run_id, listing, report)

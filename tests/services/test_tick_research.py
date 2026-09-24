@@ -19,7 +19,7 @@ from oracle.services.watch_service import watch
 from oracle.store.research import ResearchRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
-from tests.fakes.llm import ScriptedModel, step
+from tests.fakes.llm import ScriptedModel, step, use_model
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar
 
@@ -146,7 +146,7 @@ async def test_ai_off_skips_research_and_the_ai_step_saying_so(ctx):
 
 async def test_a_tick_researches_with_the_configured_model_then_runs_the_ai_step(ctx, monkeypatch):
     model = ScriptedModel(*[step("final", "Nothing new.")] * len(SYMBOLS))
-    monkeypatch.setattr(research_service, "model_for", lambda c, p: model)
+    use_model(monkeypatch, research_service, model)
     reported(ctx, "MSFT", date(2026, 9, 20))
     said = []
     run = await run_tick(ctx, on_stage=said.append)

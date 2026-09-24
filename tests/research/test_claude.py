@@ -105,6 +105,13 @@ async def test_a_served_id_that_differs_without_a_fallback_is_not_one():
     assert chat.fell_back_to == set()
 
 
+async def test_a_refused_key_names_where_the_profile_took_it_from():
+    chat = ClaudeChat("claude-opus-5", 60.0, FakeClient(status_error(anthropic.AuthenticationError, 401)),
+                      key_source="check MY_CLAUDE (key_env of model profile deep)")
+    with pytest.raises(ModelError, match=r"refused the credentials: check MY_CLAUDE \(key_env of model profile deep\)"):
+        await chat.reply([], SCHEMA)
+
+
 async def test_a_profiles_key_and_endpoint_reach_the_client(monkeypatch):
     made = []
 

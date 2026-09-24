@@ -44,6 +44,22 @@ def test_a_new_profile_needs_a_name_and_every_profile_a_model():
     assert body({**FORM, "model": " "}) == {"refused": "type a model name"}
 
 
+def prefill(profile) -> dict:
+    script = f"""
+        import {{ prefill }} from {json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())};
+        console.log(JSON.stringify(prefill({json.dumps(profile)})));
+    """
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def test_an_edit_form_fills_only_what_the_profile_sets_never_the_providers_defaults():
+    row = {"model": "qwen3:8b", "base_url": "http://localhost:11434", "context": 16384, "timeout_s": 180.0,
+           "key_env": None, "set": {"base_url": None, "context": 8192, "timeout_s": None}}
+    assert prefill(row) == {"model": "qwen3:8b", "base_url": "", "context": "8192", "timeout_s": "", "key_env": ""}
+    assert prefill(None) == {"model": "", "base_url": "", "context": "", "timeout_s": "", "key_env": ""}
+
+
 def test_bad_input_is_refused_before_sending():
     assert body({**FORM, "context": "lots"}) == {"refused": "context: not a number"}
     assert body({**FORM, "key": "k", "key_env": "K"}) == {"refused": "give a key or key_env, not both"}

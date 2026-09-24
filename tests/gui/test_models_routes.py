@@ -7,7 +7,10 @@ BIG = {"provider": "ollama", "model": "qwen3:8b", "context": 8192}
 
 async def test_profiles_are_listed_default_first_and_added_edited_and_deleted(ctx, client, tmp_path):
     listing = (await client.get("/api/models")).json()
-    assert [p["name"] for p in listing["profiles"]] == ["default"] and listing["providers"] == ["ollama", "claude_api"]
+    assert [p["name"] for p in listing["profiles"]] == ["default"] and list(listing["providers"]) == ["ollama", "claude_api"]
+    assert listing["providers"]["ollama"] == {"base_url": "http://localhost:11434", "context": 16384, "timeout_s": 180.0,
+                                              "keyed": False}
+    assert listing["profiles"][0]["set"] == {"base_url": None, "context": None, "timeout_s": None}
     added = await client.post("/api/models", json={"name": "big", **BIG})
     assert added.status_code == 200 and [p["name"] for p in added.json()["profiles"]] == ["default", "big"]
     edited = (await client.put("/api/models/big", json={**BIG, "context": 4096})).json()
@@ -31,7 +34,7 @@ async def test_a_key_is_saved_but_never_sent_back(client):
     response = await client.post("/api/models", json={"name": "deep", "provider": "claude_api",
                                                       "model": "claude-opus-5", "key": "sk-secret"})
     assert response.status_code == 200 and "sk-secret" not in response.text
-    assert response.json()["profiles"][1]["key_set"] is True
+    assert response.json()["profiles"][1]["key_state"] == "set"
 
 
 async def test_test_reports_ok_and_the_reply_time_or_the_error(ctx, client):
@@ -42,3 +45,11 @@ async def test_test_reports_ok_and_the_reply_time_or_the_error(ctx, client):
     failed = (await client.post("/api/models/big/test")).json()
     assert failed["ok"] is False and "ollama pull qwen3:8b" in failed["error"]
     assert (await client.post("/api/models/nope/test")).status_code == 404
+
+
+async def test_a_test_while_a_job_holds_the_model_is_409_with_why(ctx, client):
+    from oracle.jobs import JobLock
+
+    JobLock(ctx.conn, ctx.clock).acquire("discovery_chat", 600)
+    busy = await client.post("/api/models/default/test")
+    assert busy.status_code == 409 and busy.json()["error"] == "discovery chat is using the model: test once it finishes"

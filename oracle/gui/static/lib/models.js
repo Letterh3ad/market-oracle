@@ -7,6 +7,7 @@ import { el, showError } from "./dom.js";
 // box keeps the saved one.
 
 const FIELDS = ["model", "base_url", "context", "timeout_s", "key_env", "key"];
+const PROVIDER_FIELDS = ["base_url", "context"];
 
 // Form values (strings) to the JSON the server takes: empty means the provider's default.
 function profileBody(fields, create) {
@@ -32,9 +33,24 @@ function profileBody(fields, create) {
   return body;
 }
 
+// An edit form's boxes: only what the profile sets, so a default never gets written as a
+// value (and carried to another provider). Defaults show as placeholders instead.
+function prefill(p) {
+  if (!p) return { model: "", base_url: "", context: "", timeout_s: "", key_env: "" };
+  const set = (k) => (p.set[k] ?? "") === "" ? "" : String(p.set[k]);
+  return { model: p.model, base_url: set("base_url"), context: set("context"), timeout_s: set("timeout_s"),
+    key_env: p.key_env ?? "" };
+}
+
+function placeholders(defaults) {
+  return { base_url: defaults.base_url ?? "provider's own endpoint", context: String(defaults.context),
+    timeout_s: String(defaults.timeout_s) };
+}
+
 function keyState(p) {
-  const state = p.key_set ? "set" : "unset";
-  return p.key_env ? `${state} (${p.key_env})` : state;
+  if (p.key_state === "none") return "no key";
+  if (p.key_state === "fallback") return p.key_fallback;
+  return p.key_env ? `${p.key_state} (${p.key_env})` : p.key_state;
 }
 
 function pane() {
@@ -66,7 +82,8 @@ function profileRow(p, providers) {
       result.className = r.ok ? "up small" : "down small";
       result.textContent = r.ok ? `ok in ${r.seconds.toFixed(1)}s` : `failed after ${r.seconds.toFixed(1)}s: ${r.error}`;
     } catch (err) {
-      result.className = "down small";
+      // A job holding the model answers 409 with why; shown here, not as a page error.
+      result.className = "warn-text small";
       result.textContent = err.message;
     } finally {
       test.disabled = false;
@@ -97,20 +114,35 @@ async function remove(name) {
   }
 }
 
-// One row of inputs: a new profile when `p` is null, else an edit of `p`.
+// One row of inputs: a new profile when `p` is null, else an edit of `p`. `providers` maps
+// each provider to its defaults.
 function formRow(p, providers) {
+  const values = prefill(p);
   const box = (key, attrs = {}) => {
     const input = el("input", { type: "text", size: 14, placeholder: key, autocomplete: "off", ...attrs });
-    input.value = p?.[key] ?? "";
+    input.value = values[key] ?? "";
     return input;
   };
   const name = p ? null : box("name", { size: 10 });
-  const provider = el("select", null, ...providers.map((v) => el("option", { value: v }, v)));
-  provider.value = p?.provider ?? providers[0];
-  const inputs = Object.fromEntries(FIELDS.map((k) => [k, box(k, k === "key" ? {
-    type: "password", placeholder: p?.key_set && !p.key_env ? "saved key kept" : "key" } : {})]));
-  inputs.key.value = "";
+  const provider = el("select", null, ...Object.keys(providers).map((v) => el("option", { value: v }, v)));
+  provider.value = p?.provider ?? Object.keys(providers)[0];
+  const inputs = Object.fromEntries(FIELDS.map((k) => [k, box(k, k === "key" ? { type: "password" } : {})]));
   const clear = el("input", { type: "checkbox", title: "Remove the saved key" });
+  const keyCell = el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear"));
+  const fit = () => {
+    const defaults = providers[provider.value];
+    for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = `default: ${text}`;
+    inputs.key_env.placeholder = "key_env";
+    inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
+      ? "saved key kept" : "key";
+    keyCell.hidden = !defaults.keyed;
+  };
+  provider.addEventListener("change", () => {
+    // Another provider's endpoint or window would break this one; its own defaults apply.
+    for (const k of PROVIDER_FIELDS) inputs[k].value = "";
+    fit();
+  });
+  fit();
   const save = async () => {
     let body;
     try {
@@ -129,7 +161,7 @@ function formRow(p, providers) {
     el("td", null, inputs.model, inputs.base_url),
     el("td", null, inputs.context),
     el("td", null, inputs.timeout_s),
-    el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear")),
+    keyCell,
     el("td", null,
       el("button", { type: "button", class: "small-btn", onclick: save }, "Save"),
       el("button", { type: "button", class: "small-btn", onclick: load }, "Cancel")),
@@ -144,4 +176,4 @@ async function load() {
   }
 }
 
-export { load, profileBody };
+export { load, prefill, profileBody };

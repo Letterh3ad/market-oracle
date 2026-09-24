@@ -11,8 +11,10 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from tomlkit.exceptions import TOMLKitError
+
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -122,6 +124,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
     if (setting.section, setting.key) in BLANK_OFF:
         row["blank_off"] = True
+    if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):
+        row["ignored"] = "ignored: [models.default] replaces it (Settings > Models)"
     return {**row, "value": table.get(setting.key, setting.default)}
 
 
@@ -184,7 +188,8 @@ def _write_settings(path: Path, edit: Callable[[str], str], by_hand: str) -> Non
     eol = "\r\n" if b"\r\n" in raw else "\n"
     try:
         updated = edit(raw.decode("utf-8").replace("\r\n", "\n"))
-    except ConfigError as exc:
+    # tomlkit raises ValueError for shapes it cannot extend, such as a table inside an inline table.
+    except (ConfigError, TOMLKitError, ValueError) as exc:
         raise InvalidQuery(f"could not update {path} safely ({exc}); {by_hand} by hand") from exc
     fd, name = tempfile.mkstemp(prefix=path.name + ".", suffix=".new", dir=path.parent)
     staged = Path(name)

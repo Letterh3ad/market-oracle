@@ -12,6 +12,7 @@ from tests.fakes.ollama import FakeOllama
 def run(tmp_path, capsys, monkeypatch):
     cfg = tmp_path / "oracle.toml"
     cfg.write_text('[models.deep]\nprovider = "claude_api"\nmodel = "claude-opus-5"\nkey = "sk-secret"\n'
+                   '[models.own]\nprovider = "claude_api"\nmodel = "claude-opus-5"\n'
                    '[models.gone]\nprovider = "claude_api"\nmodel = "m"\nkey_env = "NOT_SET_ANYWHERE"\n',
                    encoding="utf-8")
     ollama = FakeOllama({"ok": True})
@@ -30,9 +31,10 @@ def test_list_shows_each_profile_with_its_key_as_set_or_unset_only(run):
     assert code == 0 and "sk-secret" not in out
     lines = out.splitlines()
     assert lines[0].split() == ["name", "provider", "model", "context", "key"]
-    assert lines[1].split() == ["default", "ollama", "qwen3:4b-instruct-2507-q8_0", "16384", "unset", "from", "[llm]"]
+    assert lines[1].split() == ["default", "ollama", "qwen3:4b-instruct-2507-q8_0", "16384", "-", "from", "[llm]"]
     assert lines[2].split() == ["deep", "claude_api", "claude-opus-5", "200000", "set"]
-    assert lines[3].split() == ["gone", "claude_api", "m", "200000", "unset", "(NOT_SET_ANYWHERE)"]
+    assert lines[3].split() == ["own", "claude_api", "claude-opus-5", "200000", "env", "/", "ant", "login"]
+    assert lines[4].split() == ["gone", "claude_api", "m", "200000", "unset", "(NOT_SET_ANYWHERE)"]
 
 
 def test_test_reports_ok_with_the_reply_time_or_the_error(run):

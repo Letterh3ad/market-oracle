@@ -193,10 +193,11 @@ async def discover(ctx: AppContext, model: ChatModel | None = None) -> Discovery
         usable = [s for s in searched_sources(ctx) if s == "themes" or seeds]
         if not usable:
             return DiscoveryRun(note=_nothing_to_search(ctx, seeds))
+        # Built before the rotation moves on, so a model that cannot be built skips no source.
+        run = _Run(ctx, held, model or model_for(ctx, DEFAULT_PROFILE), _Screen(ctx, room))
         meta = MetaRepo(ctx.conn)
         order = [s for s in _after(list(SOURCES), meta.get(_LAST_SOURCE)) if s in usable]
         meta.set(_LAST_SOURCE, order[0])
-        run = _Run(ctx, held, model or model_for(ctx, DEFAULT_PROFILE), _Screen(ctx, room))
         tried: list[str] = []
         async with open_client(ctx) as client:
             run.client = client

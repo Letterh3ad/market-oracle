@@ -8,7 +8,7 @@ from pydantic import BaseModel, StrictFloat, StrictInt, StrictStr
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.models_service import (
-    PROVIDERS, delete_model_profile, model_profile_rows, save_model_profile, try_model_profile,
+    delete_model_profile, model_profile_rows, provider_defaults, save_model_profile, try_model_profile,
 )
 
 router = APIRouter(prefix="/api/models")
@@ -30,7 +30,7 @@ class NewProfile(Profile):
 
 
 def _listing(ctx: AppContext) -> dict:
-    return {"profiles": model_profile_rows(ctx), "providers": list(PROVIDERS)}
+    return {"profiles": model_profile_rows(ctx), "providers": provider_defaults()}
 
 
 @router.get("")

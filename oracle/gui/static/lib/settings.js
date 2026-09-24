@@ -43,6 +43,7 @@ function read(row, box) {
 }
 
 function state(row) {
+  if (row.ignored) return row.ignored;
   if (!row.secret) return row.live ? "applies now" : "applies after Restart";
   const where = row.set ? "set in oracle.toml" : "not set";
   return row.from_env ? `${where}; ${row.env} in the environment wins` : where;
@@ -50,7 +51,8 @@ function state(row) {
 
 function settingRow(row) {
   const box = input(row);
-  const note = el("span", { class: row.live || row.secret ? "dim small" : "warn-text small" }, state(row));
+  const note = el("span", { class: row.ignored || !(row.live || row.secret) ? "warn-text small" : "dim small" },
+    state(row));
   const label = `${row.section ? `[${row.section}] ` : ""}${row.key}`;
   const save = async (value) => {
     try {
