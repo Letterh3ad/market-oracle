@@ -2304,7 +2304,7 @@ out the UK). In the shortlist, companies both named and screened rank first and 
 evidence, then those only named, then those only screened, up to 15, with their own budget of 20
 price checks; one without recent prices is passed over for the next and only counted. The evidence
 line ("universe: Semiconductors & Semiconductor Equipment, Netherlands, Mega Cap") is stored per
-item (m0039) and shown on the Discover tab and in `oracle discover show`; a note says how many
+item (m0040) and shown on the Discover tab and in `oracle discover show`; a note says how many
 matched and how many are shown. The recognised industry words join the question in `NamedIn.asked`,
 so 03's sector check holds a name matched by its start to them. Auto: a company only the screen found
 is never validated or added ("a universe match alone is not evidence"); a named one on its screened
@@ -2358,3 +2358,12 @@ providers, operators, developers); anything else stays unrecognised with the not
 or 39 (`is_receipt_symbol`); the screen checks both on the primary and on every line it may choose.
 **Alternatives:** Keeping the per-word retry with a stop list (every new phrase finds a new wrong
 word); dropping every Sao Paulo line of a foreign company (the ticker says which are receipts).
+
+## 2026-09-24 - Universe screen gate round 3: foreign quotes on Latin American boards
+**Context:** With a region asked, Mexico's SIC quotes and Buenos Aires' CEDEARs of foreign companies
+stood as home lines (TSMN.MX for TSMC, SQ.BA for Square): they trade on a main board in the local
+currency.
+**Decision:** The screen never takes a line on BUE, MEX or SAO for a company whose universe country is
+not that exchange's country. The replay picker's rule is left as it is.
+**Alternatives:** Changing `home_line` itself (would change the replay spread); a ticker pattern per
+board (SIC and CEDEAR tickers follow no one pattern).

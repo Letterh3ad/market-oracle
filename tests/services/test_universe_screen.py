@@ -80,6 +80,11 @@ UNIVERSE = [
     *company("c1hi", "China Petroleum & Chemical Corporation", "China", "Large Cap",
              [("C1HI34.SA", "SAO", "BRL")], **OIL),
     *company("e1co", "ECOPETROL SADRN", "Colombia", "Large Cap", [("E1CO34.SA", "SAO", "BRL")], **OIL),
+    # Foreign quotes on Latin American boards: Mexico's SIC and Buenos Aires' CEDEARs.
+    *company("tsmc", "Taiwan Semiconductor Manufacturing Company Limited", "Taiwan", "Large Cap",
+             [("TSM", "NYQ", "USD"), ("TSMN.MX", "MEX", "MXN")]),
+    *company("brch", "Brachip S.A.", "Brazil", "Large Cap", [("BRCH", "NYQ", "USD"), ("BRCH.BA", "BUE", "ARS")]),
+    *company("smx", "Semimex S.A.B. de C.V.", "Mexico", "Mid Cap", [("SMX.MX", "MEX", "MXN")]),
     *company("olix", "OliX Pharmaceuticals,Inc", "South Korea", "Micro Cap", [("226950.KQ", "KOE", "KRW")],
              sector="Health Care", group="Pharmaceuticals, Biotechnology & Life Sciences",
              industry="Pharmaceuticals"),
@@ -198,6 +203,13 @@ def test_a_phrase_ending_in_a_trade_noun_is_its_industry(phrase, found):
 
 def test_brazilian_receipts_never_stand_for_a_company_in_a_region(ctx):
     assert lines(screen_universe(ctx, filters(ctx, ["oil and gas"], ["emerging markets"]))) == ["PETR4.SA"]
+
+
+def test_a_foreign_quote_on_a_latin_american_board_is_never_a_home_line(ctx):
+    assert lines(screen_universe(ctx, filters(ctx, ["semiconductors"], ["emerging markets"]))) == ["SMX.MX"], \
+        "not TSMC's Mexican SIC quote"
+    assert lines(screen_universe(ctx, filters(ctx, ["semiconductors"], ["Latin America"]))) == ["SMX.MX"], \
+        "not a Brazilian company's Buenos Aires CEDEAR"
 
 
 def test_plan_words_are_mapped_onto_the_universe_and_unknown_ones_dropped_with_a_note(ctx):

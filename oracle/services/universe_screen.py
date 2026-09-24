@@ -11,7 +11,7 @@ from oracle.services.industry_words import Classes, classes
 from oracle.services.never_list import is_never, never_names
 from oracle.store.health import HealthRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
-from oracle.universe.exchanges import EXCHANGES
+from oracle.universe.exchanges import EXCHANGES, exchange_country
 from oracle.universe.listings import Listing, is_receipt, is_receipt_symbol
 from oracle.universe.regions import countries_of, home_country, home_line
 
@@ -21,6 +21,7 @@ _TRADE_NOUNS = frozenset({"maker", "makers", "manufacturer", "manufacturers", "c
                           "company", "companies", "firm", "firms", "producer", "producers", "supplier",
                           "suppliers", "major", "majors", "player", "players", "stock", "stocks", "group",
                           "groups", "provider", "providers", "operator", "operators", "developer", "developers"})
+_FOREIGN_QUOTE_BOARDS = frozenset({"BUE", "MEX", "SAO"})
 _UNTRUSTED = tuple(code for code, (country, tier) in EXCHANGES.items() if country == "United States" and tier == 3)
 
 
@@ -124,10 +125,16 @@ def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
             if not p.country:
                 continue
             countries = {p.country}
-        if (line := home_line([x for x in lines if not _receipt(x)], countries, dead)) is None:
+        if (line := home_line([x for x in lines if not _receipt(x) and not _foreign_quote(x, p)], countries, dead)) is None:
             continue
         out.append(Screened(p, line.symbol, _evidence(p, home_country(line), filters)))
     return Screening(tuple(out))
+
+
+def _foreign_quote(line: Listing, p: ListingProfile) -> bool:
+    """A foreign company quoted on a Latin American main board (Mexico's SIC, Buenos Aires'
+    CEDEARs, Sao Paulo): in the local currency, yet no home line."""
+    return line.exchange in _FOREIGN_QUOTE_BOARDS and exchange_country(line.exchange) != p.country
 
 
 def _receipt(line: Listing | ListingProfile) -> bool:
