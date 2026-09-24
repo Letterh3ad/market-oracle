@@ -543,6 +543,23 @@ async def test_a_bad_cluster_mid_study_ends_failed_while_the_rest_are_done(ctx, 
     assert (s.finished, s.done, sorted(c.symbol for c in s.failed)) == (True, 2, ["AAPL", "HSBA.L", "JPM"])
 
 
+async def test_an_outage_whose_error_changes_still_backs_off_and_charges_little(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 6, 1)
+    for symbol in ("AAPL", "JPM", "HSBA.L"):
+        await run_one(pacer, runner, research, symbol, day, "ollama is not running")
+    begun = ctx.clock.utcnow()
+    for n in range(8):
+        assert pacer.check() is None and pacer.waiting.startswith("backing off")  # never at polling speed
+        ctx.clock.advance(LONG_BACKOFF.total_seconds())
+        await probe_fails(pacer, runner, research, f"model {n} reply unusable for {{symbol}}")
+    s = study_status(ctx)
+    charged = sum(c.attempts for c in cells(ctx))
+    assert charged <= 4 and s.failed == () and s.state == "running"
+    assert ctx.clock.utcnow() - begun >= 8 * LONG_BACKOFF
+
+
 async def test_failures_whose_text_varies_still_count_as_one_outage(ctx, runner, research):
     await started(ctx)
     pacer = ReplayPacer(ctx, runner)

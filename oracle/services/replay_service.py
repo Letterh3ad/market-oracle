@@ -609,9 +609,16 @@ class ReplayPacer:
         repo.mark_failed(cell.id, error, now)
         kind = _error_kind(error, cell.symbol)
         if self._outage_since:
-            if self._outage_kind in (None, kind):  # the probe after a back-off: the outage goes on
+            # The probe after a back-off failed: the outage goes on, whatever its error says now.
+            if self._outage_kind in (None, kind):
                 repo.refund([cell.id], MAX_REFUNDS)
-                self._back_off(error, now)
+            else:
+                # A new error costs its cell the attempt, but five in a row are an outage too.
+                self._run.append((cell.id, kind))
+                if len(self._run) >= ANY_OUTAGE_AFTER:
+                    repo.refund([cell_id for cell_id, _ in self._run], MAX_REFUNDS)
+                    self._run, self._outage_kind = [], None
+            self._back_off(error, now)
             return
         self._run.append((cell.id, kind))
         alike = self._run[-OUTAGE_AFTER:]
