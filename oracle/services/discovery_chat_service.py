@@ -32,7 +32,7 @@ from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.job_history import INTERRUPTED
 from oracle.store.questions import DONE, FAILED, RUNNING, Answer, Question, QuestionRepo, ShortlistItem
 from oracle.store.research import evidence_of, note_model
-from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.store.universe import CLASSIFICATION_LEVELS, ListingProfile, UniverseRepo
 from oracle.universe.listings import MARKET_CAP_BANDS
 
 __all__ = [
@@ -62,7 +62,10 @@ _NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "secto
 _WORDS = re.compile(r"[a-z0-9]+")
 # Everyday words for what the universe names otherwise, after plurals are folded.
 _ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
-            "chip": "semiconductor", "chipmaker": "semiconductor"}
+            "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
+            "automaker": "automobile", "car": "automobile", "cars": "automobile"}
+# "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
+_WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}
 
 PLAN = """You plan news searches to answer an investor's question about which listed companies fit it.
 Reply with JSON:
@@ -248,7 +251,9 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     stage("planning searches")
     plan = await _plan(model, asked)
     repo.set_searches(answer_id, [s.label for s in plan.searches])
-    notes.extend(_filter_notes(plan, UniverseRepo(ctx.conn).classifications()))
+    classifications = UniverseRepo(ctx.conn).classifications()
+    exclusions = [e for x in plan.exclude if (e := exclusion(x, classifications))]
+    notes.extend(_filter_notes(plan, exclusions))
     found: list[list[int]] = []
     failed: list[str] = []
     shelf = Shelf(ctx.conn, ctx.clock, lambda ids, _query: found[-1].extend(ids))
@@ -288,7 +293,7 @@ async def _answer(ctx: AppContext, repo: QuestionRepo, answer_id: int, asked: st
     # More items behind a name first; the model's own order among equals.
     ranked = sorted(mentions, key=lambda m: -len(m.headlines))
     stage("checking listings")
-    shortlist = _Shortlist(ctx, plan)
+    shortlist = _Shortlist(ctx, plan, exclusions)
     items = await shortlist.screen(ranked, [e.id for e in evidence])
     if kept := record_links(ctx, _links(shortlist, ranked, [e.id for e in evidence]), SOURCE_CHAT):
         notes.append(f"kept {kept} link{'' if kept == 1 else 's'} between companies the news states "
@@ -337,12 +342,12 @@ def _unique(items) -> list[str]:
     return out
 
 
-def _filter_notes(plan: Plan, classifications: set[str]) -> list[str]:
+def _filter_notes(plan: Plan, exclusions: list[Exclusion]) -> list[str]:
     """What the filters do, and which excludes name nothing the universe holds (they leave nothing out)."""
     notes = []
     if plan.market_caps:
         notes.append(f"only {', '.join(c.lower() + 's' for c in plan.market_caps)}")
-    known = [x for x in plan.exclude if _matching(x, classifications)]
+    known = [e.text for e in exclusions]
     if known:
         notes.append(f"leaving out {', '.join(known)}")
     notes.extend(f'"{x}" was not recognised as a sector or industry, so nothing was left out for it'
@@ -373,9 +378,10 @@ class _Shortlist(Screen):
     """Screens named companies in rank order. Never-listed and removed companies are left off;
     watched and discovered ones stay on, marked, with no price check."""
 
-    def __init__(self, ctx: AppContext, plan: Plan) -> None:
+    def __init__(self, ctx: AppContext, plan: Plan, exclusions: list[Exclusion]) -> None:
         super().__init__(ctx, MAX_PRICE_CHECKS)
         self._plan = plan
+        self._exclusions = exclusions
 
     async def screen(self, mentions: list[Mention], item_ids: list[int]) -> list[ShortlistItem]:
         """Shortlisted first, numbered from 1 in rank order, then those left off."""
@@ -408,19 +414,44 @@ class _Shortlist(Screen):
         caps = self._plan.market_caps
         if caps and p.market_cap not in caps:
             return f"not the size asked for ({p.market_cap or 'size unknown'})"
-        for word in self._plan.exclude:
-            if (field := _matching(word, (p.sector, p.industry_group, p.industry))) is not None:
-                return f"in {field}, which the question leaves out"
+        for rule in self._exclusions:
+            if (value := rule.leaves_out(p)) is not None:
+                return f"in {value}, which the question leaves out"
         return None
 
 
-def _matching(exclude: str, fields) -> str | None:
-    """The first field holding every word of `exclude`, singular or plural and in everyday words
-    ("utility" finds "Utilities", "oil and gas" finds "Oil, Gas & Consumable Fuels", "chipmakers"
-    finds "Semiconductors"); one shared word is not enough ("consumer staples" is not "Consumer
-    Discretionary")."""
-    wanted = {_ALIASES.get(w, w) for w in _words(exclude)} - _NOT_A_SECTOR
-    return next((f for f in fields if f and wanted and wanted <= _words(f)), None)
+@dataclass(frozen=True)
+class Exclusion:
+    """An exclude as the universe's classifications at one level."""
+
+    text: str
+    level: str
+    """A ListingProfile field: industry, industry_group or sector."""
+    values: frozenset[str]
+
+    def leaves_out(self, p: ListingProfile) -> str | None:
+        value = getattr(p, self.level)
+        return value if value in self.values else None
+
+
+def exclusion(text: str, classifications: dict[str, frozenset[str]]) -> Exclusion | None:
+    """What an exclude leaves out: the classifications holding every word of it, singular or
+    plural and in everyday words ("utility" finds "Utilities", "chipmakers" finds "Semiconductors");
+    one shared word is not enough ("consumer staples" is not "Consumer Discretionary"). Only the
+    most specific level is used, an exact name before one merely holding the words, so "biotech"
+    leaves out Biotechnology, not the Pharmaceuticals beside it in their combined group, and
+    "media" leaves out Media, not Interactive Media & Services. None when nothing matches."""
+    words = frozenset(w for word in _words(text) for w in _ALIASES.get(word, word).split()) - _NOT_A_SECTOR
+    wanted = _WHOLE.get(words, words)
+    if not wanted:
+        return None
+    for exact in (True, False):
+        for level in CLASSIFICATION_LEVELS:
+            found = frozenset(v for v in classifications.get(level, ())
+                              if (_words(v) == wanted if exact else wanted <= _words(v)))
+            if found:
+                return Exclusion(text, level, found)
+    return None
 
 
 def _words(text: str) -> set[str]:

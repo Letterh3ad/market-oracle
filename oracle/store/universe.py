@@ -9,6 +9,8 @@ from oracle.universe.listings import MARKET_CAP_BANDS, Listing, pick_primary
 from oracle.universe.query import COMPANY_FIELDS, FILTER_FIELDS, UniverseQuery, fts_match
 
 _COLUMNS = [f.name for f in fields(Listing)]
+CLASSIFICATION_LEVELS = ("industry", "industry_group", "sector")
+"""ListingProfile fields, the most specific first."""
 
 _CAP_ORDER = "CASE p.market_cap {} END".format(
     " ".join(f"WHEN '{band}' THEN {i}" for i, band in enumerate(MARKET_CAP_BANDS))
@@ -322,12 +324,13 @@ class UniverseRepo:
         column = _column(sort)
         return f"{column} IS NULL, {column} COLLATE NOCASE{way}, {tail}"
 
-    def classifications(self) -> set[str]:
-        """Every sector, industry group and industry an active company has."""
+    def classifications(self) -> dict[str, frozenset[str]]:
+        """Every industry, industry group and sector an active company has, by level
+        (`CLASSIFICATION_LEVELS`, the most specific first)."""
         rows = self._conn.execute(
-            "SELECT sector, industry_group, industry FROM listings WHERE is_primary AND delisted = 0 "
-            "GROUP BY sector, industry_group, industry")
-        return {v for row in rows for v in row if v}
+            "SELECT industry, industry_group, sector FROM listings WHERE is_primary AND delisted = 0 "
+            "GROUP BY sector, industry_group, industry").fetchall()
+        return {level: frozenset(r[n] for r in rows if r[n]) for n, level in enumerate(CLASSIFICATION_LEVELS)}
 
     def facets(self, name: str) -> list[Facet]:
         """Values of a field with how many active companies have each."""
