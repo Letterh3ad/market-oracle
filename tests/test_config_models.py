@@ -40,7 +40,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
 
 
 @pytest.mark.parametrize("table, message", [
-    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, got 'gpt'"),
+    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, claude_code, got 'gpt'"),
     ('model = "x"', r"models.fast needs a provider"),
     ('provider = "ollama"', r"models.fast needs a model"),
     ('provider = "ollama"\nmodel = ""', r"models.fast.model must be a model name"),
@@ -119,3 +119,38 @@ def test_profile_names_are_checked_and_may_not_differ_only_in_case(tmp_path):
 def test_a_duplicate_table_is_refused_with_the_toml_parsers_message(tmp_path):
     with pytest.raises(ConfigError, match="not valid TOML"):
         _load(tmp_path, '[models.a]\nprovider = "ollama"\nmodel = "x"\n[models.a]\nprovider = "ollama"\nmodel = "y"\n')
+
+
+CLAUDE_CODE = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\n'
+ALLOWED = "[models]\nallow_claude_code = true\n"
+
+
+def test_claude_code_is_refused_unless_the_models_flag_allows_it(tmp_path):
+    with pytest.raises(ConfigError, match="models.sub: provider claude_code .* set allow_claude_code = true under"):
+        _load(tmp_path, CLAUDE_CODE)
+    with pytest.raises(ConfigError, match="models.sub: provider claude_code"):
+        _load(tmp_path, f"[models]\nallow_claude_code = false\n{CLAUDE_CODE}")
+    config = _load(tmp_path, ALLOWED + CLAUDE_CODE)
+    assert config.allow_claude_code is True and list(config.models) == ["sub"]
+    assert model_profiles(config)["sub"] == ModelProfile("claude_code", "sonnet", None, CLAUDE_CONTEXT, 180.0)
+    assert _load(tmp_path, "[llm]\n").allow_claude_code is False
+
+
+@pytest.mark.parametrize("text, message", [
+    ("[models]\nallow_claude_code = 1\n", "models.allow_claude_code must be true or false"),
+    ("allow_claude_code = true\n", r"allow_claude_code belongs under \[models\]"),
+    ('[models.allow_claude_code]\nprovider = "ollama"\nmodel = "x"\n', "must be true or false"),
+    (ALLOWED + CLAUDE_CODE + 'base_url = "http://x"\n', "claude_code reaches no endpoint"),
+    (ALLOWED + CLAUDE_CODE + 'key_env = "K"\n', "claude_code takes no key"),
+])
+def test_the_flag_and_claude_code_profiles_are_checked(tmp_path, text, message):
+    with pytest.raises(ConfigError, match=message):
+        _load(tmp_path, text)
+
+
+def test_the_flag_is_not_a_profile_name_or_a_settings_form_key():
+    from oracle.config import check_profile_name, setting_list
+
+    with pytest.raises(ConfigError, match="not a profile name"):
+        check_profile_name("allow_claude_code")
+    assert not [s for s in setting_list() if s.key == "allow_claude_code"]

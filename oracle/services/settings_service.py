@@ -146,7 +146,9 @@ def reload_live_settings(ctx: AppContext) -> None:
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return
-    ctx.config = replace(ctx.config, **{section: getattr(loaded, section) for section in LIVE_SECTIONS})
+    # The flag sits in [models] beside the profiles, so it is live with them.
+    ctx.config = replace(ctx.config, allow_claude_code=loaded.allow_claude_code,
+                         **{section: getattr(loaded, section) for section in LIVE_SECTIONS})
 
 
 def _check_schedule_write(ctx: AppContext, values: dict[str, object]) -> ScheduleConfig:

@@ -1,15 +1,20 @@
+from dataclasses import replace
+
 import httpx
 import pytest
 
 from oracle.config import CLAUDE_CONTEXT, PROVIDERS, load_config
 from oracle.research.claude import ClaudeChat
+from oracle.research.claude_code import BIN_ENV, ClaudeCodeChat
 from oracle.research.ollama import OllamaChat
 from oracle.services import models_service
 from oracle.services.context import load_settings, open_context
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, UnknownModelProfile
 from oracle.services.models_service import (
-    delete_model_profile, model_for, model_profile_rows, resolve_model, save_model_profile, try_model_profile,
+    delete_model_profile, model_for, model_profile_rows, provider_defaults, resolve_model, save_model_profile,
+    try_model_profile,
 )
+from tests.fakes.claude_cli import shim
 from tests.fakes.ollama import FakeOllama
 
 
@@ -217,3 +222,59 @@ def test_a_profile_the_file_writes_inline_is_an_edit_by_hand_error(tmp_path):
         with pytest.raises(InvalidQuery, match="by hand"):
             save_model_profile(ctx, "small", {"provider": "ollama", "model": "y"}, create=True)
         assert ctx.config_source.read_bytes() == before
+
+
+ALLOWED = "[models]\nallow_claude_code = true\n"
+SUB = '[models.sub]\nprovider = "claude_code"\nmodel = "sonnet"\ntimeout_s = 30\n'
+
+
+def test_claude_code_is_offered_only_when_the_flag_allows_it(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        assert "claude_code" not in provider_defaults(ctx)
+    with _ctx(tmp_path, ALLOWED) as ctx:
+        assert provider_defaults(ctx)["claude_code"] == {
+            "base_url": None, "context": CLAUDE_CONTEXT, "timeout_s": 180.0, "keyed": False, "url": False}
+        assert provider_defaults(ctx)["ollama"]["url"] is True
+
+
+def test_a_claude_code_profile_builds_the_cli_backend(tmp_path):
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        built = model_for(ctx, "sub")
+        assert type(built) is ClaudeCodeChat and (built.model, built._timeout) == ("sonnet", 30.0)
+        assert model_profile_rows(ctx)[1]["key_state"] == "none"
+        ctx.config = replace(ctx.config, allow_claude_code=False)
+        with pytest.raises(ModelUnavailable, match="allow_claude_code"):
+            model_for(ctx, "sub")
+
+
+@pytest.mark.parametrize("mode, ok, says", [
+    ("good", True, None),
+    ("logged_out", False, "not logged in"),
+    ("garbage", False, "not the JSON"),
+])
+async def test_the_test_button_runs_the_cli_the_app_finds(tmp_path, monkeypatch, mode, ok, says):
+    monkeypatch.setenv(BIN_ENV, str(shim(tmp_path, mode)))
+    with _ctx(tmp_path, ALLOWED + SUB) as ctx:
+        result = await try_model_profile(ctx, "sub")
+    assert result.ok is ok and (says is None or says in result.error)
+
+
+def test_a_claude_code_profile_saves_only_when_allowed_and_drops_a_url(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        with pytest.raises(InvalidQuery, match="allow_claude_code"):
+            save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "sonnet"}, create=True)
+        assert "sub" not in load_config(ctx.config_source)[0].models
+    with _ctx(tmp_path, ALLOWED) as ctx:
+        save_model_profile(ctx, "sub", {"provider": "claude_code", "model": "opus", "base_url": "http://x"}, create=True)
+        assert ctx.config.models["sub"].base_url is None and model_for(ctx, "sub").model == "opus"
+        text = ctx.config_source.read_text(encoding="utf-8")
+        assert text.index("allow_claude_code") < text.index("[models.sub]")
+
+
+def test_the_flag_applies_live_with_the_profiles(tmp_path):
+    from oracle.services.settings_service import reload_live_settings
+
+    with _ctx(tmp_path) as ctx:
+        ctx.config_source.write_text(ctx.config_source.read_text(encoding="utf-8") + ALLOWED + SUB, encoding="utf-8")
+        reload_live_settings(ctx)
+        assert ctx.config.allow_claude_code and "claude_code" in provider_defaults(ctx)

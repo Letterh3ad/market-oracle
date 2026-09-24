@@ -30,7 +30,7 @@ class NewProfile(Profile):
 
 
 def _listing(ctx: AppContext) -> dict:
-    return {"profiles": model_profile_rows(ctx), "providers": provider_defaults()}
+    return {"profiles": model_profile_rows(ctx), "providers": provider_defaults(ctx)}
 
 
 @router.get("")

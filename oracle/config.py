@@ -258,9 +258,15 @@ class Provider:
 PROVIDERS: dict[str, Provider] = {
     "ollama": Provider(LlmConfig.base_url, LlmConfig.context, None),
     "claude_api": Provider(None, CLAUDE_CONTEXT, "env / ant login"),
+    "claude_code": Provider(None, CLAUDE_CONTEXT, None),
 }
 """Every provider a profile can name, with what its unset keys mean."""
 PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
+URLLESS_PROVIDERS = ("claude_code",)
+"""Providers that reach no endpoint, so take no base_url."""
+ALLOW_CLAUDE_CODE = "allow_claude_code"
+"""The `[models]` key, beside the profile tables, that lets a profile name claude_code: it
+drives the user's own claude.ai login, which a distributed build must not offer."""
 PROVIDER_KEYS = ("base_url", "context")
 """Keys whose meaning belongs to one provider: a value carried over from another is dropped."""
 
@@ -350,6 +356,8 @@ class Config:
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
     """The `[models.<name>]` tables only; model_profiles adds the implicit default."""
+    allow_claude_code: bool = False
+    """`[models] allow_claude_code`: set in the file by hand only, never in Settings."""
     research: ResearchConfig = field(default_factory=ResearchConfig)
     keys: Keys = field(default_factory=Keys)
 
@@ -392,8 +400,8 @@ def setting_list(extra_sources: tuple[str, ...] = ()) -> list[Setting]:
                         for s in fields(SourceConfig)]
         elif f.name == "keys":
             out += [Setting("keys", name, "str", None) for name in KEY_NAMES]
-        elif f.name == "models":
-            continue  # edited as whole profiles, in the Models section
+        elif f.name in ("models", ALLOW_CLAUDE_CODE):
+            continue  # profiles are edited in the Models section; the flag only by hand
         elif hasattr(value, "__dataclass_fields__"):
             out += [_setting(f.name, s.name, getattr(value, s.name), s.type) for s in fields(value)]
         else:
@@ -564,8 +572,10 @@ def _apply(raw: dict) -> Config:
             values[name] = _llm(value)
             continue
         if name == "models":
-            values[name] = _models(value)
+            values[name], values[ALLOW_CLAUDE_CODE] = _models(value)
             continue
+        if name == ALLOW_CLAUDE_CODE:
+            raise ConfigError(f"{name} belongs under [models]")
         if name == "research":
             values[name] = _research(value)
             continue
@@ -800,21 +810,33 @@ PROFILE_NAME = re.compile(r"[A-Za-z0-9_-]{1,40}")
 ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
-def _models(raw: object) -> dict[str, ModelProfile]:
+def _models(raw: object) -> tuple[dict[str, ModelProfile], bool]:
+    """The profiles, and whether claude_code may be named."""
     if not isinstance(raw, dict):
         raise ConfigError("models must be a table of [models.<name>] sections")
+    raw = dict(raw)
+    allow = raw.pop(ALLOW_CLAUDE_CODE, False)
+    if not isinstance(allow, bool):
+        raise ConfigError(f"models.{ALLOW_CLAUDE_CODE} must be true or false, got {allow!r}")
     seen: dict[str, str] = {}
     for name in raw:
         check_profile_name(name)
         if name.lower() in seen:
             raise ConfigError(f"models: {seen[name.lower()]} and {name} differ only in case; rename one")
         seen[name.lower()] = name
-    return {name: check_profile(name, table) for name, table in raw.items()}
+    profiles = {name: check_profile(name, table) for name, table in raw.items()}
+    gated = next((n for n, p in profiles.items() if p.provider == "claude_code"), None)
+    if gated and not allow:
+        raise ConfigError(f"models.{gated}: provider claude_code runs your own logged-in claude CLI and is off; "
+                          f"set {ALLOW_CLAUDE_CODE} = true under [models] to use it")
+    return profiles, allow
 
 
 def check_profile_name(name: object) -> str:
     if not (isinstance(name, str) and PROFILE_NAME.fullmatch(name)):
         raise ConfigError(f"models: {name!r} is not a profile name (letters, digits, _ and -, up to 40)")
+    if name.lower() == ALLOW_CLAUDE_CODE:
+        raise ConfigError(f"models: {name} is a [models] setting, not a profile name")
     return name
 
 
@@ -834,6 +856,8 @@ def check_profile(name: str, raw: object) -> ModelProfile:
         raise ConfigError(f"{where} sets key and key_env; keep one")
     if PROVIDERS[provider].fallback_key is None and ("key" in raw or "key_env" in raw):
         raise ConfigError(f"{where}: {provider} takes no key; remove key and key_env")
+    if provider in URLLESS_PROVIDERS and "base_url" in raw:
+        raise ConfigError(f"{where}: {provider} reaches no endpoint; remove base_url")
     p = ModelProfile(**raw)
     low, high = PROFILE_CONTEXT_RANGE
     checks = {

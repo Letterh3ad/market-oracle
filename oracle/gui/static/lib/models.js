@@ -136,6 +136,7 @@ function formRow(p, providers) {
     inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
       ? "saved key kept" : "key";
     keyCell.hidden = !defaults.keyed;
+    inputs.base_url.hidden = !defaults.url;
   };
   provider.addEventListener("change", () => {
     // Another provider's endpoint or window would break this one; its own defaults apply.
