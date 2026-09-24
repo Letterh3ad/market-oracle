@@ -41,11 +41,13 @@ def test_list_shows_each_profile_with_its_key_as_set_or_unset_only(run):
 
 def test_list_warns_when_a_slots_profile_has_its_key_unset(run, tmp_path):
     cfg = tmp_path / "oracle.toml"
-    cfg.write_text(cfg.read_text(encoding="utf-8") + '[models.slots]\nverdict = "gone"\n', encoding="utf-8")
+    cfg.write_text(cfg.read_text(encoding="utf-8") + '[models.slots]\nverdict = "gone"\ndiscovery = "gone"\n'
+                   'ai_account = "gone"\n', encoding="utf-8")
     code, out, _ = run("models", "list")
     lines = out.splitlines()
-    assert code == 0 and lines[-2].endswith("slots: verdict")
-    assert "warning: NOT_SET_ANYWHERE is not set, so gone cannot run" in lines[-1]
+    assert code == 0 and lines[-2].endswith("slots: verdict, discovery, ai_account")
+    assert lines[-1] == ("  warning: NOT_SET_ANYWHERE is not set, so gone cannot run: verdict runs on the research "
+                         "slot's profile; discovery fails; tick research uses the other slots")
     assert "verdict (unset)" not in lines[1]
 
 

@@ -54,12 +54,12 @@ function keyState(p) {
 }
 
 // The slots a profile serves, those it serves by being unset marked so; a warning when its
-// key is missing, since those stages then run on the research slot's profile.
+// key is missing, saying what then happens to each.
 function slotsCell(p) {
   const text = [...p.slots, ...p.unset_slots.map((s) => `${s} (unset)`)].join(", ");
-  if (!text || p.key_state !== "unset") return el("td", { class: "dim small" }, text);
-  return el("td", { class: "warn-text small", title: `${p.key_env} is not set: these stages run on the research ` +
-    "slot's profile instead, and research on it fails" }, `${text}: key unset`);
+  if (!p.if_unset?.length) return el("td", { class: "dim small" }, text);
+  return el("td", { class: "warn-text small", title: `${p.key_env} is not set: ${p.if_unset.join("; ")}` },
+    `${text}: key unset`);
 }
 
 function pane() {

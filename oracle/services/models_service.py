@@ -106,8 +106,6 @@ def check_model_profile(ctx: AppContext, name: str | None) -> str | None:
     return name
 
 
-
-
 def model_for(ctx: AppContext, profile: str) -> ChatModel:
     """The model the named profile describes."""
     return resolve_model(ctx, profile).model
@@ -145,7 +143,19 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
         "set": {f: getattr(tables[name], f) for f in ("base_url", "context", "timeout_s")},
         "slots": [slot for slot in SLOTS if ctx.config.model_slots.get(slot) == name],
         "unset_slots": _unset_slots(ctx.config) if name == DEFAULT_PROFILE else [],
+        "if_unset": [if_unavailable(slot) for slot in _served(ctx.config, name)] if _key_state(p) == "unset" else [],
     } for name, p in model_profiles(ctx.config).items()]
+
+
+def if_unavailable(slot: str) -> str:
+    """What happens to a slot's work when its profile cannot be built."""
+    return {"research": "research fails", "discovery": "discovery fails",
+            "ai_account": "tick research uses the other slots"}.get(slot, f"{slot} runs on the research slot's profile")
+
+
+def _served(config: Config, name: str) -> list[str]:
+    return [slot for slot in SLOTS if config.model_slots.get(slot) == name] + (
+        _unset_slots(config) if name == DEFAULT_PROFILE else [])
 
 
 def _unset_slots(config: Config) -> list[str]:

@@ -115,6 +115,7 @@ def test_a_profile_a_slot_names_is_not_deleted_and_the_slots_are_named(tmp_path)
         rows = model_profile_rows(ctx)
         assert [r["slots"] for r in rows] == [[], ["notes", "verdict"]]
         assert rows[0]["unset_slots"] == ["research", "roles", "queries", "discovery"] and rows[1]["unset_slots"] == []
+        assert rows[1]["if_unset"] == [], "a warning only for a key that is unset"
         with pytest.raises(InvalidQuery, match=r"big is in use by slots notes, verdict"):
             delete_model_profile(ctx, "big")
         assert "big" in load_config(ctx.config_source)[0].models

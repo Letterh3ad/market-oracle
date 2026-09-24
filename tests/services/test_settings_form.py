@@ -129,11 +129,15 @@ def test_a_slot_is_a_row_choosing_a_profile_that_applies_at_once(ctx):
     assert ctx.config.model_slots == {}
 
 
-def test_a_dangling_slot_edited_in_by_hand_is_not_taken_live(ctx):
+def test_a_dangling_slot_edited_in_by_hand_is_dropped_on_reload_and_the_rest_still_applies(ctx, caplog):
     from oracle.services.settings_service import reload_live_settings
 
     set_setting(ctx, "models.slots", "notes", "default")
     path = ctx.config_source
-    path.write_text(path.read_text(encoding="utf-8").replace('notes = "default"', 'notes = "huge"'), encoding="utf-8")
+    text = path.read_text(encoding="utf-8").replace('notes = "default"', 'notes = "huge"')
+    path.write_text(text + '\n[automation]\nenabled = false\n', encoding="utf-8")
     reload_live_settings(ctx)
-    assert ctx.config.model_slots == {"notes": "default"}, "kept, not dropped to default behind the user's back"
+    assert ctx.config.model_slots == {} and ctx.config.automation.enabled is False
+    assert "models.slots.notes names no profile 'huge'" in caplog.text
+    with pytest.raises(InvalidQuery, match="names no profile 'huge'"):
+        set_setting(ctx, "models.slots", "verdict", "huge")

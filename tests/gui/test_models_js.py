@@ -72,7 +72,7 @@ def slots_cell(profile: dict) -> dict:
           createTextNode: (text) => text }};
         const {{ slotsCell }} = await import({json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())});
         const td = slotsCell({json.dumps(profile)});
-        console.log(JSON.stringify({{ text: td.children.join(""), cls: td.className }}));
+        console.log(JSON.stringify({{ text: td.children.join(""), cls: td.className, title: td.attrs.title }}));
     """
     done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
     return json.loads(done.stdout)
@@ -81,5 +81,7 @@ def slots_cell(profile: dict) -> dict:
 def test_the_slots_a_profile_serves_show_unset_ones_marked_and_warn_when_its_key_is_unset():
     default = {"slots": ["notes"], "unset_slots": ["research", "roles"], "key_state": "none"}
     assert slots_cell(default) == {"text": "notes, research (unset), roles (unset)", "cls": "dim small"}
-    keyless = {"slots": ["verdict"], "unset_slots": [], "key_state": "unset", "key_env": "MY_KEY"}
-    assert slots_cell(keyless) == {"text": "verdict: key unset", "cls": "warn-text small"}
+    keyless = {"slots": ["verdict"], "unset_slots": [], "key_state": "unset", "key_env": "MY_KEY",
+               "if_unset": ["verdict runs on the research slot's profile"]}
+    assert slots_cell(keyless) == {"text": "verdict: key unset", "cls": "warn-text small",
+                                   "title": "MY_KEY is not set: verdict runs on the research slot's profile"}

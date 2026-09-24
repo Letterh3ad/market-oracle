@@ -124,13 +124,29 @@ async def test_a_slot_whose_model_cannot_be_built_runs_on_the_research_profile_a
     slots(ctx, verdict="claude")
     run = await research(ctx, "AAPL")
     verdict = run.stages[-1]
-    assert (verdict.stage, verdict.profile, verdict.model) == ("verdict", "default", "lead")
-    [why] = verdict.fell_back_to
-    assert why.startswith("default profile (claude unavailable: ") and "ORACLE_TEST_UNSET_KEY" in why
-    assert run.report.verdict is not None and why in run.fell_back_to
+    assert (verdict.stage, verdict.profile, verdict.model, verdict.fell_back_to) == ("verdict", "default", "lead", ())
+    assert verdict.unavailable.startswith("claude unavailable: ") and "ORACLE_TEST_UNSET_KEY" in verdict.unavailable
+    assert run.report.verdict is not None and run.fell_back_to == ()
+    assert run.model_label == f"scripted lead; verdict on default ({verdict.unavailable})"
+    assert "answered when it refused" not in run.model_label
     slots(ctx, research="claude")
     with pytest.raises(ModelUnavailable, match="ORACLE_TEST_UNSET_KEY"):
         await research(ctx, "AAPL")
+
+
+async def test_a_tick_whose_ai_account_profile_cannot_be_built_researches_on_the_slots(ctx, models, monkeypatch):
+    lead, _ = models
+    monkeypatch.delenv("ORACLE_TEST_UNSET_KEY", raising=False)
+    monkeypatch.setattr("oracle.services.research_service.stale_research", lambda c: ["AAPL"])
+    keyless = ModelProfile("claude_api", "claude-opus-5", key_env="ORACLE_TEST_UNSET_KEY")
+    ctx.config = replace(ctx.config, models={"claude": keyless})
+    slots(ctx, ai_account="claude")
+    done = await refresh_research(ctx)
+    assert done.researched == ["AAPL"] and done.failed == []
+    run = latest_research(ctx, "AAPL")
+    assert {s.profile for s in run.stages} == {"default"} and loop_calls(lead)
+    assert all(s.unavailable.startswith("claude unavailable: ") for s in run.stages)
+    assert run.model_label.startswith("scripted lead; queries, research, notes, roles, verdict on default (claude unavailable: ")
 
 
 async def test_a_ticks_research_runs_on_the_ai_account_slot_else_the_slots(ctx, monkeypatch):

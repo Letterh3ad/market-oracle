@@ -35,7 +35,9 @@ def test_an_unknown_slot_or_profile_is_refused(tmp_path, slots, message):
 def test_at_start_a_slot_naming_a_missing_profile_runs_on_default_with_a_warning(tmp_path, caplog):
     config = _load(tmp_path, BIG + '[models.slots]\nnotes = "huge"\nverdict = "big"\n', strict=False)
     assert config.model_slots == {"verdict": "big"}
-    assert "models.slots.notes names no profile 'huge'" in caplog.text
+    assert "models.slots.notes names no profile 'huge'" in caplog.text and "notes runs on default" in caplog.text
+    _load(tmp_path, BIG + '[models.slots]\nai_account = "huge"\n', strict=False)
+    assert "tick research uses the other slots" in caplog.text
     with pytest.raises(ConfigError, match="unknown slot"):
         _load(tmp_path, BIG + '[models.slots]\nreading = "big"\n', strict=False)
 

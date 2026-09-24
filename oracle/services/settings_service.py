@@ -147,7 +147,9 @@ def reload_live_settings(ctx: AppContext) -> None:
     if ctx.config_source is None:
         return
     try:
-        loaded = load_config(ctx.config_source, strict=True)[0]
+        # Lenient: a slot naming a gone profile is dropped with a warning rather than freezing
+        # every live setting (the automation switch included) at its old value.
+        loaded = load_config(ctx.config_source)[0]
     except (ConfigError, tomllib.TOMLDecodeError, OSError) as exc:
         log.warning("oracle.toml no longer loads (%s); keeping the current live settings", exc)
         return

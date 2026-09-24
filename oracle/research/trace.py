@@ -201,15 +201,22 @@ class ResearchRun:
 
     @property
     def model_label(self) -> str:
-        if not self.mixed:
-            return f"{self.backend} {self.model}{_fell_back(self.fell_back_to)}"
-        groups: dict[tuple[str, str], list[StageModel]] = {}
+        if self.mixed:
+            groups: dict[tuple[str, str], list[StageModel]] = {}
+            for s in self.stages:
+                groups.setdefault((s.backend, s.model), []).append(s)
+            label = "; ".join(
+                f"{backend} {model} ({', '.join(s.stage for s in group)})"
+                f"{_fell_back(tuple(sorted({m for s in group for m in s.fell_back_to})))}"
+                for (backend, model), group in groups.items())
+        else:
+            label = f"{self.backend} {self.model}{_fell_back(self.fell_back_to)}"
+        instead: dict[tuple[str, str], list[str]] = {}
         for s in self.stages:
-            groups.setdefault((s.backend, s.model), []).append(s)
-        return "; ".join(
-            f"{backend} {model} ({', '.join(s.stage for s in group)})"
-            f"{_fell_back(tuple(sorted({m for s in group for m in s.fell_back_to})))}"
-            for (backend, model), group in groups.items())
+            if s.unavailable:
+                instead.setdefault((s.profile, s.unavailable), []).append(s.stage)
+        return label + "".join(f"; {', '.join(stages)} on {profile} ({why})"
+                               for (profile, why), stages in instead.items())
 
 
 @dataclass(frozen=True)
@@ -220,6 +227,8 @@ class StageModel:
     backend: str
     model: str
     fell_back_to: tuple[str, ...] = ()
+    unavailable: str | None = None
+    """Set when the profile meant for this stage could not be built: which, and why. `profile` is then the one it ran on."""
 
 
 def _fell_back(models: tuple[str, ...]) -> str:

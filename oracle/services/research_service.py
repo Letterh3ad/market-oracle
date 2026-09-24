@@ -62,15 +62,22 @@ LEASE_S = 3600.0
 
 async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
                    as_of: date | None = None, searcher: WebSearcher | None = None,
-                   profile: str | None = None) -> ResearchRun:
+                   profile: str | None = None, slots_if_unavailable: bool = False) -> ResearchRun:
     """One run over the listing, one at a time across processes. Each stage runs on its slot's
     profile, or every stage on `profile` (a run's picked model); `model` (a test's) answers
     every stage. With `as_of`, the run replays that day: every tool sees only what existed by
-    its end, for backtests after the model's training cutoff."""
+    its end, for backtests after the model's training cutoff. With `slots_if_unavailable`, a
+    `profile` that cannot be built (its key unset) gives way to the slots, saying why."""
     listing = resolve_symbol(ctx, symbol).symbol
     check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, profile, model, lead="research"))
+    try:
+        stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, profile, model, lead="research"))
+    except ModelUnavailable as exc:
+        if not (profile and slots_if_unavailable):
+            raise
+        stages = _Stages(resolve_stages(ctx, RESEARCH_STAGES, None, model, lead="research"),
+                         f"{profile} unavailable: {exc}")
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
         lead = stages.peek("research")
@@ -93,10 +100,11 @@ class _Stages:
     one after another, so a model shared by two stages counts each fallback for the stage
     that was running."""
 
-    def __init__(self, resolved: dict[str, RunModel]) -> None:
+    def __init__(self, resolved: dict[str, RunModel], unavailable: str | None = None) -> None:
+        """`unavailable`: why every stage is not on the profile picked for the run."""
         self._resolved = resolved
-        self._fell: dict[str, set[str]] = {
-            stage: {f"{r.profile} profile ({r.unavailable})"} if r.unavailable else set() for stage, r in resolved.items()}
+        self._unavailable = {stage: r.unavailable or unavailable for stage, r in resolved.items()}
+        self._fell: dict[str, set[str]] = {stage: set() for stage in resolved}
         self._current: str | None = None
 
     def peek(self, stage: str) -> ChatModel:
@@ -120,8 +128,8 @@ class _Stages:
     def records(self) -> tuple[StageModel, ...]:
         self._settle()
         self._current = None
-        return tuple(StageModel(stage, r.profile, r.model.name, r.model.model, tuple(sorted(self._fell[stage])))
-                     for stage, r in self._resolved.items())
+        return tuple(StageModel(stage, r.profile, r.model.name, r.model.model, tuple(sorted(self._fell[stage])),
+                                self._unavailable[stage]) for stage, r in self._resolved.items())
 
 
 async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, stages: _Stages,
@@ -204,8 +212,10 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
     """Research the watched listings whose report is missing, too old or behind a price move
     (`[ai_account]`), most stale first, starting runs only while the time budget (`budget_min`,
     else the tick's) lasts. `progress` hears each listing as it starts; `run` defaults to `research`
-    on the ai_account slot's profile when set, else on the slots like any run."""
-    run = run or (lambda c, symbol: research(c, symbol, profile=c.config.model_slots.get("ai_account")))
+    on the ai_account slot's profile when set (the slots when that cannot be built), else on
+    the slots like any run."""
+    run = run or (lambda c, symbol: research(c, symbol, profile=c.config.model_slots.get("ai_account"),
+                                             slots_if_unavailable=True))
     budget = timedelta(minutes=ctx.config.ai_account.research_budget_min if budget_min is None else budget_min)
     started = ctx.clock.utcnow()
     due = stale_research(ctx)

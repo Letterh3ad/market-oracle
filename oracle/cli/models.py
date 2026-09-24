@@ -25,9 +25,8 @@ def _list(ctx: AppContext, args: argparse.Namespace) -> int:
         serves = slots_served(r)
         slots = f"  slots: {serves}" if serves else ""
         print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}{slots}")
-        if serves and r["key_state"] == "unset":
-            print(f"  warning: {r['key_env']} is not set, so {r['name']} cannot run: its slots run on the research "
-                  "slot's profile instead, and research on it fails")
+        if r["if_unset"]:
+            print(f"  warning: {r['key_env']} is not set, so {r['name']} cannot run: {'; '.join(r['if_unset'])}")
     return 0
 
 

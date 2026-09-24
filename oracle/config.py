@@ -844,7 +844,8 @@ def check_slots(raw: object, profiles: set[str], strict: bool = True) -> dict[st
         message = f"{where}.{slot} names no profile {raw[slot]!r}; the profiles are {', '.join(sorted(profiles))}"
         if strict:
             raise ConfigError(message)
-        log.warning("%s: it runs on %s until fixed", message, DEFAULT_PROFILE)
+        log.warning("%s: until fixed, %s", message, "tick research uses the other slots" if slot == "ai_account"
+                    else f"{slot} runs on {DEFAULT_PROFILE}")
     return {slot: raw[slot] for slot in SLOTS if slot in raw and slot not in dangling}
 
 

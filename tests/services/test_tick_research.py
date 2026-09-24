@@ -57,7 +57,7 @@ def fake_research(ctx, minutes=0, fail=()):
     records a failed run and raises, as real research does."""
     done = []
 
-    async def run(c, symbol, profile=None):
+    async def run(c, symbol, **_):
         if symbol in fail:
             repo = ResearchRepo(c.conn)
             now = c.clock.utcnow().isoformat()
