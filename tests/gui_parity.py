@@ -57,8 +57,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "analyse": "POST /api/jobs/analyse",
     "peers": "GET /api/companies/{symbol}/peers",
     "research": "POST /api/jobs/research",
-    "research --as-of": Pending("gui-parity 05"),
-    "research --history": Pending("gui-parity 05"),
+    "research --as-of": "POST /api/jobs/research",  # Company tab, "Replay as of"
+    "research --history": "GET /api/companies/{symbol}/research/history",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",

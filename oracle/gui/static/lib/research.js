@@ -108,18 +108,44 @@ function jobLine(job) {
   return "";
 }
 
+// Earlier reports, newest first; each opens in place of the latest.
+function historyList(rows, open) {
+  if (rows.length < 2) return null;
+  return el("details", null, el("summary", null, tip(`Earlier reports (${rows.length})`, "research_history")),
+    el("table", { class: "results small" }, el("tbody", null, ...rows.map((h) => el("tr", null,
+      el("td", null, h.day, h.as_of ? el("span", { class: "badge" }, "replay") : null),
+      el("td", null, h.model_label),
+      el("td", null, h.verdict ? el("strong", { class: TONES[h.verdict.label] },
+        `${h.verdict.label.toUpperCase()} ${Math.round(h.verdict.confidence * 100)}%`) : el("span", { class: "dim" }, "no verdict")),
+      el("td", { class: "dim" }, h.status === "done" ? "" : h.status.replace("_", " ")),
+      el("td", null, el("button", { type: "button", class: "small-btn", onclick: () => open(h.id) }, "Open")))))));
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
 function researchSection(symbol) {
+  const sym = encodeURIComponent(symbol);
   const body = el("div", null, el("p", { class: "dim" }, "Loading research..."));
+  const earlier = el("div");
   const status = el("span", { class: "dim small" }, "about a minute");
   const box = el("div", { class: "card", id: "c-research" });
   // Late answers paint only while this section is still on screen.
   const show = (r) => { if (box.isConnected) body.replaceChildren(...view(r.run, r.failed).filter(Boolean)); };
-  const reload = () => api(`/api/companies/${encodeURIComponent(symbol)}/research`)
-    .then(show)
-    .catch((err) => { if (box.isConnected) body.replaceChildren(el("p", { class: "dim" }, err.message)); });
+  const open = (id) => api(`/api/companies/${sym}/research/${id}`).then((r) => {
+    if (!box.isConnected) return;
+    const back = el("button", { type: "button", class: "small-btn", onclick: reload }, "Back to the latest");
+    body.replaceChildren(el("p", { class: "dim small" }, "An earlier report. ", back), ...view(r.run).filter(Boolean));
+  }).catch((err) => showError(err.message));
+  const reload = () => {
+    api(`/api/companies/${sym}/research`).then(show)
+      .catch((err) => { if (box.isConnected) body.replaceChildren(el("p", { class: "dim" }, err.message)); });
+    api(`/api/companies/${sym}/research/history`).then((rows) => { if (box.isConnected) earlier.replaceChildren(historyList(rows, open) ?? ""); })
+      .catch(() => {});
+  };
+  const buttons = [];
   // Follows the job until it ends, however the page came to it (a click, or a run already going).
   const follow = async (job) => {
-    run.disabled = true;
+    buttons.forEach((b) => { b.disabled = true; });
     while (box.isConnected && ACTIVE.includes(job.state)) {
       status.textContent = jobLine(job);
       await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -131,24 +157,34 @@ function researchSection(symbol) {
       }
     }
     if (!box.isConnected) return;
-    run.disabled = false;
+    buttons.forEach((b) => { b.disabled = false; });
     status.textContent = job.state === "failed" || job.state === "interrupted" ? `Failed: ${job.error}`
       : job.state === "cancelled" ? "Cancelled." : "";
     reload();
   };
-  const run = el("button", { type: "button", onclick: async () => {
+  const start = async (params) => {
     try {
       clearError();
-      await follow(await api(`/api/jobs/research?symbol=${encodeURIComponent(symbol)}`, { method: "POST" }));
+      await follow(await api(`/api/jobs/research?${new URLSearchParams({ symbol, ...params })}`, { method: "POST" }));
     } catch (err) {
       showError(err.message);
-      run.disabled = false;
+      buttons.forEach((b) => { b.disabled = false; });
     }
-  } }, "Research");
-  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, status), body);
+  };
+  const day = el("input", { type: "date", max: today(), "aria-label": "Replay as of" });
+  const run = el("button", { type: "button", onclick: () => start({}) }, "Research");
+  const replay = el("button", { type: "button", onclick: () => {
+    if (!day.value) return showError("pick the day to replay");
+    start({ as_of: day.value });
+  } }, "Replay as of");
+  buttons.push(run, replay);
+  box.append(el("div", { class: "row" }, el("h3", null, tip("Research", "research")), run, status,
+    el("span", { class: "row" }, replay, day, tip("", "research_replay"))), body, earlier);
   reload();
   api("/api/activity").then(({ jobs }) => {
-    const going = jobs.find((j) => j.kind === "research" && j.subject === symbol && ACTIVE.includes(j.state));
+    // A replay's subject is SYMBOL@day.
+    const going = jobs.find((j) => j.kind === "research" && (j.subject === symbol || j.subject?.startsWith(`${symbol}@`))
+      && ACTIVE.includes(j.state));
     if (going) follow(going);
   }).catch(() => {});
   return box;

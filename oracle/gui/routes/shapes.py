@@ -92,6 +92,14 @@ def order_outcome(order: Order, status: str, note: str | None) -> dict:
     return {"symbol": order.symbol, "account": order.account, "side": order.side, "status": status, "note": note}
 
 
+def research_summary(run: ResearchRun) -> dict:
+    """A history row: enough to pick a report without loading its trace."""
+    v = run.report.verdict
+    return {"id": run.id, "day": run.report.day, "as_of": run.as_of, "status": run.status,
+            "started_at": run.started_at, "model_label": run.model_label,
+            "verdict": v and {"label": v.label, "confidence": v.confidence}, "no_verdict": run.report.no_verdict}
+
+
 def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> dict:
     """`failed`: a newer run that failed, shown beside the last report rather than instead of it."""
     if run is None:

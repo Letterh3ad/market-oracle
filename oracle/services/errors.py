@@ -48,6 +48,10 @@ class UnknownJob(ServiceError):
     pass
 
 
+class UnknownResearchRun(ServiceError):
+    pass
+
+
 class InvalidWatchlistName(ServiceError):
     pass
 

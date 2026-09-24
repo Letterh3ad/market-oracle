@@ -4,6 +4,8 @@ lists and cancels them."""
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Query
 
 from oracle.gui.deps import get_ctx, get_runner
@@ -31,10 +33,11 @@ async def analyse(symbol: str | None = None, ctx: AppContext = Depends(get_ctx),
 
 
 @router.post("/research", status_code=202)
-async def research(symbol: str, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+async def research(symbol: str, as_of: date | None = None, ctx: AppContext = Depends(get_ctx),
+                   runner: JobRunner = Depends(get_runner)) -> dict:
     """One research run (about a minute on the default local model); its report shows on
-    the company page when done."""
-    return shapes.job(submit_research(ctx, runner, symbol))
+    the company page when done. `as_of` replays that day, seeing only what existed by then."""
+    return shapes.job(submit_research(ctx, runner, symbol, as_of))
 
 
 @router.post("/tick", status_code=202)

@@ -25,7 +25,9 @@ from oracle.research.verdict import Material, add_verdict
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.analysis_service import latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, ServiceError
+from oracle.services.errors import (
+    InvalidQuery, JobAlreadyRunning, ModelUnavailable, ServiceError, UnknownResearchRun,
+)
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
@@ -42,8 +44,8 @@ from oracle.store.watchlists import WatchlistRepo
 from oracle.system import idle
 
 __all__ = [
-    "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
-    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "sweep_interrupted",
+    "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "check_as_of", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
+    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "research_run", "sweep_interrupted",
 ]
 
 log = logging.getLogger(__name__)
@@ -62,9 +64,8 @@ async def research(ctx: AppContext, symbol: str, model: ChatModel | None = None,
     configured backend. With `as_of`, the run replays that day: every tool sees only what
     existed by its end, for backtests after the model's training cutoff."""
     listing = resolve_symbol(ctx, symbol).symbol
+    check_as_of(ctx, as_of)
     today = ctx.clock.utcnow().date()
-    if as_of and as_of > today:
-        raise InvalidQuery(f"as-of date {as_of.isoformat()} is in the future (today is {today.isoformat()})")
     model = model or configured_model(ctx)
     with single_flight(ctx, JOB, LEASE_S):
         repo = ResearchRepo(ctx.conn)
@@ -213,6 +214,21 @@ async def _statistics(ctx: AppContext, shelf: Shelf, run_id: int, listing: str, 
                                     f"{listing} stored prices, fundamentals and analyst signals", "stored data",
                                     datetime.combine(day, time(), timezone.utc), body=data)], "oracle")
     return f"[a{data_id}] {day.isoformat()} stored data: {data}", data_id
+
+
+def check_as_of(ctx: AppContext, as_of: date | None) -> None:
+    today = ctx.clock.utcnow().date()
+    if as_of and as_of > today:
+        raise InvalidQuery(f"as-of date {as_of.isoformat()} is in the future (today is {today.isoformat()})")
+
+
+def research_run(ctx: AppContext, symbol: str, run_id: int) -> ResearchRun:
+    """One run of the listing, whatever its outcome."""
+    listing = resolve_symbol(ctx, symbol).symbol
+    run = ResearchRepo(ctx.conn).get(run_id)
+    if run is None or run.symbol != listing:
+        raise UnknownResearchRun(f"no research run {run_id} for {listing}")
+    return run
 
 
 def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:

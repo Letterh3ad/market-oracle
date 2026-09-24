@@ -10,7 +10,7 @@ import os
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from oracle.jobs import pid_alive
@@ -20,7 +20,7 @@ from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, a
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
-from oracle.services.research_service import research, research_progress, sweep_interrupted
+from oracle.services.research_service import check_as_of, research, research_progress, sweep_interrupted
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import refresh_universe, resolve_symbol
@@ -229,17 +229,24 @@ def sweep_leftovers(ctx: AppContext) -> None:
     sweep_interrupted(ctx)
 
 
-def submit_research(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
-    """Queue one research run; an unknown symbol is refused now, not when its turn comes."""
+def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date | None = None) -> Job:
+    """Queue one research run, or with `as_of` a replay of that day; an unknown symbol or a
+    future day is refused now, not when its turn comes."""
     listing = resolve_symbol(ctx, symbol).symbol
+    check_as_of(ctx, as_of)
 
     async def work(c: AppContext):
-        run = await research(c, listing)
+        run = await research(c, listing, as_of=as_of)
         if run.status == RunStatus.FAILED:  # recorded on the run; Activity must agree with the company page
             raise ServiceError(run.error or "research failed")
         return run
 
-    return runner.submit("research", f"Research {listing}", work, subject=listing,
+    # A replay has its own subject, so it never joins (or is taken for) a live run of the listing.
+    if as_of:
+        subject, label = f"{listing}@{as_of.isoformat()}", f"Replay {listing} as of {as_of.isoformat()}"
+    else:
+        subject, label = listing, f"Research {listing}"
+    return runner.submit("research", label, work, subject=subject,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
 
 

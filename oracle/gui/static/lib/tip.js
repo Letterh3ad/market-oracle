@@ -73,6 +73,10 @@ const GLOSSARY = {
     "The articles, filings and pages the research was shown, by id. [a3] in the report points here. " +
     "'stored data' is Market Oracle's own prices, fundamentals and analyst signals.",
   research_trace: "Every step the model took: what it thought, which tool it used, and what came back.",
+  research_history: "Every report on this listing, newest first. A replay is marked; its date is the day it replayed.",
+  research_replay:
+    "Research as if it were that day: only news, filings and prices from by its end are used, and no web " +
+    "pages (they carry no reliable date). Backtests research without hindsight. Replays never feed the AI account.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

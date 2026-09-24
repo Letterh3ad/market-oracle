@@ -9,14 +9,15 @@ from fastapi.responses import JSONResponse
 from oracle.services.errors import (
     CannotRestart, InvalidQuery, InvalidTag, InvalidWatchlistName, JobAlreadyRunning, ModelUnavailable, NoPrices, PriceUnavailable,
     ServiceError,
-    UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownJob, UnknownSymbol, UnknownWatchlist,
+    UniverseNotLoaded, UniverseUnavailable, UnknownFilterValue, UnknownJob, UnknownResearchRun, UnknownSymbol,
+    UnknownWatchlist,
 )
 
 log = logging.getLogger(__name__)
 
 # Most specific first: the first matching class wins. Anything else a service raises is 400.
 STATUS = (
-    ((UnknownSymbol, UnknownWatchlist, UnknownJob), 404),
+    ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun), 404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
     ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart), 409),
     ((PriceUnavailable, UniverseUnavailable), 502),

@@ -167,7 +167,7 @@ async def test_cancelling_running_research_records_it_cancelled_frees_the_lock_a
     from oracle.services.research_service import research
 
     stalled = Stalled()
-    monkeypatch.setattr(activity_service, "research", lambda c, s: research(c, s, model=stalled))
+    monkeypatch.setattr(activity_service, "research", lambda c, s, **kw: research(c, s, model=stalled, **kw))
     first = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
     second = (await ready.post("/api/jobs/research", params={"symbol": "KO"})).json()
     await asyncio.to_thread(stalled.asked.wait)
@@ -219,3 +219,53 @@ async def test_the_verdict_comes_with_the_report_or_why_there_is_none(ready, oll
     report = (await researched(ready))["report"]
     assert report["verdict"] is None
     assert report["no_verdict"] == "the verdict was rejected: 'moon' is not buy, hold or sell"
+
+
+async def test_history_lists_every_report_newest_first_with_replays_marked(ready, ollama, clock):
+    ollama.roles["verdict"] = {"verdict": "hold", "confidence": 0.5, "reason": "Priced in", "cites": ["a1"],
+                               "invalidated_if": "x"}
+    first = await researched(ready)
+    clock.advance(60)
+    ollama.contents = [step("final", "Replayed.")]
+    replay = await finish(ready, job=(await ready.post("/api/jobs/research",
+                                                        params={"symbol": "AAPL", "as_of": "2026-01-05"})).json())
+    assert replay["state"] == "done"
+    rows = (await ready.get("/api/companies/aapl/research/history")).json()
+    assert [(r["as_of"], r["day"]) for r in rows] == [("2026-01-05", "2026-01-05"), (None, first["report"]["day"])]
+    assert rows[1]["id"] == first["id"] and rows[1]["status"] == "done" and rows[1]["model_label"]
+    assert rows[1]["verdict"] == {"label": "hold", "confidence": 0.5}
+    assert rows[0]["verdict"] is None and rows[0]["no_verdict"]
+
+
+async def test_an_earlier_report_opens_with_its_trace(ready, ollama):
+    first = await researched(ready)
+    ollama.contents = [step("final", "Again.")]
+    await finish(ready)
+    run = (await ready.get(f"/api/companies/AAPL/research/{first['id']}")).json()["run"]
+    assert run["id"] == first["id"] and run["steps"] == first["steps"]
+
+
+async def test_a_run_of_another_listing_is_not_found_under_this_one(ready):
+    first = await researched(ready)
+    assert (await ready.get(f"/api/companies/KO/research/{first['id']}")).status_code == 404
+    assert (await ready.get("/api/companies/AAPL/research/999")).status_code == 404
+
+
+async def test_a_replay_is_its_own_job_and_never_joins_a_live_run(ready, ollama):
+    ollama.contents.append(step("final", "Replayed."))
+    live = (await ready.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
+    replay = (await ready.post("/api/jobs/research", params={"symbol": "AAPL", "as_of": "2026-01-05"})).json()
+    assert replay["id"] != live["id"] and replay["label"] == "Replay AAPL as of 2026-01-05"
+    again = (await ready.post("/api/jobs/research", params={"symbol": "AAPL", "as_of": "2026-01-05"})).json()
+    assert again["id"] == replay["id"]
+    await finish(ready, job=live)
+    done = await finish(ready, job=replay)
+    run = (await ready.get("/api/companies/AAPL/research")).json()["run"]
+    assert done["state"] == "done" and run["as_of"] == "2026-01-05"
+
+
+@pytest.mark.parametrize(("day", "says"), [("2099-01-01", "in the future"), ("someday", "as_of")])
+async def test_a_replay_date_in_the_future_or_malformed_is_refused_before_it_queues(ready, day, says):
+    response = await ready.post("/api/jobs/research", params={"symbol": "AAPL", "as_of": day})
+    assert response.status_code == 400 and says in response.json()["error"]
+    assert (await ready.get("/api/activity")).json()["jobs"] == []
