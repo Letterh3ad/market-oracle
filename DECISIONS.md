@@ -2127,3 +2127,15 @@ itself. Auto is re-read before each validation and each add; `add_checked` re-re
 name starts with the words (so "consumer" is both Consumer sectors), then any name holding them.
 **Alternatives:** A public-suffix list (a dependency for the few country suffixes seen); counting
 releases as independent when on two wires (every wire copy is the same company speaking).
+
+## 2026-09-24 - Quant basics as a pre-v1 stream
+
+**Context:** The rule backtest made +2.6% against buy-and-hold's +20.2%, and there is no simple well-known baseline to show whether LLM research adds anything. Phase 4 already has volatility sizing, drawdown, pairwise correlation and peer value/quality/growth scores.
+**Decision:** Add `quant-basics` at the start of phase 9. It covers 12-1 momentum and low-volatility ranks across the watched and discovered set, portfolio beta, concentration and correlation per account, one factor/risk line in the AI verdict input, volatility-targeted AI sizing, and a monthly-rebalanced momentum baseline account (also in `oracle backtest`). Fundamentals factors enter backtests only once stored daily snapshots are deep enough.
+**Alternatives:** Trained return models, regime detection and optimisers now (overfit at this data depth; moved to v2). Skipping it (phase 12 would lack a factor baseline).
+
+## 2026-09-24 - Replay study before quant basics
+
+**Context:** Evidence of an edge is the top priority, and months of paper trading are slow. Research replays at past dates already exist, and the model's claimed training cutoff is 2025-05-20.
+**Decision:** Add `replay-study` ahead of `quant-basics`: a cutoff probe of the model in use, ~300 paced replays (about 20 listings, monthly dates after the measured cutoff), each verdict scored against 1- and 3-month forward returns, plus a simulated AI account against buy-and-hold and later the momentum baseline. The report states its limits (filings and headlines only, survivorship, sample size).
+**Alternatives:** Paper trading only (months to a first read). Replays before the cutoff (look-ahead). Every listing monthly (too slow on the local model).
