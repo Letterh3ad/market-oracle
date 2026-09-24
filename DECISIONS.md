@@ -1443,3 +1443,32 @@ and its flags `Pending` on ticket 02.
 **Alternatives:** Full history per day (quadratic: minutes for a few years); the IBKR fee table
 and FX spread the paper accounts use (the spec asks for commission and slippage only, default
 free, so a run is comparable across markets); keeping runs in a new table now (left to 02).
+
+## 2026-09-24 - Retry for cancelled, interrupted and failed jobs
+**Context:** A restart cancelled 8 queued research jobs at once with no way to redo them
+short of re-entering each request by hand. The Activity tab needed a way to retry a single
+finished job and to retry everything left in a bad state after an outage.
+**Decision:** One mapping in `oracle/services/activity_service.py` (`_RETRY`) from job kind
+to a resubmit function that rebuilds the original call from the job's stored kind, subject
+and label; `retry(job_id)` looks a job up (live or from history via `JobRunner.get`) and
+refuses anything not cancelled, interrupted or failed, or a kind not in the mapping.
+`retryable(ctx, runner)` reads `JobHistoryRepo.latest_per_subject()` (the newest finished
+row per kind+subject) and keeps only rows in a bad state, not already queued or running, and
+of a retryable kind; `retry_all` resubmits each one. A subject's older bad runs are never
+retried individually: only the latest matters, since anything before it either already
+reran or is superseded by the one that matters now. A research replay's subject
+(`SYMBOL@day`) carries its day; a tick always retries as manual, regardless of what
+triggered the original; prices, analyse and fx tell "every listing" apart from one listing
+by the same `*`/name subject `submit_*` already stores. Routes: `POST
+/api/activity/{job_id}/retry`, `POST /api/activity/retry-all`, and `GET
+/api/activity/retryable/count` for the button's badge. `activity.js` adds a Retry button
+next to Cancel (mutually exclusive by state) and a "Retry all (n)" button by the Finished
+heading, both refreshing the finished list and the count in place, no page reload.
+**Alternatives:** Storing the original submit arguments verbatim (a new column, more to keep
+in sync with every `submit_*` signature) instead of rebuilding from kind+subject, which
+already uniquely determines the call for every kind in this app; retrying every past bad run
+for a subject instead of only the latest (redundant, and confusing when an older failure was
+already fixed by a later success); a kind allow-list hard-coded in the route instead of the
+resubmit mapping doubling as the "can this be rebuilt" check (one source of truth instead of
+two lists to keep in sync).
+free, so a run is comparable across markets); keeping runs in a new table now (left to 02).

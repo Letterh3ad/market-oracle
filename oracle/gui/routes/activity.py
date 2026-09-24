@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
-from oracle.services.activity_service import JobRunner
+from oracle.services.activity_service import JobRunner, retry, retry_all, retryable
 from oracle.services.context import AppContext
 from oracle.services.errors import UnknownJob
 from oracle.services.jobs_service import held_elsewhere
@@ -41,6 +41,18 @@ async def finished_count(q: str = "", runner: JobRunner = Depends(get_runner)) -
     return {"total": runner.finished_count(q)}
 
 
+@router.get("/retryable/count")
+async def retryable_count(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """How many finished jobs `retry-all` would queue: cancelled, interrupted or failed,
+    not since redone successfully, and not already queued or running."""
+    return {"total": len(retryable(ctx, runner))}
+
+
+@router.post("/retry-all", status_code=202)
+async def retry_all_route(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    return {"jobs": [shapes.job(j) for j in retry_all(ctx, runner)]}
+
+
 @router.get("/{job_id}")
 async def get_job(job_id: int, runner: JobRunner = Depends(get_runner)) -> dict:
     job = runner.get(job_id)
@@ -57,3 +69,9 @@ async def cancel_job(job_id: int, runner: JobRunner = Depends(get_runner)) -> di
     with suppress(TimeoutError):
         await asyncio.wait_for(job.finished.wait(), 1.0)
     return shapes.job(job)
+
+
+@router.post("/{job_id}/retry", status_code=202)
+async def retry_job(job_id: int, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Re-submit a finished job (cancelled, interrupted or failed) with the same subject."""
+    return shapes.job(retry(ctx, runner, job_id))
