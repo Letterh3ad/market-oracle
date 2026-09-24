@@ -1861,3 +1861,55 @@ can never apply to it, because none is looked up. This is left as is (a listing 
 universe has nothing left to research a verdict against).
 **Alternatives:** Having `ai_step` fall back to the baseline lean for a delisted symbol
 (would trade the AI account on baseline in a rule it otherwise never uses).
+
+## 2026-09-24 - Discovery chat: a Discover tab, follow-ups as linked questions, whole answers kept
+**Context:** Ticket 04 asks for a question box that answers with a shortlist, follow-ups that
+refine it, and reruns that show what changed.
+**Decision:** A Discover tab of its own (the Watchlist tab's Discovery section is already long).
+m0034 keeps `discovery_questions` (a follow-up is a question with `refines`, so each keeps its
+own answers), `discovery_answers` (status, stage for progress, searches, notes) and
+`discovery_answer_items` (the whole shortlist, skipped names with why included, evidence ids as
+JSON). The model reads the whole chain ("X Follow-up: Y"). "New" and "gone" compare an answer
+with the question's previous done answer, or for a follow-up's first, its question's newest.
+Watched and discovered marks are the live state when the answer is shown, not stored. Asking is
+an Activity job of kind `ask` (subject = question id, so Retry reruns it); the question is saved
+at submit, so a bad one is refused before a job starts.
+**Alternatives:** Follow-ups as runs of one question (loses which text each answered); storing
+only the shortlist (a rerun could not say why a company dropped off).
+
+## 2026-09-24 - Discovery chat pipeline: plan, research tools, reading, one naming call, code screen
+**Context:** The ticket asks for model-planned searches, the deep-research reading stage, and
+code-side resolution with the never and removed lists.
+**Decision:** One bounded-JSON plan call gives up to 4 English queries (each run on Google News
+and GDELT through the research tools and their gates), up to 2 local-edition queries with a
+country from `EDITION`, the first 2 queries on the web, and filters: market-cap bands and
+excluded sectors (matched in code against sector, industry group and industry, singular or
+plural). A plan with no usable query searches the question itself. Items are taken a search at a
+time (at most 24); the reading stage reads 4 of them, keeping notes under `<model>#question` so a
+question's "not about" never marks an article for a company's research. One naming call returns
+companies with a why line and item numbers; a name no cited item holds is dropped (as in 01).
+The screen is 01's, moved into `candidate_screen.Screen` and shared: never list and removed
+companies are left off with the reason, filters next, watched and discovered companies stay on
+(marked, not re-priced), others are price-checked (at most 8 an answer). Rank: most items behind
+a name first, the model's order among equals. The model failing to plan or name fails the
+answer (saved with the error): unlike a discovery run, a question has nothing to fall back on.
+**Alternatives:** Running the full ReAct loop per question (slow on a 4B model, and its findings
+are prose, not a list); ranking in the model's order alone (small models list in headline order).
+
+## 2026-09-24 - Add to discovered from a shortlist keeps the discovered list's rules
+**Context:** A shortlist button puts a company on the list the AI account trades.
+**Decision:** `discovery_service.add_by_hand` refuses a never-listed company, one the user
+removed, one already watched or discovered, and a full list (`max_total`), with the reason. It
+records source `question`, relation `answer`, the question text as seed and the item's evidence,
+so the Discovery section says 'an answer to your question "..."'. Watch and Research reuse
+`/api/watchlists/main/items` and `/api/jobs/research`.
+**Alternatives:** Letting a click go past `max_total` (the cap bounds what the AI trades, whoever
+adds); refusing watched companies from the shortlist (they are still answers; they are marked).
+
+## 2026-09-24 - Discovery chat follow-ups left open
+**Context:** Found while building ticket 04.
+**Decision:** Recorded, not fixed: the name lookup misses hyphenated names written without the
+leading "The" ("Coca-Cola" does not find "The Coca-Cola Company"), shared with 01; the plan's
+region is only searched, never enforced in code (a "European" question can list a US company if
+the news names it); questions cannot be deleted; the naming call sees at most 24 items.
+**Alternatives:** A country filter from the plan (needs a region-to-country map).

@@ -1,7 +1,8 @@
 import pytest
 
 from oracle.research.mentions import (
-    MENTIONS_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, topic_prompt,
+    MENTIONS_SCHEMA, QUESTION_SCHEMA, TOPIC_SCHEMA, Mention, mentions_prompt, parse_mentions, question_prompt,
+    topic_prompt,
 )
 
 HEADLINES = [
@@ -69,3 +70,17 @@ def test_a_topic_prompt_asks_what_companies_the_headlines_are_about_without_a_re
     assert "relation" not in TOPIC_SCHEMA["properties"]["companies"]["items"]["properties"]
     reply = {"companies": [{"name": "Honda", "headlines": [3]}, {"name": "Toyota", "headlines": [1, 3]}]}
     assert parse_mentions(reply, HEADLINES) == [Mention("Honda", "other", (2,)), Mention("Toyota", "other", (0, 2))]
+
+
+def test_a_question_prompt_carries_the_question_and_numbers_the_items():
+    [system, user] = question_prompt("which European companies gain from grid batteries?",
+                                     ["2026-09-20 Wire: Siemens Energy wins battery deal"])
+    assert "grid batteries" in system["content"] and "why" in system["content"]
+    assert user["content"].startswith("News items:\n[1] 2026-09-20 Wire: Siemens Energy wins")
+    assert QUESTION_SCHEMA["properties"]["companies"]["items"]["properties"]["why"]["maxLength"] <= 200
+
+
+def test_a_why_line_comes_back_without_item_numbers_or_citations():
+    reply = {"companies": [{"name": "Panasonic", "why": "Battery venture with Toyota [1] (a3)", "headlines": [1]}]}
+    [m] = parse_mentions(reply, HEADLINES)
+    assert m.why == "Battery venture with Toyota" and m.headlines == (0,)

@@ -4,6 +4,7 @@ import * as status from "./lib/status.js";
 import * as settings from "./lib/settings.js";
 import universeTab from "./tabs/universe.js";
 import watchlistTab from "./tabs/watchlist.js";
+import discoverTab from "./tabs/discover.js";
 import companyTab from "./tabs/company.js";
 import ledgersTab from "./tabs/ledgers.js";
 import activityTab from "./tabs/activity.js";
@@ -12,6 +13,7 @@ import activityTab from "./tabs/activity.js";
 const TABS = [
   universeTab,
   watchlistTab,
+  discoverTab,
   companyTab,
   ledgersTab,
   activityTab,

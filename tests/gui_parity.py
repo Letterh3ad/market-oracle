@@ -66,6 +66,14 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "research --as-of": "POST /api/jobs/research",  # Company tab, "Replay as of"
     "research --history": "GET /api/companies/{symbol}/research/history",
     "discover": "POST /api/jobs/discover",  # Watchlist tab, Discovery section "Discover now"
+    # Discover tab: Ask, a follow-up's Refine, Rerun, the saved questions, one question's answers,
+    # and a shortlist row's Add to discovered (its Watch and Research reuse those routes).
+    "discover ask": "POST /api/jobs/ask",
+    "discover ask --refines": "POST /api/jobs/ask",
+    "discover rerun": "POST /api/jobs/ask/{question_id}/rerun",
+    "discover questions": "GET /api/questions",
+    "discover show": "GET /api/questions/{question_id}",
+    "discover add": "POST /api/questions/answers/{answer_id}/items/{n}/discovered",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",

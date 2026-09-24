@@ -3,19 +3,27 @@ model only names; turning a name into a listing is the caller's code."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
+from oracle.research.citations import strip_citations
 from oracle.universe.listings import blind_name, normalise_name
 
 RELATIONS = ("supplier", "customer", "competitor", "partner", "other")
 MAX_COMPANIES = 8
 MAX_NAME = 80
+MAX_WHY = 200
+# The numbers of the items a line rests on travel with it; written into the line they are noise.
+_ITEM_REFS = re.compile(r"\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]")
 
-def _schema(relation: bool) -> dict:
+
+def _schema(relation: bool, why: bool = False) -> dict:
     item = {"name": {"type": "string", "maxLength": MAX_NAME},
             "headlines": {"type": "array", "maxItems": 5, "items": {"type": "integer"}}}
     if relation:
         item["relation"] = {"type": "string", "enum": list(RELATIONS)}
+    if why:
+        item["why"] = {"type": "string", "maxLength": MAX_WHY}
     return {
         "type": "object",
         "properties": {"companies": {"type": "array", "maxItems": MAX_COMPANIES, "items": {
@@ -27,6 +35,8 @@ def _schema(relation: bool) -> dict:
 MENTIONS_SCHEMA = _schema(relation=True)
 TOPIC_SCHEMA = _schema(relation=False)
 """For headlines about a topic, not a company: nothing to relate to."""
+QUESTION_SCHEMA = _schema(relation=False, why=True)
+"""For news items found for a question: each company with one line on why it answers it."""
 
 
 @dataclass(frozen=True)
@@ -35,6 +45,8 @@ class Mention:
     relation: str
     headlines: tuple[int, ...]
     """0-based positions in the headlines given."""
+    why: str = ""
+    """One line on why, where the schema asks for it."""
 
 
 def mentions_prompt(seed: str, headlines: list[str]) -> list[dict]:
@@ -54,9 +66,18 @@ def topic_prompt(topic: str, headlines: list[str]) -> list[dict]:
     return _messages(system, headlines)
 
 
-def _messages(system: str, headlines: list[str]) -> list[dict]:
+def question_prompt(question: str, items: list[str]) -> list[dict]:
+    system = (f"You answer an investor's question from numbered news items. The question: {question}\n"
+              f"List the listed companies the items show answer it, best first, at most {MAX_COMPANIES}: each "
+              "company's usual name as written in an item, one short line on why it fits (from the items only), "
+              "and the numbers of the items that show it. Leave out people, places, regulators, funds, indexes "
+              "and news outlets. Name only companies that an item names; an empty list is a fine answer.")
+    return _messages(system, items, "News items")
+
+
+def _messages(system: str, headlines: list[str], heading: str = "Headlines") -> list[dict]:
     numbered = "\n".join(f"[{i}] {h}" for i, h in enumerate(headlines, start=1))
-    return [{"role": "system", "content": system}, {"role": "user", "content": f"Headlines:\n{numbered}"}]
+    return [{"role": "system", "content": system}, {"role": "user", "content": f"{heading}:\n{numbered}"}]
 
 
 def parse_mentions(reply: object, headlines: list[str], seed: str | None = None) -> list[Mention]:
@@ -83,10 +104,16 @@ def parse_mentions(reply: object, headlines: list[str], seed: str | None = None)
         if not at:
             continue
         relation = item.get("relation") if item.get("relation") in RELATIONS else "other"
-        out[key] = Mention(name, relation, at)
+        out[key] = Mention(name, relation, at, _why(item.get("why")))
     return list(out.values())
 
 
 def same_company(a: str, b: str) -> bool:
     """Blind names where one is the other's leading words ("toyota" and "toyota motor")."""
     return a == b or a.startswith(b + " ") or b.startswith(a + " ")
+
+
+def _why(text: object) -> str:
+    if not isinstance(text, str):
+        return ""
+    return " ".join(_ITEM_REFS.sub("", strip_citations(text)).split())[:MAX_WHY]

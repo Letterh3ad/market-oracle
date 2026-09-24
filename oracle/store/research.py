@@ -12,6 +12,10 @@ from oracle.research.trace import (
 )
 from oracle.store.db import transaction
 
+# What reading an article left, for the note-taking model given as the one parameter.
+_READ_COLUMNS = "t.failed, n.about, n.facts, n.failed"
+_READ_JOINS = ("LEFT JOIN article_texts t ON t.article_id = a.id "
+               "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ?")
 _RUN = "id, symbol, backend, model, started_at, finished_at, status, findings, error, as_of, fell_back_to"
 
 
@@ -121,10 +125,8 @@ class ResearchRepo:
             "SELECT n, thought, action, input, observation FROM research_steps WHERE run_id = ? ORDER BY n", (row[0],),
         )
         evidence = self._conn.execute(
-            "SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, t.failed, n.about, "
-            "n.facts, n.failed FROM research_evidence e JOIN articles a ON a.id = e.article_id "
-            "LEFT JOIN article_texts t ON t.article_id = a.id "
-            "LEFT JOIN article_notes n ON n.article_id = a.id AND n.model = ? WHERE e.run_id = ? "
+            f"SELECT a.id, a.url, a.title, a.outlet, a.published_at, e.cited, a.body, a.query, {_READ_COLUMNS} "
+            f"FROM research_evidence e JOIN articles a ON a.id = e.article_id {_READ_JOINS} WHERE e.run_id = ? "
             "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id", (note_model(row[2], row[3]), row[0]),
         )
         # A replay reads only what cannot have changed since its day: a filing, not today's copy
@@ -156,6 +158,16 @@ class ResearchRepo:
                       tuple(RoleCheck(c["role"], c["usable"], {Drop(k): n for k, n in c["dropped"].items()})
                             for c in body.get("checks", ())),
                       verdict(body.get("verdict")), body.get("verdict_rejected"), tuple(body.get("unread", ())))
+
+
+def evidence_of(conn: sqlite3.Connection, article_ids: list[int], note_key: str) -> list[Evidence]:
+    """Stored articles as evidence, in the order given, with what `note_key` read in them."""
+    rows = conn.execute(
+        f"SELECT a.id, a.url, a.title, a.outlet, a.published_at, a.body, a.query, {_READ_COLUMNS} FROM articles a "
+        f"{_READ_JOINS} WHERE a.id IN ({','.join('?' * len(article_ids))})", (note_key, *article_ids)).fetchall()
+    found = {r[0]: Evidence(r[0], r[1], r[2], r[3], datetime.fromisoformat(r[4]) if r[4] else None, False, r[5], r[6],
+                            *_reading(*r[7:])) for r in rows}
+    return [found[i] for i in article_ids if i in found]
 
 
 def note_model(backend: str, model: str) -> str:

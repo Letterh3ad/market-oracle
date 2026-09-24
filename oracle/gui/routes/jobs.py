@@ -11,7 +11,8 @@ from fastapi import APIRouter, Depends, Query
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
-    JobRunner, submit_analyse, submit_backtest, submit_discover, submit_fx, submit_merges, submit_prices, submit_research, submit_tick,
+    JobRunner, submit_analyse, submit_ask, submit_backtest, submit_discover, submit_fx, submit_merges, submit_prices,
+    submit_rerun, submit_research, submit_tick,
     submit_universe_refresh,
 )
 from oracle.services.context import AppContext
@@ -71,6 +72,20 @@ async def fx(source: list[str] = Query(default=[]), runner: JobRunner = Depends(
 async def discover(runner: JobRunner = Depends(get_runner)) -> dict:
     """Companies related to the watched ones, checked and added to the discovered list."""
     return shapes.job(submit_discover(runner))
+
+
+@router.post("/ask", status_code=202)
+async def ask(question: str, refines: int | None = None, ctx: AppContext = Depends(get_ctx),
+              runner: JobRunner = Depends(get_runner)) -> dict:
+    """Save a question (or, with `refines`, a follow-up narrowing that one) and answer it with a
+    shortlist; a blank or overlong question is refused now."""
+    return shapes.job(submit_ask(ctx, runner, question, refines))
+
+
+@router.post("/ask/{question_id}/rerun", status_code=202)
+async def rerun(question_id: int, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Answer a saved question again; the new answer marks what is new since the last."""
+    return shapes.job(submit_rerun(ctx, runner, question_id))
 
 
 @router.post("/backtest", status_code=202)

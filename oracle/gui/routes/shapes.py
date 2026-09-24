@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.backtest_service import KeptBacktest
+from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
 from oracle.services.research_service import UNVALIDATED, ResearchRun
@@ -86,10 +87,25 @@ def backtest(k: KeptBacktest) -> dict:
             "trades": [asdict(t) for t in b.trades], "notes": list(b.notes)}
 
 
+def answer(v: AnswerView) -> dict:
+    """One answer to a question: its shortlist with evidence, what was left off and why, and
+    what changed since the answer it is compared with."""
+    a = v.answer
+    return {
+        "id": a.id, "question_id": a.question_id, "model": a.model, "started_at": a.started_at,
+        "finished_at": a.finished_at, "status": a.status, "stage": a.stage, "error": a.error,
+        "searches": list(a.searches), "notes": list(a.notes), "compared_to": v.compared_to,
+        "shortlist": [{**asdict(line.item), "new": line.new, "watched": line.watched, "discovered": line.discovered,
+                       "evidence": [{**asdict(e), "link": web_link(e.url)} for e in line.evidence]}
+                      for line in v.shortlist],
+        "skipped": [asdict(i) for i in v.skipped], "gone": [asdict(i) for i in v.gone],
+    }
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
-            "discover": asdict, "backtest": backtest_summary}
+            "discover": asdict, "backtest": backtest_summary, "ask": answer}
 
 
 def _result(j: Job) -> dict | None:

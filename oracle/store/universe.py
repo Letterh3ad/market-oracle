@@ -84,6 +84,8 @@ class ListingProfile:
     """Active listings of the company."""
     website: str | None
     summary: str | None
+    market_cap: str | None = None
+    """The company's band (MARKET_CAP_BANDS), when FinanceDatabase gives one."""
 
 
 @dataclass(frozen=True)
@@ -159,7 +161,7 @@ class UniverseRepo:
                       p.industry_group, p.industry, p.category, p.family, l.exchange,
                       (SELECT COUNT(*) FROM listings x WHERE x.company_key = l.company_key AND x.delisted = 0)
                         AS listings,
-                      p.website, p.summary
+                      p.website, p.summary, p.market_cap
                FROM listings l JOIN listings p ON p.company_key = l.company_key AND p.is_primary
                WHERE l.symbol = :s COLLATE NOCASE ORDER BY l.symbol = :s DESC LIMIT 1""",
             {"s": symbol.strip()},
