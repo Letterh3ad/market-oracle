@@ -41,6 +41,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | Dataset | License | Use |
 |---|---|---|
 | [FinanceDatabase](https://github.com/JerBouma/FinanceDatabase) (compressed CSVs, fetched at a pinned commit) | MIT | offline universe: names, classification, exchanges (`oracle/universe/financedatabase.py`) |
+| Wikipedia index member tables (KOSPI 200, S&P 500 and the rest in `oracle/universe/indexes.py`), read through the Wikimedia REST API and cached a week | CC BY-SA 4.0; member symbols and names only, kept locally, not redistributed | index backfill: which home lines the universe lacks (`oracle/services/backfill_service.py`); checked 2026-09-24 |
 
 ## Services
 
@@ -68,6 +69,8 @@ Called over HTTP, not redistributed.
 | `aapl-8k-index.htm`: an 8-K's filing index table | SEC EDGAR (sec.gov page, trimmed) | US government work, public domain | `tests/fixtures/edgar/` |
 | `citi-10q.txt`: first 200 lines of a 10-Q as text | SEC EDGAR filing (Citigroup Inc., Q2 2026 10-Q) | Public filing with the SEC; short excerpt kept as a test input only | `tests/fixtures/edgar/` |
 | `wikipedia-largest-tech-companies.html`: the 2025 table, scripts and styling stripped | Wikipedia, "List of largest technology companies by revenue" (captured 2026-09-24) | CC BY-SA 4.0 (attribution in the file) | `tests/fixtures/list_pages/` |
+| Index member pages (one per index in `oracle/universe/indexes.py`), tables only | Wikipedia articles of those names (captured 2026-09-24) | CC BY-SA 4.0 (attribution in each file) | `tests/fixtures/indexes/` |
+| `373220.KS.json`, `BT-A.L.json`, `SPY.json`: quoteSummary answers | Yahoo Finance (captured 2026-09-24) | Yahoo terms; small test inputs only | `tests/fixtures/yahoo/` |
 
 ## Dev dependencies
 

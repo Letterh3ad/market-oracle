@@ -4,6 +4,7 @@ import argparse
 import asyncio
 
 from oracle.cli.common import cut
+from oracle.services.backfill_service import MAX_LOOKUPS, BackfillReport, backfill_universe
 from oracle.services.context import AppContext
 from oracle.services.universe_service import (
     FILTER_FIELDS,
@@ -21,8 +22,11 @@ from oracle.services.universe_service import (
 def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="universe_command", required=True)
     sub.add_parser(
-        "refresh", help="download FinanceDatabase (~17MB) and replace the local universe"
+        "refresh", help="download FinanceDatabase (~17MB), replace the local universe, then backfill"
     ).set_defaults(handler=refresh)
+    sub.add_parser(
+        "backfill", help=f"add index members the universe lacks from Yahoo (up to {MAX_LOOKUPS} lookups a run)"
+    ).set_defaults(handler=backfill_cmd)
     sub.add_parser("status", help="what is loaded and when it was refreshed").set_defaults(handler=status)
     search = sub.add_parser(
         "search", help="find companies by name or symbol, or browse with filters"
@@ -55,7 +59,25 @@ def register(parser: argparse.ArgumentParser) -> None:
 def refresh(ctx: AppContext, args: argparse.Namespace) -> int:
     print("downloading FinanceDatabase...", flush=True)
     _print(asyncio.run(refresh_universe(ctx)))
+    return backfill_cmd(ctx, args)
+
+
+def backfill_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    print(f"backfilling index members (up to {MAX_LOOKUPS} Yahoo lookups; a few minutes)...", flush=True)
+    _print_backfill(asyncio.run(backfill_universe(ctx, lambda stage: print(f"  {stage}", flush=True))))
     return 0
+
+
+def _print_backfill(r: BackfillReport) -> None:
+    heads = ("members", "present", "added", "corrected", "failed", "waiting")
+    width = max(len(c.name) for c in r.indexes) + 2
+    print(f"{'index':<{width}}" + "".join(f"{h:>10}" for h in heads))
+    for c in r.indexes:
+        counts = "".join(f"{getattr(c, h):>10}" for h in heads)
+        print(f"{c.name:<{width}}{counts}  {c.error or ''}".rstrip())
+    for ch in r.changes:
+        print(f"{ch.kind:<10}{ch.symbol:<12}{cut(ch.name, 30):<32}{ch.note}")
+    print(f"{r.lookups} Yahoo lookups" + (f"; stopped early: {r.stopped}" if r.stopped else ""))
 
 
 def status(ctx: AppContext, args: argparse.Namespace) -> int:

@@ -5,6 +5,7 @@ import { sendJson, busyButton, runJob } from "../lib/ui.js";
 import { refresh as refreshHeader } from "../lib/status.js";
 import { repaint } from "../lib/repaint.js";
 import { fillPicker } from "../lib/watchlists.js";
+import { backfillSection } from "../lib/backfill.js";
 
 const PAGE = 50;
 const LABELS = {
@@ -258,7 +259,7 @@ async function render(pane) {
     el("div", { class: "row" }, box, el("span", { class: "dim" }, "Watch adds to "), target,
       el("span", { class: "dim small" }, "(new lists: Watchlist tab)")),
     el("div", { id: "u-tags", class: "row" }), el("div", { id: "u-controls" }), el("div", { id: "u-results" }), el("div", { id: "u-pages" }),
-    mergesSection());
+    backfillSection(), mergesSection());
   pane.prepend(el("div", { class: "row" }, el("span", { id: "u-status-text", class: "dim" }, "Universe ..."),
     refreshButton(pane), tip("", "universe")));
   const u = await showStatus(pane);

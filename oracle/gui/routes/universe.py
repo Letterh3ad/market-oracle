@@ -6,6 +6,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Query, Request
 
 from oracle.gui.deps import get_ctx
+from oracle.services.backfill_service import backfill_status
 from oracle.services.context import AppContext, worker_context
 from oracle.services.tags_service import list_tags
 from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe, universe_status
@@ -60,3 +61,9 @@ async def get_facets(field: str, ctx: AppContext = Depends(get_ctx)) -> list[dic
 async def tags(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     """Every tag with the companies carrying it; `orphaned` ones have left the universe."""
     return [asdict(t) for t in list_tags(ctx)]
+
+
+@router.get("/backfill")
+async def backfill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """Each index's backfill counts as they stand."""
+    return [asdict(c) for c in backfill_status(ctx)]

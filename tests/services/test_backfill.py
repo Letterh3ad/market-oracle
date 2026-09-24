@@ -229,10 +229,12 @@ async def test_status_reports_counts_without_running(ctx):
         ("kr", 4, 3), ("us", 0, 0)]
 
 
-async def test_the_live_kospi_page_adds_the_lg_home_lines(ctx, wiki):
+async def test_the_live_kospi_page_adds_the_lg_home_lines(ctx, wiki, yahoo):
+    yahoo.summaries["051910.KS"] = profile("LG Chem, Ltd.", "KSC", "KRW", 25e12, "South Korea", "Basic Materials")
+    yahoo.summaries["003550.KS"] = profile("LG Corp.", "KSC", "KRW", 13e12, "South Korea", "Industrials")
     wiki.pages["KOSPI_200"] = (FIXTURES / "kospi200.html").read_text(encoding="utf-8")
     await refresh_universe(ctx)
     report = await run(ctx, BY_CODE["kospi200"], max_lookups=400)
     added = {c.symbol for c in report.changes if c.kind == "added"}
-    assert {"066570.KS", "373220.KS", "028260.KS"} <= added
+    assert {"066570.KS", "373220.KS", "051910.KS", "003550.KS", "028260.KS"} <= added
     assert report.indexes[0].members == 200

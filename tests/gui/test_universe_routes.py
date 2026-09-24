@@ -135,3 +135,12 @@ async def test_proposed_merges_run_as_a_job_that_changes_nothing(ctx, loaded):
     assert job["result"] == {"merges": [], "enabled": False, "flag_counts": {"legal forms differ": 0, "no country": 0}}
     after = ctx.conn.execute("SELECT symbol, company_key, is_primary FROM listings ORDER BY symbol").fetchall()
     assert [tuple(r) for r in after] == [tuple(r) for r in before]
+
+
+async def test_the_backfill_runs_as_a_job_and_its_counts_can_be_read(loaded):
+    job = await run_job(loaded, "/api/jobs/backfill")
+    assert (job["kind"], job["subject"], job["state"]) == ("universe", "backfill", "done")
+    first = job["result"]["indexes"][0]
+    assert (first["code"], first["members"]) == ("sp500", 0) and "HTTP 404" in first["error"]
+    counts = (await loaded.get("/api/universe/backfill")).json()
+    assert [c["code"] for c in counts] == [c["code"] for c in job["result"]["indexes"]]
