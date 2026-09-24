@@ -210,18 +210,99 @@ class Config:
     keys: Keys = field(default_factory=Keys)
 
 
+EXAMPLE_PATH = Path(__file__).resolve().parents[1] / "oracle.toml.example"
+SECRET_SECTIONS = ("keys",)
+
+
+@dataclass(frozen=True)
+class Setting:
+    """One oracle.toml key. `section` "" is the top level."""
+
+    section: str
+    key: str
+    kind: str
+    """bool, int, float, str or list."""
+    default: object
+
+    @property
+    def secret(self) -> bool:
+        return self.section in SECRET_SECTIONS
+
+    def meaning_in(self, meanings: Mapping[tuple[str, str], str]) -> str | None:
+        # Every [sources.<name>] table has the same keys; the example documents one.
+        return meanings.get((self.section.split(".")[0], self.key))
+
+
+def setting_list(extra_sources: tuple[str, ...] = ()) -> list[Setting]:
+    """Every oracle.toml key with its default, in Config's order; `extra_sources` adds
+    [sources.<name>] tables a file defines beyond the built-ins."""
+    out: list[Setting] = []
+    defaults = Config()
+    for f in fields(Config):
+        value = getattr(defaults, f.name)
+        if f.name == "sources":
+            names = list(DEFAULT_SOURCES) + [n for n in extra_sources if n not in DEFAULT_SOURCES]
+            for name in names:
+                base = DEFAULT_SOURCES.get(name)
+                out += [_setting(f"sources.{name}", s.name, getattr(base, s.name) if base else None, s.type)
+                        for s in fields(SourceConfig)]
+        elif f.name == "keys":
+            out += [Setting("keys", name, "str", None) for name in KEY_NAMES]
+        elif hasattr(value, "__dataclass_fields__"):
+            out += [_setting(f.name, s.name, getattr(value, s.name), s.type) for s in fields(value)]
+        else:
+            out.append(_setting("", f.name, value, f.type))
+    return out
+
+
+def _setting(section: str, key: str, default: object, annotation: str) -> Setting:
+    if isinstance(default, Path):
+        default = default.as_posix()
+    elif isinstance(default, tuple):
+        default = list(default)
+    kind = "list" if isinstance(default, list) else annotation if annotation in ("bool", "int", "float") else "str"
+    return Setting(section, key, kind, default)
+
+
+_EXAMPLE_KEY = re.compile(r'^(#\s*)?([a-z_]+)\s*=\s*("[^"]*"|\[[^\]]*\]|[^\s#]+)\s*#\s*(.+)$')
+
+
+def example_meanings(text: str) -> dict[tuple[str, str], str]:
+    """(section, key) -> the inline comment on that key in oracle.toml.example, commented-out
+    keys included. [sources.<name>] tables all read as "sources"."""
+    out: dict[tuple[str, str], str] = {}
+    section = ""
+    for line in text.splitlines():
+        header = re.match(r"^\[([\w.]+)\]", line)
+        if header:
+            section = header.group(1).split(".")[0]
+            continue
+        match = _EXAMPLE_KEY.match(line.strip())
+        if match and (section, match.group(2)) not in out:
+            out[section, match.group(2)] = match.group(4).strip()
+    return out
+
+
 def with_settings(text: str, section: str, values: Mapping[str, object]) -> str:
-    """`text` (an oracle.toml) with each key in `[section]` set to its value. Everything else,
+    """`text` (an oracle.toml) with each key in `[section]` set to its value, or removed when
+    None. `section` "" is the top level; "sources.web" a nested table. Everything else,
     comments included, is kept as it was."""
     try:
         doc = tomlkit.parse(text)
     except TOMLKitError as exc:
         raise ConfigError(f"not valid TOML: {exc}") from exc
-    table = doc.get(section)
-    if table is None:
-        table = doc[section] = tomlkit.table()
+    table = doc
+    parts = section.split(".") if section else []
+    for depth, part in enumerate(parts):
+        inner = table.get(part)
+        if inner is None:
+            inner = table[part] = tomlkit.table(is_super_table=depth < len(parts) - 1)
+        table = inner
     for key, value in values.items():
-        table[key] = value
+        if value is None:
+            table.pop(key, None)
+        else:
+            table[key] = value
     return tomlkit.dumps(doc)
 
 
@@ -243,10 +324,14 @@ def _with_env_keys(config: Config) -> Config:
     # The environment wins, so a key can stay out of any file.
     keys = config.keys
     for name in KEY_NAMES:
-        value = os.environ.get(f"ORACLE_{name.upper()}_KEY")
+        value = os.environ.get(key_env_var(name))
         if value:
             keys = keys.with_(name, value)
     return replace(config, keys=keys)
+
+
+def key_env_var(name: str) -> str:
+    return f"ORACLE_{name.upper()}_KEY"
 
 
 def _reject_unknown(raw: dict, cls: type, where: str) -> None:

@@ -248,3 +248,42 @@ def test_ai_research_refresh_defaults_to_a_5_percent_move_and_30_minutes(tmp_pat
         path.write_text(f"[ai_account]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="ai_account"):
             load_config(path, cwd=tmp_path)
+
+
+def test_with_settings_reaches_top_level_keys_and_source_tables_and_none_removes_a_key():
+    from oracle.config import with_settings
+
+    text = '# head\ndb_path = "o.db"\n\n[keys]\neodhd = "old"  # keep\n'
+    out = with_settings(text, "", {"base_currency": "USD"})
+    out = with_settings(out, "sources.web", {"max_retries": 2})
+    out = with_settings(out, "keys", {"eodhd": None})
+    assert out.startswith('# head\ndb_path = "o.db"\nbase_currency = "USD"\n')
+    assert "[sources.web]\nmax_retries = 2" in out and "eodhd" not in out
+    assert with_settings("", "keys", {"eodhd": None}) == "[keys]\n"
+
+
+def test_every_setting_is_a_real_key_with_a_one_line_meaning_in_the_example():
+    from oracle.config import EXAMPLE_PATH, example_meanings, setting_list
+
+    listed = setting_list()
+    meanings = example_meanings(EXAMPLE_PATH.read_text(encoding="utf-8"))
+    missing = [f"[{s.section}] {s.key}" for s in listed if not s.meaning_in(meanings)]
+    assert missing == []
+    assert set(meanings) <= {(s.section.split(".")[0], s.key) for s in listed}, "the example names a key the form lacks"
+    sections = {s.section for s in listed}
+    assert {"", "sources.yahoo", "sources.gdelt", "prices", "risk", "llm", "research", "keys"} <= sections
+    assert {s.key for s in listed if s.section == ""} == {"db_path", "base_currency"}
+    by_name = {(s.section, s.key): s for s in listed}
+    assert (by_name["risk", "account"].kind, by_name["risk", "account"].default) == ("float", 10_000.0)
+    assert by_name["prices", "sources"].default == ["yahoo", "eodhd"]
+    assert (by_name["research", "contact"].kind, by_name["research", "contact"].default) == ("str", None)
+    assert by_name["keys", "eodhd"].secret and not by_name["llm", "model"].secret
+
+
+def test_example_meanings_read_inline_comments_including_commented_out_keys():
+    from oracle.config import example_meanings
+
+    text = ('[sources.gdelt]\nrate_per_second = 0.1   # requests a second\n'
+            '[keys]\n# eodhd = "..."   # eodhd.com prices\n# backend = "claude" runs on Claude: no meaning\n')
+    assert example_meanings(text) == {("sources", "rate_per_second"): "requests a second",
+                                      ("keys", "eodhd"): "eodhd.com prices"}

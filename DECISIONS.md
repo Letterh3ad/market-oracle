@@ -1292,3 +1292,18 @@ too. The three missed gaps are `Pending("untracked: ...")` until ticketed. Flags
 shape CLI output are exempt as output-only.
 **Alternatives:** A manifest under `oracle/` (the app does not need it); exempting the missed
 gaps (hides real gaps).
+
+## 2026-09-24 - One generic settings path over every oracle.toml key
+**Context:** gui-parity 07: every oracle.toml key must be editable in the GUI; there is no
+CLI command to pin in the manifest.
+**Decision:** `GET/PUT /api/settings` over `setting_list()`, walked from `Config`, so a new
+key appears by itself. A save builds the file with `with_settings` and goes through the safe
+writer, which loads it with the real loader first: bad values are refused with the loader's
+message and validation stays in one place. Meanings come from inline comments in
+`oracle.toml.example` (a test requires one per key). `[schedule]`, `[automation]`,
+`[ai_account]` and `[analysts]` apply live (now all reloaded by `reload_live_settings`);
+the rest say "applies after Restart" and offer the header's Restart. `[keys]` values are
+never sent: rows say set/not set and name the environment variable that overrides them.
+The manifest holds `SETTINGS_FORM` routes, checked as served and called by the page.
+**Alternatives:** One setter per key (dozens, validation duplicated); sending masked secrets
+(still leaks length); applying every key live (db and gui changes need a fresh process).

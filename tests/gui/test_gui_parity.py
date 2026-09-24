@@ -4,7 +4,7 @@ from pathlib import Path
 
 from oracle.cli.main import build_parser
 from oracle.gui.app import STATIC_DIR, build_app
-from tests.gui_parity import MANIFEST, Exempt, Pending
+from tests.gui_parity import MANIFEST, SETTINGS_FORM, Exempt, Pending
 
 
 def cli_actions(parser: argparse.ArgumentParser, prefix: str = "") -> set[str]:
@@ -114,3 +114,8 @@ def test_every_mapped_route_is_called_from_the_page():
 def test_every_exemption_and_pending_entry_says_why():
     assert all(v.reason if isinstance(v, Exempt) else v.ticket
                for v in MANIFEST.values() if isinstance(v, (Exempt, Pending)))
+
+
+def test_the_settings_form_over_every_oracle_toml_key_is_served_and_called(ctx):
+    assert set(SETTINGS_FORM) <= app_routes(build_app(ctx))
+    assert [r for r in SETTINGS_FORM if uncalled(r, _page_source())] == []

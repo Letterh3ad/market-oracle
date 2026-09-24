@@ -168,8 +168,13 @@ async function mountSettings() {
   repaint();
 }
 
+// The header's Restart confirmation, for a page that saved something needing one.
+function offerRestart() {
+  confirmStop("Restart", restart);
+}
+
 function mount() {
   mountSettings();
 }
 
-export { mount, show };
+export { mount, show, offerRestart };

@@ -18,6 +18,10 @@ class Pending:
     ticket: str
 
 
+# oracle.toml has no CLI command: every key (oracle.config.setting_list, walked from Config)
+# is edited through these. tests/services/test_settings_form.py pins that the form lists them all.
+SETTINGS_FORM = ("GET /api/settings", "PUT /api/settings")
+
 OUTPUT_ONLY = Exempt("formats the CLI's output; the page shows it all")
 
 MANIFEST: dict[str, str | Exempt | Pending] = {
