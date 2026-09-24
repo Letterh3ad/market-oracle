@@ -156,7 +156,7 @@ def test_report_prints_the_account_against_buy_and_hold(cfg, capsys, tmp_path, n
     # Two months of bars before the study are too few for a risk size, so nothing is bought.
     assert "costs (GBP)" in out and "  AI                    +0.00%          +0.00%       0          0.00" in out
     assert "  Every verdict a buy   +0.00%" in out
-    assert "  Buy and hold          +5.08%          -0.40%       2         39.93" in out  # +5.5% less entry costs
+    assert "  Buy and hold          +5.08%          -0.40%       2      3,994.01" in out  # +5.5% less entry costs
     assert "returns stay in its own currency" in out and "0.5% stamp duty on LSE buys" in out
 
 

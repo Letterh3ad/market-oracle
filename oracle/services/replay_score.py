@@ -264,7 +264,8 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Ac
     if not first:
         return None
     start, repo = min(first.values()), BarRepo(ctx.conn)
-    fetched = {s: date.fromisoformat(d) for s, d in _price_state(ctx, study.id).get("fetched", {}).items()}
+    state = _price_state(ctx, study.id)
+    fetched = {s: date.fromisoformat(d) for s, d in state.get("fetched", {}).items()}
     history, left_out = {}, []
     for p in json.loads(study.listings):
         s = p["symbol"]
@@ -284,7 +285,8 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Ac
         if c.verdict and c.symbol in history:
             calls.setdefault(c.symbol, []).append((c.as_of, c.verdict, c.confidence))
     lagging = {s: b[-1].date for s, b in history.items() if end - b[-1].date > STALE}
-    return simulate(ctx, history, {s: first[s] for s in history}, calls, start, end, left_out, lagging)
+    return simulate(ctx, history, {s: first[s] for s in history}, calls, start, end, left_out, lagging,
+                    set(state.get("failures", ())))
 
 
 def _unpriced(bars: Sequence[Bar], first: date, fetched: date | None) -> str | None:
@@ -314,10 +316,10 @@ def _sizing_from(bars: Sequence[Bar], first: date) -> list[Bar]:
     reaches a risk size (a split between fetches would read as a huge swing)."""
     cut = 0
     for i, (a, b) in enumerate(zip(bars, bars[1:])):
-        if b.date > first:
-            break
         if not (_price(a.close) and _price(b.close) and _steady((a, b))):
             cut = i + 1
+        if b.date > first:
+            break
     return [b for b in bars[cut:] if _price(b.close)]
 
 

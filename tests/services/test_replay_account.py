@@ -210,11 +210,27 @@ def test_a_buy_verdict_that_goes_stale_is_never_bought(tmp_path):
 
 
 def test_a_listing_with_older_bars_is_held_flat_after_its_last_close(ctx):
+    cut = date(2026, 9, 10)
     ctx.conn.execute("DELETE FROM bars WHERE symbol = 'BBB' AND date > '2026-09-10'")
+    # AAA flat after the cut too, so every line is flat there only if BBB keeps its last close.
+    aaa = path(fall_after_july)
+    store(ctx, "AAA", {d: aaa[cut] if d > cut else c for d, c in aaa.items()})
     make_study(ctx, all_buy())
     account = replay_report(ctx).account
     assert account.listings == SYMBOLS and account.end == LAST and account.left_out == ()
-    assert any("BBB" in n and "2026-09-10" in n and "held flat" in n for n in account.notes)
+    assert any("BBB" in n and "2026-09-10" in n and "held flat" in n and "refetched about monthly" in n
+               for n in account.notes)
+    for line in account.lines:
+        at_cut = dict(line.points)[cut]
+        assert all(r == pytest.approx(at_cut) for d, r in line.points if d > cut), line.name
+
+
+def test_a_lagging_listing_whose_last_fetch_failed_says_so(ctx):
+    ctx.conn.execute("DELETE FROM bars WHERE symbol = 'BBB' AND date > '2026-09-10'")
+    sid = make_study(ctx, all_buy())
+    MetaRepo(ctx.conn).set(f"replay_prices:{sid}", json.dumps({"failures": ["BBB"]}))
+    notes = replay_report(ctx).account.notes
+    assert any(n.startswith("BBB: prices only up to 2026-09-10") and "no prices fetched" in n for n in notes)
 
 
 def test_a_listing_a_whole_fetch_found_nothing_newer_for_has_stopped_and_is_left_out(ctx):
@@ -240,6 +256,43 @@ def test_a_split_before_the_study_does_not_reach_the_risk_size(ctx):
     account = replay_report(ctx).account
     spent = {t.symbol: -t.cash for t in account.trades}
     assert account.listings == SYMBOLS and spent["BBB"] == pytest.approx(spent["AAA"], rel=0.01)
+
+
+def test_a_split_between_the_first_as_of_day_and_the_next_close_does_not_reach_the_risk_size(ctx):
+    closes = path(rise)
+    store(ctx, "BBB", {d: c * (2.5 if d <= JUN else 1) for d, c in closes.items()})
+    make_study(ctx, {(s, JUL): ("buy", 0.9) for s in SYMBOLS})
+    account = replay_report(ctx).account
+    # Sizing starts after the jump, so by July BBB has too few bars for a size, never a tiny one.
+    assert account.listings == SYMBOLS and {t.symbol for t in account.trades} == {"AAA"}
+
+
+def test_a_notional_capital_keeps_whole_shares_from_distorting_the_lines(tmp_path):
+    # At the default 10,000 GBP a 1,000 GBP position cannot buy a 1,600 GBP share.
+    with opened(tmp_path) as ctx:
+        FxRepo(ctx.conn, "GBP").upsert([FxRate("USD", JUN, 1.25, "test")], "2026-09-23T22:00:00Z")
+        store(ctx, "BBB", {d: c * 20 for d, c in path(rise).items()})
+        make_study(ctx, all_buy())
+        account = replay_report(ctx).account
+        ai, control, held = (lines(account)[n] for n in ("ai", "all_buy", "buy_and_hold"))
+        assert account.capital == 1_000_000 and {t.symbol for t in account.trades} == {"AAA", "BBB"}
+        assert (ai.points, ai.trades) == (control.points, control.trades)
+        closes = {s: {d: c for d, c in path(m).items()} for s, m in (("AAA", fall_after_july), ("BBB", rise))}
+        mean = sum(c[LAST] / c[date(2026, 6, 2)] - 1 for c in closes.values()) / 2
+        # Fully invested in equal parts, less entry costs of about 0.4%.
+        assert held.return_ == pytest.approx(mean - 0.004, abs=0.001) and held.trades == 2
+        assert held.costs == pytest.approx(4_000, rel=0.1)
+        assert any("Simulated at a notional 1,000,000 GBP so whole shares do not distort the comparison; fixed "
+                   "fee minimums are negligible at this size" in n for n in account.notes)
+
+
+def test_rejections_collapse_to_one_line_per_listing_and_reason():
+    notes = replay_account.collapsed([
+        "2026-07-02 AAA: not enough cash to buy (1,000.00 asked, 500.00 left)",
+        "2026-08-04 AAA: not enough cash to buy (1,200.00 asked, 100.00 left)",
+        "2026-07-02 BBB: 3.00 buys no whole share after costs"])
+    assert notes == ["Could not fill AAA 2 times from 2026-07-02: not enough cash to buy.",
+                     "Could not fill BBB once, on 2026-07-02: buys no whole share after costs."]
 
 
 def test_fills_pay_stamp_duty_on_lse_buys_and_the_fx_spread_outside_the_base_currency(ctx):

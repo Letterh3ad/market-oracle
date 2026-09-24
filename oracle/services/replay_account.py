@@ -5,14 +5,15 @@ and the same listings bought in equal amounts and held. Nothing is written to th
 
 from __future__ import annotations
 
+import re
 from bisect import bisect_right
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping, Sequence, Set
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 
-from oracle.broker.backtest import LeanSource, Replay, Trade, Venue, fill_costs, replay
+from oracle.broker.backtest import LeanSource, Replay, Trade, Venue, replay
 from oracle.broker.compare import max_fall
-from oracle.broker.fills import COSTS, buy_fill
+from oracle.broker.fills import COSTS, fee
 from oracle.broker.rules import Lean
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
@@ -22,9 +23,12 @@ from oracle.store.fx import FxRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
-__all__ = ["BASELINES", "Account", "simulate"]
+__all__ = ["BASELINES", "NOTIONAL", "Account", "collapsed", "simulate"]
 
 SOURCE = "ai"
+NOTIONAL = 1_000_000.0
+"""The capital every line starts from, in the base currency: at the AI account's own size a
+position of a few hundred pounds buys no share of the biggest names, which the study favours."""
 BASELINES: dict[str, tuple[str, LeanSource]] = {}
 """Rule accounts drawn beside the verdicts' over the same listings, days and costs, by line
 name: a caption and the leans they trade. quant-basics adds its monthly momentum baseline here."""
@@ -40,7 +44,7 @@ class Account:
     end: date
     """The last stored close."""
     capital: float
-    """The AI account's size, which each line starts from."""
+    """The notional capital each line starts from (NOTIONAL)."""
     currency: str
     """The base currency every amount is in."""
     listings: tuple[str, ...]
@@ -56,27 +60,29 @@ class Account:
 
 def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mapping[str, date],
              calls: Mapping[str, Sequence[Call]], start: date, end: date, left_out: Sequence[str],
-             lagging: Mapping[str, date]) -> Account:
+             lagging: Mapping[str, date], failing: Set[str]) -> Account:
     """`history` is each priced listing's bars, from a year before `start` for the risk sizes;
     `first` its first as-of day; `calls` its verdicts, oldest first; `lagging` the last close
-    of each listing whose bars stop well before `end` (held flat after it)."""
+    of each listing whose bars stop well before `end` (held flat after it); `failing` the
+    listings the last price check could not fetch."""
     base = ctx.config.base_currency
     rates, unrated = _rates(ctx, history, start)
     rows = {s: _priced(bars, rates[s]) for s, bars in history.items()}
     venues = {s: _venue(ctx, s) for s in history}
-    rules, max_age, capital = strategy_rules(ctx), ctx.config.ai_account.max_verdict_age_days, ctx.config.risk.account
+    rules, max_age, capital = strategy_rules(ctx), ctx.config.ai_account.max_verdict_age_days, NOTIONAL
+    risk = {**asdict(ctx.config.risk), "account": capital}
 
     def run(lean: LeanSource) -> Replay:
         # A verdict reads its day's news to 24:00 UTC, after most closes: it fills at the next close.
-        return replay(rows, start, end, rules=rules, risk=asdict(ctx.config.risk), slippage=0.0, commission=0.0,
-                      lean=lean, fill_at="close", venues=venues)
+        return replay(rows, start, end, rules=rules, risk=risk, slippage=0.0, commission=0.0, lean=lean,
+                      fill_at="close", venues=venues)
 
     def line(name: str, caption: str, r: Replay, label: str = "") -> Line:
         return Line(name, caption, _returns(r.equity, capital), max_fall(r.equity), len(r.trades),
                     sum(t.costs for t in r.trades), label)
 
     ai = run(_verdicts(calls, max_age))
-    held, held_costs = _buy_and_hold(rows, first, venues, start, capital)
+    held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
     lines = (
         line("ai", "The replay verdicts, traded under the AI account's rules, risk sizes and costs.", ai),
@@ -86,7 +92,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
              "Every verdict a buy"),
         Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'}, bought at the "
                              "first close after the first as-of day, paying the same costs, and never sold.",
-             _returns(held, capital), max_fall(held), sum(1 for s in rows if _entry(rows[s], first[s])), held_costs),
+             _returns(held, capital), max_fall(held), entered, held_costs),
         *(line(name, caption, run(lean), name) for name, (caption, lean) in BASELINES.items()))
     notes = [
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
@@ -96,19 +102,34 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
         f"Fills pay the paper accounts' costs at the first close after the as-of day: {COSTS.slippage:.1%} slippage, "
         f"the broker's fee table for each listing's exchange, a {COSTS.fx_spread:.1%} FX spread each way for listings "
         f"not in {base} and {COSTS.stamp_duty:.1%} stamp duty on LSE buys.",
+        f"Simulated at a notional {capital:,.0f} {base} so whole shares do not distort the comparison; fixed fee "
+        "minimums are negligible at this size.",
         f"Each listing's returns stay in its own currency, as the score's do: its {base} rate is held at the first "
         "day's, so exchange moves are left out.",
         "Listings are kept or left out, and priced on adjusted or plain closes, from their bars over the whole span, "
         "after the start too (the same for every line).",
         *([f"No stored exchange rate to {base} for {', '.join(unrated)}: priced as if a share cost 1 {base} on the "
            "first day, so their fees are approximate."] if unrated else []),
-        *(f"{s}: prices only up to {d.isoformat()}, held flat after (unwatched listings are refetched about "
-          "monthly)." for s, d in lagging.items()),
+        *(f"{s}: prices only up to {d.isoformat()}, held flat after ("
+          + ("no prices fetched on the last price check" if s in failing
+             else "unwatched listings are refetched about monthly") + ")." for s, d in lagging.items()),
         *([f"No verdict for: {', '.join(unjudged)}."] if unjudged else []),
-        *(f"Could not fill: {note}." for note in ai.rejected),
+        *collapsed(ai.rejected),
         *([f"Still waiting to fill on the last day: {', '.join(ai.unfilled)}."] if ai.unfilled else []),
     ]
     return Account(start, end, capital, base, tuple(rows), lines, ai.trades, tuple(left_out), tuple(notes))
+
+
+def collapsed(rejected: Sequence[str]) -> list[str]:
+    """One line per listing and reason, from the engine's `DAY SYMBOL: reason (amounts)` notes."""
+    seen: dict[tuple[str, str], list[str]] = {}
+    for note in rejected:
+        day, rest = note.split(" ", 1)
+        symbol, reason = rest.split(": ", 1)
+        reason = re.sub(r"^[\d,.]+ ", "", re.sub(r" \(.*\)$", "", reason))
+        seen.setdefault((symbol, reason), []).append(day)
+    return [f"Could not fill {symbol} {f'{len(days)} times from {days[0]}' if len(days) > 1 else f'once, on {days[0]}'}"
+            f": {reason}." for (symbol, reason), days in seen.items()]
 
 
 def _returns(series: Sequence[tuple[date, float]], capital: float) -> tuple[tuple[date, float], ...]:
@@ -180,21 +201,23 @@ def _entry(rows: Sequence[ConvertedBar], first: date) -> ConvertedBar | None:
 
 
 def _buy_and_hold(rows: Mapping[str, Sequence[ConvertedBar]], first: Mapping[str, date],
-                  venues: Mapping[str, Venue], start: date, capital: float) -> tuple[list[tuple[date, float]], float]:
-    """Equal amounts, each bought in whole shares at its first close after its first as-of
-    day with the paper costs, then held; cash until then, and its last close on days without one."""
+                  venues: Mapping[str, Venue], start: date,
+                  capital: float) -> tuple[list[tuple[date, float]], float, int]:
+    """Equal amounts, each bought in fractional units at its first close after its first
+    as-of day with the paper costs, then held; cash until then, and its last close on days
+    without one. Also the costs and the listings bought."""
     if not rows:
-        return [], 0.0
+        return [], 0.0, 0
     share, costs = capital / len(rows), 0.0
-    shares: dict[str, tuple[date, int, float]] = {}
+    units: dict[str, tuple[date, float]] = {}
     for s, r in rows.items():
         p = _entry(r, first[s])
         if p is None:
             continue
-        v = venues[s]
-        fill = buy_fill(share, open_price=p.bar.close, rate=p.rate, country=v.country, exchange=v.exchange, costs=COSTS)
-        shares[s] = (p.bar.date, fill.shares, share + fill.cash)
-        costs += fill_costs(fill, p.rate)
+        n = _units(share, p, venues[s])
+        if n > 0:
+            units[s] = (p.bar.date, n)
+            costs += share - n * p.close_base
     by_day: dict[date, dict[str, float]] = {}
     for s, r in rows.items():
         for p in r:
@@ -204,12 +227,15 @@ def _buy_and_hold(rows: Mapping[str, Sequence[ConvertedBar]], first: Mapping[str
     out = []
     for d in sorted(by_day):
         last.update(by_day[d])
-        value = 0.0
-        for s in rows:
-            if s in shares and d >= shares[s][0]:
-                _, n, left = shares[s]
-                value += n * last[s] + left
-            else:
-                value += share
-        out.append((d, value))
-    return out, costs
+        out.append((d, sum(units[s][1] * last[s] if s in units and d >= units[s][0] else share for s in rows)))
+    return out, costs, len(units)
+
+
+def _units(cash: float, p: ConvertedBar, venue: Venue) -> float:
+    """What `cash` (base currency) buys of a listing at its close after the paper costs, as
+    `fills.buy_fill` charges them, in fractional units."""
+    spread = COSTS.fx_spread if p.rate != 1.0 else 0.0
+    local, price = cash * p.rate * (1 - spread), p.bar.close * (1 + COSTS.slippage)
+    stamp = COSTS.stamp_duty if venue.exchange == "LSE" else 0.0
+    paid = local - fee(venue.country, local / price, price, COSTS)
+    return max(0.0, paid / (price * (1 + stamp)))

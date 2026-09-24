@@ -191,7 +191,7 @@ def print_account(a: Account) -> None:
     print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
     for line in a.lines:
         print(f"  {LINE_LABELS.get(line.name, line.label or line.name):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
-              f"{line.trades:>8}{line.costs:>14.2f}")
+              f"{line.trades:>8}{line.costs:>14,.2f}")
     for line in a.lines:
         print(f"  - {line.caption}")
     if a.left_out:
