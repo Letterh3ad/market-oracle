@@ -15,6 +15,7 @@ from oracle.market.fx import RateSeries, pick_rate
 from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
+from oracle.services.never_list import never_company, refuse_never
 from oracle.services.prices_service import benchmark_history_in_base, price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import discovered_only, own_picks
@@ -29,7 +30,8 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "UNVALIDATED", "AccountScore", "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "NEVER_BUY", "UNVALIDATED", "AccountScore", "AccountView", "Action",
+    "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
     "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
     "strategy_rules", "strategy_step", "traded_by",
@@ -43,6 +45,7 @@ AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers
           "or set [ai_account] enabled = true in oracle.toml")
 DISCOVERED_OFF = ("discovered, and the AI account does not trade discovered companies: turn it on in Settings "
                   "([discovery] ai_trades)")
+NEVER_BUY = "on the never list: never bought"
 
 
 @dataclass(frozen=True)
@@ -143,6 +146,7 @@ def place_buy(ctx: AppContext, symbol: str, cash: float, account: str = "manual"
     if not (math.isfinite(cash) and cash > 0):
         raise InvalidQuery(f"a buy must spend more than nothing, not {cash:,.2f}")
     listing = resolve_symbol(ctx, symbol).symbol
+    refuse_never(ctx, listing)
     now = ctx.clock.utcnow()
     return PaperRepo(ctx.conn).add_order(account, listing, Side.BUY, cash, None, to_utc_iso(now), now.date(), source)
 
@@ -198,15 +202,15 @@ def ai_step(ctx: AppContext) -> list[Decision] | None:
 
 
 def traded_by(ctx: AppContext, account: str) -> list[str]:
-    """The watched listings a trading account decides over. The strategy account keeps to
-    the user's own picks, so its record stays a fair test of the rules on them; the AI
-    account adds discovered ones while `[discovery] ai_trades` is on. A discovered listing
-    already held stays in, so it can still be sold."""
-    mine = own_picks(ctx)
+    """The listings a trading account decides over. The strategy account keeps to the
+    user's own picks, so its record stays a fair test of the rules on them; the AI account
+    adds discovered ones while `[discovery] ai_trades` is on. Whatever the account holds
+    stays in, off every list or not, so a position is never stranded: the rules only ever
+    buy what is not held, so a held listing can be sold but never added to."""
+    listed = own_picks(ctx)
     if account == "ai" and ctx.config.discovery.ai_trades:
-        return sorted(mine + discovered_only(ctx))
-    held = {p.symbol for p in account_view(ctx, account).positions}
-    return sorted(mine + [s for s in discovered_only(ctx) if s in held])
+        listed += discovered_only(ctx)
+    return sorted(set(listed) | set(PaperRepo(ctx.conn).held_symbols(account)))
 
 
 def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
@@ -215,6 +219,9 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
     every decision; `reports` maps a listing to the research run behind its decision."""
     view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
+    barred = _never_bought(ctx, [s for s in found if s not in holdings])
+    found = {s: lean for s, lean in found.items() if s not in barred}
+    unusable = unusable + [Decision(s, Action.SKIP, None, NEVER_BUY) for s in barred]
     sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
@@ -234,6 +241,13 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
                                 reports.get(d.symbol), d.needs_research)])
     return decisions
+
+
+def _never_bought(ctx: AppContext, symbols: list[str]) -> set[str]:
+    """The user's rule bars a company everywhere; `[discovery] never` only what discovery
+    alone brought in."""
+    discovered = set(discovered_only(ctx))
+    return {s for s in symbols if never_company(ctx, s, user=s in discovered)}
 
 
 def strategy_rules(ctx: AppContext) -> Rules:

@@ -24,6 +24,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
+from oracle.services.never_list import is_never, never_company, never_names
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import update_listing
 from oracle.services.research_service import configured_model
@@ -37,7 +38,7 @@ from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
-from oracle.universe.listings import blind_name, is_receipt, normalise_name
+from oracle.universe.listings import blind_name, is_receipt
 
 __all__ = [
     "DISCOVERED_LIST", "SOURCES", "Added", "DiscoveredLine", "DiscoveryEvidence", "DiscoveryRun", "MoverSearch",
@@ -52,8 +53,6 @@ SOURCE_THEME = "theme"
 SOURCE_MOVER = "mover"
 SOURCES = ("related", "themes", "movers")
 """In the order they take turns; each is switched by `[discovery] search_<name>`."""
-# The user's rule, kept whatever `[discovery] never` says.
-ALWAYS_NEVER = ("Tesla",)
 # Bounds on one run's network and model use: seeds, themes and mover searches tried (one model
 # call each), price checks, peers per seed, headlines per model call.
 MAX_SEEDS = 3
@@ -62,6 +61,8 @@ MAX_MOVER_SEARCHES = 2
 MAX_PRICE_CHECKS = 6
 MAX_PEERS = 10
 MAX_HEADLINES = 20
+# Shorter names ("US", "GE") start too many companies' names to be matched by their start.
+MIN_LEADING_NAME = 4
 _LAST_SEED = "discovery_last_seed"
 _LAST_SOURCE = "discovery_last_source"
 _LAST_THEME = "discovery_last_theme"
@@ -392,7 +393,7 @@ class _Screen:
         self._checks = 0
         self._universe = UniverseRepo(ctx.conn)
         self._repo = DiscoveryRepo(ctx.conn)
-        self._never = [normalise_name(n) for n in (*ALWAYS_NEVER, *ctx.config.discovery.never)]
+        self._never = never_names(ctx, user=True)
         self._removed_symbols, self._removed_keys = self._repo.removed()
         lists = WatchlistRepo(ctx.conn)
         self._watched = self._keys(s for w in lists.summaries() if w.name.casefold() != DISCOVERED_LIST
@@ -407,18 +408,17 @@ class _Screen:
         return len(self.added) >= self._room or self._checks >= MAX_PRICE_CHECKS
 
     async def check(self, c: _Candidate) -> None:
-        if self._is_never(c.name):
+        if is_never(c.name, self._never):
             return self._skip(c, "on the never list")
-        profile = self._universe.profile(c.symbol) if c.symbol else self._lookup(c.name)
+        profile, why_not = (self._universe.profile(c.symbol), None) if c.symbol else self._lookup(c.name)
         if profile is None:
-            return self._skip(c, "not in the universe under that name")
+            return self._skip(c, why_not or "not in the universe under that name")
         if profile.company_key in self._seen:
             return None
         self._seen.add(profile.company_key)
         if profile.type != "equity" or is_receipt(profile.name):
             return self._skip(c, "not a company's own shares")
-        names = [profile.name, *(x.name for x in self._universe.company_listings(profile.company_key))]
-        if any(self._is_never(n) for n in names):
+        if never_company(self._ctx, profile.symbol, user=True):
             return self._skip(c, "on the never list")
         if profile.company_key in self._watched:
             return self._skip(c, "already watched")
@@ -426,7 +426,7 @@ class _Screen:
             return self._skip(c, "already discovered")
         symbols = {s.upper() for s in self._universe.company_symbols(profile.company_key)}
         if profile.company_key in self._removed_keys or symbols & self._removed_symbols:
-            return self._skip(c, "you removed it from the discovered list")
+            return self._skip(c, "you removed it before")
         listing = self._live_line(profile)
         if listing is None:
             return self._skip(c, "no listing with live prices")
@@ -445,17 +445,26 @@ class _Screen:
                                 c.evidence, c.source))
         return None
 
-    def _lookup(self, name: str) -> ListingProfile | None:
-        """The company the name means: one of its listings named exactly that (legal forms
-        aside), else one whose name starts with it, biggest first as the search ranks them."""
+    def _lookup(self, name: str) -> tuple[ListingProfile | None, str | None]:
+        """The company the name means, or why none: one of its listings named exactly that
+        (legal forms aside, biggest first as the search ranks them), else the one company
+        whose name starts with it, else a listing with that symbol. A short or shared leading
+        name is never guessed at."""
         want = blind_name(name)
         hits = search_universe(self._ctx, want, filters={"type": ["equity"]}, limit=10)
         names = {h.symbol: {blind_name(h.name)} | {blind_name(x.name) for x in
                                                    self._universe.company_listings(h.company_key)} for h in hits}
         exact = [h for h in hits if want in names[h.symbol]]
-        leading = [h for h in hits if any(same_company(n, want) for n in names[h.symbol])]
-        best = (exact or leading or [None])[0]
-        return self._universe.profile(best.symbol) if best else None
+        leading = {h.company_key: h for h in hits if any(same_company(n, want) for n in names[h.symbol])}
+        if exact:
+            return self._universe.profile(exact[0].symbol), None
+        if len(want) >= MIN_LEADING_NAME and len(leading) == 1:
+            return self._universe.profile(next(iter(leading.values())).symbol), None
+        if (by_symbol := self._universe.profile(name.strip())) is not None:
+            return by_symbol, None
+        if not leading:
+            return None, None
+        return None, "too short a name to tell which company" if len(want) < MIN_LEADING_NAME else "ambiguous name"
 
     def _live_line(self, profile: ListingProfile) -> str | None:
         """The primary line (home or most liquid), else its best live sibling."""
@@ -464,10 +473,6 @@ class _Screen:
             return primary
         siblings = live_siblings(self._ctx, primary)
         return siblings[0].symbol if siblings else None
-
-    def _is_never(self, name: str) -> bool:
-        text = f" {normalise_name(name)} "
-        return any(n and f" {n} " in text for n in self._never)
 
     def _keys(self, symbols) -> set[str]:
         return {r.company_key for s in symbols if (r := self._universe.resolve(s))}

@@ -161,7 +161,8 @@ class DiscoveryConfig:
     max_total: int = 10
     """The discovered list never holds more."""
     never: tuple[str, ...] = ("Tesla",)
-    """Company names never added, matched as whole words on every listing's name."""
+    """Company names never discovered, put on the discovered list or bought from it, matched
+    as whole words on every listing's name. Tesla is never watched or traded whatever this says."""
     ai_trades: bool = True
     """The AI account trades discovered listings' verdicts; off, it leaves them alone."""
     themes: tuple[str, ...] = ()

@@ -1787,3 +1787,33 @@ label living on `Line` (would break the cli/gui-only-imports-services layering, 
 the label logic between the CLI and the GUI); a static per-symbol colour map in `ledgers.js`
 instead of assigning by position (would silently run out of colours, or collide, once a user
 configures a third benchmark).
+
+## 2026-09-24 - Held positions are never stranded; one never-list check everywhere
+**Context:** Review of discovery found a listing removed from every list (discovered, or the
+user's own `main`) while an account held it dropped out of both pricing and the accounts'
+decisions, so a stop could never fire on fresh prices. Main already had this for removed
+watched listings. The never list was only enforced inside discovery runs.
+**Decision:** `traded_by` is the listed picks plus whatever the account holds; the rules
+only buy what is not held, so a held listing can be sold but never added to.
+`update_watched` also prices every listing any paper account holds (held but gone from the
+universe is skipped with a note, like a benchmark). A new `oracle.services.never_list`
+holds `ALWAYS_NEVER` (Tesla) and one company-wide check over every listing's name:
+`watch()` refuses Tesla on every list and `[discovery] never` names on the discovered list;
+`place_buy` refuses Tesla on every account; both trading accounts skip a buy of Tesla
+anywhere, or of a `[discovery] never` company that only the discovered list holds. A company
+moved from discovered to the user's list and later removed is remembered as removed.
+Discovery's name lookup takes a leading-name match only when exactly one company matches,
+never for names under 4 characters, and falls back to an exact symbol ("Meta" is META).
+**Alternatives:** Pricing held listings through a hidden watchlist (would leak into every
+list view); refusing the whole never check in `decide` (the broker layer has no universe).
+
+## 2026-09-24 - Discovery follow-ups left open
+**Context:** Items from the discovery review not fixed now.
+**Decision:** Recorded as follow-ups: (B4) headline injection, where a crafted headline
+names a company to get it discovered, is bounded by `per_tick`, by the rule that a name must
+appear in a headline it cites, and by the code-side universe and price checks, but not
+removed; (B6) the price checks store bars for candidates later rejected, which costs a
+little database space and nothing else. B5 (CDR, BDR and CEDEAR receipts not filtered) was a
+one-line regex widening and is fixed.
+**Alternatives:** Fixing B4 with a second model pass (costly, and still model-judged);
+checking prices without storing (would need a separate fetch path).

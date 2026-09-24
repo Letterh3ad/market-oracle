@@ -53,12 +53,13 @@ def normalise_name(name: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
 
 
-_RECEIPT = re.compile(r"\b[AG]DRS?\b", re.IGNORECASE)
+_RECEIPT = re.compile(r"\b(?:[ABCG]DRS?|CEDEARS?)\b", re.IGNORECASE)
 
 
 def is_receipt(name: str) -> bool:
     """A depositary receipt line: it carries its own ISIN, so it repeats a company listed
-    elsewhere (Samsung's GDRs) as if it were another."""
+    elsewhere (Samsung's GDRs; Brazil's BDRs, Canada's CDRs, Argentina's CEDEARs) as if it
+    were another."""
     return _RECEIPT.search(name) is not None
 
 

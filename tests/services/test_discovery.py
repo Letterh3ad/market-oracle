@@ -263,3 +263,12 @@ async def test_only_one_run_at_a_time(ctx, monkeypatch):
     with single_flight(ctx, discovery_service.JOB, 60.0):
         with pytest.raises(JobAlreadyRunning):
             await discover(ctx, silent())
+
+
+async def test_a_moved_company_taken_off_my_list_is_never_rediscovered(ctx):
+    await discover(ctx, silent())
+    move_discovered(ctx, "6902.T")
+    assert unwatch(ctx, "6902.T")
+    run = await discover(ctx, silent())
+    assert "removed" in reasons(run)["DENSO Corporation"]
+    assert "6902.T" not in {a.symbol for a in run.added}

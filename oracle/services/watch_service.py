@@ -7,7 +7,8 @@ from oracle.broker.rules import Lean
 from oracle.market.bars import is_stale
 from oracle.services.analysis_service import StoredSignal, latest_lean, latest_signals
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidSwap, InvalidWatchlistName, UnknownWatchlist
+from oracle.services.errors import InvalidSwap, InvalidWatchlistName, NeverListed, UnknownWatchlist
+from oracle.services.never_list import never_company, refuse_never
 from oracle.services.prices_service import day_change, price_history_in_base
 from oracle.services.suggest import closest, hint
 from oracle.services.universe_service import Sibling, live_siblings, resolve_symbol
@@ -71,9 +72,14 @@ class WatchLine(WatchItem):
 
 
 def watch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> Watched:
-    """Watch one listing (not the company's others: a listing is what gets priced)."""
+    """Watch one listing (not the company's others: a listing is what gets priced). Never a
+    company on the user's never list, and on the discovered list never one on `[discovery] never`."""
     name = _name(watchlist)
     listing = resolve_symbol(ctx, symbol)
+    refuse_never(ctx, listing.symbol)
+    if name.casefold() == DISCOVERED_LIST and (company := never_company(ctx, listing.symbol, user=True)):
+        raise NeverListed(f"{company} is on the discovery never list ([discovery] never in Settings): "
+                          "it is never put on the discovered list")
     stored, added = WatchlistRepo(ctx.conn).add(name, listing.symbol, to_utc_iso(ctx.clock.utcnow()))
     return Watched(listing.symbol, listing.name, stored, added)
 
@@ -104,14 +110,17 @@ def create_watchlist(ctx: AppContext, watchlist: str) -> tuple[str, bool]:
 
 def unwatch(ctx: AppContext, symbol: str, watchlist: str = DEFAULT_LIST) -> bool:
     """False when it was not on the list. Works on symbols gone from the universe. A company
-    taken off the discovered list is remembered, so discovery never adds it again."""
+    taken off the discovered list, or off any list after being moved there from it, is
+    remembered, so discovery never adds it again."""
     name, symbol = _name(watchlist), symbol.strip()
     with transaction(ctx.conn):
         removed = WatchlistRepo(ctx.conn).remove(name, symbol)
-        if removed and name.casefold() == DISCOVERED_LIST:
+        discoveries = DiscoveryRepo(ctx.conn)
+        moved = (was := discoveries.latest(symbol)) is not None and was.moved_at is not None
+        if removed and (name.casefold() == DISCOVERED_LIST or moved):
             found = UniverseRepo(ctx.conn).resolve(symbol)
-            DiscoveryRepo(ctx.conn).remember_removed(found.symbol if found else symbol, found and found.company_key,
-                                                     found and found.name, to_utc_iso(ctx.clock.utcnow()))
+            discoveries.remember_removed(found.symbol if found else symbol, found and found.company_key,
+                                         found and found.name, to_utc_iso(ctx.clock.utcnow()))
     return removed
 
 

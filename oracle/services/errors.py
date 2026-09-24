@@ -77,3 +77,7 @@ class ModelUnavailable(ServiceError):
 
 class CannotRestart(ServiceError):
     pass
+
+
+class NeverListed(ServiceError):
+    pass

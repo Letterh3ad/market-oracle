@@ -86,6 +86,12 @@ class PaperRepo:
             "SELECT account FROM paper_fills WHERE symbol = ? GROUP BY account "
             "HAVING SUM(CASE side WHEN 'buy' THEN shares ELSE -shares END) > 0 ORDER BY account", (symbol,)))
 
+    def held_symbols(self, account: str | None = None) -> list[str]:
+        """The symbols with shares held, on one account or on any, sorted."""
+        return sorted({r[0] for r in self._conn.execute(
+            "SELECT symbol FROM paper_fills WHERE (:a IS NULL OR account = :a) GROUP BY account, symbol "
+            "HAVING SUM(CASE side WHEN 'buy' THEN shares ELSE -shares END) > 0", {"a": account})})
+
     def fills(self, account: str) -> list[FillRow]:
         """Oldest first."""
         rows = self._conn.execute(f"SELECT {_FILL} FROM paper_fills WHERE account = ? ORDER BY date, order_id",
