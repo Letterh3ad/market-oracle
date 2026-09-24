@@ -105,11 +105,14 @@ def query(input: str) -> str:
 
 
 async def fetch(client: RateLimitedClient, source: str, label: str, url: str, *, params: dict | None = None,
-                headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool = True,
+                headers: dict | None = None, max_bytes: int | None = None, follow_redirects: bool | None = None,
                 accept: tuple[int, ...] = (200,), count_403: bool = True, form: dict | None = None,
                 breaker: bool = True) -> httpx.Response:
     """A GET, or with `form` a POST, through the gate whose failures read as tool errors the
-    model can act on."""
+    model can act on. Redirects are followed for a GET and not for a POST, unless told."""
+    if follow_redirects is None:
+        # httpx follows a POST's 302 or 303 as a GET, which the caller never asked for.
+        follow_redirects = form is None
     options = dict(params=params, headers=headers, max_bytes=max_bytes, follow_redirects=follow_redirects,
                    count_403=count_403, breaker=breaker)
     try:

@@ -458,6 +458,10 @@ def test_a_host_reduces_to_its_registered_domain_and_an_outlet_to_its_sites_name
     assert registered_domain("localhost") == "" and site_name("") == ""
     assert registered_domain("fool.co.com") == "co.com" and registered_domain("reuters.com.de") == "com.de"
     assert registered_domain("www.fool.com.au") == "fool.com.au"
+    for host, name in [("elcomercio.com.pe", "elcomercio"), ("www.pap.com.pl", "pap"), ("kurier.co.at", "kurier"),
+                       ("www.eltiempo.com.co", "eltiempo"), ("www.mof.go.jp", "mof"), ("www.rba.gov.au", "rba")]:
+        assert site_name(host) == name, host
+    assert site_name("reuters.com.de") == "com" and site_name("reuters.co.com") == "co"
     assert outlet_key("The Motley Fool") == "fool" and outlet_key("The Wall Street Journal") == "wsj"
     assert outlet_key("Reuters") == "reuters" and outlet_key("Fool's Gold Weekly") == "foolsgoldweekly"
 

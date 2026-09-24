@@ -70,12 +70,15 @@ def domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-# Registries under a country code (bbc.co.uk, abc.net.au), where the name sits one further left.
-# Listed, not guessed from the labels, so reuters.com.de is never taken for Reuters.
+# Registries under a country code (bbc.co.uk, abc.net.au), where the name sits one further left:
+# the common ones listed, the rest guessed from a generic label under a two-letter code.
 _SECOND_LEVEL = frozenset({
     "co.uk", "org.uk", "ac.uk", "gov.uk", "com.au", "net.au", "org.au", "co.nz", "co.jp", "ne.jp", "or.jp",
     "co.za", "com.br", "com.sg", "com.hk", "co.in", "co.kr", "com.cn", "com.mx", "com.tr", "co.il", "com.tw",
     "com.my", "co.id", "com.ar", "com.ph", "co.th", "com.vn", "co.ke", "com.ng", "com.pk", "com.sa", "com.eg"})
+_GENERIC = frozenset({"co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go"})
+# Zones sold by private resellers, not a country's registry: anyone can have reuters.com.de.
+_RESELLER = frozenset({"com.de", "co.de", "com.se", "co.nl", "com.ru", "net.ru", "org.ru"})
 
 
 # Words that name no outlet, so "Yahoo Finance" is yahoo and "BBC News" is bbc.
@@ -114,7 +117,12 @@ def registered_domain(host: str) -> str:
     """A host with its subdomains dropped: reuters.com for uk.reuters.com, bbc.co.uk for
     www.bbc.co.uk. Empty for no host."""
     labels = [label for label in host.lower().split(".") if label]
-    keep = 3 if len(labels) > 2 and ".".join(labels[-2:]) in _SECOND_LEVEL else 2
+    if len(labels) < 2:
+        return ""
+    suffix = ".".join(labels[-2:])
+    registry = suffix in _SECOND_LEVEL or (
+        len(labels[-1]) == 2 and labels[-2] in _GENERIC and suffix not in _RESELLER)
+    keep = 3 if len(labels) > 2 and registry else 2
     return ".".join(labels[-keep:]) if len(labels) > 1 else ""
 
 
