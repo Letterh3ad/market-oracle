@@ -51,3 +51,9 @@ def test_facts_are_trimmed_cut_deduplicated_and_at_most_three():
 
 def test_an_article_not_about_the_company_keeps_no_facts():
     assert read_note({"about_company": False, "facts": ["Pears are up"]}) == Note(False, ())
+
+
+def test_facts_are_asked_for_in_english_whatever_the_articles_language():
+    from oracle.research.notes import system_prompt
+
+    assert "in English" in system_prompt("Sony Group (6758.T)")

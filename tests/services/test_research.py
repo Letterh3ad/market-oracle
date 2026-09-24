@@ -445,10 +445,11 @@ async def test_a_run_starts_from_seed_queries_and_the_models_suggestions(ctx):
     model.suggestions = {"queries": ["Apple iPhone 18 demand", "apple SHARES", "", "x" * 150,
                                      "Apple tariffs", "Apple CEO John Ternus", "Apple services growth", "Apple AI"]}
     run = await research(ctx, "AAPL", model)
-    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple iPhone 18 demand", "Apple tariffs",
-                           "Apple CEO John Ternus", "Apple services growth")
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations",
+                           "Apple iPhone 18 demand", "Apple tariffs", "Apple CEO John Ternus")
     task = model.calls[1][0][1]["content"]
-    assert "Start with these searches" in task and "- Apple CEO John Ternus" in task
+    assert "Start with these searches" in task and "- news_search: Apple CEO John Ternus" in task
+    assert "- web_search: Apple press release investor relations" in task
     assert latest_research(ctx, "AAPL").queries == run.queries
 
 
@@ -457,13 +458,39 @@ async def test_a_listing_abroad_gets_a_query_in_its_language_and_the_model_is_as
     run = await research(ctx, "6758.T", model)
     assert run.queries[:3] == ("Sony shares", "Sony earnings outlook", "Sony 株価")
     assert "Japanese" in model.calls[0][0][-1]["content"]
+    assert "- local_news_search: Sony 株価" in model.calls[1][0][1]["content"]
+
+
+async def test_a_listing_abroad_can_search_its_countrys_own_news_edition(ctx, news):
+    news.results["ソニー 決算"] = [("https://nikkei.test/1", "ソニー、純利益20%増", "日本経済新聞", utc("2026-09-20"))]
+    model = ScriptedModel(step("local_news_search", "ソニー 決算"), step("final", "Profit up [a1]."))
+    run = await research(ctx, "6758.T", model)
+    assert run.steps[0].observation == "[a1] 2026-09-20 日本経済新聞: ソニー、純利益20%増"
+    assert {k: news.params[0][k] for k in ("hl", "gl", "ceid")} == {"hl": "ja", "gl": "JP", "ceid": "JP:ja"}
+    assert "local_news_search: news headlines from Google News Japan, in Japanese" in model.calls[1][0][0]["content"]
+
+
+async def test_an_english_speaking_listing_is_offered_no_local_edition(ctx, news):
+    model = ScriptedModel(step("news_search", "Apple"), step("final", "Done."))
+    await research(ctx, "AAPL", model)
+    assert "local_news_search" not in model.calls[1][0][0]["content"]
+    assert (news.params[0]["hl"], news.params[0]["ceid"]) == ("en-GB", "GB:en")
+
+
+async def test_a_replay_searches_the_local_edition_before_its_cutoff_and_plans_no_web_search(ctx, news):
+    from datetime import date
+
+    model = ScriptedModel(step("local_news_search", "ソニー"), step("final", "Done."))
+    run = await research(ctx, "6758.T", model, as_of=date(2026, 9, 18))
+    assert news.params[0]["q"] == "ソニー before:2026-09-19" and news.params[0]["hl"] == "ja"
+    assert not any("press release" in q for q in run.queries)
 
 
 async def test_a_garbled_suggestion_reply_leaves_the_seed_queries(ctx):
     model = ScriptedModel(step("final", "Done."))
     model.suggestions = "no idea"
     run = await research(ctx, "AAPL", model)
-    assert run.queries == ("Apple shares", "Apple earnings outlook")
+    assert run.queries == ("Apple shares", "Apple earnings outlook", "Apple press release investor relations")
 
 
 async def test_citations_grouped_in_one_bracket_each_count(ctx, news):

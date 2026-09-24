@@ -16,11 +16,13 @@ class FakeGoogleNews:
         self.results: dict[str, list[tuple]] = {}
         """query -> [(url, headline, outlet, published datetime or None)]"""
         self.queries: list[str] = []
+        self.params: list[dict] = []
         self.status = 200
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         query = request.url.params.get("q", "")
         self.queries.append(query)
+        self.params.append(dict(request.url.params))
         if self.status != 200:
             return httpx.Response(self.status)
         items = "".join(_item(*r) for r in self.results.get(query, []))

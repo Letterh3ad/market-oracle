@@ -14,6 +14,7 @@ from oracle.research.web import domain
 GOOGLE_NEWS = "https://news.google.com/rss/search"
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_RECORDS = 50
+ENGLISH_EDITION = ("en-GB", "GB", "GB:en")
 
 
 class FeedUnreadable(ValueError):
@@ -40,10 +41,13 @@ def end_of(day: date) -> datetime:
     return datetime.combine(day + timedelta(days=1), datetime.min.time(), timezone.utc)
 
 
-def google_news_params(query: str, as_of: date | None = None) -> dict:
+def google_news_params(query: str, as_of: date | None = None,
+                       edition: tuple[str, str, str] = ENGLISH_EDITION) -> dict:
+    """`edition` is Google's (hl, gl, ceid): the language and country searched."""
     # Google's `before:` narrows the search; results are still filtered on their dates.
     q = f"{query} before:{(as_of + timedelta(days=1)).isoformat()}" if as_of else query
-    return {"q": q, "hl": "en-GB", "gl": "GB", "ceid": "GB:en"}
+    hl, gl, ceid = edition
+    return {"q": q, "hl": hl, "gl": gl, "ceid": ceid}
 
 
 def gdelt_params(query: str, as_of: date | None = None) -> dict:

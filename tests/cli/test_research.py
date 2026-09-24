@@ -105,7 +105,8 @@ def test_the_planned_searches_are_shown_first(run, ollama):
     ollama.suggestions = ["Apple iPhone demand"]
     ollama.contents = [step("final", "Done.")]
     _, out, _ = run("research", "AAPL")
-    assert "Searches: Apple shares; Apple earnings outlook; Apple iPhone demand" in out
+    assert ("Searches: Apple shares; Apple earnings outlook; Apple press release investor relations; "
+            "Apple iPhone demand") in out
 
 
 def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, monkeypatch):
@@ -118,7 +119,7 @@ def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, mon
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(raw, encoding="cp1252"))
     code, _, _ = run("research", "AAPL")
     sys.stdout.flush()
-    assert code == 0 and b"Searches: Apple shares; Apple earnings outlook; ??? ??" in raw.getvalue()
+    assert code == 0 and b"Apple press release investor relations; ??? ??" in raw.getvalue()
 
 
 def scripted_report(ollama, news, bull="Earnings momentum"):

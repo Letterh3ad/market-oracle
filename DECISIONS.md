@@ -1425,3 +1425,28 @@ site or a subdomain of it; with no site stored, a domain label must match the ou
 No match is a lasting skip with the reason; replays never search and leave the link unread.
 **Alternatives:** Following Google's redirect (it answers with a script page, not a Location
 header); decoding the article id in the stub (undocumented and has changed before).
+
+## 2026-09-24 - Local news as its own loop tool
+**Context:** Listings outside the English-speaking markets need Google News in their own
+country and language, and the ReAct loop runs on a 4B model.
+**Decision:** A separate `local_news_search` tool, offered only when the listing's country
+has an edition (`EDITION` beside `LOCAL` in `oracle/research/queries.py`). The step schema
+limits `action` to tool names, so the model cannot misspell or forget the choice; the input
+stays a plain query. English-speaking listings see the same tools and the en-GB edition as
+before. Editions were checked live (a pairing Google does not serve redirects); Denmark has
+none and uses Norway's, where Google itself sends it.
+**Alternatives:** An input flag such as `local: <query>` on `news_search` (a small model
+drops or garbles it, and nothing in the schema enforces it); always searching both editions
+in one call (doubles Google traffic and halves the room per edition in an observation).
+
+## 2026-09-24 - Planned searches name their tool and stay at six
+**Context:** Local-edition and press-release seeds mean more seeds, and each planned search
+costs one of the loop's 8 steps.
+**Decision:** Seeds and suggestions are `Search(tool, query)`; the task lists them as
+`- tool: query`. A press-release / investor-relations seed goes to `web_search` (only when
+the web is offered, so never in replays). Seeds are always kept and suggestions fill up to
+`MAX_PLANNED` = 6 in all (US: 3 seeds + 3; Japan: 4 + 2). A suggestion with non-Latin
+letters goes to the local edition. Stored queries stay plain strings, so no migration.
+**Alternatives:** Plain query lines (the model would send local-script and press queries to
+the English news tool); letting the plan grow to 8 (the loop would spend every step on seeds).
+Ticket 04 raises the steps to 16 and may raise `MAX_PLANNED` with them.

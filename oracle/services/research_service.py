@@ -17,7 +17,7 @@ from oracle.research.freshness import Known, due_for_research
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
 from oracle.research.news import Article
-from oracle.research.queries import plan, seed_queries, suggest
+from oracle.research.queries import EDITION, Search, plan, seed_queries, suggest
 from oracle.research.roles import digest, digest_room, write_report
 from oracle.research.tools import Tool
 from oracle.research.trace import UNVALIDATED, UNVALIDATED_TAG, Claim, Report, ResearchRun, RunStatus, Step, Verdict
@@ -31,7 +31,7 @@ from oracle.services.errors import (
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.research_tools import (
-    Filings, GdeltSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
+    Filings, GdeltSearch, LocalNewsSearch, MarketData, NewsSearch, ReadPage, Reader, RelatedCompanies, Shelf, WebSearch,
     evidence_entry, market_summary,
 )
 from oracle.services.universe_service import resolve_symbol
@@ -95,14 +95,14 @@ async def _run(ctx: AppContext, repo: ResearchRepo, run_id: int, listing: str, m
         repo.add_evidence(run_id, ids)
 
     profile = UniverseRepo(ctx.conn).profile(listing)
-    queries = plan(seed_queries(profile.name, profile.country),
-                   await suggest(model, _about(profile, day), profile.country))
-    repo.set_queries(run_id, queries)
-    shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
     # Web pages carry no reliable date, so a replay cannot search the web.
     searcher = None if as_of else searcher or DdgsSearcher()
+    queries = plan(seed_queries(profile.name, profile.country, searcher is not None),
+                   await suggest(model, _about(profile, day), profile.country), profile.country)
+    repo.set_queries(run_id, [q.query for q in queries])
+    shelf = Shelf(ctx.conn, ctx.clock, on_shown, as_of)
     async with open_client(ctx) as client:
-        tools = _tools(ctx, client, shelf, listing, as_of, searcher)
+        tools = _tools(ctx, client, shelf, listing, profile.country, as_of, searcher)
         outcome = await react(model, tools, _task(profile, day, queries), ctx.config.llm.max_steps,
                               lambda s: repo.add_step(run_id, s))
         reader = Reader(ctx.conn, ctx.clock, client, searcher, SourceGate(ctx.conn, ctx.clock, ctx.config.sources),
@@ -248,11 +248,13 @@ def report_history(ctx: AppContext, symbol: str) -> list[ResearchRun]:
     return ResearchRepo(ctx.conn).with_reports(resolve_symbol(ctx, symbol).symbol)
 
 
-def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, as_of: date | None,
-           searcher: WebSearcher | None) -> list[Tool]:
+def _tools(ctx: AppContext, client: RateLimitedClient, shelf: Shelf, listing: str, country: str | None,
+           as_of: date | None, searcher: WebSearcher | None) -> list[Tool]:
     contact = ctx.config.research.contact
     tools = [MarketData(ctx, listing, as_of), NewsSearch(client, shelf), GdeltSearch(client, shelf),
              RelatedCompanies(ctx, listing)]
+    if country in EDITION:
+        tools.insert(2, LocalNewsSearch(client, shelf, country))
     if contact:
         # SEC refuses requests without one; offering the tool would only waste a step.
         tools.append(Filings(client, ctx.conn, ctx.clock, shelf, listing, contact))
@@ -315,9 +317,10 @@ def _about(p: ListingProfile, day: date) -> str:
             f"Company: {p.name} ({p.symbol}){': ' + where if where else ''}.")
 
 
-def _task(p: ListingProfile, day: date, queries: list[str]) -> str:
-    searches = "\n".join(f"- {q}" for q in queries)
-    return f"{_about(p, day)}\nResearch it. Start with these searches, then follow what you find:\n{searches}"
+def _task(p: ListingProfile, day: date, queries: list[Search]) -> str:
+    searches = "\n".join(f"- {q.tool}: {q.query}" for q in queries)
+    return (f"{_about(p, day)}\nResearch it. Start with these searches (tool: query), then follow what you "
+            f"find:\n{searches}")
 
 
 def _now(ctx: AppContext) -> str:

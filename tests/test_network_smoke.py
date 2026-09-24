@@ -119,6 +119,19 @@ async def test_real_google_news_feed_parses_into_dated_articles():
     assert all(a.published is not None and a.published.tzinfo is not None for a in articles)
 
 
+async def test_every_local_google_news_edition_answers_without_a_redirect():
+    import httpx
+
+    from oracle.research.news import GOOGLE_NEWS, google_news_params, parse_google_news
+    from oracle.research.queries import EDITION
+
+    async with httpx.AsyncClient(timeout=20) as http:
+        for country, edition in EDITION.items():
+            resp = await http.get(GOOGLE_NEWS, params=google_news_params("Nokia", edition=edition))
+            assert resp.status_code == 200, country
+            assert parse_google_news(resp.text), country
+
+
 async def test_real_gdelt_doc_api_answers_in_artlist_json():
     import httpx
 

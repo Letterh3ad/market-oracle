@@ -5,11 +5,17 @@ anchor it, and its own suggestions add what it knows is going on."""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from oracle.research.llm import ChatModel
 
 MAX_SUGGESTED = 4
 MAX_QUERY = 100
+# Seeds are always kept; suggestions fill the rest. Each planned search costs a loop step, so
+# the plan stays at what an English-speaking listing had before local and press seeds.
+MAX_PLANNED = 6
+
+NEWS, LOCAL_NEWS, WEB = "news_search", "local_news_search", "web_search"
 
 # Trailing legal forms and holding words that no headline uses ("Sony Group Corporation"
 # is "Sony" in the news).
@@ -31,6 +37,19 @@ LOCAL = {
     "Brazil": ("ações", "Portuguese"), "Portugal": ("ações", "Portuguese"),
 }
 
+# Google News (hl, gl, ceid) for each LOCAL country, checked live: a pairing Google does not
+# serve answers with a redirect. Denmark has no edition, and Google sends it to Norway's.
+EDITION = {
+    "Japan": ("ja", "JP", "JP:ja"), "China": ("zh-CN", "CN", "CN:zh-Hans"),
+    "Hong Kong": ("zh-HK", "HK", "HK:zh-Hant"), "Taiwan": ("zh-TW", "TW", "TW:zh-Hant"),
+    "South Korea": ("ko", "KR", "KR:ko"), "Germany": ("de", "DE", "DE:de"), "Austria": ("de", "AT", "AT:de"),
+    "Switzerland": ("de", "CH", "CH:de"), "France": ("fr", "FR", "FR:fr"), "Belgium": ("fr", "BE", "BE:fr"),
+    "Italy": ("it", "IT", "IT:it"), "Spain": ("es", "ES", "ES:es"), "Mexico": ("es-419", "MX", "MX:es-419"),
+    "Netherlands": ("nl", "NL", "NL:nl"), "Sweden": ("sv", "SE", "SE:sv"), "Denmark": ("no", "NO", "NO:no"),
+    "Norway": ("no", "NO", "NO:no"), "Finland": ("fi-FI", "FI", "FI:fi"),
+    "Brazil": ("pt-BR", "BR", "BR:pt-419"), "Portugal": ("pt-PT", "PT", "PT:pt-150"),
+}
+
 SUGGEST = """You plan news searches about a listed company for an investor holding for days to weeks.
 Reply with JSON: "queries", a list of up to {cap} short search queries (under 8 words each) about
 what could move its share price now: products, results, deals, lawsuits, leadership, regulation.
@@ -43,11 +62,21 @@ def short_name(name: str) -> str:
     return name
 
 
-def seed_queries(name: str, country: str | None) -> list[str]:
+@dataclass(frozen=True)
+class Search:
+    tool: str
+    """The loop tool the search is planned for."""
+    query: str
+
+
+def seed_queries(name: str, country: str | None, web: bool) -> list[Search]:
+    """`web` when the loop can search the web, for the company's own announcements."""
     short = short_name(name)
-    seeds = [f"{short} shares", f"{short} earnings outlook"]
+    seeds = [Search(NEWS, f"{short} shares"), Search(NEWS, f"{short} earnings outlook")]
     if country in LOCAL:
-        seeds.append(f"{short} {LOCAL[country][0]}")
+        seeds.append(Search(LOCAL_NEWS, f"{short} {LOCAL[country][0]}"))
+    if web:
+        seeds.append(Search(WEB, f"{short} press release investor relations"))
     return seeds
 
 
@@ -65,19 +94,26 @@ async def suggest(model: ChatModel, context: str, country: str | None) -> list[s
     return [q for q in found if isinstance(q, str)] if isinstance(found, list) else []
 
 
-def plan(seeds: list[str], suggested: list[str]) -> list[str]:
-    """Seeds, then up to MAX_SUGGESTED new suggestions: blank, overlong and repeated
-    (ignoring case) ones dropped."""
+def plan(seeds: list[Search], suggested: list[str], country: str | None) -> list[Search]:
+    """Seeds, then new suggestions up to MAX_SUGGESTED and MAX_PLANNED in all: blank, overlong
+    and repeated (ignoring case) ones dropped. A suggestion outside the Latin alphabet goes to
+    the local edition, which finds far more in that script than the English one."""
     out, seen, added = [], set(), 0
-    for i, query in enumerate([*seeds, *suggested]):
-        query = " ".join(query.split())
+    local = country in EDITION
+    for i, search in enumerate([*seeds, *(Search(NEWS, q) for q in suggested)]):
+        query = " ".join(search.query.split())
         key = query.casefold()
         if not query or len(query) > MAX_QUERY or key in seen:
             continue
         if i >= len(seeds):
-            if added == MAX_SUGGESTED:
+            if added == MAX_SUGGESTED or len(out) >= MAX_PLANNED:
                 break
             added += 1
+            search = Search(LOCAL_NEWS if local and not _latin(query) else NEWS, query)
         seen.add(key)
-        out.append(query)
+        out.append(Search(search.tool, query))
     return out
+
+
+def _latin(text: str) -> bool:
+    return all(ord(c) < 0x250 for c in text)

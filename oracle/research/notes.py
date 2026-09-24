@@ -17,7 +17,8 @@ CUT = " [cut]"
 
 _SYSTEM = ("Role: note_taker. You read one article for an investor in {company}. List up to {n} short facts "
            "from it that could move the share price soon: results, guidance, deals, products, lawsuits, "
-           "regulation, leadership, with their numbers and dates. Use only the article. If it is not about "
+           "regulation, leadership, with their numbers and dates. Write the facts in English, whatever the "
+           "article's language. Use only the article. If it is not about "
            '{company}, set "about_company" to false and give no facts. Reply with JSON: "about_company" and '
            '"facts".')
 SCHEMA = {"type": "object",
