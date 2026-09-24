@@ -10,7 +10,7 @@ async def test_run_midday_pass_now_shows_apart_from_the_last_tick(ctx, loaded):
     assert job["label"] == "Midday pass (manual)"
     run = job["result"]
     assert (run["kind"], run["label"], [s["name"] for s in run["stages"]]) == (
-        "midday", "Midday pass", ["discover", "research"])
+        "midday", "Midday pass", ["discover", "questions", "research"])
     status = (await loaded.get("/api/status")).json()
     assert status["midday"] == run and status["tick"] is None
 

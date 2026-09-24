@@ -20,8 +20,11 @@ from oracle.research.tools import ToolError
 from oracle.research.web import DdgsSearcher, WebSearcher
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
-from oracle.services.discovery_service import SOURCE_QUESTION, Added, add_by_hand
-from oracle.services.errors import InvalidQuery, ModelUnavailable, SearchFailed, UnknownQuestion
+from oracle.services.auto_validation import auto_add
+from oracle.services.discovery_service import DISCOVERED_LIST, SOURCE_QUESTION, Added, add_by_hand, list_full
+from oracle.services.errors import (
+    InvalidQuery, JobAlreadyRunning, ModelUnavailable, SearchFailed, ServiceError, UnknownQuestion,
+)
 from oracle.services.http import open_client
 from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.links_service import SOURCE_CHAT, LinkFound, record_links
@@ -34,11 +37,13 @@ from oracle.store.job_history import INTERRUPTED
 from oracle.store.questions import DONE, FAILED, RUNNING, Answer, Question, QuestionRepo, ShortlistItem
 from oracle.store.research import evidence_of, note_model
 from oracle.store.universe import CLASSIFICATION_LEVELS, ListingProfile, UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import MARKET_CAP_BANDS
 
 __all__ = [
-    "AnswerView", "Line", "Question", "QuestionLine", "QuestionView", "add_to_discovered", "answer", "answer_progress",
-    "ask", "new_question", "question", "questions", "saved_question", "sweep_interrupted_answers",
+    "AnswerView", "AutoRun", "Line", "Question", "QuestionLine", "QuestionView", "add_to_discovered", "answer",
+    "answer_auto_questions", "answer_progress", "ask", "new_question", "question", "questions", "saved_question",
+    "set_auto", "sweep_interrupted_answers",
 ]
 
 JOB = "discovery_chat"
@@ -186,6 +191,10 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
         note_key = note_model(model.name, model.model) + NOTE_KEY.format(root=_chain(repo, q)[0].id)
         try:
             items = await _answer(ctx, repo, answer_id, asked, model, searcher or DdgsSearcher(), notes, note_key)
+            if q.auto:
+                items, said = await auto_add(ctx, q.id, asked, model, note_key, items,
+                                             lambda text: repo.set_stage(answer_id, text))
+                notes.extend(said)
         except BaseException as exc:
             error = "cancelled" if not isinstance(exc, Exception) else str(exc) or type(exc).__name__
             repo.finish(answer_id, FAILED, error, notes, (), _now(ctx))
@@ -194,6 +203,45 @@ async def answer(ctx: AppContext, question_id: int, model: ChatModel | None = No
             raise
         repo.finish(answer_id, DONE, None, notes, items, _now(ctx))
     return _view(ctx, repo, q, repo.answer(answer_id))
+
+
+def set_auto(ctx: AppContext, question_id: int, on: bool) -> Question:
+    """Switch a question's auto mode: each answer from then on adds the shortlisted companies
+    that pass validation to the discovered list."""
+    repo = QuestionRepo(ctx.conn)
+    _question(repo, question_id)
+    repo.set_auto(question_id, on)
+    return repo.get(question_id)
+
+
+@dataclass(frozen=True)
+class AutoRun:
+    answered: tuple[AnswerView, ...] = ()
+    failed: tuple[str, ...] = ()
+    """Questions whose answer failed, with why."""
+    note: str | None = None
+    """Why none was answered."""
+
+
+async def answer_auto_questions(ctx: AppContext, limit: int, model: ChatModel | None = None,
+                                searcher: WebSearcher | None = None) -> AutoRun:
+    """Answer up to `limit` auto questions again, the one answered longest ago first; a failed
+    answer is noted and the next one goes on. Nothing is asked while the discovered list is full."""
+    auto = QuestionRepo(ctx.conn).auto()
+    if not auto:
+        return AutoRun(note="no question is on auto")
+    on_list, cap = len(WatchlistRepo(ctx.conn).items(DISCOVERED_LIST)), ctx.config.discovery.max_total
+    if on_list >= cap:
+        return AutoRun(note=list_full(on_list, cap))
+    answered, failed = [], []
+    for q in auto[:limit]:
+        try:
+            answered.append(await answer(ctx, q.id, model, searcher))
+        except JobAlreadyRunning:
+            return AutoRun(tuple(answered), tuple(failed), "another question is being answered: the rest wait")
+        except ServiceError as exc:
+            failed.append(f"question {q.id}: {exc}")
+    return AutoRun(tuple(answered), tuple(failed))
 
 
 def saved_question(ctx: AppContext, question_id: int) -> Question:

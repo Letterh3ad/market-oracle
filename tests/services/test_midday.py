@@ -25,6 +25,10 @@ def researching(ctx, monkeypatch):
     return run
 
 
+def stage(run, name):
+    return next(s for s in run.stages if s.name == name)
+
+
 def orders(ctx):
     return ctx.conn.execute("SELECT id, status FROM paper_orders ORDER BY id").fetchall()
 
@@ -34,7 +38,8 @@ async def test_it_discovers_then_researches_and_is_stored_apart_from_ticks(ctx, 
     ctx.clock.advance(60)
     discovering.result[0] = DiscoveryRun((DENSO,), seeds=("7203.T",))
     run = await run_midday(ctx)
-    assert [s.name for s in run.stages] == list(MIDDAY_STAGES) == ["discover", "research"]
+    assert [s.name for s in run.stages] == list(MIDDAY_STAGES) == ["discover", "questions", "research"]
+    assert stage(run, "questions").summary == "nothing asked: no question is on auto"
     assert (run.kind, run.trigger, run.outcome) == ("midday", "manual", "ok")
     assert run.stages[0].summary.startswith("added 6902.T")
     assert researching.done == ["AAPL", "IBM", "MSFT"]
@@ -75,9 +80,9 @@ async def test_its_budget_covers_discovery_and_research(ctx, discovering, monkey
         return DiscoveryRun(seeds=("AAPL",))
 
     monkeypatch.setattr(tick_service, "discover", slow_discovery)
-    stage = (await run_midday(ctx)).stages[1]
+    research = stage(await run_midday(ctx), "research")
     # Discovery took 5 of 30 minutes; runs start at 5 and 25, and at 45 the budget is spent.
-    assert run.done == ["AAPL", "IBM"] and "1 deferred (time budget spent)" in stage.summary
+    assert run.done == ["AAPL", "IBM"] and "1 deferred (time budget spent)" in research.summary
 
 
 def test_discovery_gets_at_most_a_third_of_the_budget(ctx):
@@ -89,7 +94,8 @@ def test_discovery_gets_at_most_a_third_of_the_budget(ctx):
 async def test_switches_off_hold_back_its_stages_as_they_do_a_ticks(ctx, discovering, researching, section, values):
     settings(ctx, section, **values)
     run = await run_midday(ctx)
-    assert run.outcome == "ok" and ("nothing" in run.stages[0].summary or "nothing" in run.stages[1].summary)
+    assert run.outcome == "ok" and ("nothing" in stage(run, "discover").summary
+                                    or "nothing" in stage(run, "research").summary)
 
 
 async def test_the_pc_in_use_holds_it_back_with_research_when_idle(ctx, discovering, researching, monkeypatch):
@@ -97,8 +103,9 @@ async def test_the_pc_in_use_holds_it_back_with_research_when_idle(ctx, discover
     settings(ctx, "schedule", research_when_idle=True)
     run = await run_midday(ctx)
     assert discovering.calls == [] and researching.done == []
-    assert run.stages[0].summary == "PC in use: discovery waits for the next midday pass"
-    assert "PC in use" in run.stages[1].summary
+    assert stage(run, "discover").summary == "PC in use: discovery waits for the next midday pass"
+    assert stage(run, "questions").summary == "PC in use: discovery waits for the next midday pass"
+    assert "PC in use" in stage(run, "research").summary
 
 
 async def test_as_a_job_it_is_labelled_and_a_retry_runs_another_midday_pass(ctx, discovering, researching):

@@ -5,6 +5,8 @@ answers yes or no. Checks run cheapest first and stop at the first that fails.""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import replace
 from datetime import timedelta
 
 from oracle.market.bars import is_stale
@@ -14,18 +16,19 @@ from oracle.research.trace import Evidence
 from oracle.research.web import domain
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
+from oracle.services.discovery_service import RELATION_AUTO, SOURCE_QUESTION, add_checked, list_full
 from oracle.services.never_list import is_never, never_company, never_names
 from oracle.store.articles import ArticleRepo
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
-from oracle.store.discoveries import DISCOVERED_LIST, Check, Validation
+from oracle.store.discoveries import DISCOVERED_LIST, Check, DiscoveryRepo, Validation
 from oracle.store.questions import ShortlistItem
 from oracle.store.research import evidence_of
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import blind_name, is_receipt, normalise_name
 
-__all__ = ["CHECKS", "EVIDENCE_DAYS", "MIN_OUTLETS", "RELEVANCE_SCHEMA", "Validator"]
+__all__ = ["CHECKS", "EVIDENCE_DAYS", "MIN_OUTLETS", "RELEVANCE_SCHEMA", "Validator", "auto_add"]
 
 RESOLVED, LINE, PRICES, NEVER, REMOVED_CHECK, RECEIPT, EVIDENCE, RELEVANCE = (
     "resolved", "line", "prices", "never list", "removed", "receipt", "evidence", "relevance")
@@ -166,6 +169,49 @@ class Validator:
         if answer not in ("yes", "no") or not reason:
             return Check(RELEVANCE, False, "the model's answer could not be read")
         return Check(RELEVANCE, answer == "yes", f"{answer}: {reason}")
+
+
+async def auto_add(ctx: AppContext, question_id: int, asked: str, model: ChatModel, note_key: str,
+                   items: list[ShortlistItem], stage: Callable[[str], None]) -> tuple[list[ShortlistItem], list[str]]:
+    """Validate an auto question's shortlisted companies in rank order and add those that pass,
+    within `[discovery] max_total` and `per_question`. Each keeps what validation made of it;
+    companies already watched or discovered are left alone. Returns the items and a note."""
+    cfg = ctx.config.discovery
+    validator = Validator(ctx, model, asked, note_key)
+    screen = Screen(ctx, 0)
+    discoveries, lists = DiscoveryRepo(ctx.conn), WatchlistRepo(ctx.conn)
+    tried = [i for i in items if i.skipped is None and i.symbol and not _on_a_list(screen, i)]
+    out, added = [], []
+    for item in items:
+        if item not in tried:
+            out.append(item)
+            continue
+        stage(f"validating {tried.index(item) + 1} of {len(tried)}")
+        on_list, mine = len(lists.items(DISCOVERED_LIST)), discoveries.on_list_from(question_id)
+        if on_list >= cfg.max_total:
+            validation = Validation(note=f"not validated: {list_full(on_list, cfg.max_total)}")
+        elif mine >= cfg.per_question:
+            validation = Validation(note=f"not validated: this question already has {mine} of its "
+                                         f"{cfg.per_question} on the discovered list (Settings, per_question)")
+        else:
+            validation, counted = await validator.validate(item)
+            if validation.failed is None:
+                done = replace(validation, added=True)
+                why = add_checked(ctx, screen.profile(item.symbol), item.symbol, SOURCE_QUESTION, asked,
+                                  RELATION_AUTO, counted, question_id, done)
+                validation = replace(validation, note=why) if why else done
+                if not why:
+                    added.append(item.symbol)
+        out.append(replace(item, validation=validation))
+    kept = len(tried) - len(added)
+    note = [f"auto: added {', '.join(added) or 'nothing'}"
+            + (f"; {kept} stayed suggestion{'' if kept == 1 else 's'} (why is on each)" if kept else "")] if tried else []
+    return out, note
+
+
+def _on_a_list(screen: Screen, item: ShortlistItem) -> bool:
+    p = screen.profile(item.symbol)
+    return p is not None and (screen.watched(p) or screen.listed(p))
 
 
 def relevance_prompt(question: str, company: str, items: list[str]) -> list[dict]:

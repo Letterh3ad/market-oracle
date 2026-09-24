@@ -65,7 +65,8 @@ function render(pane, arg) {
     el("p", { class: "dim small" }, "Ask which companies fit a question. The local model plans news and web "
       + "searches, reads what they find and names the companies the news shows; each is then checked in code to be "
       + "a real listing with recent prices, never one on your never list or one you removed. Nothing is added "
-      + "until you press a button."),
+      + "until you press a button, unless you switch a question to auto: then its answers (and the midday pass's "
+      + "reruns) add the companies that pass every validation check."),
     el("div", { class: "row" }, question, el("span", { id: "q-ask" })),
     el("div", { id: "q-status", class: "result" }),
     el("div", { id: "q-view" }),

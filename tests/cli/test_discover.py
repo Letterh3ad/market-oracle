@@ -116,3 +116,19 @@ def test_a_follow_up_a_rerun_listing_showing_and_adding(run, news, chat):
 def test_a_blank_question_is_refused(run):
     code, _, err = run("discover", "ask", " ")
     assert code == 1 and "ask a question" in err
+
+
+def test_auto_switches_a_question_and_an_auto_answer_says_what_validation_made_of_each(run, news, chat):
+    rivals(news, "Rivian and Honda race on electric trucks")
+    chat.replies = [naming(("Rivian", "Trucks", [1])), naming(("Rivian", "Trucks", [1]))]
+    chat.roles = {"relevance_check": {"answer": "yes", "reason": "Makes trucks"}}
+    run("discover", "ask", "which carmakers gain from electric trucks?")
+    code, out, _ = run("discover", "auto", "1", "on")
+    assert code == 0 and "question 1 is on auto" in out
+    assert "which carmakers gain from electric trucks? [auto]" in run("discover", "questions")[1]
+    code, out, _ = run("discover", "rerun", "1")
+    assert code == 0 and "auto: stays a suggestion: failed" in out, "one outlet is not enough"
+    code, out, _ = run("discover", "auto", "1", "off")
+    assert "question 1 is off auto" in out
+    code, _, err = run("discover", "auto", "9", "on")
+    assert code == 1 and "no question 9" in err

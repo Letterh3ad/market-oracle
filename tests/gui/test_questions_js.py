@@ -106,3 +106,46 @@ def test_a_question_shows_what_it_refines_its_follow_ups_and_older_answers_folde
     assert "Refines: grid batteries?" in out["text"] and "Follow-ups: no utilities" in out["text"]
     assert out["links"] == ["#discover/3", "#discover/6"]
     assert "Answer 5, 2026-09-23: done, 3 shortlisted" in out["folded"]
+
+
+CHECKS = [{"name": "resolved", "passed": True, "detail": "matched"},
+          {"name": "evidence", "passed": False, "detail": "only 1 outlet (wire) named it"}]
+
+
+def test_an_auto_answer_says_what_validation_made_of_each_company():
+    shortlist = [item(1, "ENR.DE", "Siemens Energy", validation={"checks": CHECKS[:1], "added": True, "note": None}),
+                 item(2, "FLNC", "Fluence", validation={"checks": CHECKS, "added": False, "note": None}),
+                 item(3, "RWE.DE", "RWE", validation={"checks": [], "added": False,
+                                                       "note": "not validated: the discovered list is full (10 of 10)"}),
+                 item(4, "NIBE-B.ST", "Nibe", validation=None)]
+    out = run(f"""const card = m.answerCard({json.dumps({**ANSWER, "shortlist": shortlist})});
+        console.log(JSON.stringify({{ text: card.textContent,
+          badges: card.all((n) => n.className?.startsWith("badge")).map((b) => b.textContent) }}));""")
+    text = out["text"]
+    assert "Auto: added to the discovered list; every check passed." in text
+    assert "Auto: stays a suggestion, failed evidence (only 1 outlet (wire) named it)." in text
+    assert "Auto: stays a suggestion, not validated: the discovered list is full (10 of 10)." in text
+    assert text.count("Auto:") == 3
+    assert out["badges"] == ["auto-added"]
+
+
+def test_the_auto_switch_shows_the_question_s_mode_and_saves_a_change():
+    q = {"id": 4, "text": "grid batteries?", "asked": "grid batteries?", "auto": False,
+         "chain": [{"id": 4, "text": "grid batteries?"}], "follow_ups": [], "answers": []}
+    out = run(f"""
+        let changes = 0;
+        const view = m.questionView({json.dumps(q)}, () => changes++);
+        const box = view.all((n) => n.tag === "input")[0];
+        const before = box.checked;
+        box.checked = true;
+        box.fire("change");
+        await settle();
+        console.log(JSON.stringify({{ before, asked, changes }}));""")
+    assert out["before"] is False and out["asked"] == ["PUT /api/questions/4/auto"] and out["changes"] == 1
+
+
+def test_the_question_list_marks_auto_questions():
+    listing = {"questions": [{"id": 3, "text": "grid batteries?", "refines": None, "answers": 0, "last": None,
+                              "auto": True}]}
+    out = run(f"""console.log(JSON.stringify(m.questionList({json.dumps(listing)}, null).textContent));""")
+    assert out == "grid batteries?auto 0 answers; not answered yet"

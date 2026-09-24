@@ -2054,3 +2054,53 @@ left alone.
 **Alternatives:** Capping at 5 years from the first day instead of the last (would show a stale
 window on a long-lived list instead of the most recent data); adding a separate period selector
 (the date inputs already do this job).
+
+## 2026-09-24 - A discovery exclude leaves out its most specific match only
+**Context:** An exclude matching a combined industry group dropped the whole group: "biotech"
+left out Pharmaceuticals (group "Pharmaceuticals, Biotechnology & Life Sciences"), "media" left
+out Interactive Media & Services, "tech" matched Health Care Technology.
+**Decision:** `UniverseRepo.classifications()` returns the universe's industries, groups and
+sectors by level. An exclude becomes one `Exclusion` (level + values): the most specific level
+with a classification named exactly the exclude's words, else the most specific level with one
+holding all of them, else nothing. Only that level of a company is tested. "tech" alone means
+Information Technology; aliases healthcare -> health care, automaker/car(s) -> automobile.
+**Alternatives:** Industry level first with plain word containment (the brief's rule: "media"
+would still leave out Interactive Media, since its name holds the word; "utilities" would
+match the Multi-Utilities industry and keep power producers); a model-chosen enum.
+
+## 2026-09-24 - Auto questions add only what passes a validation layer (discovery 05)
+**Context:** Ticket 05: a per-question auto switch that adds shortlisted companies to the
+discovered list unattended, but only when they pass every check; the rest stay suggestions.
+**Decision:** m0036 adds `discovery_questions.auto`, `discovery_answer_items.validation` and
+`discoveries.question_id` + `validation` (JSON: checks with name, passed, detail; added; note).
+`auto_validation.Validator` runs, cheapest first and stopping at the first failure: resolved
+(symbol still resolves to the shortlisted company key), line (the primary or the most liquid
+live line, as the screen picks), prices (stored bars not stale), never list, removed, receipt
+(the line or company is a depositary receipt, or a watched company of another key has the same
+legal-form-blind name), evidence (items naming the company, dated within 90 days, from at least
+2 outlets; outlet = the feed's outlet, else the URL's domain), relevance (a separate call,
+"Role: relevance_check", given only the question, the company and the cited items; yes/no + a
+reason; "no", garbled, blank reason or a model error fail it). Filings count: the company's SEC
+filings already stored (any listing's symbol, last 90 days) join the evidence check with outlet
+"SEC"; relevance still reads only the cited items. The counted items become the discovery's
+evidence. Adds go through `add_checked` (rules re-read in one transaction) with source
+"question", relation "auto", seed = the whole question.
+Caps: `[discovery] per_question` (default 2, 1 to 20) is how many of the question's companies
+are on the discovered list now (moved or removed ones free a place), plus `max_total`. Once a cap
+is reached the rest are not validated (no model calls) and say so. Watched and discovered
+companies are left alone. Turning auto on does not act on answers already given: the next Rerun
+or midday pass does.
+Midday pass: a "questions" stage between discovery and research answers up to 3 auto questions
+again, longest since answered first, under discovery's switches (discovery on, automation on,
+PC idle) and discovery's time cap (min(10 min, budget/3)); a full list or a question already
+being answered asks nothing. The nightly tick does not rerun them.
+GUI: an Auto checkbox per question (`PUT /api/questions/{id}/auto`), an "auto" badge in the
+list, each shortlisted row's validation line (added, or the failed check with its detail), and
+the discovered list's folded "Passed N checks". CLI: `oracle discover auto ID on|off`, and the
+answer printout shows each company's validation.
+**Alternatives:** A per-run cap (unattended daily reruns would fill the list from one question);
+counting every company a question ever added (a removal would never free the place); running
+auto questions on the nightly tick too (it already has a discovery stage and a longer research
+queue); fetching filings live during validation (network per candidate; stored filings cover
+companies research already read); an auto flag given at Ask time (one more switch; Rerun after
+switching does the same).

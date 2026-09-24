@@ -18,6 +18,7 @@ function questionList(listing, selected) {
     const last = q.last ? `${q.last.status} ${day(q.last.started_at)}, ${q.last.shortlist} shortlisted` : "not answered yet";
     const title = q.id === selected ? el("strong", null, q.text) : link(q);
     return el("li", null, title, q.refines ? el("span", { class: "dim small" }, ` (follow-up to ${q.refines})`) : null,
+      q.auto ? el("span", { class: "badge" }, "auto") : null,
       el("span", { class: "dim small" }, ` ${q.answers} answer${q.answers === 1 ? "" : "s"}; ${last}`));
   }));
 }
@@ -51,7 +52,18 @@ function action(label, hint, send, done, changed) {
 function marks(i) {
   return [i.new ? el("span", { class: "badge up" }, "new") : null,
     i.watched ? el("span", { class: "badge" }, "watched") : null,
-    i.discovered ? el("span", { class: "badge" }, "discovered") : null];
+    i.discovered ? el("span", { class: "badge" }, "discovered") : null,
+    i.validation?.added ? el("span", { class: "badge up" }, "auto-added") : null];
+}
+
+// What auto mode's validation made of a company: added, or why it stays a suggestion.
+function validationLine(v) {
+  if (!v) return null;
+  const failed = v.checks.find((c) => !c.passed);
+  const text = v.added ? "Auto: added to the discovered list; every check passed."
+    : failed ? `Auto: stays a suggestion, failed ${failed.name} (${failed.detail}).`
+      : `Auto: stays a suggestion, ${v.note}.`;
+  return el("p", { class: v.added ? "small" : "small warn-text" }, text);
 }
 
 function buttons(i, answerId, changed) {
@@ -78,7 +90,7 @@ function shortlistTable(a, changed) {
     el("tbody", null, ...a.shortlist.map((i) => el("tr", null,
       el("td", { class: "num" }, String(i.n)),
       el("td", { class: "name" }, companyLink(i.symbol), " ", i.company ?? i.name, ...marks(i)),
-      el("td", null, i.why, evidence(i.evidence)),
+      el("td", null, i.why, validationLine(i.validation), evidence(i.evidence)),
       el("td", null, ...buttons(i, a.id, changed))))));
 }
 
@@ -103,6 +115,27 @@ function answerCard(a, changed = () => {}) {
     a.notes.length ? el("ul", { class: "dim small" }, ...a.notes.map((n) => el("li", null, n))) : null);
 }
 
+// Auto mode for the question: its answers from then on add what passes validation.
+function autoSwitch(q, changed) {
+  const box = el("input", { type: "checkbox" });
+  box.checked = q.auto;
+  box.addEventListener("change", async () => {
+    try {
+      clearError();
+      await sendJson(`/api/questions/${q.id}/auto`, { auto: box.checked }, "PUT");
+      changed();
+    } catch (err) {
+      box.checked = !box.checked;
+      showError(err.message);
+    }
+  });
+  return el("label", { class: "small", title: "Each answer (Rerun, or the midday pass) adds shortlisted companies to "
+    + "the discovered list only when they pass every check: a live primary line with fresh prices, not on the never "
+    + "or removed list, not another line of a watched company, named by 2 outlets in 90 days, and a separate model "
+    + "check that the news shows it fits the question. The rest stay suggestions with the failed check shown." },
+  box, " Auto: add companies that pass validation to the discovered list (up to the per-question limit in Settings)");
+}
+
 // The whole question: what it asks (with what it refines), the newest answer, older ones folded.
 function questionView(q, changed) {
   const [newest, ...older] = q.answers;
@@ -110,6 +143,7 @@ function questionView(q, changed) {
     ...qs.flatMap((x, i) => [i ? "; " : "", link(x)])) : null);
   return el("div", null,
     el("h3", null, q.asked), links("Refines: ", q.chain.slice(0, -1)), links("Follow-ups: ", q.follow_ups),
+    el("p", null, autoSwitch(q, changed)),
     newest ? answerCard(newest, changed) : el("p", { class: "dim" }, "Not answered yet: press Rerun."),
     ...older.map((a) => el("details", null,
       el("summary", { class: "dim small" }, `Answer ${a.id}, ${day(a.started_at)}: ${a.status}`
@@ -117,4 +151,4 @@ function questionView(q, changed) {
       answerCard(a, changed))));
 }
 
-export { answerCard, questionList, questionView };
+export { answerCard, questionList, questionView, validationLine };

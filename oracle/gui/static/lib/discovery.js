@@ -40,6 +40,13 @@ function evidence(items) {
   }));
 }
 
+// The checks an auto question's company passed to be added, folded.
+function checks(v) {
+  if (!v) return null;
+  return el("details", { class: "small" }, el("summary", { class: "dim" }, `Passed ${v.checks.length} checks`),
+    el("ul", null, ...v.checks.map((c) => el("li", null, `${c.name}: ${c.detail}`))));
+}
+
 // `changed` runs after a Move or Remove, so the page can reload what else it shows.
 function discoveryTable(body, changed) {
   const s = body.settings;
@@ -60,7 +67,7 @@ function discoveryTable(body, changed) {
       el("th", null, "Why it was found"), el("th", null, "Added"), el("th", null, ""))),
     el("tbody", null, ...body.items.map((i) => el("tr", null,
       el("td", null, companyLink(i.symbol)), el("td", { class: "name" }, i.name ?? ""),
-      el("td", null, i.why, evidence(i.evidence)),
+      el("td", null, i.why, checks(i.validation), evidence(i.evidence)),
       el("td", null, (i.added_at ?? "").slice(0, 10)),
       el("td", null,
         act("Move to my watchlist", "Watch it on your main list; it leaves this list",
