@@ -118,3 +118,25 @@ def test_decisions_logged_before_accounts_belong_to_the_strategy(tmp_path, monke
     [old] = DecisionRepo(conn).recent("strategy")
     assert (old.account, old.symbol, old.report_id) == ("strategy", "AAPL", None)
     assert DecisionRepo(conn).recent("ai") == []
+
+
+def test_ai_decisions_logged_before_the_flag_say_whether_they_need_research(tmp_path, monkeypatch):
+    from oracle.store import migrations
+    from oracle.store.paper import DecisionRepo
+
+    conn = connect(tmp_path / "t.db")
+    before = migrations.MIGRATIONS[: migrations.MIGRATIONS.index(migrations.m0031_decision_research)]
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", before)
+    migrate(conn)
+    conn.executemany(
+        "INSERT INTO strategy_decisions (account, day, symbol, action, reason) VALUES (?, '2026-09-22', ?, 'skip', ?)",
+        [("ai", "AAPL", "no verdict yet: run research on it"),
+         ("ai", "KO", "the verdict is from 2026-09-10, older than 7 days: run research on it again"),
+         ("ai", "MSFT", "no verdict: the verdict was rejected: it cites nothing"),
+         ("strategy", "IBM", "no lean yet: analyse it first")],
+    )
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
+    migrate(conn)
+    repo = DecisionRepo(conn)
+    assert {d.symbol: d.needs_research for d in repo.recent("ai")} == {"AAPL": True, "KO": True, "MSFT": False}
+    assert [d.needs_research for d in repo.recent("strategy")] == [False]

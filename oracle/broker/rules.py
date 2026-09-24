@@ -56,6 +56,8 @@ class Decision:
     cash: float | None
     """For a buy, the base-currency amount."""
     reason: str
+    needs_research: bool = False
+    """The listing has no verdict yet, or it is too old: researching it would let the AI account act."""
 
 
 def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Position], cash: float, equity: float,

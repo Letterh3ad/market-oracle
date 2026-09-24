@@ -20,14 +20,17 @@ from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, a
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
-from oracle.services.research_service import check_as_of, research, research_progress, sweep_interrupted
+from oracle.services.research_service import (
+    check_as_of, research, research_progress, stale_research, sweep_interrupted,
+)
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import record_skipped, run_tick
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
-__all__ = ["FinishedPage", "Job", "JobRunner", "submit_analyse", "submit_prices", "submit_research", "submit_tick",
-           "submit_fx", "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
+__all__ = ["FinishedPage", "Job", "JobRunner", "StaleQueued", "StaleResearch", "queue_stale_research",
+           "stale_research_jobs", "submit_analyse", "submit_prices", "submit_research", "submit_tick", "submit_fx",
+           "submit_merges", "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
 
@@ -249,6 +252,46 @@ def submit_research(ctx: AppContext, runner: JobRunner, symbol: str, as_of: date
         subject, label = listing, f"Research {listing}"
     return runner.submit("research", label, work, subject=subject,
                          link=f"#company/{listing}", progress=lambda: research_progress(ctx, listing))
+
+
+@dataclass(frozen=True)
+class StaleResearch:
+    due: list[str]
+    """Every listing a tick would research now, in its order."""
+    waiting: list[str]
+    """Those already queued or running here."""
+
+    @property
+    def to_queue(self) -> list[str]:
+        return [s for s in self.due if s not in self.waiting]
+
+
+@dataclass(frozen=True)
+class StaleQueued:
+    jobs: list[Job]
+    waiting: list[str]
+    refused: list[tuple[str, str]]
+    """Listing and why it could not be queued."""
+
+
+def stale_research_jobs(ctx: AppContext, runner: JobRunner) -> StaleResearch:
+    """The listings due for research by the tick's rule, and which of them are already queued."""
+    due = stale_research(ctx)
+    active = {j.subject for j in runner.active("research")}
+    return StaleResearch(due, [s for s in due if s in active])
+
+
+def queue_stale_research(ctx: AppContext, runner: JobRunner) -> StaleQueued:
+    """One research job per due listing not already queued, back to back, with no time budget:
+    someone asked for them all."""
+    stale = stale_research_jobs(ctx, runner)
+    jobs, refused = [], []
+    for symbol in stale.to_queue:
+        try:
+            jobs.append(submit_research(ctx, runner, symbol))
+        except ServiceError as exc:
+            refused.append((symbol, str(exc)))
+    return StaleQueued(jobs, stale.waiting, refused)
 
 
 def submit_prices(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:

@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import replace
 from datetime import date, datetime, timezone
 
@@ -10,7 +11,8 @@ from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import decision_log
-from oracle.services.research_service import latest_research, refresh_research
+from oracle.services.activity_service import JobRunner, queue_stale_research, stale_research_jobs, submit_research
+from oracle.services.research_service import latest_research, refresh_research, stale_research
 from oracle.services.tick_service import run_tick
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
@@ -204,3 +206,68 @@ async def test_the_idle_gate_is_off_by_default(ctx, monkeypatch):
 
     monkeypatch.setattr(idle, "idle_seconds", lambda: 0.0)
     assert (await refresh_research(ctx, run=fake_research(ctx))).deferred == []
+
+
+async def test_stale_research_lists_what_a_tick_would_research_in_the_same_order(ctx):
+    reported(ctx, "AAPL", date(2026, 9, 20))
+    reported(ctx, "MSFT", date(2026, 9, 1))
+    assert stale_research(ctx) == ["IBM", "MSFT"]
+    run = fake_research(ctx)
+    await refresh_research(ctx, run=run)
+    assert run.done == ["IBM", "MSFT"] and stale_research(ctx) == []
+
+
+@pytest.fixture
+async def runner(ctx, monkeypatch):
+    from oracle.services import activity_service
+
+    async def stalled(c, symbol, **kw):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(activity_service, "research", stalled)
+    r = JobRunner(ctx)
+    yield r
+    await r.stop()
+
+
+async def test_research_all_stale_queues_each_due_listing_in_tick_order(ctx, runner):
+    reported(ctx, "AAPL", date(2026, 9, 20))
+    queued = queue_stale_research(ctx, runner)
+    assert [j.subject for j in queued.jobs] == ["IBM", "MSFT"] and queued.waiting == [] and queued.refused == []
+    assert [j.label for j in runner.current()] == ["Research IBM", "Research MSFT"]
+
+
+async def test_research_all_stale_twice_never_queues_a_listing_again(ctx, runner):
+    first = queue_stale_research(ctx, runner)
+    again = queue_stale_research(ctx, runner)
+    assert again.jobs == [] and again.waiting == ["AAPL", "IBM", "MSFT"]
+    assert len(runner.current()) == len(first.jobs) == 3
+
+
+async def test_a_listing_already_queued_by_its_own_button_is_left_out(ctx, runner):
+    submit_research(ctx, runner, "MSFT")
+    stale = stale_research_jobs(ctx, runner)
+    assert (stale.due, stale.waiting, stale.to_queue) == (["AAPL", "IBM", "MSFT"], ["MSFT"], ["AAPL", "IBM"])
+    assert [j.subject for j in queue_stale_research(ctx, runner).jobs] == ["AAPL", "IBM"]
+    assert [j.subject for j in runner.current()] == ["MSFT", "AAPL", "IBM"]
+
+
+async def test_a_replay_queued_for_a_listing_does_not_count_as_its_research(ctx, runner):
+    submit_research(ctx, runner, "MSFT", as_of=date(2026, 9, 1))
+    assert stale_research_jobs(ctx, runner).waiting == []
+
+
+async def test_nothing_stale_queues_nothing(ctx, runner):
+    for s in SYMBOLS:
+        reported(ctx, s, date(2026, 9, 20))
+    queued = queue_stale_research(ctx, runner)
+    assert (queued.jobs, queued.waiting, runner.current()) == ([], [], [])
+
+
+async def test_a_watched_listing_gone_from_the_universe_is_refused_and_the_rest_still_queue(ctx, runner):
+    with ctx.conn:
+        ctx.conn.execute("DELETE FROM listings WHERE symbol = 'IBM'")
+    queued = queue_stale_research(ctx, runner)
+    assert [j.subject for j in queued.jobs] == ["AAPL", "MSFT"]
+    [(symbol, why)] = queued.refused
+    assert symbol == "IBM" and "no listing 'IBM'" in why

@@ -490,14 +490,16 @@ async def test_the_ai_step_skips_what_it_has_no_usable_verdict_for(ctx, clock):
         watch(ctx, s)
         seed(ctx, s, "buy")
     [d] = [d for d in ai_step(ctx) if d.symbol == "AAPL"]
-    assert (d.action, d.reason) == ("skip", "no verdict yet: run research on it")
+    assert (d.action, d.reason, d.needs_research) == ("skip", "no verdict yet: run research on it", True)
+    assert decision_log(ctx, "ai", limit=2)[0].needs_research
     rejected = verdict(ctx, "AAPL", "", rejected="its reason cites no evidence")
     [d] = [d for d in ai_step(ctx) if d.symbol == "AAPL"]
-    assert d.reason == "no verdict: the verdict was rejected: its reason cites no evidence"
+    assert d.reason == "no verdict: the verdict was rejected: its reason cites no evidence" and not d.needs_research
     assert {x.symbol: x.report_id for x in decision_log(ctx, "ai", limit=2)}["AAPL"] == rejected
     old = verdict(ctx, "VOD.L", "buy", 0.9, day=date(2026, 9, 17))
     [d] = [d for d in ai_step(ctx) if d.symbol == "VOD.L"]
     assert d.reason == "the verdict is from 2026-09-17, older than 3 days: run research on it again"
+    assert d.needs_research and {x.symbol: x.needs_research for x in decision_log(ctx, "ai", limit=2)}["VOD.L"]
     assert {x.symbol: x.report_id for x in decision_log(ctx, "ai", limit=2)}["VOD.L"] == old
     delist(ctx, "VOD.L")
     [d] = [d for d in ai_step(ctx) if d.symbol == "VOD.L"]
