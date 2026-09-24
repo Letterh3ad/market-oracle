@@ -182,7 +182,7 @@ async def test_one_outlet_under_its_name_and_its_domain_is_one_outlet(ctx):
 
 async def test_a_feed_item_without_a_site_is_known_by_its_outlet_name(ctx):
     ids = news(ctx, ("Fluence Energy wins grid storage deal", "Reuters", 3, None),
-               ("Fluence Energy battery orders jump", "reuters.com", 4))
+               ("Fluence Energy battery orders jump", "reuters.com", 4, "reuters.com"))
     validation, _ = await validate(ctx, shortlisted(ctx, evidence=ids))
     assert outcome(validation)[0] == "evidence"
 
