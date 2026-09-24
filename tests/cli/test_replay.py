@@ -69,7 +69,8 @@ def test_create_start_pause_and_status(cfg, capsys):
 
 def test_create_picks_a_mid_small_half_too_unless_bands_says_large(cfg, capsys):
     assert replay(cfg, "create", "--from", "2026-06-01") == 0
-    assert "US Health Care (mid/small)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "US Health Care (mid/small)" in out and "a mix checks about twice as many" in out
     assert replay(cfg, "create", "--from", "2026-06-01", "--bands", "large") == 0
     out = capsys.readouterr().out
     assert "Created replay study 2: 7 listings" in out and "(mid/small)" not in out

@@ -22,6 +22,7 @@ from oracle.services.prices_service import ConvertedBar
 from oracle.store.fx import FxRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
+from oracle.universe.listings import MARKET_CAP_BANDS
 
 __all__ = ["BASELINES", "NOTIONAL", "Account", "collapsed", "simulate"]
 
@@ -160,11 +161,17 @@ def _venue(ctx: AppContext, symbol: str, band: str | None) -> Venue:
 
 
 def _slippage(venues: Mapping[str, Venue]) -> str:
+    present = {v.band for v in venues.values()}
     by_rate: dict[float, list[str]] = {}
-    for band in sorted({v.band or "no known band" for v in venues.values()}):
+    unknown = ["no known band"] if present - set(MARKET_CAP_BANDS) else []
+    for band in [b for b in MARKET_CAP_BANDS if b in present] + unknown:
         by_rate.setdefault(costs_for(band).slippage, []).append(band)
-    return "slippage by size band (" + ", ".join(f"{rate:.2%} for {' and '.join(bands)}"
+    return "slippage by size band (" + "; ".join(f"{rate:.2%} for {_listed(bands)}"
                                                  for rate, bands in sorted(by_rate.items())) + ")"
+
+
+def _listed(words: Sequence[str]) -> str:
+    return ", ".join(words[:-1]) + " and " + words[-1] if len(words) > 1 else words[0]
 
 
 def _rates(ctx: AppContext, history: Mapping[str, Sequence[Bar]], start: date) -> tuple[dict[str, float], list[str]]:

@@ -68,8 +68,9 @@ function replaySection() {
       el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", bands, " ", create),
       el("p", { class: "dim small" }, "One replay per listing on its first trading day of each month, up to a month "
         + "ago so each has an outcome. About 20 listings per size spread over regions and sectors, each on its home "
-        + "market with prices from the first day to now (fetched while creating, a minute or two), picked once and "
-        + "kept. Listings you name stand in for the large half. " + where));
+        + "market with prices from the first day to now, picked once and kept. Creating fetches prices and takes a "
+        + "few minutes: a mix checks about twice as many listings as one size. Listings you name stand in for the "
+        + "large half, and a mix still picks a mid/small half beside them. " + where));
   }
 
   function progress(s) {

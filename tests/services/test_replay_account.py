@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from oracle.broker.backtest import fill_costs
+from oracle.broker.backtest import Venue, fill_costs
 from oracle.broker.fills import COSTS, buy_fill
 from oracle.broker.rules import Lean
 from oracle.config import Config, RiskConfig, StrategyConfig
@@ -358,3 +358,10 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
     shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
     assert shaped["return"] == lines(small.account)["ai"].return_
+
+
+def test_the_slippage_note_lists_bands_biggest_first_by_rate():
+    venues = {s: Venue("United States", "NMS", band) for s, band in
+              (("A", "Small Cap"), ("B", "Large Cap"), ("C", None), ("D", "Mega Cap"), ("E", "Mid Cap"))}
+    assert replay_account._slippage(venues) == ("slippage by size band (0.10% for Mega Cap, Large Cap and no known "
+                                                "band; 0.25% for Mid Cap; 0.50% for Small Cap)")

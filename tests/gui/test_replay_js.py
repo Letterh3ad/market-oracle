@@ -91,7 +91,7 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
                     ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"], "bands": "large"}]]
     assert "Creating is refused for now: replays run on default: probe default first" in text
     assert "Model cutoff" in text and "Probe cutoff" in text and "press Start" in text
-    assert "Left out, nothing fits: UK Energy." in text
+    assert "Left out, nothing fits: UK Energy." in text and "a mix checks about twice as many" in text
 
 
 def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():

@@ -54,7 +54,8 @@ def _symbols(text: str) -> list[str]:
 
 
 def _create(ctx: AppContext, args: argparse.Namespace) -> int:
-    print("Checking each listing's prices (fetching what is missing); this takes a minute or two.")
+    print("Checking each listing's prices (fetching what is missing); this takes a few minutes, and a mix checks "
+          "about twice as many listings as one size.")
     s = asyncio.run(create_study(ctx, args.first, args.symbols, print, args.bands))
     print(f"Created replay study {s.id}: {len(s.listings)} listings, {s.total} replays from "
           f"{s.first_day.isoformat()} to {s.last_day.isoformat()}. It is paused: `oracle replay start` runs it.")
