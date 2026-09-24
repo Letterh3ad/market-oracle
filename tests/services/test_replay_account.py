@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from oracle.broker.backtest import fill_costs
+from oracle.broker.backtest import Venue, fill_costs
 from oracle.broker.fills import COSTS, buy_fill
 from oracle.broker.rules import Lean
 from oracle.config import Config, RiskConfig, StrategyConfig
@@ -64,9 +64,10 @@ def store(ctx, symbol, closes, currency="USD"):
                               for d, c in closes.items()], "2026-09-23T22:00:00Z")
 
 
-def make_study(ctx, calls, failed=(), symbols=SYMBOLS):
+def make_study(ctx, calls, failed=(), symbols=SYMBOLS, bands=None):
     repo = ReplayRepo(ctx.conn)
-    listings = [{"symbol": s, "name": s, "region": "US", "sector": "Energy", "market_cap": "Mega Cap"} for s in symbols]
+    listings = [{"symbol": s, "name": s, "region": "US", "sector": "Energy",
+                 "market_cap": (bands or {}).get(s, "Mega Cap")} for s in symbols]
     sid = repo.create(NOW, JUN, AUG, json.dumps(listings), [(s, d) for d in (JUN, JUL, AUG) for s in symbols],
                       allowed=1)
     cells = {(c.symbol, c.as_of): c.id for c in repo.cells(sid)}
@@ -332,3 +333,35 @@ def test_replays_on_or_before_the_cutoff_are_left_out_of_the_account_as_of_the_s
     assert [(t.symbol, t.side.value, t.day) for t in account.trades] == [("BBB", "buy", date(2026, 7, 2)),
                                                                        ("AAA", "buy", date(2026, 8, 4))]
     assert min(d for d, _ in lines(account)["buy_and_hold"].points) == JUL
+
+
+def test_fills_pay_slippage_by_the_size_band_the_study_picked_the_listing_in(ctx):
+    make_study(ctx, {(s, JUN): ("buy", 0.9) for s in SYMBOLS}, bands={"BBB": "Small Cap"})
+    account = replay_report(ctx).account
+    closes = {s: dict((b.date, b.close) for b in BarRepo(ctx.conn).history(s)) for s in SYMBOLS}
+    trades = {t.symbol: t for t in account.trades}
+    assert trades["AAA"].price == pytest.approx(closes["AAA"][trades["AAA"].day] * 1.001)
+    assert trades["BBB"].price == pytest.approx(closes["BBB"][trades["BBB"].day] * 1.005)
+    held = lines(account)["buy_and_hold"]
+    assert held.costs == pytest.approx(sum(t.costs for t in account.trades), rel=0.05)
+    assert any("slippage by size" in n and "0.50% for Small Cap" in n for n in account.notes)
+
+
+def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
+    make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
+    s = replay_report(ctx)
+    assert s.account.listings == SYMBOLS
+    large, small = s.by_size
+    assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
+    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold"]
+    # BBB only rose, AAA fell after July: the smaller half did better.
+    assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
+    shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
+    assert shaped["return"] == lines(small.account)["ai"].return_
+
+
+def test_the_slippage_note_lists_bands_biggest_first_by_rate():
+    venues = {s: Venue("United States", "NMS", band) for s, band in
+              (("A", "Small Cap"), ("B", "Large Cap"), ("C", None), ("D", "Mega Cap"), ("E", "Mid Cap"))}
+    assert replay_account._slippage(venues) == ("slippage by size band (0.10% for Mega Cap, Large Cap and no known "
+                                                "band; 0.25% for Mid Cap; 0.50% for Small Cap)")

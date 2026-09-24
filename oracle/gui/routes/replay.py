@@ -16,7 +16,7 @@ from oracle.services.context import AppContext, worker_context
 from oracle.services.cutoff_service import replay_cutoff
 from oracle.services.replay_score import replay_report
 from oracle.services.replay_service import (
-    pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
+    MIX, pause_study, retry_failed, start_study, study_status, submit_create, submit_replace,
 )
 
 router = APIRouter(prefix="/api/replay")
@@ -38,12 +38,15 @@ class Create(BaseModel):
     """None: the day after the measured cutoff."""
     symbols: list[StrictStr] | None = None
     """None: picked as a spread."""
+    bands: StrictStr = MIX
+    """Which halves to pick: large, mid-small or mix."""
 
 
 @router.post("", status_code=202)
 async def create(body: Create, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """A job: each listing's prices are checked (and fetched) before the study is saved."""
-    return shapes.job(submit_create(ctx, runner, body.first, [s.strip() for s in body.symbols or [] if s.strip()]))
+    return shapes.job(submit_create(ctx, runner, body.first, [s.strip() for s in body.symbols or [] if s.strip()],
+                                    body.bands))
 
 
 class Replace(BaseModel):

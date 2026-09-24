@@ -1,7 +1,7 @@
 // The Ledgers tab's Replay study card: research replayed at past dates over a fixed spread of
 // listings, one replay at a time in the PC's free time. It never starts by itself.
 import { api } from "./api.js";
-import { compareLines, table } from "./compare.js";
+import { compareLines, lineInfos, table } from "./compare.js";
 import { cutoffSection } from "./cutoff_probe.js";
 import { el } from "./dom.js";
 import { money, pct } from "./fmt.js";
@@ -15,6 +15,7 @@ const share = (v) => (v == null ? "n/a" : `${Math.round(v * 100)}%`);
 const rate = (v, ci) => share(v) + (ci ? ` (95% ${share(ci[0])} to ${share(ci[1])})` : "");
 const HORIZON_NAMES = { "1m": "1 month", "3m": "3 months" };
 const clock = (iso) => String(iso).slice(0, 16).replace("T", " ");
+const SIZE_MIXES = { mix: "Large and mid/small", large: "Large only", "mid-small": "Mid/small only" };
 
 function replaySection() {
   let started = false;
@@ -55,18 +56,21 @@ function replaySection() {
     if (r.replay_from) first.setAttribute("min", r.replay_from);
     const symbols = el("input", { size: "36", placeholder: "blank: a spread picked for you",
       "aria-label": "Replay listings" });
+    const bands = el("select", { "aria-label": "Study size mix" },
+      ...Object.entries(SIZE_MIXES).map(([value, text]) => el("option", { value }, text)));
     const create = job(label, "/api/replay", () => ({ first: first.value || null,
-      symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean) }),
+      symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean), bands: bands.value }),
     (r) => "Created, paused: press Start when you want it to run."
       + (r.left_out?.length ? ` Left out, nothing fits: ${r.left_out.join("; ")}.` : ""));
     const where = r.cutoff_note ? `Creating is refused for now: ${r.cutoff_note}`
       : `The measured cutoff is ${r.cutoff}: the first replay day must be after it, from ${r.replay_from}.`;
     return el("div", null,
-      el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", create),
+      el("div", { class: "row" }, "First replay day ", first, " listings ", symbols, " ", bands, " ", create),
       el("p", { class: "dim small" }, "One replay per listing on its first trading day of each month, up to a month "
-        + "ago so each has an outcome. About 20 listings spread over regions and sectors, each on its home market "
-        + "with prices from the first day to now (fetched while creating, a minute or two), picked once and kept. "
-        + where));
+        + "ago so each has an outcome. About 20 listings per size spread over regions and sectors, each on its home "
+        + "market with prices from the first day to now, picked once and kept. Creating fetches prices and takes a "
+        + "few minutes: a mix checks about twice as many listings as one size. Listings you name stand in for the "
+        + "large half, and a mix still picks a mid/small half beside them. " + where));
   }
 
   function progress(s) {
@@ -91,15 +95,16 @@ function replaySection() {
   }
 
   function listings(s) {
-    const text = s.listings.map((p) => `${p.symbol} (${p.region}, ${p.sector})`).join(", ");
+    const text = s.listings.map((p) => `${p.symbol} (${[p.region, p.sector, p.market_cap].filter(Boolean).join(", ")})`)
+      .join(", ");
     if (!s.untouched) return [el("p", { class: "small" }, `Listings: ${text}.`)];
     return [
       el("p", { class: "dim small" }, "Before the first replay, any listing can be swapped for another: it is held to "
         + "the same checks."),
-      table([["Symbol"], ["Region"], ["Sector"], ["Replace with"]], s.listings.map((p) => {
+      table([["Symbol"], ["Region"], ["Sector"], ["Size"], ["Replace with"]], s.listings.map((p) => {
         const other = el("input", { size: "10", placeholder: "symbol", "aria-label": `Replace ${p.symbol} with` });
         return el("tr", null, el("td", { class: "mono" }, p.symbol), el("td", null, p.region),
-          el("td", null, p.sector), el("td", null, other, " ",
+          el("td", null, p.sector), el("td", null, p.market_cap ?? ""), el("td", null, other, " ",
             job("Replace", "/api/replay/replace", () => ({ old: p.symbol, new: other.value.trim() }),
               () => `Replaced ${p.symbol}.`)));
       }), ""),
@@ -158,6 +163,31 @@ function replaySection() {
     ];
   }
 
+  // The study's headline numbers beside each size's: the comparison the size mix is for.
+  function sizes(r) {
+    if (!r.by_size?.length) return [];
+    const rows = [{ label: "All", horizons: r.horizons, account: r.account }, ...r.by_size];
+    const calls = (h) => String(h.by_band.reduce((n, g) => n + g.n, 0));
+    const num = (text) => el("td", { class: "num" }, text);
+    const account = (row) => Object.fromEntries((row.account?.lines ?? []).map((line) => [line.name, line.return]));
+    return [
+      el("h3", null, "By size"),
+      el("p", { class: "dim small" }, `${r.by_size.map((z) => `${z.label}: ${z.listings.join(", ")}.`).join(" ")} `
+        + "Each size is scored against the whole study's basket, and traded as an account of its own."),
+      ...r.horizons.map((h, i) => table([[HORIZON_NAMES[h.horizon] ?? h.horizon], ["Calls", null, true],
+        ["Hit", null, true], ["No skill", null, true], ["Hit vs basket", null, true],
+        ["No skill vs basket", null, true], ["Mean as called", null, true]], rows.map((row) => {
+        const x = row.horizons[i];
+        return el("tr", null, el("td", null, row.label), num(calls(x)), num(share(x.hit_rate)),
+          num(share(x.expected_hit_rate)), num(share(x.hit_rate_vs_basket)),
+          num(share(x.expected_hit_rate_vs_basket)), num(pct(x.mean_as_called)));
+      }), "")),
+      ...(r.account ? [table([["Account return"], ...Object.values(lineInfos(r.account.lines))
+        .map((info) => [info.label, null, true])], rows.map((row) => el("tr", null, el("td", null, row.label),
+        ...r.account.lines.map((line) => num(pct(account(row)[line.name]))))), "")] : []),
+    ];
+  }
+
   const updatePrices = busyButton("Update prices", async (onState) => {
     try {
       const r = await runJob("/api/replay/prices", onState);
@@ -194,6 +224,7 @@ function replaySection() {
       el("p", { class: "dim small" }, "Hits are buys that rose and sells that fell; holds call no direction. The "
         + "bands hold buys and sells only, their returns as called (a sell's sign flipped). Returns are in each "
         + "listing's own currency, so \"vs basket\" compares against a basket that mixes currencies."),
+      ...sizes(r),
       el("div", { class: "row" }, updatePrices, el("span", { class: "dim small" }, `${missing} ${updated}`)),
       accountNode,
       el("h3", null, "Limits"),

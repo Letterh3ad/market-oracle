@@ -1,6 +1,6 @@
 import pytest
 
-from oracle.broker.fills import COSTS, buy_fill, fee, sell_fill
+from oracle.broker.fills import COSTS, buy_fill, costs_for, fee, sell_fill
 
 US, UK, EU, OTHER = "United States", "United Kingdom", "Germany", "Japan"
 
@@ -52,3 +52,19 @@ def test_stamp_duty_on_lse_buys_only():
     xetra = buy_fill(1000.0, open_price=10.0, rate=1.0, country=EU, exchange="GER", costs=COSTS)
     assert lse.stamp == pytest.approx(lse.shares * lse.price * 0.005) and lse.stamp > 0
     assert xetra.stamp == 0.0
+
+
+@pytest.mark.parametrize("band, slippage", [
+    ("Mega Cap", 0.001), ("Large Cap", 0.001), ("Mid Cap", 0.0025), ("Small Cap", 0.005), ("Micro Cap", 0.01),
+    ("Nano Cap", 0.02), (None, COSTS.slippage), ("", COSTS.slippage), ("Huge Cap", COSTS.slippage),
+])
+def test_slippage_rises_as_the_company_shrinks_and_an_unknown_band_pays_the_default(band, slippage):
+    costs = costs_for(band)
+    assert costs.slippage == pytest.approx(slippage)
+    assert (costs.fx_spread, costs.stamp_duty, costs.commission) == (COSTS.fx_spread, COSTS.stamp_duty, None)
+
+
+def test_a_small_cap_buy_fills_worse_than_a_large_cap_one():
+    large = buy_fill(1000.0, open_price=10.0, rate=1.0, country=UK, exchange="LSE", costs=costs_for("Large Cap"))
+    small = buy_fill(1000.0, open_price=10.0, rate=1.0, country=UK, exchange="LSE", costs=costs_for("Small Cap"))
+    assert (large.price, small.price) == (pytest.approx(10.01), pytest.approx(10.05))

@@ -10,6 +10,8 @@ from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning, UniverseUnavailable
 from oracle.services.net_service import source_statuses
 from oracle.services.universe_service import refresh_universe, universe_status
+from oracle.store.universe import UniverseRepo
+from oracle.universe.regions import home_line
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import BASIC, EQUITY_COLUMNS, FakeFinanceDatabase, bz2_csv, equity
 
@@ -112,3 +114,30 @@ async def test_refresh_names_each_stage_as_it_starts(ctx):
     stages = []
     await refresh_universe(ctx, on_stage=stages.append)
     assert stages == ["downloading", "saving"]
+
+
+TSMC_ADR = equity("TSM", "Taiwan Semiconductor Manufacturing Company Limited", "Taiwan", "NYQ", currency="USD",
+                  isin="US8740391003", sector="Information Technology", market_cap="Mega Cap",
+                  market="New York Stock Exchange")
+
+
+async def test_a_home_line_financedatabase_lacks_is_added_beside_its_company(tmp_path):
+    fdb = FakeFinanceDatabase([*BASIC, TSMC_ADR])
+    with open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(START), fdb.transport) as c:
+        await refresh_universe(c)
+        repo = UniverseRepo(c.conn)
+        tsmc = repo.resolve("2330.TW")
+        assert tsmc is not None and tsmc.company_key == repo.resolve("TSM").company_key
+        profile = repo.profile("2330.TW")
+        assert (profile.exchange, tsmc.currency, profile.market_cap) == ("TAI", "TWD", "Mega Cap")
+        assert home_line(repo.company_listings(tsmc.company_key), {"Taiwan"}).symbol == "2330.TW"
+
+
+async def test_a_missing_home_line_is_added_only_when_absent_and_its_company_is_there(tmp_path):
+    own = equity("2330.TW", "TSMC", "Taiwan", "TAI", currency="TWD", isin="US8740391003", market_cap="Large Cap")
+    for rows, band in (([*BASIC, TSMC_ADR, own], "Large Cap"), (BASIC, None)):
+        with open_context(Config(db_path=tmp_path / f"{band}.db"), None, FakeClock(START),
+                          FakeFinanceDatabase(rows).transport) as c:
+            await refresh_universe(c)
+            profile = UniverseRepo(c.conn).profile("2330.TW")
+            assert (profile.market_cap if profile else None) == band

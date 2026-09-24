@@ -636,8 +636,8 @@ async def test_create_is_refused_while_the_price_sources_do_not_answer(ctx, yaho
 
 async def test_create_tells_every_slot_it_left_out(ctx):
     s = await create_study(ctx, FIRST)
-    assert "UK Energy" in s.left_out and "US Information Technology" not in s.left_out
-    assert len(s.left_out) + len(s.listings) == 20 and s.to_json()["left_out"] == list(s.left_out)
+    assert {"UK Energy", "UK Energy (mid/small)"} <= set(s.left_out) and "US Information Technology" not in s.left_out
+    assert len(s.left_out) + len(s.listings) == 40 and s.to_json()["left_out"] == list(s.left_out)
 
 
 async def test_a_replay_cancelled_in_activity_pauses_the_study_and_is_not_counted(ctx, runner, research):
@@ -782,3 +782,82 @@ async def test_retrying_in_activity_a_replay_now_on_or_before_the_cutoff_is_refu
     with pytest.raises(InvalidQuery, match="on or before the measured cutoff 2026-08-10"):
         retry(ctx, runner, job.id)
     assert not [r for r in retryable(ctx, runner) if r.id == job.id]
+
+
+# The size mix
+
+SMALLER = [
+    equity("MIDT", "Mid Tech", "United States", IT, "NMS", "USD", cap="Mid Cap"),
+    equity("SMLT", "Small Tech", "United States", IT, "NMS", "USD", cap="Small Cap"),
+    equity("MICT", "Micro Tech", "United States", IT, "NMS", "USD", cap="Micro Cap"),
+    equity("SMLF", "Small Bank", "United States", FIN, "NYQ", "USD", cap="Small Cap"),
+    equity("NANF", "Nano Bank", "United States", FIN, "NYQ", "USD", cap="Nano Cap"),
+    equity("TSLA", "Tesla, Inc.", "Japan", IT, "JPX", "JPY", cap="Mid Cap"),
+    equity("MIDJ.DE", "Mid Japan", "Japan", IT, "GER", "EUR", cap="Mid Cap"),
+    equity("SMLH.L", "Small Health", "United Kingdom", "Health Care", "LSE", "GBp", cap="Small Cap"),
+]
+
+
+@pytest.fixture
+def mixed(ctx, yahoo):
+    UniverseRepo(ctx.conn).replace_all([*SPREAD, *SMALLER])
+    for x in SMALLER:
+        priced(yahoo, x.symbol)
+    return ctx
+
+
+async def test_the_mix_adds_one_mid_cap_per_slot_else_a_small_cap_never_micro_or_nano(mixed):
+    picked, left_out = await pick_listings(mixed, FIRST, bands="mix")
+    assert [p.symbol for p in picked] == [*SYMBOLS, "MIDT", "SMLF", "SMLH.L"]
+    assert [(p.region, p.sector, p.market_cap) for p in picked[-3:]] == [
+        ("US", IT, "Mid Cap"), ("US", FIN, "Small Cap"), ("UK", "Health Care", "Small Cap")]
+    # Tesla is never picked, and a Frankfurt line is not a Japanese company's home line.
+    assert "Japan Information Technology (mid/small)" in left_out
+    assert "US Information Technology (mid/small)" not in left_out and len(left_out) == 13 + 17
+
+
+async def test_the_large_pick_is_unchanged_and_mid_small_takes_only_the_smaller_half(mixed):
+    assert [p.symbol for p in (await pick_listings(mixed, FIRST, bands="large"))[0]] == SYMBOLS
+    assert [p.symbol for p in (await pick_listings(mixed, FIRST))[0]] == SYMBOLS
+    assert [p.symbol for p in (await pick_listings(mixed, FIRST, bands="mid-small"))[0]] == ["MIDT", "SMLF", "SMLH.L"]
+
+
+async def test_symbols_stand_in_for_the_large_half_of_a_mix(mixed):
+    s = await create_study(mixed, FIRST, symbols=["JPM", "6758.T"], bands="mix")
+    assert [p.symbol for p in s.listings] == ["JPM", "6758.T", "MIDT", "SMLF", "SMLH.L"]
+    assert s.total == 3 * 5
+    s = await create_study(mixed, FIRST, symbols=["JPM"], bands="large")
+    assert [p.symbol for p in s.listings] == ["JPM"]
+    with pytest.raises(InvalidQuery, match="large half"):
+        await create_study(mixed, FIRST, symbols=["JPM"], bands="mid-small")
+    with pytest.raises(InvalidQuery, match="large, mid-small or mix"):
+        await create_study(mixed, FIRST, bands="tiny")
+
+
+async def test_a_new_study_is_a_mix_unless_told_otherwise(mixed):
+    s = await create_study(mixed, FIRST)
+    assert [p.symbol for p in s.listings] == [*SYMBOLS, "MIDT", "SMLF", "SMLH.L"]
+
+
+async def test_a_pick_keeps_the_band_it_was_ranked_by_the_companys_primary_one(mixed, yahoo):
+    UniverseRepo(mixed.conn).replace_all([
+        *SPREAD, equity("SMLJ.DE", "Small Japan", "Japan", IT, "GER", "EUR", cap="Mid Cap", key="smlj"),
+        equity("6666.T", "Small Japan", "Japan", IT, "JPX", "JPY", cap="Small Cap", key="smlj", primary=False)])
+    priced(yahoo, "6666.T")
+    picked, _ = await pick_listings(mixed, FIRST, bands="mid-small")
+    assert [(p.symbol, p.market_cap, p.half) for p in picked] == [("6666.T", "Mid Cap", "mid-small")]
+
+
+async def test_a_named_listing_without_a_band_takes_its_primarys_else_counts_in_the_large_half(mixed, yahoo):
+    UniverseRepo(mixed.conn).replace_all([
+        *SPREAD, *SMALLER,
+        equity("BANDX", "Banded Co", "Japan", IT, "NYQ", "USD", cap="Large Cap", key="banded"),
+        equity("7777.T", "Banded Co", "Japan", IT, "JPX", "JPY", cap=None, key="banded", primary=False),
+        equity("8888.T", "Unbanded Co", "Japan", IT, "JPX", "JPY", cap=None)])
+    for symbol in ("7777.T", "8888.T"):
+        priced(yahoo, symbol)
+    s = await create_study(mixed, FIRST, symbols=["7777.T", "8888.T"])
+    assert [(p.symbol, p.market_cap, p.half) for p in s.listings[:2]] == [
+        ("7777.T", "Large Cap", "large"), ("8888.T", None, "large")]
+    sizes = {z.size: z.listings for z in replay_report(mixed).by_size}
+    assert sizes == {"large": ("7777.T", "8888.T"), "mid-small": ("MIDT", "SMLF", "SMLH.L")}

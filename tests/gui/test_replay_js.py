@@ -81,16 +81,17 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
         button(node, "Create study").fire("click"); await settle();
         labelled(node, "First replay day").value = "2026-06-01";  // the card reloaded after the job
         labelled(node, "Replay listings").value = " AAPL, 7203.T ,";
+        labelled(node, "Study size mix").value = "large";
         button(node, "Create study").fire("click"); await settle();
         console.log(JSON.stringify([asked, sent, node.textContent]));
     """, study=None)
     asked, sent, text = shown
     assert asked[0] == "POST /api/replay"
-    assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
-                    ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
+    assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": [], "bands": "mix"}],
+                    ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"], "bands": "large"}]]
     assert "Creating is refused for now: replays run on default: probe default first" in text
     assert "Model cutoff" in text and "Probe cutoff" in text and "press Start" in text
-    assert "Left out, nothing fits: UK Energy." in text
+    assert "Left out, nothing fits: UK Energy." in text and "a mix checks about twice as many" in text
 
 
 def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():
@@ -105,7 +106,8 @@ def test_the_first_day_is_filled_strictly_after_the_measured_cutoff():
 def test_a_paused_study_shows_progress_listings_and_failures_with_start():
     text = run("console.log(JSON.stringify(node.textContent));")
     assert "2 done, 3 queued, 1 failed of 6 (2026-06-01 to 2026-08-03); 3 min per replay on average." in text
-    assert "Listings: AAPL (US, Information Technology), 7203.T (Japan, Consumer Discretionary)." in text
+    assert ("Listings: AAPL (US, Information Technology, Mega Cap), 7203.T (Japan, Consumer Discretionary, "
+            "Large Cap).") in text
     assert "Nothing runs until you press Start" in text and "2 x model down" in text
     assert "1 cell waiting for its one automatic retry" in text and "Last checked 2026-09-24 12:00 UTC." in text
 
@@ -233,3 +235,26 @@ def test_the_study_shows_its_fixed_stage_models_the_cutoff_and_replays_left_out_
     assert ("Stage models, fixed when the study was created: research on default, verdict on big. "
             "Measured cutoff: 2026-06-30.") in text
     assert "2 replays excluded: on or before the current cutoff." in text
+
+
+def sized(size, label, listings, hit, mean, ret):
+    one = {**REPORT["horizons"][0], "hit_rate": hit, "mean_as_called": mean,
+           "by_band": [group("0.80 and up", 1, hit, hit, mean, mean, 0.9)]}
+    lines = [{**line, "return": ret} for line in ACCOUNT["lines"]]
+    return {"size": size, "label": label, "listings": listings, "verdicts": 1, "mix": REPORT["mix"],
+            "horizons": [one, REPORT["horizons"][1]], "account": {**ACCOUNT, "listings": listings, "lines": lines}}
+
+
+def test_the_score_and_account_split_by_size():
+    report = {**REPORT, "account": ACCOUNT,
+              "by_size": [sized("large", "Large", ["AAPL"], 1.0, 0.05, 0.03),
+                          sized("mid-small", "Mid/small", ["7203.T"], 0.0, -0.02, -0.01)]}
+    text = run("console.log(JSON.stringify(node.textContent));", report=report)
+    assert "By size" in text and "Large: AAPL. Mid/small: 7203.T." in text
+    assert "Large1100%45%100%50%+5.00%" in text and "Mid/small10%45%100%50%-2.00%" in text
+    assert "All2" in text and "Account return" in text
+    assert "Large+3.00%+3.00%+3.00%" in text and "Mid/small-1.00%-1.00%-1.00%" in text
+
+
+def test_a_study_of_one_size_shows_no_split():
+    assert "By size" not in run("console.log(JSON.stringify(node.textContent));", report={**REPORT, "by_size": []})
