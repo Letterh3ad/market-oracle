@@ -7,11 +7,11 @@ import logging
 import os
 import tempfile
 import tomllib
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from oracle.config import (
-    DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, Setting, check_ai_account,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, EXAMPLE_PATH, PEERS_RANGE, AutomationConfig, ConfigError, Setting, check_ai_account,
     check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config, setting_list,
     with_settings,
 )
@@ -53,7 +53,7 @@ def set_tick_warning(ctx: AppContext, warn_minutes: int, research_when_idle: boo
     only once the PC has been idle `idle_minutes`."""
     values = {"warn_minutes": warn_minutes, "research_when_idle": research_when_idle, "idle_minutes": idle_minutes}
     s = ctx.config.schedule
-    schedule = _check(check_schedule, {"enabled": s.enabled, "time": s.time, **values})
+    schedule = _check(check_schedule, {**asdict(s), **values})
     path = _save(ctx, "schedule", values)
     ctx.config = replace(ctx.config, schedule=schedule)
     return path
@@ -117,6 +117,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
     if setting.secret:
         env = key_env_var(setting.key)
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
+    if (setting.section, setting.key) in BLANK_OFF:
+        row["blank_off"] = True
     return {**row, "value": table.get(setting.key, setting.default)}
 
 

@@ -23,14 +23,17 @@ const middayBudget = el("input", { type: "number", min: "1", max: "480", step: "
 const DEFAULT_MIDDAY = "12:30";
 let refreshAll = async () => {};
 
-async function saveSetting(key, value) {
+// Every control here saves the same way: PUT, show any refusal, repaint.
+async function put(path, body, label) {
   try {
-    await sendJson("/api/settings", { section: "schedule", key, value }, "PUT");
+    await sendJson(path, body, "PUT");
   } catch (err) {
-    showError(`${key}: ${err.message}`);
+    showError(`${label}: ${err.message}`);
   }
   await refreshAll();
 }
+
+const saveSetting = (key, value) => put("/api/settings", { section: "schedule", key, value }, key);
 
 function runButton(label, path) {
   return busyButton(label, async (onState) => {
@@ -46,25 +49,11 @@ function runButton(label, path) {
 // Built once, so the 30-second refresh never replaces a button mid-run or a field being edited.
 function mount(refresh) {
   refreshAll = refresh;
-  const save = async () => {
-    try {
-      await sendJson("/api/settings/schedule", { enabled: toggle.checked, time: time.value }, "PUT");
-    } catch (err) {
-      showError(`schedule: ${err.message}`);
-    }
-    await refresh();
-  };
+  const save = () => put("/api/settings/schedule", { enabled: toggle.checked, time: time.value }, "schedule");
   toggle.addEventListener("change", save);
   time.addEventListener("change", () => { if (time.value) save(); });
-  const saveWarning = async () => {
-    try {
-      await sendJson("/api/settings/tick-warning", { warn_minutes: Number(warnMinutes.value),
-        research_when_idle: whenIdle.checked, idle_minutes: Number(idleMinutes.value) }, "PUT");
-    } catch (err) {
-      showError(`tick warning: ${err.message}`);
-    }
-    await refresh();
-  };
+  const saveWarning = () => put("/api/settings/tick-warning", { warn_minutes: Number(warnMinutes.value),
+    research_when_idle: whenIdle.checked, idle_minutes: Number(idleMinutes.value) }, "tick warning");
   for (const input of [warnMinutes, whenIdle, idleMinutes]) input.addEventListener("change", saveWarning);
   const saveMidday = () => saveSetting("midday_time", middayOn.checked ? middayTime.value || DEFAULT_MIDDAY : "");
   middayOn.addEventListener("change", saveMidday);
@@ -75,14 +64,14 @@ function mount(refresh) {
     el("label", null, toggle, " Run automatically on weekdays at "), time,
     el("span", { id: "schedule-next", class: "dim small" }));
   document.getElementById("tick-options").replaceChildren(
-    el("label", null, "Warn ", warnMinutes, " minutes before a scheduled tick (0: no warning)"),
+    el("label", null, "Warn ", warnMinutes, " minutes before a scheduled tick or midday pass (0: no warning)"),
     el("label", null, whenIdle, " Research only after the PC has been idle "), idleMinutes,
     el("span", null, " minutes (otherwise it waits for the next tick)"));
   document.getElementById("midday-options").replaceChildren(
     runButton("Run midday pass now", "/api/jobs/midday"),
     el("label", { title: "Discovery, then research on stale listings. No prices, no strategy or AI steps, no orders." },
       middayOn, " Midday pass on weekdays at "), middayTime,
-    el("label", null, " for up to ", middayBudget, " minutes"),
+    el("label", null, ", starting research for up to ", middayBudget, " minutes"),
     el("span", { id: "midday-next", class: "dim small" }));
 }
 

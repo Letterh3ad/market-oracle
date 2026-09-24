@@ -1,3 +1,14 @@
+from dataclasses import replace
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def midday_off(ctx):
+    """These are about the tick; tests/gui/test_midday_routes.py covers the midday pass."""
+    ctx.config = replace(ctx.config, schedule=replace(ctx.config.schedule, midday_time=""))
+
+
 async def test_scheduling_is_off_until_turned_on_and_then_shows_the_next_run(ctx, client, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     schedule = (await client.get("/api/status")).json()["schedule"]

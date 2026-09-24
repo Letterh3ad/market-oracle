@@ -87,3 +87,9 @@ def test_a_config_file_another_program_holds_is_a_readable_error_and_is_left_as_
         set_setting(ctx, "schedule", "time", "21:15")
     assert ctx.config_source.read_bytes() == before
     assert [p.name for p in ctx.config_source.parent.iterdir() if p.suffix == ".new"] == []
+
+
+def test_a_blank_midday_time_turns_the_midday_pass_off(ctx):
+    assert row(ctx, "schedule", "midday_time")["blank_off"] is True and "blank_off" not in row(ctx, "schedule", "time")
+    assert set_setting(ctx, "schedule", "midday_time", "")["value"] == ""
+    assert ctx.config.schedule.midday_time == ""

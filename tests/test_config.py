@@ -335,7 +335,7 @@ def test_the_midday_pass_is_at_half_past_twelve_for_an_hour_and_empty_turns_it_o
     path.write_text('[schedule]\nmidday_time = ""\nmidday_budget_min = 5\n', encoding="utf-8")
     s = load_config(path, cwd=tmp_path)[0].schedule
     assert (s.midday_time, s.midday_budget_min) == ("", 5)
-    for line in ('midday_time = "25:00"', "midday_time = 1230", "midday_budget_min = 0",
+    for line in ('midday_time = "25:00"', "midday_time = 1230", 'midday_time = "22:30"', "midday_budget_min = 0",
                  "midday_budget_min = 481", "midday_budget_min = true"):
         path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="schedule.midday"):

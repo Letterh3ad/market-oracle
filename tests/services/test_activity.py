@@ -187,7 +187,7 @@ def london_scheduler(ctx, runner):
     from oracle.services.schedule_service import Scheduler
 
     # NOW is Wednesday 21:00 in London; the run is due at 21:30 there (20:30 UTC).
-    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time="21:30"))
+    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time="21:30", midday_time=""))
     return Scheduler(ctx, runner, tz=ZoneInfo("Europe/London"))
 
 

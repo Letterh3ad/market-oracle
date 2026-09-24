@@ -1876,6 +1876,10 @@ tick", catch-up and "ticked since" count ticks only, so a midday pass never hide
 tick. The slot needs scheduling (`[schedule] enabled`) and automation on, shares the
 warning, postpone and skip (on whichever run is soonest), and never catches up: a pass not
 started within 30 minutes of its time (or its postponed time) is missed, not fired late.
+The grace is checked again as the queued job starts, a restart inside the grace still runs
+it, and a missed pass is stored as skipped ("missed: ...") so the Ticks panel says why.
+Each slot keeps its own floor, so changing one never drops the other's postponed run, and
+midday_time may not equal time.
 Research still needs the AI account on, as in a tick; research_when_idle holds both stages.
 **Alternatives:** A `kind` column (needs a migration, which the ticket rules out); a separate
 job kind and lock (a midday pass and a tick could then run at once and fight over research);

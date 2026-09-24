@@ -26,7 +26,9 @@ from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
 from oracle.services.routine_service import update_listing_prices, update_prices
-from oracle.services.tick_service import KIND_LABELS, MIDDAY, TICK, record_skipped, run_midday, run_tick
+from oracle.services.tick_service import (
+    KIND_LABELS, MIDDAY, TICK, last_tick, record_skipped, run_midday, run_tick, ticked_since,
+)
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 
@@ -43,6 +45,7 @@ PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
+MISSED_LATE = "missed: started too late"
 """Finished states worth another try; `done` needs no retry."""
 
 
@@ -322,14 +325,20 @@ def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None
 
 
 def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False,
-                kind: str = TICK) -> Job:
+                kind: str = TICK, due: datetime | None = None, deadline: datetime | None = None) -> Job:
     """One tick (or midday pass) as a job; its progress is the stage it is on. With
     `skip_if_busy` (scheduled runs), one held by another process is recorded as skipped
-    instead of failing. Both kinds share the tick queue, so they run one after the other."""
+    instead of failing. Both kinds share the tick queue, so they run one after the other.
+    A scheduled run passes its `due` time: one run or skipped since it was queued is not
+    run again. Past `deadline` as it starts, it is recorded as missed instead."""
     stage: list[str] = []
     run = run_midday if kind == MIDDAY else run_tick
 
     async def work(c: AppContext):
+        if due is not None and ticked_since(c, due, kind):
+            return last_tick(c, kind)
+        if deadline is not None and c.clock.utcnow() > deadline:
+            return record_skipped(c, trigger, MISSED_LATE, kind=kind)
         try:
             return await run(c, trigger, on_stage=lambda name: stage.append(name))
         except JobAlreadyRunning as exc:

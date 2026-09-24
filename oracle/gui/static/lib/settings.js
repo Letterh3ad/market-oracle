@@ -36,7 +36,7 @@ function read(row, box) {
   if (box.validity?.badInput) throw new Error("not a number: type one, or use Default");
   const text = box.value.trim();
   if (!text && row.secret) throw new Error("type a key, or use Clear");
-  if (!text) return null;
+  if (!text) return row.blank_off ? "" : null; // blank turns such a key off, not back to its default
   if (row.kind === "list") return text.split(",").map((s) => s.trim()).filter(Boolean);
   return row.kind === "int" || row.kind === "float" ? Number(text) : text;
 }

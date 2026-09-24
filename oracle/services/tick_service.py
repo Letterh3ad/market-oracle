@@ -82,13 +82,14 @@ def discover_cap_min(ctx: AppContext, budget_min: float | None = None) -> float:
     return min(DISCOVER_CAP_MIN, (budget_min or ctx.config.ai_account.research_budget_min) / 3)
 
 
-async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None) -> tuple[str, str | None]:
+async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None, run: str = "tick") -> tuple[str, str | None]:
+    """`run` names what it is part of, for its messages."""
     if not ctx.config.discovery.enabled:
         return "discovery is off in Settings: nothing discovered", None
     if not ctx.config.automation.enabled:
         return "automation is off: nothing discovered", None
     if pc_in_use(ctx):
-        return "PC in use: discovery waits for the next tick", None
+        return f"PC in use: discovery waits for the next {run}", None
     before = {d.symbol for d in discovered(ctx)}
     try:
         async with asyncio.timeout((cap_min or discover_cap_min(ctx)) * 60):
@@ -97,7 +98,7 @@ async def _discover(ctx: AppContext, _: Say, cap_min: float | None = None) -> tu
         added = [f"{d.symbol} {d.name} ({d.why})" for d in discovered(ctx) if d.symbol not in before]
         return "stopped at its time limit; " + (f"added {'; '.join(added)}" if added else "nothing added"), None
     except JobAlreadyRunning:
-        return "a discovery run is already going (Discover now): nothing more this tick", None
+        return f"a discovery run is already going (Discover now): nothing more this {run}", None
     return _discovered_summary(run), run.source_errors[0] if run.source_errors else None
 
 
@@ -154,7 +155,7 @@ def _midday_stages(started: datetime) -> dict[str, StageRun]:
         return ctx.config.schedule.midday_budget_min
 
     async def discover_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
-        return await _discover(ctx, say, discover_cap_min(ctx, budget(ctx)))
+        return await _discover(ctx, say, discover_cap_min(ctx, budget(ctx)), MIDDAY_RUN)
 
     async def research_stage(ctx: AppContext, say: Say) -> tuple[str, str | None]:
         return await _research(ctx, say, budget(ctx) - (ctx.clock.utcnow() - started) / timedelta(minutes=1))
@@ -162,8 +163,9 @@ def _midday_stages(started: datetime) -> dict[str, StageRun]:
     return {"discover": discover_stage, "research": research_stage}
 
 
-MIDDAY_STAGES = tuple(_midday_stages(datetime.min))
+MIDDAY_STAGES = ("discover", "research")
 KIND_LABELS = {TICK: "Tick", MIDDAY: "Midday pass"}
+MIDDAY_RUN = KIND_LABELS[MIDDAY].lower()
 
 
 async def run_tick(ctx: AppContext, trigger: str = "manual",

@@ -124,12 +124,15 @@ class ScheduleConfig:
     midday_time: str = "12:30"
     """A second weekday slot, local time, for discovery and research only; "" off."""
     midday_budget_min: int = 60
-    """How long the midday pass may take, discovery included."""
+    """How long the midday pass may start work, discovery included; a research run started
+    near the end finishes past it."""
 
 
 WARN_RANGE = (0, 120)
 IDLE_RANGE = (1, 240)
 MIDDAY_BUDGET_RANGE = (1, 480)
+BLANK_OFF = {("schedule", "midday_time")}
+"""Keys an empty value turns off, rather than resetting to the default."""
 
 
 @dataclass(frozen=True)
@@ -631,6 +634,9 @@ def check_schedule(raw: Mapping[str, object]) -> ScheduleConfig:
     check_schedule_time(s.time)
     if s.midday_time != "":
         check_schedule_time(s.midday_time, "midday_time", ' or "" (off)')
+        if s.midday_time == s.time:
+            raise ConfigError(f"schedule.midday_time must differ from schedule.time ({s.time}): both would be due "
+                              "at once")
     return s
 
 

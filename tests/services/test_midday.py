@@ -97,7 +97,8 @@ async def test_the_pc_in_use_holds_it_back_with_research_when_idle(ctx, discover
     settings(ctx, "schedule", research_when_idle=True)
     run = await run_midday(ctx)
     assert discovering.calls == [] and researching.done == []
-    assert "PC in use" in run.stages[0].summary and "PC in use" in run.stages[1].summary
+    assert run.stages[0].summary == "PC in use: discovery waits for the next midday pass"
+    assert "PC in use" in run.stages[1].summary
 
 
 async def test_as_a_job_it_is_labelled_and_a_retry_runs_another_midday_pass(ctx, discovering, researching):
