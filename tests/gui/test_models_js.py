@@ -60,6 +60,22 @@ def test_an_edit_form_fills_only_what_the_profile_sets_never_the_providers_defau
     assert prefill(None) == {"model": "", "base_url": "", "context": "", "timeout_s": "", "key_env": ""}
 
 
+def placeholders(defaults) -> dict:
+    script = f"""
+        import {{ placeholders }} from {json.dumps((STATIC_DIR / "lib" / "models.js").as_uri())};
+        console.log(JSON.stringify(placeholders({json.dumps(defaults)})));
+    """
+    done = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(done.stdout)
+
+
+def test_a_provider_without_an_endpoint_of_its_own_asks_for_one():
+    own = {"base_url": None, "base_url_required": False, "context": 200000, "timeout_s": 180.0}
+    assert placeholders(own) == {"base_url": "default: provider's own endpoint", "context": "default: 200000",
+                                 "timeout_s": "default: 180"}
+    assert placeholders({**own, "base_url_required": True})["base_url"] == "required, like http://localhost:1234/v1"
+
+
 def test_bad_input_is_refused_before_sending():
     assert body({**FORM, "context": "lots"}) == {"refused": "context: not a number"}
     assert body({**FORM, "key": "k", "key_env": "K"}) == {"refused": "give a key or key_env, not both"}

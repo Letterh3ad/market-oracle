@@ -16,13 +16,13 @@ def register(parser: argparse.ArgumentParser) -> None:
 
 
 def _list(ctx: AppContext, args: argparse.Namespace) -> int:
-    print(f"{'name':<14}{'provider':<12}{'model':<32}{'context':>9}  key")
+    print(f"{'name':<14}{'provider':<19}{'model':<32}{'context':>9}  key")
     for r in model_profile_rows(ctx):
         key = {"none": "-", "fallback": r["key_fallback"]}.get(r["key_state"], r["key_state"])
         if r["key_env"]:
             key += f" ({r['key_env']})"
         source = "  from [llm]" if r["from_llm"] else ""
-        print(f"{r['name']:<14}{r['provider']:<12}{r['model']:<32}{r['context']:>9}  {key}{source}")
+        print(f"{r['name']:<14}{r['provider']:<19}{r['model']:<32}{r['context']:>9}  {key}{source}")
     return 0
 
 

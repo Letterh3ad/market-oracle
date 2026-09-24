@@ -250,14 +250,20 @@ class ModelProfile:
 @dataclass(frozen=True)
 class Provider:
     base_url: str | None
+    """None: the provider's own endpoint, or none at all where `base_url_required`."""
     context: int
-    fallback_key: str | None
-    """Where the provider looks with no key or key_env; None: it takes no key at all."""
+    keyed: bool
+    """Whether it takes a key."""
+    fallback_key: str | None = None
+    """Where it looks with no key or key_env; None: it goes without one."""
+    base_url_required: bool = False
 
 
 PROVIDERS: dict[str, Provider] = {
-    "ollama": Provider(LlmConfig.base_url, LlmConfig.context, None),
-    "claude_api": Provider(None, CLAUDE_CONTEXT, "env / ant login"),
+    "ollama": Provider(LlmConfig.base_url, LlmConfig.context, keyed=False),
+    "claude_api": Provider(None, CLAUDE_CONTEXT, keyed=True, fallback_key="env / ant login"),
+    # Local servers need no key, and OPENAI_API_KEY is never read: a key goes only where a profile sends it.
+    "openai_compatible": Provider(None, LlmConfig.context, keyed=True, base_url_required=True),
 }
 """Every provider a profile can name, with what its unset keys mean."""
 PROFILE_CONTEXT_RANGE = (2048, 2_000_000)
@@ -832,8 +838,10 @@ def check_profile(name: str, raw: object) -> ModelProfile:
         raise ConfigError(f"{where}.provider must be one of {', '.join(PROVIDERS)}, got {provider!r}")
     if "key" in raw and "key_env" in raw:
         raise ConfigError(f"{where} sets key and key_env; keep one")
-    if PROVIDERS[provider].fallback_key is None and ("key" in raw or "key_env" in raw):
+    if not PROVIDERS[provider].keyed and ("key" in raw or "key_env" in raw):
         raise ConfigError(f"{where}: {provider} takes no key; remove key and key_env")
+    if PROVIDERS[provider].base_url_required and "base_url" not in raw:
+        raise ConfigError(f"{where} needs a base_url: the server's API root, like http://localhost:1234/v1")
     p = ModelProfile(**raw)
     low, high = PROFILE_CONTEXT_RANGE
     checks = {

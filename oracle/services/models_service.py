@@ -15,6 +15,7 @@ from oracle.config import (
 from oracle.research.claude import ClaudeChat
 from oracle.research.llm import ChatModel, ModelError
 from oracle.research.ollama import OllamaChat
+from oracle.research.openai_compatible import OpenAICompatibleChat
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, UnknownModelProfile
 from oracle.services.jobs_service import job_statuses
@@ -30,7 +31,9 @@ Builder = Callable[[AppContext, str, ModelProfile], ChatModel]
 BUILDERS: dict[str, Builder] = {
     "ollama": lambda ctx, name, p: OllamaChat(p.model, p.base_url, p.timeout_s, p.context, transport=ctx.transport),
     "claude_api": lambda ctx, name, p: ClaudeChat(p.model, p.timeout_s, api_key=_key(name, p), base_url=p.base_url,
-                                                  **({"key_source": _key_source(name, p)} if p.key or p.key_env else {})),
+                                                  **_key_source(name, p)),
+    "openai_compatible": lambda ctx, name, p: OpenAICompatibleChat(
+        p.model, p.base_url, p.timeout_s, api_key=_key(name, p), transport=ctx.transport, **_key_source(name, p)),
 }
 
 MODEL_JOBS = ("research", "discovery", "discovery_chat")
@@ -84,9 +87,12 @@ def _key(name: str, p: ModelProfile) -> str | None:
     return value
 
 
-def _key_source(name: str, p: ModelProfile) -> str:
-    return (f"check {p.key_env} (key_env of model profile {name})" if p.key_env
-            else f"check the key saved in model profile {name}")
+def _key_source(name: str, p: ModelProfile) -> dict[str, str]:
+    """Where to fix a refused key, as a builder argument; none when the profile sets no key,
+    so the model's own advice applies."""
+    if p.key_env:
+        return {"key_source": f"check {p.key_env} (key_env of model profile {name})"}
+    return {"key_source": f"check the key saved in model profile {name}"} if p.key else {}
 
 
 def model_profile_rows(ctx: AppContext) -> list[dict]:
@@ -103,18 +109,21 @@ def model_profile_rows(ctx: AppContext) -> list[dict]:
 
 def provider_defaults() -> dict[str, dict]:
     """Each provider with what its unset keys mean, and whether it takes a key."""
-    return {name: {"base_url": spec.base_url, "context": spec.context, "timeout_s": LlmConfig.timeout_s,
-                   "keyed": spec.fallback_key is not None} for name, spec in PROVIDERS.items()}
+    return {name: {"base_url": spec.base_url, "base_url_required": spec.base_url_required, "context": spec.context,
+                   "timeout_s": LlmConfig.timeout_s, "keyed": spec.keyed} for name, spec in PROVIDERS.items()}
 
 
 def _key_state(p: ModelProfile) -> str:
     """set, unset (key_env names a missing variable), fallback (the provider's own lookup)
-    or none (the provider takes no key)."""
-    if PROVIDERS[p.provider].fallback_key is None:
+    or none (no key goes with a request)."""
+    spec = PROVIDERS[p.provider]
+    if not spec.keyed:
         return "none"
     if p.key or p.key_env and os.environ.get(p.key_env):
         return "set"
-    return "unset" if p.key_env else "fallback"
+    if p.key_env:
+        return "unset"
+    return "fallback" if spec.fallback_key else "none"
 
 
 async def try_model_profile(ctx: AppContext, name: str) -> ModelTest:
@@ -153,7 +162,7 @@ def save_model_profile(ctx: AppContext, name: str, values: dict[str, object], cr
     provider = PROVIDERS.get(named) if isinstance(named, str) else None
     if old and provider and table["provider"] != old.provider:
         table = {k: v for k, v in table.items() if k not in PROVIDER_KEYS or v != getattr(old, k)}
-    if provider and provider.fallback_key is None:
+    if provider and not provider.keyed:
         table = {k: v for k, v in table.items() if k not in ("key", "key_env")}
     elif values.get("key") is None and "key_env" not in table and old and old.key:
         table["key"] = old.key

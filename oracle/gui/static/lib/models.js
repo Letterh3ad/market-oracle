@@ -43,8 +43,9 @@ function prefill(p) {
 }
 
 function placeholders(defaults) {
-  return { base_url: defaults.base_url ?? "provider's own endpoint", context: String(defaults.context),
-    timeout_s: String(defaults.timeout_s) };
+  const base = defaults.base_url_required ? "required, like http://localhost:1234/v1"
+    : `default: ${defaults.base_url ?? "provider's own endpoint"}`;
+  return { base_url: base, context: `default: ${defaults.context}`, timeout_s: `default: ${defaults.timeout_s}` };
 }
 
 function keyState(p) {
@@ -131,7 +132,7 @@ function formRow(p, providers) {
   const keyCell = el("td", null, inputs.key_env, inputs.key, el("label", { class: "small" }, clear, " clear"));
   const fit = () => {
     const defaults = providers[provider.value];
-    for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = `default: ${text}`;
+    for (const [k, text] of Object.entries(placeholders(defaults))) inputs[k].placeholder = text;
     inputs.key_env.placeholder = "key_env";
     inputs.key.placeholder = p?.key_state === "set" && !p.key_env && provider.value === p.provider
       ? "saved key kept" : "key";
@@ -176,4 +177,4 @@ async function load() {
   }
 }
 
-export { load, prefill, profileBody };
+export { load, placeholders, prefill, profileBody };

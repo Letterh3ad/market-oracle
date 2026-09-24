@@ -40,7 +40,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
 
 
 @pytest.mark.parametrize("table, message", [
-    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, got 'gpt'"),
+    ('provider = "gpt"\nmodel = "x"', r"models.fast.provider must be one of ollama, claude_api, openai_compatible, got 'gpt'"),
     ('model = "x"', r"models.fast needs a provider"),
     ('provider = "ollama"', r"models.fast needs a model"),
     ('provider = "ollama"\nmodel = ""', r"models.fast.model must be a model name"),
@@ -51,6 +51,7 @@ def test_a_literal_key_is_kept_but_never_shown_in_a_repr(tmp_path):
     ('provider = "claude_api"\nmodel = "x"\nkey_env = "not a name"', r"models.fast.key_env must be the name of an"),
     ('provider = "claude_api"\nmodel = "x"\nkey = ""', r"models.fast.key must be a non-empty string"),
     ('provider = "claude_api"\nmodel = "x"\nkey = "k"\nkey_env = "K"', r"models.fast sets key and key_env"),
+    ('provider = "openai_compatible"\nmodel = "x"', r"models.fast needs a base_url: the server's API root"),
     ('provider = "ollama"\nmodel = "x"\ntemperature = 1', r"unknown key\(s\) in \[models.fast\]: temperature"),
 ])
 def test_a_bad_profile_is_refused_naming_the_key(tmp_path, table, message):
@@ -119,3 +120,14 @@ def test_profile_names_are_checked_and_may_not_differ_only_in_case(tmp_path):
 def test_a_duplicate_table_is_refused_with_the_toml_parsers_message(tmp_path):
     with pytest.raises(ConfigError, match="not valid TOML"):
         _load(tmp_path, '[models.a]\nprovider = "ollama"\nmodel = "x"\n[models.a]\nprovider = "ollama"\nmodel = "y"\n')
+
+
+def test_an_openai_compatible_profile_needs_a_base_url_and_may_take_a_key(tmp_path):
+    config = _load(tmp_path, '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\n'
+                             'base_url = "http://localhost:1234/v1"\n'
+                             '[models.router]\nprovider = "openai_compatible"\nmodel = "m"\n'
+                             'base_url = "https://openrouter.ai/api/v1"\nkey_env = "OPENROUTER_KEY"\n')
+    profiles = model_profiles(config)
+    assert profiles["lm"] == ModelProfile("openai_compatible", "qwen3-8b", "http://localhost:1234/v1", 16384, 180.0)
+    assert profiles["router"].key_env == "OPENROUTER_KEY"
+

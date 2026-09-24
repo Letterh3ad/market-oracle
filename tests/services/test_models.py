@@ -4,13 +4,16 @@ import pytest
 from oracle.config import CLAUDE_CONTEXT, PROVIDERS, load_config
 from oracle.research.claude import ClaudeChat
 from oracle.research.ollama import OllamaChat
+from oracle.research.openai_compatible import OpenAICompatibleChat
 from oracle.services import models_service
 from oracle.services.context import load_settings, open_context
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ModelUnavailable, UnknownModelProfile
 from oracle.services.models_service import (
-    delete_model_profile, model_for, model_profile_rows, resolve_model, save_model_profile, try_model_profile,
+    delete_model_profile, model_for, model_profile_rows, provider_defaults, resolve_model, save_model_profile,
+    try_model_profile,
 )
 from tests.fakes.ollama import FakeOllama
+from tests.fakes.openai import FakeOpenAI
 
 
 def _ctx(tmp_path, text="", transport=None):
@@ -217,3 +220,47 @@ def test_a_profile_the_file_writes_inline_is_an_edit_by_hand_error(tmp_path):
         with pytest.raises(InvalidQuery, match="by hand"):
             save_model_profile(ctx, "small", {"provider": "ollama", "model": "y"}, create=True)
         assert ctx.config_source.read_bytes() == before
+
+
+OPENAI = '[models.lm]\nprovider = "openai_compatible"\nmodel = "qwen3-8b"\nbase_url = "http://llm.test/v1"\n'
+
+
+async def test_an_openai_compatible_profile_is_built_on_the_apps_transport_and_tested(tmp_path):
+    server = FakeOpenAI({"ok": True})
+    with _ctx(tmp_path, OPENAI, transport=httpx.MockTransport(server.handle)) as ctx:
+        run = resolve_model(ctx, "lm")
+        assert (type(run.model), run.context) == (OpenAICompatibleChat, 16384)
+        result = await try_model_profile(ctx, "lm")
+    assert result.ok, result.error
+    assert "authorization" not in server.requests[0].headers
+
+
+async def test_an_openai_compatible_profile_sends_its_key_and_says_where_to_fix_a_refused_one(tmp_path, monkeypatch):
+    monkeypatch.setenv("LM_KEY", "sk-wrong")
+    server = FakeOpenAI(key="sk-right")
+    with _ctx(tmp_path, f'{OPENAI}key_env = "LM_KEY"\n', transport=httpx.MockTransport(server.handle)) as ctx:
+        result = await try_model_profile(ctx, "lm")
+    assert not result.ok and "check LM_KEY (key_env of model profile lm)" in result.error
+    assert server.requests[0].headers["authorization"] == "Bearer sk-wrong" and "sk-wrong" not in result.error
+
+
+def test_an_openai_compatible_key_is_optional_with_no_fallback(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-never-used")
+    with _ctx(tmp_path, f'{OPENAI}[models.keyed]\nprovider = "openai_compatible"\nmodel = "m"\n'
+                        'base_url = "https://api.openai.com/v1"\nkey = "sk-lit"\n') as ctx:
+        _, lm, keyed = model_profile_rows(ctx)
+        assert (lm["key_state"], lm["key_fallback"], keyed["key_state"]) == ("none", None, "set")
+        assert model_for(ctx, "lm")._api_key is None
+        save_model_profile(ctx, "lm", {"provider": "openai_compatible", "model": "m", "base_url": "http://llm.test/v1",
+                                       "key_env": "LM_KEY"}, create=False)
+        assert ctx.config.models["lm"].key_env == "LM_KEY", "a keyed provider keeps the key it is given"
+    assert provider_defaults()["openai_compatible"] == {"base_url": None, "base_url_required": True, "context": 16384,
+                                                        "timeout_s": 180.0, "keyed": True}
+    assert provider_defaults()["ollama"]["base_url_required"] is False
+
+
+def test_switching_to_openai_compatible_without_a_base_url_is_refused(tmp_path):
+    with _ctx(tmp_path) as ctx:
+        with pytest.raises(InvalidQuery, match="needs a base_url"):
+            save_model_profile(ctx, "default", {"provider": "openai_compatible", "model": "m",
+                                                "base_url": "http://localhost:11434"}, create=False)

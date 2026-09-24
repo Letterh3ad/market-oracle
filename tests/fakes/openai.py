@@ -1,0 +1,51 @@
+"""A fake OpenAI-style /v1/chat/completions server, answering scripted message contents in order."""
+
+from __future__ import annotations
+
+import json
+
+import httpx
+
+
+class FakeOpenAI:
+    hosts = {"llm.test"}
+
+    def __init__(self, *contents, key: str | None = None, schema_format: bool = True,
+                 temperature: bool = True) -> None:
+        self.contents = list(contents)
+        """Strings sent as-is, dicts as a whole `message`-override, anything else as JSON text."""
+        self.key = key
+        """The key the server wants; None takes any request."""
+        self.schema_format = schema_format
+        """False: refuses a json_schema response_format with 400, as some servers do."""
+        self.temperature = temperature
+        """False: refuses any temperature but the default, as reasoning models do."""
+        self.requests: list[httpx.Request] = []
+        self.bodies: list[dict] = []
+        self.down = False
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if self.down:
+            raise httpx.ConnectError("connection refused", request=request)
+        self.requests.append(request)
+        body = json.loads(request.content)
+        self.bodies.append(body)
+        if request.url.path != "/v1/chat/completions":
+            return httpx.Response(404, json={"error": {"message": "not found"}})
+        if self.key and request.headers.get("authorization") != f"Bearer {self.key}":
+            return httpx.Response(401, json={"error": {"message": "Incorrect API key provided"}})
+        if not self.temperature and "temperature" in body:
+            return _refused("Unsupported value: 'temperature' does not support 0 with this model.")
+        if not self.schema_format and body.get("response_format", {}).get("type") == "json_schema":
+            return _refused("response_format json_schema is not supported by this server")
+        content = self.contents.pop(0)
+        if isinstance(content, dict) and "message" in content:
+            message = {"role": "assistant", **content["message"]}
+        else:
+            message = {"role": "assistant", "content": content if isinstance(content, str) else json.dumps(content)}
+        return httpx.Response(200, json={"id": "c1", "model": body["model"],
+                                         "choices": [{"index": 0, "message": message, "finish_reason": "stop"}]})
+
+
+def _refused(message: str) -> httpx.Response:
+    return httpx.Response(400, json={"error": {"message": message, "type": "invalid_request_error"}})
