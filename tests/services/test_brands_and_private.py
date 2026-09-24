@@ -9,9 +9,12 @@ import pytest
 from oracle.config import Config
 from oracle.research.llm import ModelError
 from oracle.services.business_fit import NamedIn
-from oracle.services.candidate_screen import Screen
+from oracle.net.gate import SourceGate
+from oracle.services.brands import sounds_private
+from oracle.market.yahoo import SEARCH_SOURCE
+from oracle.services.candidate_screen import MAX_LOOKUPS, Screen
 from oracle.services.context import open_context
-from oracle.services.discovery_chat_service import ask
+from oracle.services.discovery_chat_service import answer, ask, new_question
 from oracle.services.discovery_service import discover, theme_query
 from oracle.services.universe_service import refresh_universe
 from tests.fakes.clock import FakeClock
@@ -55,6 +58,7 @@ UNIVERSE = [
            industry_group="Materials", industry="Chemicals"),
     equity("108670.KS", "LG Hausys, Ltd.", "South Korea", "KSC", market_cap="Small Cap", **KR, sector="Industrials",
            industry_group="Capital Goods", industry="Building Products"),
+    equity("034220.KS", "LG Display Co., Ltd.", "South Korea", "KSC", market_cap="Mid Cap", **KR, **IT),
     equity("LGRDY", "Legrand SA", "France", "PNK", currency="USD", market_cap="Large Cap", **KIT),
     equity("6506.T", "YASKAWA Electric Corporation", "Japan", "JPX", currency="JPY", market_cap="Large Cap", **KIT),
     equity("YEC.DU", "YASKAWA EL. CORP.", "Japan", "DUS", currency="EUR", sector="Industrials"),
@@ -369,3 +373,117 @@ async def test_tick_discovery_resolves_brands_parents_and_private_names(ctx, new
     assert "Intrinsic is part of Alphabet Inc." in run.added[0].why
     assert reasons(run)["Mistral AI"] == "private, not listed"
     assert reasons(run)["Cradle"].startswith("private, not listed")
+
+
+# Gate round 1.
+
+@pytest.mark.parametrize("title", ["Amazon's Anthropic investment pays off", "Alphabet's Anthropic stake grows",
+                                   "Why Amazon's Anthropic bet matters", "Amazon's Anthropic deal is done",
+                                   "Alphabet's Anthropic backing pays off"])
+async def test_a_stake_in_a_company_is_not_owning_it(ctx, news, title):
+    view = await answered(ctx, news, title, "Anthropic")
+    assert symbols(view) == [], whys(view)
+
+
+@pytest.mark.parametrize("title", ["Alphabet-owned Intrinsic brings AI to factory robots",
+                                   "Alphabet's robotics unit Intrinsic brings AI to factory robots"])
+async def test_plain_ownership_still_names_the_parent(ctx, news, title):
+    view = await answered(ctx, news, title, "Intrinsic")
+    assert symbols(view) == ["GOOG"], left_off(view)
+
+
+async def test_a_never_list_name_before_the_name_refuses_a_small_listing(ctx, news):
+    view = await answered(ctx, news, "Tesla Optimus learns to fold shirts", "Optimus")
+    assert symbols(view) == [] and left_off(view)["Optimus"] == "on the never list"
+
+
+async def test_a_listed_company_s_name_before_the_name_refuses_a_small_listing(ctx, news):
+    view = await answered(ctx, news, "Alphabet Intrinsic opens a robot lab", "Intrinsic")
+    assert "IMED" not in symbols(view), left_off(view)
+
+
+def names(*names_):
+    return [(n, [1]) for n in names_]
+
+
+async def test_yahoo_is_searched_a_few_times_per_answer_at_most(ctx, news, yahoo):
+    unknown = ["Figure", "Apptronik", "Agility", "Unitree", "Sanctuary", "Physical Intelligence", "Skild"]
+    found(news, " and ".join(unknown) + " raise money")
+    await ask(ctx, ROBOTICS, model=naming(*names(*unknown)), searcher=FakeSearcher())
+    assert len(yahoo.searched) == MAX_LOOKUPS
+
+
+async def test_a_failing_search_never_pauses_prices(ctx, news, yahoo):
+    yahoo.search_status = 429
+    unknown = ["Figure", "Apptronik", "Agility", "Unitree", "Skild"]
+    found(news, " and ".join(unknown) + " and Siemens raise money")
+    view = await ask(ctx, ROBOTICS, model=naming(*names(*unknown, "Siemens")), searcher=FakeSearcher())
+    assert symbols(view) == ["SIE.DE"]
+    gate = SourceGate(ctx.conn, ctx.clock, ctx.config.sources)
+    assert gate.status("yahoo").state != "paused" and gate.status(SEARCH_SOURCE).state == "paused"
+
+
+@pytest.mark.parametrize("body", ["<html>EU consent</html>", '{"quotes": [{"symbol": "X", "score": "high"}]}',
+                                  '{"quotes": "none"}', "[]"])
+async def test_a_garbled_search_answer_is_no_answer(ctx, news, yahoo, body):
+    yahoo.quotes["Figure"] = body
+    view = await answered(ctx, news, "Figure raises money for humanoids", "Figure")
+    assert left_off(view)["Figure"] == "not in the universe under that name"
+
+
+async def test_past_the_deadline_names_are_matched_without_searches_or_model(ctx, news, yahoo):
+    found(news, "Toyota and Figure build robots")
+    m = naming(*names("Toyota", "Figure"), picks={"company": 1})
+    q = new_question(ctx, ROBOTICS)
+    view = await answer(ctx, q.id, m, FakeSearcher(), deadline=NOW)
+    assert yahoo.searched == [] and not any(c[0][0]["content"].startswith("Role: name_check.") for c in m.calls)
+    assert left_off(view)["Toyota"].startswith("ambiguous name")
+
+
+async def test_the_model_is_asked_once_per_name_and_news(ctx, news):
+    screen = Screen(ctx, 0, naming(picks={"company": 1}))
+    named_in = NamedIn(ROBOTICS, ("Toyota invests in robot hands",))
+    first = await screen.resolve("Toyota", named_in)
+    await screen.resolve("toyota", named_in)
+    calls = [c for c in screen._model.calls if c[0][0]["content"].startswith("Role: name_check.")]
+    assert first.symbol == "7203.T" and len(calls) == 1
+
+
+async def test_the_model_never_picks_from_more_than_it_is_shown(ctx, news):
+    view = await answered(ctx, news, "LG shows a robot vacuum", "LG", question=ANY, picks={"company": 1})
+    assert "LG" not in {line.item.name for line in view.shortlist}
+    assert left_off(view)["LG"].startswith("too short a name to tell which company")
+
+
+async def test_a_listing_yahoo_ranks_first_outside_the_universe_is_not_private(ctx, news, yahoo):
+    yahoo.quotes["Foxconn"] = [quote("2317.TW", "Hon Hai Precision Industry Co., Ltd.", score=500000.0),
+                               quote("FXCOF", "Foxconn Interconnect", score=20000.0)]
+    view = await answered(ctx, news, "Foxconn builds humanoids", "Foxconn")
+    assert left_off(view)["Foxconn"] == "listed as Hon Hai Precision Industry Co., Ltd. (2317.TW), not in the universe"
+
+
+async def test_yahoo_s_private_company_line_says_private(ctx, news, yahoo):
+    yahoo.quotes["Anthropic"] = [quote("ANTH.PVT", "Anthropic", kind="PRIVATE_COMPANY", score=90000.0)]
+    view = await answered(ctx, news, "Anthropic ships a robot model", "Anthropic")
+    assert left_off(view)["Anthropic"] == "private, not listed"
+
+
+@pytest.mark.parametrize(("name", "title", "private"), [
+    ("Nvidia", "Nvidia raises guidance ahead of next round of tariffs", False),
+    ("Rheinmetall", "Rheinmetall raises capital in a placement round", False),
+    ("Siemens", "Siemens buys a startup", False),
+    ("Flexiv", "Flexiv raises $100M in a Series C round", True),
+    ("Flexiv", "Shanghai robotics startup Flexiv shows an arm", True),
+    ("Flexiv", "Flexiv, a Shanghai robotics start-up, shows an arm", True),
+    ("Flexiv", "Flexiv raises money in a funding round", True),
+])
+def test_private_words_must_be_about_the_name(name, title, private):
+    assert sounds_private(name, [title]) is private
+
+
+async def test_samsung_in_a_robotics_story_needs_the_model(ctx, news):
+    view = await answered(ctx, news, "Samsung shows a humanoid robot", "Samsung")
+    assert left_off(view)["Samsung"] == ("ambiguous name: Samsung Electronics Co., Ltd., Samsung Biologics Co.,Ltd., "
+                                         "Samsung SDI Co., Ltd.")
+    view = await answered(ctx, news, "Samsung shows a humanoid robot", "Samsung", picks={"company": 1})
+    assert symbols(view) == ["005930.KS"], left_off(view)

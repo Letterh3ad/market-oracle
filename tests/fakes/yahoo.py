@@ -35,8 +35,9 @@ class FakeYahoo:
         self.expire_crumb_after_issue = False
         """The next quoteSummary rejects the crumb just issued (it expired)."""
         self.crumb_user_agents: list[str] = []
-        self.quotes: dict[str, list[dict]] = {}
-        """search text -> the quotes Yahoo's search gives (see `quote`); other text answers 404."""
+        self.quotes: dict[str, list[dict] | str] = {}
+        """search text -> the quotes Yahoo's search gives (see `quote`), or a raw body; other text answers 404."""
+        self.search_status = 200
         self.searched: list[str] = []
 
     def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
@@ -57,8 +58,12 @@ class FakeYahoo:
         if request.url.path == "/v1/finance/search":
             text = request.url.params.get("q", "")
             self.searched.append(text)
+            if self.search_status != 200:
+                return httpx.Response(self.search_status)
             if text not in self.quotes:
                 return httpx.Response(404)
+            if isinstance(self.quotes[text], str):
+                return httpx.Response(200, text=self.quotes[text])
             return httpx.Response(200, json={"explains": [], "count": len(self.quotes[text]),
                                               "quotes": self.quotes[text], "news": []})
         prefix = "/v8/finance/chart/"

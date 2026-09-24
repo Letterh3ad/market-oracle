@@ -19,7 +19,7 @@ from oracle.research.llm import ChatModel, ModelError
 from oracle.research.mentions import same_company
 from oracle.services.brands import (
     behind_quotes, is_place, named_whole, names_in, other_words, parents, sized, sounds_private, the_group,
-    usable,
+    usable, written_before,
 )
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
@@ -54,6 +54,8 @@ _CAP_INDEX = {band: i for i, band in enumerate(MARKET_CAP_BANDS)}
 CLEARLY_BIGGER_BANDS = 2
 # Yahoo ranks a brand's own listing this far above the rest when it knows the brand ("Google").
 CLEAR_LEAD = 10
+# Yahoo searches per pass: a tick or an answer names a few dozen companies, each could want one.
+MAX_LOOKUPS = 5
 MAX_NAMED_CANDIDATES = 4
 _DOTCOM = re.compile(r"\.com\b", re.IGNORECASE)
 EXACT, START, SYMBOL, LOOKUP, PARENT = "exact", "start", "symbol", "lookup", "parent"
@@ -79,8 +81,11 @@ class Screen:
         self.on_list = len(self._listed)
         self._seen: set[str] = set()
         self._hits: dict[str, tuple[list[SearchHit], dict[str, set[str]]]] = {}
-        self._settled: dict[tuple[str, NamedIn | None], tuple[ListingProfile | None, str | None]] = {}
+        self._settled: dict[tuple[str, NamedIn | None], _Match] = {}
         self._quotes: dict[str, list[Quote] | None] = {}
+        self._lookups = 0
+        self._picks: dict[tuple[str, NamedIn], SearchHit | None] = {}
+        self._owners: dict[tuple[str, NamedIn], _Match | None] = {}
         self._fit = BusinessFit(self._universe)
         self.notes: dict[str, str] = {}
         """Name -> how it was matched when not by its own name ("Intrinsic is part of Alphabet Inc.")."""
@@ -88,6 +93,11 @@ class Screen:
     @property
     def checks_left(self) -> bool:
         return self.checks < self._max_checks
+
+    def hurry(self) -> None:
+        """Out of time: names are matched by the rules alone from here, with no search or model."""
+        self._model = None
+        self._lookups = MAX_LOOKUPS
 
     async def identify(self, name: str, symbol: str | None = None,
                        named_in: NamedIn | None = None) -> tuple[ListingProfile | None, str | None]:
@@ -137,9 +147,11 @@ class Screen:
         why = None
         if found.kind == START:
             # "Tesla's Optimus" is no small company whose name happens to start so.
-            if p.market_cap not in _BIG and (owner := await self._parent(name, named_in)):
+            small = p.market_cap not in _BIG
+            if small and (owner := await self._parent(name, named_in)):
                 return owner
-            why = self._fit.misfit(p, name, named_in) or self._unsure(p, name, named_in)
+            why = ((small and self._written_after(p, name, named_in)) or self._fit.misfit(p, name, named_in)
+                   or self._unsure(p, name, named_in))
         elif found.kind == SYMBOL and p.market_cap in _TINY and not names_in(p.name, named_in.items):
             # "CATL" is a tiny SPAC's ticker as well as a battery maker's brand.
             why = f"{name} as a symbol is {p.name}, which the news does not name"
@@ -178,7 +190,7 @@ class Screen:
         looked = await self._looked_up(name, want) if lookup else None
         if looked:
             return looked
-        return _Match(None, PRIVATE if sounds_private(named_in.items) else NOT_FOUND)
+        return _Match(None, PRIVATE if sounds_private(name, named_in.items) else NOT_FOUND)
 
     def _search(self, want: str) -> tuple[list[SearchHit], dict[str, set[str]]]:
         """The usable hits for a name, each with every name its company's listings carry."""
@@ -209,20 +221,37 @@ class Screen:
 
     async def _model_pick(self, name: str, want: str, candidates: Sequence[SearchHit],
                           named_in: NamedIn) -> SearchHit | None:
-        """The candidate the model says the items mean. A place ("American") is never settled so."""
-        if self._model is None or not named_in.items or is_place(want):
+        """The candidate the model says the items mean, asked once per name and news. Never for a
+        place ("American"), nor past `name_check.MAX_COMPANIES` candidates (which few would be shown
+        is itself a guess)."""
+        if (want, named_in) in self._picks:
+            return self._picks[want, named_in]
+        if (self._model is None or not named_in.items or is_place(want)
+                or len(candidates) > name_check.MAX_COMPANIES):
             return None
-        shown = list(candidates[:name_check.MAX_COMPANIES])
         try:
             reply = await self._model.reply(name_check.prompt(name, named_in.asked, list(named_in.items),
-                                                              [_described(h) for h in shown]),
+                                                              [_described(h) for h in candidates]),
                                             name_check.SCHEMA)
         except ModelError:
             # A model that is down stays down for this pass; waiting out its timeout per name helps no one.
             self._model = None
             return None
-        at = name_check.picked(reply, len(shown))
-        return None if at is None else shown[at]
+        at = name_check.picked(reply, len(candidates))
+        self._picks[want, named_in] = None if at is None else candidates[at]
+        return self._picks[want, named_in]
+
+    def _written_after(self, p: ListingProfile, name: str, named_in: NamedIn) -> str | None:
+        """Why a small company is not the name the news writes straight after another company's
+        ("Tesla Optimus", "Alphabet Intrinsic"): a product or unit of that one."""
+        for owner in written_before(name, named_in.items):
+            if is_never(owner, self._never):
+                return NEVER
+            want = blind_name(owner)
+            hits, names = self._search(want)
+            if any(want in names[h.symbol] for h in hits):
+                return f"not matched to {p.name}: the news writes it after {owner}"
+        return None
 
     def _unsure(self, p: ListingProfile, name: str, named_in: NamedIn) -> str | None:
         """Why a small company matched by the start of its name may be another business of the
@@ -233,21 +262,27 @@ class Screen:
             return None
         if not self._fit.unsaid(other_words(p.name, name), named_in):
             return None
-        if sounds_private(named_in.items):
+        if sounds_private(name, named_in.items):
             return f"{PRIVATE} (the news calls {name} a startup; {p.name} is another company)"
         return (f"not matched to {p.name} ({p.industry or p.sector or 'trade unknown'}, "
                 f"{p.country or 'country unknown'}): only the start of its name fits")
 
     async def _parent(self, name: str, named_in: NamedIn) -> _Match | None:
-        """The listed company the items say owns the name, looked up only for the first owners
-        the universe does not hold."""
-        owners = parents(name, named_in.items)
-        for lookup in (False, True):
-            for owner in owners[:2] if lookup else owners:
+        """The listed company the items say owns the name, once per name and news: the universe
+        asked for the first two owners the items give and their shortest forms, Yahoo only for
+        those shortest ("Alphabet", never "Why Alphabet")."""
+        if (name, named_in) not in self._owners:
+            owners = parents(name, named_in.items)
+            shortest = [o for o in owners if not any(o.endswith(f" {x}") for x in owners)][:2]
+            self._owners[name, named_in] = None
+            for owner, lookup in [*((o, False) for o in dict.fromkeys(shortest + owners[:2])),
+                                  *((o, True) for o in shortest)]:
                 found = await self._find(owner, named_in, parent=False, lookup=lookup)
                 if found.profile is not None:
-                    return _Match(found.profile, kind=PARENT, note=f"{name} is part of {found.profile.name}")
-        return None
+                    self._owners[name, named_in] = _Match(found.profile, kind=PARENT,
+                                                          note=f"{name} is part of {found.profile.name}")
+                    break
+        return self._owners[name, named_in]
 
     async def _looked_up(self, name: str, want: str, besides: str | None = None) -> _Match | None:
         """What Yahoo's search lists under the name: a company of the universe named so, trading
@@ -267,21 +302,31 @@ class Screen:
         def ticker(q: Quote) -> bool:
             return q.symbol.split(".")[0].upper() == want.replace(" ", "").upper()
 
+        def leads(q: Quote) -> bool:
+            return any(same_company(blind_name(n), want) for n in (q.name, q.short_name))
+
         for rule, big_only in ((own, False), (ticker, False), (lambda q: q is lead, True)):
             for q in equities:
                 p = self._universe.profile(q.symbol) if rule(q) else None
-                if p is None or p.company_key == besides or (big_only and p.market_cap not in _BIG):
+                # Past a refused match, a tiny ticker twin is no better a guess than the ticker was.
+                if p is None or p.company_key == besides or (big_only and p.market_cap not in _BIG) or (
+                        besides and rule is ticker and p.market_cap in _TINY):
                     continue
                 return _Match(p, kind=LOOKUP, note=None if same_company(blind_name(p.name), want)
                               else f"{name} is listed as {p.name}")
         if besides is not None:
             return None
-        listed = next((q for q in equities if own(q) or ticker(q)
-                       or any(same_company(blind_name(n), want) for n in (q.name, q.short_name))), None)
+        # Yahoo keeps private companies as ".PVT" lines ("Anthropic").
+        if any(q.symbol.upper().endswith(".PVT") and (own(q) or leads(q)) for q in quotes):
+            return _Match(None, PRIVATE)
+        listed = lead or next((q for q in equities if own(q) or ticker(q) or leads(q)), None)
         return _Match(None, f"listed as {listed.name} ({listed.symbol}), not in the universe" if listed else PRIVATE)
 
     async def _quotes_for(self, name: str) -> list[Quote] | None:
         if name not in self._quotes:
+            if self._lookups >= MAX_LOOKUPS:
+                return None
+            self._lookups += 1
             try:
                 async with open_client(self._ctx) as client:
                     self._quotes[name] = await search_quotes(client, name)

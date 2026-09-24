@@ -14,6 +14,7 @@ from oracle.research.llm import ChatModel, ModelError
 from oracle.research.mentions import item_text, item_words, quoted_items
 from oracle.research.trace import Evidence
 from oracle.research.web import domain, outlet_key, site_name
+from oracle.services.brands import plain_text
 from oracle.services.candidate_screen import REMOVED, Screen
 from oracle.services.context import AppContext
 from oracle.services.discovery_service import RELATION_AUTO, SOURCE_QUESTION, add_checked, list_full, question_full
@@ -284,5 +285,5 @@ def relevance_prompt(question: str, company: str, items: list[str]) -> list[dict
 
 
 def _names(e: Evidence, names: set[str]) -> bool:
-    text = f" {normalise_name(item_words(e))} "
+    text = plain_text([item_words(e)])
     return any(f" {n} " in text for n in names)

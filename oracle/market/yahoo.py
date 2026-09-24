@@ -66,6 +66,8 @@ def _epoch(day: date) -> int:
 
 
 SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
+# Its own limiter and breaker: a burst of name searches must never pause prices.
+SEARCH_SOURCE = "yahoo_search"
 
 
 @dataclass(frozen=True)
@@ -84,10 +86,14 @@ async def search_quotes(client: RateLimitedClient, text: str) -> list[Quote]:
     """The lines Yahoo's search finds for `text`, best first: NoData or SourceFailed when it
     cannot say."""
     params = {"q": text, "quotesCount": "6", "newsCount": "0", "listsCount": "0"}
-    body = (await sources.get(client, SOURCE, SEARCH_URL, params)).json()
-    quotes = body.get("quotes") if isinstance(body, dict) else None
-    if not isinstance(quotes, list):
-        raise NoData("no quotes")
-    return [Quote(q["symbol"], q.get("longname") or q.get("shortname") or q["symbol"],
-                  q.get("shortname") or "", q.get("quoteType") or "", float(q.get("score") or 0))
-            for q in quotes if isinstance(q, dict) and isinstance(q.get("symbol"), str)]
+    resp = await sources.get(client, SEARCH_SOURCE, SEARCH_URL, params)
+    # A consent page, or quotes of another shape, is no answer: never a failure of the caller's run.
+    try:
+        quotes = resp.json()["quotes"]
+        if not isinstance(quotes, list):
+            raise TypeError("quotes is not a list")
+        return [Quote(q["symbol"], q.get("longname") or q.get("shortname") or q["symbol"],
+                      q.get("shortname") or "", q.get("quoteType") or "", float(q.get("score") or 0))
+                for q in quotes if isinstance(q, dict) and isinstance(q.get("symbol"), str)]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise NoData(f"unreadable search answer ({type(exc).__name__})") from None

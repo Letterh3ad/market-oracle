@@ -487,6 +487,8 @@ class _Shortlist(Screen):
         screened = {s.profile.company_key: s for s in screening.companies}
         out: list[ShortlistItem] = []
         for m in mentions:
+            if self._deadline and self._ctx.clock.utcnow() >= self._deadline:
+                self.hurry()
             cited = tuple(evidence[i].id for i in m.headlines)
             why = m.why or "named in the news found for the question"
             profile, why_not = await self.identify(m.name, named_in=_named_in(m, evidence, asked))
