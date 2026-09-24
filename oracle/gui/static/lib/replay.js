@@ -33,8 +33,8 @@ function replaySection() {
   const job = (label, path, payload, done) => busyButton(label, async () => {
     try {
       const started = await sendJson(path, payload());
-      await followJob(started, (j) => say(j.progress ?? `${label}: ${j.state}...`, false));
-      say(done, false);
+      const result = await followJob(started, (j) => say(j.progress ?? `${label}: ${j.state}...`, false));
+      say(done(result ?? {}), false);
     } catch (err) {
       say(err.message);
     }
@@ -48,7 +48,8 @@ function replaySection() {
       "aria-label": "Replay listings" });
     const create = job(label, "/api/replay", () => ({ first: first.value || null,
       symbols: symbols.value.split(",").map((s) => s.trim()).filter(Boolean) }),
-    "Created, paused: press Start when you want it to run.");
+    (r) => "Created, paused: press Start when you want it to run."
+      + (r.left_out?.length ? ` Left out, nothing fits: ${r.left_out.join("; ")}.` : ""));
     const where = cutoff ? `the model's measured cutoff is ${cutoff}; no replay may start before it`
       : "no model cutoff is measured yet, so pick the first day yourself: after what the model can know";
     return el("div", null,
@@ -88,7 +89,7 @@ function replaySection() {
         return el("tr", null, el("td", { class: "mono" }, p.symbol), el("td", null, p.region),
           el("td", null, p.sector), el("td", null, other, " ",
             job("Replace", "/api/replay/replace", () => ({ old: p.symbol, new: other.value.trim() }),
-              `Replaced ${p.symbol}.`)));
+              () => `Replaced ${p.symbol}.`)));
       }), ""),
     ];
   }

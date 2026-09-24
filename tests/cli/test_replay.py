@@ -43,11 +43,15 @@ def test_create_start_pause_and_status(cfg, capsys):
     assert replay(cfg, "create", "--from", "2026-06-01") == 0
     out = capsys.readouterr().out
     assert "Created replay study 1: 7 listings" in out and "It is paused" in out and "PETR4.SA" in out
+    assert "US Information Technology: checking AAPL" in out
+    assert "Left out, nothing fits: US Health Care; US Consumer Discretionary;" in out
     assert replay(cfg, "start") == 0
+    capsys.readouterr()
     replay(cfg, "status", "--json")
-    s = json.loads(capsys.readouterr().out.split("\n", 1)[1])
+    s = json.loads(capsys.readouterr().out)
     assert (s["state"], s["done"], s["failed"], s["listings"][0]["symbol"]) == ("running", 0, [], "AAPL")
     assert s["first_day"] == "2026-06-01" and s["pending"] == s["total"]
+    assert (s["polled_at"], s["finished"], s["complete"], s["left_out"]) == (None, False, False, [])
     assert replay(cfg, "pause") == 0
     capsys.readouterr()
     replay(cfg, "status")

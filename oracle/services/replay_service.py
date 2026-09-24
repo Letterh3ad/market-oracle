@@ -10,7 +10,7 @@ import logging
 import os
 import re
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, timedelta
 
 from oracle.jobs import pid_alive
@@ -85,9 +85,14 @@ ALLOWED = 2
 """Attempts a cell gets: its first and one automatic retry."""
 OUTAGE_AFTER = 3
 """Failures in a row with the same error that mean an outage (the model or the network), not bad cells."""
+ANY_OUTAGE_AFTER = 5
+"""Failures in a row whatever their errors that mean an outage: an error's text can vary per cell."""
 BACKOFF = timedelta(minutes=45)
 MAX_BACKOFFS = 4
-"""Back-offs in a row before the study pauses."""
+"""Back-offs of BACKOFF before they lengthen to LONG_BACKOFF; an outage never pauses the study."""
+LONG_BACKOFF = timedelta(hours=2)
+HARD_CAP = timedelta(minutes=45)
+"""The least a replay may run before it is stopped as hung: the cap is 3 times the longest recent one."""
 PREEMPTED_BY = ("research", "tick", "ask", "discover")
 """Kinds of other work a running replay gives way to: they need the model."""
 TOP_FAILURES = 3
@@ -149,6 +154,8 @@ class StudyStatus:
     """The pacer's last poll: an old one means no GUI server is pacing the study."""
     untouched: bool = False
     """No replay submitted yet, so a listing can still be replaced."""
+    left_out: tuple[str, ...] = ()
+    """Slots the pick could not fill; told only by the create that left them out."""
 
     @property
     def finished(self) -> bool:
@@ -217,7 +224,13 @@ async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | Non
     if not span or span[0] > first or span[1] < recent:
         try:
             await update_listing(ctx, symbol)
-        except (PriceUnavailable, UnknownSymbol) as exc:
+        except PriceUnavailable as exc:
+            if not exc.no_data:
+                # A source that did not answer says nothing about the listing: picking on
+                # without it would quietly change the spread.
+                raise InvalidQuery(f"the price sources did not answer ({exc}): try again once they do") from exc
+            return str(exc)
+        except UnknownSymbol as exc:
             return str(exc)
         span = bars.span([symbol])
     if not span:
@@ -229,16 +242,18 @@ async def _price_problem(ctx: AppContext, symbol: str, first: date) -> str | Non
     return None
 
 
-async def pick_listings(ctx: AppContext, first: date, say: Callable[[str], None] = lambda _: None) -> list[Picked]:
+async def pick_listings(ctx: AppContext, first: date,
+                        say: Callable[[str], None] = lambda _: None) -> tuple[list[Picked], list[str]]:
     """One listing per slot: the biggest band, then the most widely listed company, on its
     region's main board in its currency, that is not on the never list, a receipt or dead, and
-    whose prices run from `first` to now (fetched here). A slot the universe cannot fill is
-    left out, saying why."""
+    whose prices run from `first` to now (fetched here). Also the slots nothing filled."""
     universe = UniverseRepo(ctx.conn)
     dead = {s.upper() for s in HealthRepo(ctx.conn).dead_symbols()}
     picked: list[Picked] = []
+    left_out: list[str] = []
     for region, sector in SLOTS:
         tries = 0
+        filled = False
         for company in universe.largest_in(REGIONS[region], sector, BANDS):
             if tries == TRIES_PER_SLOT:
                 break
@@ -254,10 +269,12 @@ async def pick_listings(ctx: AppContext, first: date, say: Callable[[str], None]
                 continue
             profile = universe.profile(line.symbol)
             picked.append(Picked(line.symbol, company.name, region, sector, profile.market_cap if profile else None))
+            filled = True
             break
-        else:
+        if not filled:
+            left_out.append(f"{region} {sector}")
             say(f"{region} {sector}: nothing fits, left out")
-    return picked
+    return picked, left_out
 
 
 async def check_symbol(ctx: AppContext, symbol: str, first: date) -> Picked:
@@ -300,17 +317,18 @@ async def create_study(ctx: AppContext, first: date | None = None, symbols: list
     """A new study, paused: its listings (picked, or `symbols`) checked and saved, one cell
     per listing and month."""
     first, last = _window(ctx, first)
+    left_out: list[str] = []
     if symbols:
         picked = [await check_symbol(ctx, s, first) for s in dict.fromkeys(symbols)]
     else:
-        picked = await pick_listings(ctx, first, say)
+        picked, left_out = await pick_listings(ctx, first, say)
     if not picked:
         raise InvalidQuery("no listing in the universe fits the spread: refresh the universe first")
     _window(ctx, first)  # a replay may have started while prices were fetched
     cells = replay_cells(ctx, [p.symbol for p in picked], first, last)
     ReplayRepo(ctx.conn).create(ctx.clock.utcnow(), min(d for _, d in cells), max(d for _, d in cells),
                                 _listings_json(picked), cells, ALLOWED)
-    return _require_status(ctx)
+    return replace(_require_status(ctx), left_out=tuple(left_out))
 
 
 async def replace_listing(ctx: AppContext, old: str, new: str) -> StudyStatus:
@@ -425,8 +443,14 @@ def _require_status(ctx: AppContext) -> StudyStatus:
 
 
 def _error_kind(error: str, symbol: str) -> str:
-    """The error without what differs between cells, so one outage reads the same on each."""
-    return re.sub(r"\d+", "#", error.replace(symbol, "~"))[:80]
+    """The error without what differs between cells, so one outage reads the same on each: its
+    head (the text before the first colon, usually the error's type or source), without the
+    symbol, quoted text, addresses or numbers."""
+    head = error.split(":", 1)[0].replace(symbol, "~")
+    # A quote opens only after a non-letter, so an apostrophe ("model's") never starts one.
+    head = re.sub(r"(?<!\w)('[^']*'|\"[^\"]*\")", "''", head)
+    head = re.sub(r"0x[0-9a-fA-F]+", "#", head)
+    return re.sub(r"\d+", "#", head)[:80]
 
 
 class ReplayPacer:
@@ -439,10 +463,12 @@ class ReplayPacer:
         self._runner = runner
         self._scheduler = scheduler
         self._preempted: set[int] = set()
-        self._streak: list[int] = []
-        self._streak_kind: str | None = None
-        self._outage: str | None = None
-        """The error kind of an outage being waited out: its failures cost no attempt."""
+        self._timed_out: dict[int, str] = {}
+        """Jobs stopped as hung, and the error their cell gets."""
+        self._run: list[tuple[int, str]] = []
+        """The failures in a row since the last replay that ended well: cell and error kind."""
+        self._outage_since: datetime | None = None
+        """While an outage is waited out, its failures cost no attempt."""
         self._outage_error: str | None = None
         self._backoffs = 0
         self._resume_at: datetime | None = None
@@ -466,7 +492,7 @@ class ReplayPacer:
             self._settle(repo, study, cell)
         study = repo.current()
         if running := repo.cells(study.id, RUNNING):
-            self._make_way(running)
+            self._make_way(repo, study, running)
             return None
         if study.state != RUNNING:
             return None
@@ -491,8 +517,9 @@ class ReplayPacer:
         if not ctx.config.automation.enabled:
             return "automation is off"
         if self._resume_at and now < self._resume_at:
-            return (f"backing off after replays kept failing alike ({self._outage_error}): trying again at "
-                    f"{self._resume_at.astimezone():%H:%M}")
+            return (f"backing off: replays have kept failing since {self._outage_since.astimezone():%Y-%m-%d %H:%M} "
+                    f"({self._backoffs} back-off{'' if self._backoffs == 1 else 's'}; the last error: "
+                    f"{self._outage_error}); trying again at {self._resume_at.astimezone():%H:%M}")
         if busy := self._runner.current():
             return f"waiting for {busy[0].label} to finish"
         if elsewhere := held_elsewhere(ctx):
@@ -512,18 +539,27 @@ class ReplayPacer:
         durations = repo.durations(study.id, RECENT_REPLAYS)
         return timedelta(seconds=max(durations)) if durations else DEFAULT_REPLAY
 
-    def _make_way(self, running: list[CellRow]) -> None:
-        """Stop a running replay that a scheduled run or other model work is waiting for; its
-        cell goes back to pending at the next poll, costing nothing."""
+    def _make_way(self, repo: ReplayRepo, study: StudyRow, running: list[CellRow]) -> None:
+        """Stop a running replay that has hung (a failure), or that a scheduled run or other
+        model work is waiting for (its cell goes back to pending at the next poll, costing
+        nothing)."""
         replays = {c.job_id for c in running}
+        cap = max(3 * self._expected(repo, study), HARD_CAP)
+        now = self._ctx.clock.utcnow()
         for cell in running:
             job = self._runner.get(cell.job_id) if cell.job_id is not None else None
             if job is None or job.work is None or job.state not in ("queued", "running"):
                 continue
-            if why := self._in_the_way(replays):
+            if cell.started_at and now - cell.started_at > cap:
+                self._timed_out[job.id] = (f"stopped after running over {cap // timedelta(minutes=1)} minutes "
+                                           "(3 times the longest recent replay)")
+                self._runner.cancel(job.id)
+            elif why := self._in_the_way(replays):
                 self._preempted.add(job.id)
                 self._runner.cancel(job.id)
-                self.waiting = f"stopped the replay of {cell.symbol} as of {cell.as_of.isoformat()} for {why}"
+                what = "replay" if job.automatic else "replay retried in Activity"
+                self.waiting = (f"stopped the {what} of {cell.symbol} as of {cell.as_of.isoformat()} for {why}; "
+                                "it goes back in the queue")
 
     def _in_the_way(self, replays: set[int | None]) -> str | None:
         other = next((j for j in self._runner.current() if j.id not in replays and j.kind in PREEMPTED_BY), None)
@@ -546,9 +582,11 @@ class ReplayPacer:
             run_id = getattr(job.result, "id", None) or ResearchRepo(self._ctx.conn).replay_run_id(cell.symbol,
                                                                                                   cell.as_of)
             repo.mark_done(cell.id, run_id, job.finished_at or self._ctx.clock.utcnow())
-            self._streak, self._streak_kind, self._outage, self._backoffs = [], None, None, 0
+            self._run, self._outage_since, self._backoffs, self._resume_at = [], None, 0, None
         elif job.state == "failed":
             self._failed(repo, study, cell, job.error or "failed")
+        elif job.id in self._timed_out:
+            self._failed(repo, study, cell, self._timed_out.pop(job.id))
         else:
             repo.back_to_pending(cell.id)
             if job.id in self._preempted:
@@ -565,28 +603,25 @@ class ReplayPacer:
     def _failed(self, repo: ReplayRepo, study: StudyRow, cell: CellRow, error: str) -> None:
         now = self._ctx.clock.utcnow()
         repo.mark_failed(cell.id, error, now)
-        kind = _error_kind(error, cell.symbol)
-        if kind == self._outage:
+        if self._outage_since:  # the probe after a back-off: the outage goes on
             repo.refund([cell.id])
-            self._back_off(repo, study, error, now)
+            self._back_off(error, now)
             return
-        if kind != self._streak_kind:
-            self._streak, self._streak_kind, self._outage = [], kind, None
-        self._streak.append(cell.id)
-        if len(self._streak) >= OUTAGE_AFTER:
-            repo.refund(self._streak)
-            self._outage, self._streak = kind, []
-            self._back_off(repo, study, error, now)
+        self._run.append((cell.id, _error_kind(error, cell.symbol)))
+        alike = self._run[-OUTAGE_AFTER:]
+        if len(alike) == OUTAGE_AFTER and len({kind for _, kind in alike}) == 1:
+            outage = alike
+        elif len(self._run) >= ANY_OUTAGE_AFTER:
+            outage = self._run
+        else:
+            return
+        repo.refund([cell_id for cell_id, _ in outage])
+        self._run, self._outage_since = [], now
+        self._back_off(error, now)
 
-    def _back_off(self, repo: ReplayRepo, study: StudyRow, error: str, now: datetime) -> None:
+    def _back_off(self, error: str, now: datetime) -> None:
         self._backoffs, self._outage_error = self._backoffs + 1, error
-        if self._backoffs > MAX_BACKOFFS:
-            hours = MAX_BACKOFFS * BACKOFF / timedelta(hours=1)
-            repo.set_state(study.id, PAUSED, f"replays kept failing alike for about {hours:.0f} hours (the last: "
-                                             f"{error}): check the model, then press Start")
-            self._outage, self._backoffs, self._resume_at = None, 0, None
-            return
-        self._resume_at = now + BACKOFF
+        self._resume_at = now + (BACKOFF if self._backoffs <= MAX_BACKOFFS else LONG_BACKOFF)
 
     async def run(self) -> None:
         while True:

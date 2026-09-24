@@ -45,6 +45,8 @@ def _create(ctx: AppContext, args: argparse.Namespace) -> int:
     print(f"Created replay study {s.id}: {len(s.listings)} listings, {s.total} replays from "
           f"{s.first_day.isoformat()} to {s.last_day.isoformat()}. It is paused: `oracle replay start` runs it.")
     print_listings(s)
+    if s.left_out:
+        print(f"Left out, nothing fits: {'; '.join(s.left_out)}. `oracle replay replace` can swap a listing in.")
     return 0
 
 

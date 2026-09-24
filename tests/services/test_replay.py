@@ -15,7 +15,7 @@ from oracle.services.activity_service import JobRunner, retry, sweep_leftovers
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.replay_service import (
-    BACKOFF, MAX_BACKOFFS, ReplayPacer, create_study, pause_study, pick_listings, replace_listing, retry_failed,
+    BACKOFF, LONG_BACKOFF, MAX_BACKOFFS, ReplayPacer, create_study, pause_study, pick_listings, replace_listing, retry_failed,
     start_study, study_status,
 )
 from oracle.services.schedule_service import Scheduler
@@ -139,7 +139,7 @@ def london(ctx, runner, hhmm, midday=""):
 # The pick and the cells
 
 async def test_the_pick_spreads_over_regions_and_sectors_one_company_each(ctx):
-    picked = await pick_listings(ctx, FIRST)
+    picked, _ = await pick_listings(ctx, FIRST)
     assert [(p.symbol, p.region) for p in picked] == [
         ("AAPL", "US"), ("JPM", "US"), ("HSBA.L", "UK"), ("SAP.DE", "Europe"), ("6758.T", "Japan"),
         ("005930.KS", "Asia"), ("PETR4.SA", "Emerging")]
@@ -158,7 +158,7 @@ async def test_the_pick_takes_the_regions_own_line_on_its_main_board(ctx, yahoo)
     ])
     for symbol in ("TSM", "2330.TW", "DKI.BE", "6367.T", "LIN"):
         priced(yahoo, symbol)
-    assert [p.symbol for p in await pick_listings(ctx, FIRST)] == ["6367.T", "2330.TW"]
+    assert [p.symbol for p in (await pick_listings(ctx, FIRST))[0]] == ["6367.T", "2330.TW"]
 
 
 async def test_the_pick_never_takes_tesla_small_dead_young_stale_or_unpriced_listings(ctx, yahoo):
@@ -178,7 +178,8 @@ async def test_the_pick_never_takes_tesla_small_dead_young_stale_or_unpriced_lis
     priced(yahoo, "OLDCO", [d for d in WEEKDAYS if d <= date(2026, 8, 1)])
     HealthRepo(ctx.conn).note_no_data("DEAD", date(2026, 9, 1), dead_after=1)
     said = []
-    assert [p.symbol for p in await pick_listings(ctx, FIRST, said.append)] == ["MSFT", "AMZN"]
+    picked, left_out = await pick_listings(ctx, FIRST, said.append)
+    assert [p.symbol for p in picked] == ["MSFT", "AMZN"] and len(left_out) == 18
     assert any("NEWCO's prices start 2026-07-01" in s for s in said)
     assert any("OLDCO's last price is" in s for s in said)
     assert any("no price data for NOPRICE" in s for s in said)
@@ -350,6 +351,7 @@ async def test_a_running_replay_gives_way_to_a_tick_about_to_fire(ctx, runner, r
     await settle()
     ctx.clock.advance(29 * 60 + 10)
     assert pacer.check() is None and pacer.waiting.startswith("stopped the replay of AAPL")
+    assert pacer.waiting.endswith("it goes back in the queue")
     await settle()
     assert job.state == "cancelled"
     pacer.check()
@@ -475,24 +477,33 @@ async def test_retry_one_cell_by_id(ctx):
         retry_failed(ctx, b.id)
 
 
-async def test_replays_failing_alike_back_off_without_using_attempts_then_pause(ctx, runner, research):
+async def probe_fails(pacer, runner, research, error):
+    job = pacer.check()
+    symbol, day = research_key(job)
+    research.finish(symbol, day, error.format(symbol=symbol))
+    await runner.wait(job.id)
+    research.gates.clear()
+    assert pacer.check() is None  # settles the probe: another back-off
+
+
+async def test_replays_failing_alike_back_off_without_using_attempts_and_never_pause(ctx, runner, research):
     await started(ctx)
     pacer = ReplayPacer(ctx, runner)
     day = date(2026, 6, 1)
     for symbol in ("AAPL", "JPM", "HSBA.L"):
         await run_one(pacer, runner, research, symbol, day, f"ollama is not running ({symbol})")
     assert pacer.check() is None and pacer.waiting.startswith("backing off")
+    assert "(1 back-off; the last error: ollama is not running (HSBA.L))" in pacer.waiting
     assert all(c.attempts == 0 for c in cells(ctx)) and study_status(ctx).state == "running"
     for _ in range(MAX_BACKOFFS):
         ctx.clock.advance(BACKOFF.total_seconds())
-        job = pacer.check()
-        symbol, day = research_key(job)
-        research.finish(symbol, day, f"ollama is not running ({symbol})")
-        await runner.wait(job.id)
-        research.gates.clear()
-        assert pacer.check() is None  # settles the probe: another back-off, or the pause
+        await probe_fails(pacer, runner, research, "ollama is not running ({symbol})")
+    ctx.clock.advance(BACKOFF.total_seconds())
+    assert pacer.check() is None and "5 back-offs" in pacer.waiting  # now every 2 hours
+    ctx.clock.advance((LONG_BACKOFF - BACKOFF).total_seconds())
+    await probe_fails(pacer, runner, research, "ollama is not running ({symbol})")
     s = study_status(ctx)
-    assert s.state == "paused" and "kept failing alike" in s.paused_reason
+    assert (s.state, s.paused_reason) == ("running", None) and "6 back-offs" in s.waiting
     assert all(c.attempts == 0 for c in cells(ctx))
 
 
@@ -501,13 +512,76 @@ def research_key(job):
     return symbol, date.fromisoformat(day)
 
 
-async def test_different_failures_count_against_their_cells_and_never_back_off(ctx, runner, research):
+async def test_failures_whose_text_varies_still_count_as_one_outage(ctx, runner, research):
     await started(ctx)
     pacer = ReplayPacer(ctx, runner)
-    for n, symbol in enumerate(("AAPL", "JPM", "HSBA.L")):
-        await run_one(pacer, runner, research, symbol, date(2026, 6, 1), ["no verdict", "timeout", "bad json"][n])
+    errors = ["no verdict", "timeout after 300s", "bad json from the model", "connection reset", "HTTP 502"]
+    for symbol, error in zip(SYMBOLS, errors):
+        await run_one(pacer, runner, research, symbol, date(2026, 6, 1), error)
+    assert pacer.check() is None and pacer.waiting.startswith("backing off")
+    assert all(c.attempts == 0 for c in cells(ctx))
+
+
+async def test_an_isolated_failure_counts_against_its_own_cell(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 6, 1)
+    await run_one(pacer, runner, research, "AAPL", day, "no verdict")
+    await run_one(pacer, runner, research, "JPM", day)
     assert pacer.check() is not None
-    assert study_status(ctx).retrying == 3
+    aapl = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "AAPL", day)
+    assert (aapl.state, aapl.attempts, aapl.error) == ("pending", 1, "no verdict")
+
+
+def test_one_outage_reads_the_same_whatever_differs_per_cell():
+    from oracle.services.replay_service import _error_kind
+
+    assert _error_kind("unexpected error: ConnectError(<object at 0x7f3a9c>)", "AAPL") == "unexpected error"
+    assert (_error_kind("the model's answers were unusable for 'Apple Inc' at 12:03", "AAPL")
+            == _error_kind("the model's answers were unusable for 'Sony Group' at 14:55", "6758.T"))
+    assert _error_kind("no verdict", "AAPL") != _error_kind("timeout", "AAPL")
+
+
+async def test_a_hung_replay_is_stopped_and_counted_as_a_failure(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(44 * 60)
+    assert pacer.check() is None and job.state == "running"
+    ctx.clock.advance(2 * 60)
+    pacer.check()
+    await settle()
+    assert job.state == "cancelled"
+    pacer.check()
+    aapl = ReplayRepo(ctx.conn).cell_at(study_status(ctx).id, "AAPL", date(2026, 6, 1))
+    assert (aapl.state, aapl.attempts) == ("pending", 1) and "over 45 minutes" in aapl.error
+    assert study_status(ctx).state == "running"
+
+
+async def test_a_retry_on_a_picked_profile_is_not_taken_for_the_cell(ctx):
+    from oracle.services.activity_service import _adopt_replay_cell
+
+    await create_study(ctx, FIRST)
+    cell = cells(ctx)[0]
+    fail_for_good(ctx, cell)
+    _adopt_replay_cell(ctx, SimpleNamespace(id=77, profile="big"), "AAPL", cell.as_of)
+    assert ReplayRepo(ctx.conn).cell(cell.id).state == "failed"
+    _adopt_replay_cell(ctx, SimpleNamespace(id=77, profile=None), "AAPL", cell.as_of)
+    assert ReplayRepo(ctx.conn).cell(cell.id).state == "running"
+
+
+async def test_create_is_refused_while_the_price_sources_do_not_answer(ctx, yahoo):
+    UniverseRepo(ctx.conn).replace_all([*SPREAD, equity("MSFT", "Microsoft", "United States", IT, "NMS", "USD")])
+    yahoo.fail["MSFT"] = 503
+    with pytest.raises(InvalidQuery, match="did not answer"):
+        await create_study(ctx, FIRST, symbols=["MSFT"])
+
+
+async def test_create_tells_every_slot_it_left_out(ctx):
+    s = await create_study(ctx, FIRST)
+    assert "UK Energy" in s.left_out and "US Information Technology" not in s.left_out
+    assert len(s.left_out) + len(s.listings) == 20 and s.to_json()["left_out"] == list(s.left_out)
 
 
 async def test_a_replay_cancelled_in_activity_pauses_the_study_and_is_not_counted(ctx, runner, research):

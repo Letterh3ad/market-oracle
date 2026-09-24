@@ -20,7 +20,7 @@ def run(body: str, study=STUDY, cutoff=None):
     script = f"""
         {PRELUDE}
         ANSWERS = {{ "GET /api/replay": {{ study: {json.dumps(study)}, cutoff: {json.dumps(cutoff)} }},
-          "POST /api/replay": {{ id: 3, kind: "replay", state: "done", result: {{}} }},
+          "POST /api/replay": {{ id: 3, kind: "replay", state: "done", result: {{ left_out: ["UK Energy"] }} }},
           "POST /api/replay/replace": {{ id: 4, kind: "replay", state: "done", result: {{}} }} }};
         const sent = [];
         const plain = globalThis.fetch;
@@ -54,6 +54,7 @@ def test_without_a_study_the_card_offers_to_create_one_paused():
     assert sent == [["/api/replay", {"first": "2026-06-01", "symbols": []}],
                     ["/api/replay", {"first": "2026-06-01", "symbols": ["AAPL", "7203.T"]}]]
     assert "no model cutoff is measured yet" in text and "press Start" in text
+    assert "Left out, nothing fits: UK Energy." in text
 
 
 def test_a_measured_cutoff_fills_the_first_day():

@@ -456,6 +456,8 @@ def _retry_research(ctx: AppContext, runner: JobRunner, job) -> Job:
 def _adopt_replay_cell(ctx: AppContext, job: Job, symbol: str, day: date) -> None:
     """A retried replay of a study cell that failed or waits for its retry counts for that
     cell, so the study never runs it a second time."""
+    if job.profile is not None:
+        return  # the study replays on the slots; a run on a picked profile is another experiment
     repo = ReplayRepo(ctx.conn)
     study = repo.current()
     cell = repo.cell_at(study.id, symbol, day) if study else None
