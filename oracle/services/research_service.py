@@ -45,7 +45,8 @@ from oracle.system import idle
 
 __all__ = [
     "UNVALIDATED", "UNVALIDATED_TAG", "Claim", "check_as_of", "Refresh", "Report", "ResearchRun", "RunStatus", "Step", "Verdict",
-    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "research_run", "sweep_interrupted",
+    "latest_research", "latest_verdict", "refresh_research", "report_history", "research", "research_progress", "research_run", "stale_research",
+    "sweep_interrupted",
 ]
 
 log = logging.getLogger(__name__)
@@ -141,29 +142,36 @@ async def refresh_research(ctx: AppContext, progress: Callable[[str], None] = la
     (`[ai_account]`), most stale first, starting runs only while the time budget lasts.
     `progress` hears each listing as it starts; `run` defaults to `research`."""
     run = run or research
-    ai = ctx.config.ai_account
     started = ctx.clock.utcnow()
-    known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
-    due = due_for_research(known, started.date(), ai.max_verdict_age_days, ai.move_threshold)
+    due = stale_research(ctx)
     done = Refresh(len(due))
     if due and _pc_in_use(ctx):
         return _defer(done, due, "PC in use")
-    for i, d in enumerate(due):
-        if ctx.clock.utcnow() - started >= timedelta(minutes=ai.research_budget_min):
+    for i, symbol in enumerate(due):
+        if ctx.clock.utcnow() - started >= timedelta(minutes=ctx.config.ai_account.research_budget_min):
             return _defer(done, due[i:], "time budget spent")
-        progress(f"research {i + 1} of {len(due)}: {d.symbol}")
+        progress(f"research {i + 1} of {len(due)}: {symbol}")
         try:
-            await run(ctx, d.symbol)
+            await run(ctx, symbol)
         except JobAlreadyRunning:
             # A manual run holds the lock for minutes: leave the rest to the next tick.
             return _defer(done, due[i:], "research is busy")
         except Exception as exc:
             if not isinstance(exc, ServiceError):
-                log.exception("research on %s failed", d.symbol)
-            done.failed.append((d.symbol, str(exc) or type(exc).__name__))
+                log.exception("research on %s failed", symbol)
+            done.failed.append((symbol, str(exc) or type(exc).__name__))
         else:
-            done.researched.append(d.symbol)
+            done.researched.append(symbol)
     return done
+
+
+def stale_research(ctx: AppContext) -> list[str]:
+    """The watched listings whose report is missing, has no valid verdict, is too old or is
+    behind a price move (`[ai_account]`), in the order a tick researches them."""
+    ai = ctx.config.ai_account
+    known = [_known(ctx, s) for s in WatchlistRepo(ctx.conn).all_symbols()]
+    due = due_for_research(known, ctx.clock.utcnow().date(), ai.max_verdict_age_days, ai.move_threshold)
+    return [d.symbol for d in due]
 
 
 def _pc_in_use(ctx: AppContext) -> bool:
@@ -176,8 +184,8 @@ def _pc_in_use(ctx: AppContext) -> bool:
     return seconds is not None and seconds < s.idle_minutes * 60
 
 
-def _defer(done: Refresh, left: list, why: str) -> Refresh:
-    return Refresh(done.due, done.researched, done.failed, [d.symbol for d in left], why)
+def _defer(done: Refresh, left: list[str], why: str) -> Refresh:
+    return Refresh(done.due, done.researched, done.failed, left, why)
 
 
 def _known(ctx: AppContext, symbol: str) -> Known:

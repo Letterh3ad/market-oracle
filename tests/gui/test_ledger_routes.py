@@ -1,5 +1,8 @@
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
+
+import pytest
 
 from oracle.services.paper_service import place_buy, strategy_step
 from tests.fakes.yahoo import bar
@@ -73,10 +76,10 @@ async def test_the_ai_account_is_off_until_switched_on_and_then_steps_on_verdict
     assert ctx.config.ai_account.enabled is True
     on = (await priced.post("/api/ledgers/ai/step")).json()
     assert on["off"] is None and on["badge"].startswith("unvalidated: AI research")
-    assert [(d["symbol"], d["action"], d["reason"]) for d in on["decisions"]] == [
-        ("AAPL", "skip", "no verdict yet: run research on it")]
+    assert [(d["symbol"], d["action"], d["reason"], d["needs_research"]) for d in on["decisions"]] == [
+        ("AAPL", "skip", "no verdict yet: run research on it", True)]
     [d] = (await priced.get("/api/ledgers/decisions", params={"account": "ai"})).json()
-    assert (d["account"], d["symbol"], d["report_id"]) == ("ai", "AAPL", None)
+    assert (d["account"], d["symbol"], d["report_id"], d["needs_research"]) == ("ai", "AAPL", None, True)
     assert (await priced.get("/api/ledgers/decisions")).json() == []
 
 
@@ -119,3 +122,51 @@ async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, y
     assert lines["buy_and_hold"]["points"] == [["2026-09-23", 0.0]]
     assert lines["buy_and_hold"]["caption"].startswith("Buy and hold: equal amounts of the 1 listing")
     assert all({"max_fall", "trades", "costs"} <= set(line) for line in compare["lines"])
+
+
+@pytest.fixture
+def stalled(monkeypatch):
+    """Research that runs until cancelled, so queued jobs stay queued."""
+    from oracle.services import activity_service
+
+    async def research(c, symbol, **kw):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(activity_service, "research", research)
+
+
+async def cancel_all(client):
+    for job in (await client.get("/api/activity")).json()["jobs"]:
+        await client.post(f"/api/activity/{job['id']}/cancel")
+
+
+async def test_research_all_stale_queues_each_due_listing_once_and_says_what_is_waiting(loaded, stalled):
+    for s in ("AAPL", "KO"):
+        await loaded.post("/api/watchlists/main/items", json={"symbol": s})
+    assert (await loaded.get("/api/ledgers/ai/stale")).json() == {"due": ["AAPL", "KO"], "waiting": []}
+    pressed = await loaded.post("/api/ledgers/ai/research-stale")
+    assert pressed.status_code == 202
+    body = pressed.json()
+    assert [j["subject"] for j in body["queued"]] == ["AAPL", "KO"] and body["waiting"] == []
+    assert body["refused"] == []
+    again = (await loaded.post("/api/ledgers/ai/research-stale")).json()
+    assert (again["queued"], again["waiting"]) == ([], ["AAPL", "KO"])
+    assert (await loaded.get("/api/ledgers/ai/stale")).json() == {"due": ["AAPL", "KO"], "waiting": ["AAPL", "KO"]}
+    assert [j["label"] for j in (await loaded.get("/api/activity")).json()["jobs"]] == [
+        "Research AAPL", "Research KO"]
+    await cancel_all(loaded)
+
+
+async def test_a_decision_line_research_button_pressed_twice_queues_one_job(loaded, stalled):
+    await loaded.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    first = (await loaded.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
+    second = (await loaded.post("/api/jobs/research", params={"symbol": "AAPL"})).json()
+    assert first["id"] == second["id"]
+    assert len((await loaded.get("/api/activity")).json()["jobs"]) == 1
+    await cancel_all(loaded)
+
+
+async def test_nothing_watched_is_nothing_stale(loaded):
+    assert (await loaded.get("/api/ledgers/ai/stale")).json() == {"due": [], "waiting": []}
+    body = (await loaded.post("/api/ledgers/ai/research-stale")).json()
+    assert (body["queued"], body["waiting"], body["refused"]) == ([], [], [])
