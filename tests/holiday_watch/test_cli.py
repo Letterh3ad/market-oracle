@@ -79,6 +79,31 @@ def test_sql_is_read_only(tmp_path):
     c.close()
 
 
+@pytest.mark.parametrize("query", [
+    "ATTACH 'file:{new}?mode=rwc' AS x", "VACUUM INTO '{new}'", "PRAGMA user_version = 5",
+    "PRAGMA journal_mode = DELETE",
+])
+def test_sql_refuses_attach_vacuum_and_pragma_writes(tmp_path, query):
+    db, new = tmp_path / "o.db", tmp_path / "new.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE t (a)")
+    c.close()
+    w = watch(tmp_path, db=db)
+    code, out = run(w, "sql", query.format(new=new.as_posix()))
+    assert code == 1 and ("not authorized" in out or "authorization denied" in out)
+    assert not new.exists()
+
+
+def test_sql_still_reads_schema_pragmas(tmp_path):
+    db = tmp_path / "o.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE t (a)")
+    c.close()
+    w = watch(tmp_path, db=db)
+    code, out = run(w, "sql", "PRAGMA table_info(t)")
+    assert code == 0 and "a" in out
+
+
 def test_status_prints_the_watch_state(tmp_path):
     w = watch(tmp_path)
     w.cfg.reports.mkdir(parents=True)

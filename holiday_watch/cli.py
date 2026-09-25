@@ -23,6 +23,9 @@ from holiday_watch.watchdog import ensure_ollama, restart_app, run_pass
 
 POST_ALLOWED = re.compile(r"^/api/(replay/(retry|pause|start)|activity/(retry-all|\d+/(cancel|retry))|app/restart)$")
 SQL_ROWS = 200
+READ_PRAGMAS = {"table_info", "table_xinfo", "table_list", "index_list", "index_info", "index_xinfo",
+                "foreign_key_list"}
+"""Pragmas that take an argument and only read."""
 LOG_TAIL = 15
 
 
@@ -123,6 +126,7 @@ def _sql(w: Watch, args: argparse.Namespace) -> int:
         conn = sqlite3.connect(f"{w.cfg.db.resolve().as_uri()}?mode=ro", uri=True)
         try:
             conn.execute("PRAGMA query_only = ON")
+            conn.set_authorizer(_read_only)
             cur = conn.execute(args.query)
             rows = cur.fetchmany(SQL_ROWS)
             conn.rollback()
@@ -135,6 +139,15 @@ def _sql(w: Watch, args: argparse.Namespace) -> int:
     for row in rows:
         w.echo("\t".join("" if v is None else str(v) for v in row))
     return 0
+
+
+def _read_only(action: int, arg1: str | None, arg2: str | None, *_: object) -> int:
+    """ATTACH (which VACUUM INTO uses too) could create files; a PRAGMA with a value could write."""
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    if action == sqlite3.SQLITE_PRAGMA and arg2 is not None and (arg1 or "").lower() not in READ_PRAGMAS:
+        return sqlite3.SQLITE_DENY
+    return sqlite3.SQLITE_OK
 
 
 def _status(w: Watch, args: argparse.Namespace) -> int:
