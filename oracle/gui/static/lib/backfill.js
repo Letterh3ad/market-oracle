@@ -19,14 +19,40 @@ export function backfillSection() {
   });
   const details = el("details", null, el("summary", null, "Index backfill"),
     el("p", { class: "dim small" }, "Members of each market's main indexes that FinanceDatabase lacks, added from "
-      + "Yahoo (never Tesla, only ordinary shares), and lines it has under the wrong code or far off in size, "
+      + "Yahoo (never Tesla, only ordinary shares, no funds or investment trusts), and lines it has under the wrong code or far off in size, "
       + "corrected. Each press looks up a bounded batch; press again to carry on."),
-    el("div", { class: "row" }, button), out);
+    el("div", { class: "row" }, button), out, fundsPart());
   details.addEventListener("toggle", async () => {
     if (!details.open || out.childElementCount) return;
     try { show(await api("/api/universe/backfill")); } catch (err) { showError(err.message); }
   });
   return details;
+}
+
+// Investment trusts added before the backfill refused them: listed first, removed only on a second press.
+function fundsPart() {
+  const out = el("div");
+  const show = async (remove) => {
+    try {
+      clearError();
+      const r = remove ? await api("/api/universe/funds/remove", { method: "POST" }) : await api("/api/universe/funds");
+      const gone = r.lines.filter((x) => !x.kept).length;
+      out.replaceChildren(
+        el("p", { class: "dim small" }, !r.lines.length ? "No closed-end funds among the lines added."
+          : r.removed ? `Removed ${gone}.` : `${gone} to remove; held or watched lines stay.`),
+        ...(r.lines.length ? [fundTable(r.lines)] : []),
+        ...(!r.removed && gone ? [el("button", { onclick: () => show(true) }, `Remove ${gone}`)] : []));
+    } catch (err) { showError(`investment trusts: ${err.message}`); }
+  };
+  return el("div", null, el("div", { class: "row" },
+    el("button", { onclick: () => show(false) }, "Find investment trusts")), out);
+}
+
+function fundTable(lines) {
+  return el("table", { class: "results" },
+    el("thead", null, el("tr", null, ...["Listing", "Name", "Index", ""].map((h) => el("th", null, h)))),
+    el("tbody", null, ...lines.map((x) => el("tr", null, el("td", null, x.symbol), el("td", null, x.name),
+      el("td", null, x.index_code), el("td", { class: "dim small" }, x.kept ? `kept: ${x.kept}` : "")))));
 }
 
 // A regroup can re-key a company, so its sector correction no longer applies.

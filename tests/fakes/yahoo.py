@@ -148,11 +148,13 @@ def summary(currency: str, market_cap=None, **figures) -> dict:
 
 
 def profile(name: str, exchange: str, currency: str, market_cap: float | None, country: str | None = None,
-            sector: str | None = None, industry: str | None = None, quote_type: str = "EQUITY") -> dict:
+            sector: str | None = None, industry: str | None = None, quote_type: str = "EQUITY",
+            summary: str | None = None) -> dict:
     """The price and assetProfile modules a listing's profile reads, shaped as captured 2026-09-24."""
     price = {"longName": name, "shortName": name.upper()[:20], "exchange": exchange, "currency": currency,
              "quoteType": quote_type}
     if market_cap is not None:
         price["marketCap"] = {"raw": market_cap, "fmt": "x", "longFmt": "x"}
-    asset = {k: v for k, v in (("country", country), ("sector", sector), ("industry", industry)) if v}
+    asset = {k: v for k, v in (("country", country), ("sector", sector), ("industry", industry),
+                               ("longBusinessSummary", summary)) if v}
     return {"price": price, **({"assetProfile": asset} if quote_type == "EQUITY" else {})}

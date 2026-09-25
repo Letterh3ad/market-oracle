@@ -20,20 +20,23 @@ from oracle.services.http import open_client
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import Held, single_flight
 from oracle.services.never_list import is_never, never_names
-from oracle.store.backfill import CORRECTED, BackfillRepo
+from oracle.store.backfill import ADDED, CORRECTED, BackfillRepo
 from oracle.store.health import HealthRepo
+from oracle.store.paper import PaperRepo
 from oracle.store.universe import UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.universe import indexes as index_pages
 from oracle.universe.backfill import (
-    BACKFILL, inherit_classification, listing_from_profile, major_currency, usd_value,
+    BACKFILL, inherit_classification, is_closed_end_fund, listing_from_profile, major_currency, usd_value,
 )
 from oracle.universe.indexes import INDEXES, IndexSpec, Member, Unreadable, page_url, parse_members
 from oracle.universe.listings import (
     MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name, place_line,
 )
 
-__all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo",
-           "backfill_status", "backfill_universe"]
+__all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "CLOSED_END_FUND", "FundLine",
+           "FundSweep", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo", "backfill_status", "backfill_universe",
+           "closed_end_funds"]
 
 MAX_LOOKUPS = 150
 """Yahoo profiles one run asks for: about five minutes at Yahoo's pace."""
@@ -53,6 +56,7 @@ FROM_YAHOO = "yahoo"
 """The index code of a line discovery found on Yahoo rather than in an index."""
 ADDED_FROM_YAHOO = "added to the universe from Yahoo"
 ALREADY_THERE = "already in the universe"
+CLOSED_END_FUND = "a closed-end fund (investment trust)"
 # Yahoo names OTC ADR lines ("...Y" tickers) without "ADR"; a home line is never one of these.
 OTC_EXCHANGES = frozenset({"PNK", "OQX", "OQB"})
 
@@ -157,11 +161,56 @@ async def add_from_yahoo(ctx: AppContext, symbol: str,
 
 
 def refusal(p: YahooProfile, never) -> str | None:
-    """Why Yahoo's line may not join the universe: only a company's own shares, never a fund,
-    a depositary receipt or the never list."""
+    """Why Yahoo's line may not join the universe: only a company's own shares, never a fund
+    (closed-end ones included), a depositary receipt or the never list."""
     return (f"not a company's shares ({p.quote_type or 'no type'})" if p.quote_type != "EQUITY" else
             "a depositary receipt" if is_receipt(p.name or "") or is_receipt_symbol(p.symbol) else
+            CLOSED_END_FUND if is_closed_end_fund(p.name or "", p.exchange, p.industry, p.summary) else
             NEVER if is_never(p.name or "", never) else None)
+
+
+@dataclass(frozen=True)
+class FundLine:
+    symbol: str
+    name: str
+    index_code: str
+    kept: str | None
+    """"held" or "watched" when the line stays for that; None when it goes."""
+
+
+@dataclass(frozen=True)
+class FundSweep:
+    lines: tuple[FundLine, ...]
+    removed: bool
+    """Whether the lines not kept were removed, or only listed."""
+
+
+def closed_end_funds(ctx: AppContext, remove: bool = False) -> FundSweep:
+    """The closed-end funds the backfill or discovery added before it refused them, and with
+    `remove`, those no paper account holds and no watchlist tracks taken out of the universe
+    and noted as refused, so a backfill does not ask Yahoo for them again."""
+    repo = BackfillRepo(ctx.conn)
+    watched = {s.casefold() for s in WatchlistRepo(ctx.conn).all_symbols()}
+    held = {s.casefold() for s in PaperRepo(ctx.conn).held_symbols()}
+    lines = tuple(
+        FundLine(r.symbol, r.fields["name"], r.index_code,
+                 "held" if r.symbol.casefold() in held else "watched" if r.symbol.casefold() in watched else None)
+        for r in repo.rows() if r.kind == ADDED and is_closed_end_fund(
+            r.fields["name"], r.fields.get("exchange"), r.fields.get("industry"), r.fields.get("summary")))
+    gone = [x for x in lines if x.kept is None]
+    if remove and gone:
+        now = ctx.clock.utcnow()
+        with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
+            universe = UniverseRepo(ctx.conn)
+            keys = set()
+            for x in gone:
+                repo.drop(x.symbol, ADDED)
+                repo.note_try(x.symbol, x.index_code, CLOSED_END_FUND, True, now)
+                keys.add(universe.remove(x.symbol))
+            dead = HealthRepo(ctx.conn).dead_symbols()
+            for key in keys - {None}:
+                universe.repick_primary(key, dead)
+    return FundSweep(lines, remove)
 
 
 def rebuild(ctx: AppContext) -> None:

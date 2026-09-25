@@ -1,10 +1,18 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from oracle.config import Config
-from oracle.services.backfill_service import ADDED_FROM_YAHOO, ALREADY_THERE, add_from_yahoo, backfill_status, backfill_universe
+from oracle.services.backfill_service import (
+    ADDED_FROM_YAHOO, ALREADY_THERE, CLOSED_END_FUND, add_from_yahoo, backfill_status, backfill_universe,
+    closed_end_funds, rebuild,
+)
+from oracle.store.backfill import BackfillRepo
+from oracle.store.paper import PaperRepo
+from oracle.store.watchlists import WatchlistRepo
+from oracle.universe.listings import Listing
 from oracle.services.context import open_context
 from oracle.services.errors import UniverseNotLoaded
 from oracle.services import universe_service
@@ -331,3 +339,72 @@ async def test_a_backfill_names_the_correction_keys_matching_no_company(ctx, mon
     await refresh_universe(ctx)
     report = await run(ctx)
     assert report.stale_corrections == ("Gone plc (name:gone plc|United Kingdom|equity)",)
+
+
+TRUST_NO_PROFILE = profile("Invesco Asia Dragon Trust Ord", "LSE", "GBp", 3e8)
+TRUST_BY_SUMMARY = profile("Fidelity Emerging Markets Limited", "LSE", "GBp", 6e8, "United Kingdom",
+                           "Financial Services", "Asset Management",
+                           summary="Fidelity Emerging Markets Limited is a closed ended equity mutual fund.")
+
+
+@pytest.mark.parametrize(("symbol", "summary"), [("IAD.L", TRUST_NO_PROFILE), ("FEML.L", TRUST_BY_SUMMARY)])
+async def test_an_investment_trust_is_refused_like_a_fund(ctx, yahoo, symbol, summary):
+    yahoo.summaries[symbol] = summary
+    await refresh_universe(ctx)
+    assert await add_from_yahoo(ctx, symbol) == (None, CLOSED_END_FUND)
+    assert UniverseRepo(ctx.conn).resolve(symbol) is None
+
+
+async def test_the_backfill_refuses_an_investment_trust_in_an_index(ctx, wiki, yahoo):
+    wiki.pages["US_2"] = members_table(("IAD.L", "Invesco Asia Dragon Trust"))
+    yahoo.summaries["IAD.L"] = TRUST_NO_PROFILE
+    await refresh_universe(ctx)
+    report = await run(ctx, US)
+    assert [(c.symbol, c.kind, c.note) for c in report.changes] == [("IAD.L", "failed", CLOSED_END_FUND)]
+
+
+def _trust(symbol: str, name: str) -> Listing:
+    return Listing(symbol, name, "equity", "United Kingdom", "LSE", currency="GBp", source="backfill")
+
+
+@pytest.fixture
+async def trusts(ctx):
+    """Investment trusts a backfill added before it refused them, beside a company it added."""
+    await refresh_universe(ctx)
+    repo = BackfillRepo(ctx.conn)
+    for x in (_trust("IAD.L", "Invesco Asia Dragon Trust Ord"),
+              _trust("JMGI.L", "JPMorgan Emerging Markets Growth & Income plc."),
+              replace(_trust("SHAW.L", "Shawbrook Group PLC"), industry="Banks - Regional",
+                      summary="Shawbrook Group PLC provides lending.")):
+        repo.add(x, "ftse250", "in the FTSE 250", NOW)
+    rebuild(ctx)
+    return repo
+
+
+async def test_a_sweep_lists_the_investment_trusts_added_and_removes_nothing(ctx, trusts):
+    sweep = closed_end_funds(ctx)
+    assert [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", None), ("JMGI.L", None)]
+    assert not sweep.removed
+    assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None
+
+
+async def test_a_sweep_removes_them_but_never_a_watched_line(ctx, trusts, wiki, asked):
+    WatchlistRepo(ctx.conn).add("default", "jmgi.l", "2026-09-24")
+    sweep = closed_end_funds(ctx, remove=True)
+    assert sweep.removed and [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", None), ("JMGI.L", "watched")]
+    repo = UniverseRepo(ctx.conn)
+    assert repo.resolve("IAD.L") is None and search_universe(ctx, "Invesco Asia Dragon") == []
+    assert repo.resolve("JMGI.L") is not None and repo.resolve("SHAW.L") is not None
+    assert [x.symbol for x in trusts.added()] == ["JMGI.L", "SHAW.L"]
+    await refresh_universe(ctx)
+    assert repo.resolve("IAD.L") is None
+    wiki.pages["US_2"] = members_table(("IAD.L", "Invesco Asia Dragon Trust"))
+    await run(ctx, US)
+    assert "IAD.L" not in asked()
+
+
+async def test_a_held_line_is_kept(ctx, trusts, monkeypatch):
+    monkeypatch.setattr(PaperRepo, "held_symbols", lambda self, account=None: ["IAD.L"])
+    sweep = closed_end_funds(ctx, remove=True)
+    assert [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", "held"), ("JMGI.L", None)]
+    assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None

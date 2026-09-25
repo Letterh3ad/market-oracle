@@ -6,7 +6,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Query, Request
 
 from oracle.gui.deps import get_ctx
-from oracle.services.backfill_service import backfill_status
+from oracle.services.backfill_service import backfill_status, closed_end_funds
 from oracle.services.context import AppContext, worker_context
 from oracle.services.tags_service import list_tags
 from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe, universe_status
@@ -67,3 +67,14 @@ async def tags(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
 async def backfill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
     """Each index's backfill counts as they stand."""
     return [asdict(c) for c in backfill_status(ctx)]
+
+
+@router.get("/funds")
+async def funds(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The closed-end funds added before they were refused, and which of them would stay."""
+    return asdict(closed_end_funds(ctx))
+
+
+@router.post("/funds/remove")
+async def remove_funds(ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(closed_end_funds(ctx, remove=True))

@@ -1,9 +1,13 @@
+from datetime import datetime, timezone
 from functools import partial
 
 import pytest
 
 from oracle.cli import main as cli_main
-from oracle.services.context import open_context
+from oracle.services.backfill_service import rebuild
+from oracle.services.context import load_settings, open_context
+from oracle.store.backfill import BackfillRepo
+from oracle.universe.listings import Listing
 from tests.fakes.financedatabase import BASIC, ETF_COLUMNS, ETFS, FakeFinanceDatabase, bz2_csv, equity
 
 
@@ -23,6 +27,27 @@ def run(tmp_path, capsys, monkeypatch):
 
     _run.fdb = fdb
     return _run
+
+
+def _seed(run, tmp_path, *lines):
+    """Lines a backfill added, laid over the refreshed universe."""
+    run("universe", "refresh")
+    with open_context(*load_settings(tmp_path / "oracle.toml")) as ctx:
+        for x in lines:
+            BackfillRepo(ctx.conn).add(x, "ftse250", "in the FTSE 250", datetime(2026, 9, 23, tzinfo=timezone.utc))
+        rebuild(ctx)
+
+
+def test_funds_lists_investment_trusts_added_and_removes_only_when_told(run, tmp_path):
+    _seed(run, tmp_path, Listing("IAD.L", "Invesco Asia Dragon Trust Ord", "equity", "United Kingdom", "LSE",
+                                 source="backfill"))
+    code, out, _ = run("universe", "funds")
+    assert code == 0 and "IAD.L" in out and "--remove" in out
+    assert "IAD.L" in run("universe", "search", "invesco")[1]
+    code, out, _ = run("universe", "funds", "--remove")
+    assert code == 0 and "removed 1" in out
+    assert "IAD.L" not in run("universe", "search", "invesco")[1]
+    assert "no closed-end funds" in run("universe", "funds")[1]
 
 
 def test_status_before_a_refresh_says_how_to_load(run):

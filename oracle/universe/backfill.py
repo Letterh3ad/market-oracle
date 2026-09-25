@@ -3,6 +3,7 @@ lines it has wrong. Both are kept apart from its rows and laid over each refresh
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import replace
 
@@ -33,6 +34,23 @@ def listing_from_profile(p: YahooProfile, market: str | None, units_per_usd: flo
         industry=p.industry, market_cap=band_of_usd(usd) if usd is not None else None, website=p.website,
         summary=p.summary, source=BACKFILL,
     )
+
+
+# A real estate investment trust is a company that owns property, not a fund.
+_TRUST = r"(?<!estate )\binvestment trust\b"
+# What the line is, not what it sells: a financial group "raises investment trust funds".
+_FUND_SUMMARY = re.compile(r"\bclosed[- ]end(?:ed)?\b|\bis an? (?:[\w-]+ ){0,4}(?:fund|investment trust)\b",
+                           re.IGNORECASE)
+_FUND_NAME = re.compile(r"\b(?:trust|fund|ord)\b", re.IGNORECASE)
+
+
+def is_closed_end_fund(name: str, exchange: str | None, industry: str | None, summary: str | None) -> bool:
+    """An investment trust or other closed-end fund, which Yahoo types EQUITY: its summary says
+    so, or it has no business profile (how Yahoo lists London's trusts) and is on London or
+    named a trust or fund."""
+    if re.search(_TRUST, name, re.IGNORECASE) or (summary and _FUND_SUMMARY.search(summary)):
+        return True
+    return not industry and not summary and (exchange == "LSE" or bool(_FUND_NAME.search(name)))
 
 
 def usd_value(p: YahooProfile, units_per_usd: float | None) -> float | None:
