@@ -144,6 +144,15 @@ class UniverseRepo:
             )
             self._conn.execute("INSERT INTO listings_fts (listings_fts) VALUES ('rebuild')")
 
+    def add(self, listing: Listing) -> None:
+        """One more line, searchable at once; a regroup may later move it to another company."""
+        with transaction(self._conn):
+            cur = self._conn.execute(
+                f"INSERT INTO listings ({', '.join(_COLUMNS)}) VALUES ({', '.join('?' for _ in _COLUMNS)})",
+                [getattr(listing, c) for c in _COLUMNS])
+            self._conn.execute("INSERT INTO listings_fts (rowid, symbol, name) VALUES (?, ?, ?)",
+                               (cur.lastrowid, listing.symbol, listing.name))
+
     def listing_count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
 
@@ -278,8 +287,16 @@ class UniverseRepo:
 
     def all_listings(self) -> list[Listing]:
         """Every listing whole, in stored order."""
+        return self._whole("")
+
+    def company_lines(self, company_key: str) -> list[Listing]:
+        """The company's listings whole."""
+        return self._whole("WHERE company_key = ?", (company_key,))
+
+    def _whole(self, where: str, params: tuple = ()) -> list[Listing]:
         return [Listing(**{c: bool(r[c]) if c in ("delisted", "is_primary") else r[c] for c in _COLUMNS})
-                for r in self._conn.execute(f"SELECT {', '.join(_COLUMNS)} FROM listings ORDER BY rowid")]
+                for r in self._conn.execute(f"SELECT {', '.join(_COLUMNS)} FROM listings {where} ORDER BY rowid",
+                                            params)]
 
     def sources_of(self, symbols: Iterable[str]) -> dict[str, str | None]:
         """Casefolded symbol -> where its line came from (None for FinanceDatabase), for those listed."""

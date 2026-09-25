@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from oracle.config import Config
-from oracle.services.backfill_service import backfill_status, backfill_universe
+from oracle.services.backfill_service import ADDED_FROM_YAHOO, add_from_yahoo, backfill_status, backfill_universe
 from oracle.services.context import open_context
 from oracle.services.errors import UniverseNotLoaded
 from oracle.services.universe_service import refresh_universe, resolve_symbol, search_universe
@@ -238,3 +238,41 @@ async def test_the_live_kospi_page_adds_the_lg_home_lines(ctx, wiki, yahoo):
     added = {c.symbol for c in report.changes if c.kind == "added"}
     assert {"066570.KS", "373220.KS", "051910.KS", "003550.KS", "028260.KS"} <= added
     assert report.indexes[0].members == 200
+
+
+async def test_a_listing_found_on_yahoo_is_added_at_once_grouped_and_kept_by_a_refresh(ctx):
+    await refresh_universe(ctx)
+    assert await add_from_yahoo(ctx, "066570.KS") == ("066570.KS", ADDED_FROM_YAHOO)
+    lge = resolve_symbol(ctx, "066570.KS")
+    assert lge.company_key == resolve_symbol(ctx, "LGLG.F").company_key
+    assert [h.symbol for h in search_universe(ctx, "LG Electronics")] == ["066570.KS"]
+    row = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}["066570.KS"]
+    assert (row.source, row.is_primary, row.market_cap, row.sector) == (
+        "backfill", True, "Large Cap", "Consumer Discretionary")
+    await refresh_universe(ctx)
+    assert resolve_symbol(ctx, "066570.KS").company_key == resolve_symbol(ctx, "LGLG.F").company_key
+
+
+@pytest.mark.parametrize(("symbol", "summary", "why"), [
+    ("SPY", profile("SPDR S&P 500 ETF Trust", "PCX", "USD", None, quote_type="ETF"), "not a company's shares (ETF)"),
+    ("SSNLF", profile("Samsung Electronics GDR", "PNK", "USD", 1e9, "South Korea"), "a depositary receipt"),
+    ("TSLA", profile("Tesla, Inc.", "NMS", "USD", 1e12, "United States"), "on the never list"),
+    ("NOPE", None, "not on Yahoo"),
+])
+async def test_a_listing_found_on_yahoo_gets_the_backfill_s_guards(ctx, yahoo, symbol, summary, why):
+    if summary:
+        yahoo.summaries[symbol] = summary
+    await refresh_universe(ctx)
+    assert await add_from_yahoo(ctx, symbol) == (None, why)
+    assert UniverseRepo(ctx.conn).resolve(symbol) is None
+
+
+async def test_no_listing_is_added_while_the_universe_is_being_refreshed(ctx):
+    from oracle.services.jobs_service import single_flight
+    from oracle.services.universe_service import JOB, LEASE_S
+
+    await refresh_universe(ctx)
+    with single_flight(ctx, JOB, LEASE_S):
+        symbol, why = await add_from_yahoo(ctx, "066570.KS")
+    assert symbol is None and "already running" in why
+    assert UniverseRepo(ctx.conn).resolve("066570.KS") is None

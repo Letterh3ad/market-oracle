@@ -158,6 +158,15 @@ def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
     return out
 
 
+def place_line(line: Listing, grouped: Iterable[Listing]) -> str:
+    """The company key of the first `grouped` line `line` shares an ISIN or a name and country
+    with, else the key it would have alone: where a regroup would put it, short of the
+    placeholder and suffix-blind rules, which the next regroup applies."""
+    mine = set(_links(line))
+    joined = next((x.company_key for x in grouped if x.company_key and mine.intersection(_links(x))), None)
+    return joined or _company_key([line], set())
+
+
 def blind_link(x: Listing) -> tuple | None:
     name = blind_name(x.name)
     return ("blind", name, x.country or "", x.type) if name else None

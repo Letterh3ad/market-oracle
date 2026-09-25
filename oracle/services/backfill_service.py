@@ -17,18 +17,23 @@ from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.services import universe_service
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
+from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import Held, single_flight
 from oracle.services.never_list import is_never, never_names
 from oracle.store.backfill import CORRECTED, BackfillRepo
+from oracle.store.health import HealthRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe import indexes as index_pages
-from oracle.universe.backfill import BACKFILL, listing_from_profile, major_currency, usd_value
+from oracle.universe.backfill import (
+    BACKFILL, inherit_classification, listing_from_profile, major_currency, usd_value,
+)
 from oracle.universe.indexes import INDEXES, IndexSpec, Member, Unreadable, page_url, parse_members
 from oracle.universe.listings import (
-    MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name,
+    MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name, place_line,
 )
 
-__all__ = ["BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "backfill_status", "backfill_universe"]
+__all__ = ["ADDED_FROM_YAHOO", "BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo",
+           "backfill_status", "backfill_universe"]
 
 MAX_LOOKUPS = 150
 """Yahoo profiles one run asks for: about five minutes at Yahoo's pace."""
@@ -44,6 +49,9 @@ FAR_OFF = 2
 NEVER = "on the never list"
 NOT_ON_YAHOO = "not on Yahoo"
 CHECKED = "size checked"
+FROM_YAHOO = "yahoo"
+"""The index code of a line discovery found on Yahoo rather than in an index."""
+ADDED_FROM_YAHOO = "added to the universe from Yahoo"
 
 
 @dataclass(frozen=True)
@@ -103,6 +111,44 @@ async def backfill_universe(ctx: AppContext, on_progress: Callable[[str], None] 
     return BackfillReport(tuple(backfill_status(ctx, indexes)), tuple(run.changes), run.lookups, run.stopped)
 
 
+async def add_from_yahoo(ctx: AppContext, symbol: str) -> tuple[str | None, str]:
+    """Add the line Yahoo lists as `symbol` to the universe at once, under the index backfill's
+    guards, in the company a regroup would give it, and kept by every refresh after. Returns
+    (the symbol, ADDED_FROM_YAHOO), or (None, why not)."""
+    universe_service.require_loaded(ctx)
+    now = ctx.clock.utcnow()
+    async with open_client(ctx) as client:
+        yahoo = _Yahoo(client, now)
+        try:
+            p = await yahoo.profile(symbol)
+        except _Stop as exc:
+            return None, str(exc)
+        if isinstance(p, str):
+            return None, p
+        if why := refusal(p, never_names(ctx, user=True)):
+            return None, why
+        line = await yahoo.line(p, UniverseRepo(ctx.conn).markets())
+    try:
+        with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
+            repo = UniverseRepo(ctx.conn)
+            if repo.resolve(line.symbol) is None:
+                BackfillRepo(ctx.conn).add(line, FROM_YAHOO, ADDED_FROM_YAHOO, now)
+                key = place_line(line, repo.grouping_rows())
+                repo.add(inherit_classification([*repo.company_lines(key), replace(line, company_key=key)])[-1])
+                repo.repick_primary(key, HealthRepo(ctx.conn).dead_symbols())
+    except JobAlreadyRunning as exc:
+        return None, str(exc)
+    return line.symbol, ADDED_FROM_YAHOO
+
+
+def refusal(p: YahooProfile, never) -> str | None:
+    """Why Yahoo's line may not join the universe: only a company's own shares, never a fund,
+    a depositary receipt or the never list."""
+    return (f"not a company's shares ({p.quote_type or 'no type'})" if p.quote_type != "EQUITY" else
+            "a depositary receipt" if is_receipt(p.name or "") or is_receipt_symbol(p.symbol) else
+            NEVER if is_never(p.name or "", never) else None)
+
+
 def rebuild(ctx: AppContext) -> None:
     """The stored universe regrouped with the backfill laid over FinanceDatabase's own lines."""
     repo = UniverseRepo(ctx.conn)
@@ -143,7 +189,6 @@ class _Run:
         self.changes: list[BackfillChange] = []
         self.lookups = 0
         self.stopped: str | None = None
-        self._rates: dict[str, float | None] = {}
 
     async def read_pages(self, client: RateLimitedClient, indexes: Sequence[IndexSpec]) -> None:
         for i, spec in enumerate(indexes, 1):
@@ -166,7 +211,7 @@ class _Run:
                 return
 
     async def look_up(self, client: RateLimitedClient, indexes: Sequence[IndexSpec]) -> None:
-        self.summary, self.fx = QuoteSummary(client), YahooFx(client)
+        self.yahoo = _Yahoo(client, self.now)
         lines = UniverseRepo(self.ctx.conn).all_listings()
         self.markets = UniverseRepo(self.ctx.conn).markets()
         self.by_symbol = {x.symbol.casefold(): x for x in lines}
@@ -212,12 +257,9 @@ class _Run:
         p = await self._profile(m.symbol)
         if isinstance(p, str):
             return self._fail(spec, m.symbol, m.name, p)
-        why = (f"not a company's shares ({p.quote_type or 'no type'})" if p.quote_type != "EQUITY" else
-               "a depositary receipt" if is_receipt(p.name or "") or is_receipt_symbol(p.symbol) else
-               NEVER if is_never(p.name or "", self.never) else None)
-        if why:
+        if why := refusal(p, self.never):
             return self._fail(spec, m.symbol, p.name or m.name, why)
-        line = listing_from_profile(p, self.markets.get(p.exchange or ""), await self._rate(p.currency))
+        line = await self.yahoo.line(p, self.markets)
         line = replace(line, isin=m.isin) if m.isin else line
         note = f"in the {spec.name}; {line.market_cap or 'size unknown'}"
         self.repo.add(line, spec.code, note, self.now)
@@ -233,7 +275,7 @@ class _Run:
         if isinstance(p, str):
             fields, note = {"delisted": True}, f"{p}; {lists}"
         elif p.name and normalise_name(p.name) != normalise_name(x.name):
-            band = self._band(p, await self._rate(p.currency))
+            band = await self.yahoo.band(p)
             fields = {"name": p.name, **({"market_cap": band} if band else {})}
             note = f"Yahoo names it {p.name}; {lists}"
         else:
@@ -242,7 +284,7 @@ class _Run:
 
     async def _check(self, spec: IndexSpec, x: Listing) -> None:
         p = await self._profile(x.symbol)
-        if not isinstance(p, str) and (band := self._band(p, await self._rate(p.currency))):
+        if not isinstance(p, str) and (band := await self.yahoo.band(p)):
             if _apart(band, x.market_cap) >= FAR_OFF:
                 self._correct(spec, x, {"market_cap": band},
                               f"in the {spec.name}; Yahoo's market cap puts it in {band}, not {x.market_cap or 'no band'}")
@@ -257,8 +299,19 @@ class _Run:
         self.changes.append(BackfillChange(symbol, name, spec.name, "failed", why))
 
     async def _profile(self, symbol: str) -> YahooProfile | str:
-        """The profile, or why there is none; _Stop when Yahoo refuses to answer at all."""
         self.lookups += 1
+        return await self.yahoo.profile(symbol)
+
+
+class _Yahoo:
+    """Yahoo profiles over one client, and the dollar rates that band them."""
+
+    def __init__(self, client: RateLimitedClient, now: datetime) -> None:
+        self.summary, self.fx, self.now = QuoteSummary(client), YahooFx(client), now
+        self._rates: dict[str, float | None] = {}
+
+    async def profile(self, symbol: str) -> YahooProfile | str:
+        """The profile, or why there is none; _Stop when Yahoo refuses to answer at all."""
         try:
             return parse_profile(symbol, await self.summary.modules(symbol, PROFILE_MODULES))
         except NoData:
@@ -267,6 +320,13 @@ class _Run:
             raise _Stop(f"Yahoo stopped answering: {exc}") from None
         except (KeyError, IndexError, TypeError, ValueError, AttributeError):
             return "Yahoo's answer was unreadable"
+
+    async def line(self, p: YahooProfile, markets: dict[str, str]) -> Listing:
+        return listing_from_profile(p, markets.get(p.exchange or ""), await self._rate(p.currency))
+
+    async def band(self, p: YahooProfile) -> str | None:
+        usd = usd_value(p, await self._rate(p.currency))
+        return band_of_usd(usd) if usd is not None else None
 
     async def _rate(self, currency: str | None) -> float | None:
         """Units of `currency`'s major unit per US dollar, or None when Yahoo has none."""
@@ -280,11 +340,6 @@ class _Run:
             except (NoData, SourceFailed, KeyError, IndexError, TypeError, ValueError):
                 self._rates[major] = None
         return self._rates[major]
-
-    @staticmethod
-    def _band(p: YahooProfile, units_per_usd: float | None) -> str | None:
-        usd = usd_value(p, units_per_usd)
-        return band_of_usd(usd) if usd is not None else None
 
 
 def _same_line(x: Listing) -> tuple:
