@@ -26,12 +26,13 @@ Everything it writes goes to `holiday-reports/` (gitignored).
 - **pass** (every 30 min): restarts the app from the live worktree and starts Ollama when they
   do not answer, keeps one Remote Control session (PID file), starts a fix run on a trigger (app
   still down after 2 restarts, replay failures over 20% or one error 3 times, a job over 2 h, a
-  weekday tick missed by 45 min, no replay done in 6 h while idle), and reaps claude processes
-  that are idle or over 3 h, sparing the Remote Control session, a fix run in its first 30 min,
-  the Claude desktop app and Claude Code's daemon. One line per action in `watchdog.log`.
+  weekday tick missed by 45 min, no replay done in 6 h while idle), and reaps headless claude
+  (`-p`) that is idle or over 3 h, never a Remote Control session, a fix run in its first 30 min,
+  the app's own children, the Claude desktop app or Claude Code's daemon. Interactive sessions are
+  only logged unless `reaper.reap_interactive` is on. One line per action in `watchdog.log`.
 - **Fix runs**: one headless `claude -p` per trigger, locked down (`fix_prompt.md`, settings with
   `dontAsk`), killed after 30 min, at most 3 a day, the same kind not within 4 h. They act only
-  through `python -m holiday_watch api|restart-app|start-ollama|sql` and fix code on a
+  through `python -P -m holiday_watch status|api|restart-app|start-ollama|sql` and fix code on a
   `holiday-fix` branch; never deploy.
 - **report**: status, last tick, study progress and failures, interim score, account lines, the
   day's watchdog actions and fix runs, with a short claude summary on top (the plain report is

@@ -2440,16 +2440,34 @@ wants its decisions (triggers, fix-run limits, which claude processes die) teste
 **Decision:** `holiday_watch/` at the repo root, stdlib only, never importing `oracle` (a test
 checks), so an app import bug or a broken dependency cannot stop the watch, and every decision is
 a pure function tested with fakes. Side effects (HTTP, process list, spawn, kill, claude runs) sit
-behind one `System` and one `Http` seam; `--dry-run` swaps spawn, kill and run for log lines and
-keeps its own state file. Task Scheduler calls one thin `run.ps1`. Fix runs run under a detached
-supervisor (`fix-run`) holding a lock, so a pass never waits; the pass kills a run the supervisor
-failed to stop. Fix runs act only through `python -m holiday_watch api` (GET anything, POST an
-allowlist: replay retry/pause/start, activity cancel/retry, app restart), `restart-app`,
-`start-ollama` and a read-only `sql`, with a `dontAsk` settings file that allows edits only in the
-`holiday-fix` worktree. The reaper spares the Claude desktop app and Claude Code's daemon (both
-`claude.exe` on this PC) and the process chain that started the watch; the app's own `claude -p`
-children get no exception. A missing Remote Control PID file adopts a running session before
-launching a second one.
+behind one `System` and one `Http` seam; `--dry-run` swaps POST, spawn, kill and run for log lines
+and keeps its files in `holiday-reports/dry-run/`. Task Scheduler calls one thin `run.ps1`. Fix
+runs run under a detached supervisor (`fix-run`) holding a lock, so a pass never waits; the pass
+kills a run the supervisor failed to stop. Fix runs act only through `python -P -m holiday_watch`
+(`status`, `api` with GET anything and POST an allowlist, `restart-app`, `start-ollama`, a
+read-only `sql`), with a `dontAsk` settings file that allows edits only in the `holiday-fix`
+worktree. Each pass step fails alone into the log. A server is killed only when status failed
+three tries, its port is closed, it was down on the pass before and its PID still has the start
+time status reported.
 **Alternatives:** Plain PowerShell scripts (the HANDOFF plan; untestable without real processes);
 reusing `oracle` code for API shapes (couples the watch to the app it guards); psutil for the
 process list (a dependency; PowerShell CIM gives CPU time and command lines).
+
+## 2026-09-25 - Holiday reaper kills headless claude only; fix-run pytest is an accepted hole
+**Context:** Gate round 1 on holiday-watch: a Remote Control session opened by hand with
+`/remote-control` leaves no mark in its command line, so the reaper could not tell it from any
+other interactive session and would kill it when idle; a `/T` kill could take a protected child
+with it; fix runs could run edited code through their own watch copy, `--config` or pytest.
+**Decision (coordinator):** `reaper.reap_interactive = false` by default: only headless claude
+(`-p`/`--print`) that is idle or past its limit is killed; an interactive one is logged once as
+"would reap". Idle interactive sessions cost no usage. A Remote Control session (PID file, or
+`--remote-control`, `--rc`, the `remote-control` subcommand) is never reaped, even with the flag on.
+A process whose tree holds a protected one (Remote Control, a fix run in its window, the watch's
+ancestors, the app server's tree) is only logged, never `/T`-killed. `claude.exe` is matched by
+executable name, node only when running Claude Code. Fix runs call the watch with `python -P` and
+PYTHONPATH at the repo, only its listed subcommands, never `--config` (refused in code and denied),
+never edit `holiday_watch/` or the reports. The fix run's `pytest` on the holiday-fix worktree
+stays allowed: fixing code needs it, and a test it writes can do anything the user's account can.
+The prompt forbids tests that open the real DB or the live worktree; that is the only guard.
+**Alternatives:** Killing idle interactive sessions (kills a hand-opened Remote Control session);
+no pytest for fix runs (a code fix could not be checked); a real sandbox (none on this PC).
