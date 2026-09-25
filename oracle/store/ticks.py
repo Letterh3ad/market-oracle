@@ -12,6 +12,8 @@ INTERRUPTED = "interrupted"
 TICK = "tick"
 MIDDAY = "midday"
 """The midday pass: discovery and research only, stored beside ticks but never counted as one."""
+FILL = "fill"
+"""A fill pass: prices, FX and fills only, stored the same way."""
 KIND_SEP = "/"
 # No column for the kind: a midday run's trigger is stored as "midday/<trigger>", a tick's bare.
 

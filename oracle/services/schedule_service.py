@@ -1,6 +1,6 @@
 """Ticks on a timer inside the GUI server: weekdays at one local time, plus the midday pass
-at a second. The scheduler polls rather than sleeping until the due time, so a changed
-setting or a woken laptop is noticed within a poll."""
+at a second and the fill passes at their own. The scheduler polls rather than sleeping until
+the due time, so a changed setting or a woken laptop is noticed within a poll."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from oracle.services.activity_service import JobRunner, submit_tick
 from oracle.services.errors import InvalidQuery
 from oracle.services.settings_service import reload_live_settings
 from oracle.services.tick_service import (
-    KIND_LABELS, MIDDAY, TICK, TickRun, last_tick, record_skipped, ticked_since,
+    FILL, KIND_LABELS, MIDDAY, TICK, TickRun, last_tick, record_skipped, ticked_since,
 )
 from oracle.store.watchlists import WatchlistRepo
 
@@ -27,7 +27,9 @@ log = logging.getLogger(__name__)
 POLL_S = 30.0
 POSTPONE = timedelta(hours=1)
 MIDDAY_GRACE = timedelta(minutes=30)
-"""A midday pass not started this soon after its time is missed, not fired late."""
+"""A midday or fill pass not started this soon after its time is missed, not fired late."""
+WARNED = (TICK, MIDDAY)
+"""Kinds the banner warns of, postpones and skips: a fill pass is too light to be in the way."""
 SKIPPED_BY_USER = "skipped: skipped by the user"
 
 
@@ -71,6 +73,9 @@ class ScheduleView:
     midday_budget_min: int
     midday_next: datetime | None
     """None when scheduling or the midday pass is off."""
+    fill_times: tuple[str, ...]
+    fill_next: datetime | None
+    """The soonest fill pass; None when scheduling or the fill passes are off."""
 
 
 def schedule_status(ctx: AppContext, tz: tzinfo | None = None) -> ScheduleView:
@@ -78,8 +83,10 @@ def schedule_status(ctx: AppContext, tz: tzinfo | None = None) -> ScheduleView:
     now = ctx.clock.utcnow()
     next_run = next_due(now, s.time, tz) if s.enabled else None
     midday_next = next_due(now, s.midday_time, tz) if s.enabled and s.midday_time else None
+    fill_next = min((next_due(now, t, tz) for t in s.fill_times), default=None) if s.enabled else None
     return ScheduleView(s.enabled, s.time, next_run, len(WatchlistRepo(ctx.conn).all_symbols()), s.warn_minutes,
-                        s.research_when_idle, s.idle_minutes, s.midday_time, s.midday_budget_min, midday_next)
+                        s.research_when_idle, s.idle_minutes, s.midday_time, s.midday_budget_min, midday_next,
+                        s.fill_times, fill_next)
 
 
 @dataclass(frozen=True)
@@ -113,7 +120,7 @@ class Scheduler:
         self._postponed: set[tuple[str, datetime]] = set()
 
     async def check(self) -> TickRun | None:
-        """One poll: run the first slot (tick, then midday pass) that is due and has not run since."""
+        """One poll: run the first slot (tick, midday pass, then fill passes) that is due and has not run since."""
         if (stamp := self._stamp()) != self._file_stamp:
             self._file_stamp = stamp
             reload_live_settings(self._ctx)
@@ -142,22 +149,27 @@ class Scheduler:
         if now < fire_at:
             return None
         trigger = "catch-up" if due < self._started else "scheduled"
-        if kind == MIDDAY:
+        # A fill pass's skip is dated at its due time: dated now, it would cover a later fill time too.
+        dated = due if kind == FILL else None
+        if kind != TICK:
             if self._missed(fire_at, now):
                 if due < self._started:
                     return None  # the app was closed at its time: nothing to say
                 # Never fired late, but recorded, so the Ticks panel says why there was none.
                 grace = MIDDAY_GRACE // timedelta(minutes=1)
                 return record_skipped(ctx, trigger, f"missed: not started within {grace} minutes of its time",
-                                      kind=MIDDAY)
+                                      at=dated, kind=kind)
         elif trigger == "catch-up" and last_tick(ctx) is None:
             return None  # never ticked, so nothing was missed
-        label = KIND_LABELS[kind].lower()
-        # Only the same kind: a tick due while a midday pass is queued waits behind it.
-        if self._in_flight(kind):
-            return record_skipped(ctx, trigger, f"skipped: a {label} is already queued or running here", kind=kind)
-        # A midday pass queued behind a long manual tick checks its grace again as it starts.
-        deadline = fire_at + MIDDAY_GRACE if kind == MIDDAY else None
+        # Only the same kind: a tick due while a midday pass is queued waits behind it. A fill
+        # pass never queues behind anything, so it never delays what comes after.
+        busy = [j for j in self._runner.active("tick") if kind == FILL or j.subject == kind]
+        if busy:
+            what = KIND_LABELS.get(busy[0].subject, KIND_LABELS[TICK]).lower()
+            return record_skipped(ctx, trigger, f"skipped: a {what} is already queued or running here",
+                                  at=dated, kind=kind)
+        # A pass queued behind a long manual tick checks its grace again as it starts.
+        deadline = fire_at + MIDDAY_GRACE if kind != TICK else None
         job = await self._runner.wait(
             submit_tick(ctx, self._runner, trigger, skip_if_busy=True, kind=kind, due=due, deadline=deadline).id)
         if job.state == "done":
@@ -166,7 +178,7 @@ class Scheduler:
         # not, and without one this due time would be submitted again on the next poll.
         if ticked_since(ctx, due, kind):
             return last_tick(ctx, kind)
-        return record_skipped(ctx, trigger, f"skipped: {job.error}", kind=kind)
+        return record_skipped(ctx, trigger, f"skipped: {job.error}", at=dated, kind=kind)
 
     @staticmethod
     def _missed(fire_at: datetime, now: datetime) -> bool:
@@ -181,16 +193,18 @@ class Scheduler:
 
     def _slots(self) -> list[tuple[str, str]]:
         s = self._ctx.config.schedule
-        return [(TICK, s.time)] + ([(MIDDAY, s.midday_time)] if s.midday_time else [])
+        return ([(TICK, s.time)] + ([(MIDDAY, s.midday_time)] if s.midday_time else [])
+                + [(FILL, t) for t in s.fill_times])
 
     def upcoming(self) -> Upcoming | None:
-        """The next scheduled run (tick or midday pass) not yet run or skipped; None while
-        scheduling or automation is off."""
+        """The next scheduled tick or midday pass (the kinds the banner acts on) not yet run
+        or skipped; None while scheduling or automation is off."""
         ctx, s = self._ctx, self._ctx.config.schedule
         if not (s.enabled and ctx.config.automation.enabled):
             return None
         now = ctx.clock.utcnow()
-        return min((self._upcoming(kind, hhmm, now) for kind, hhmm in self._slots()), key=lambda u: u.at)
+        return min((self._upcoming(kind, hhmm, now) for kind, hhmm in self._slots() if kind in WARNED),
+                   key=lambda u: u.at)
 
     def _upcoming(self, kind: str, hhmm: str, now: datetime) -> Upcoming:
         ctx = self._ctx
@@ -231,7 +245,7 @@ class Scheduler:
         if due < self._floors[kind] or ticked_since(ctx, due, kind) or self._in_flight(kind):
             return False
         if due < self._started:  # a catch-up
-            if kind == MIDDAY:
+            if kind != TICK:
                 return not self._missed(self._fire_at(kind, due), now)
             return last_tick(ctx) is not None
         return True
@@ -262,9 +276,10 @@ class Scheduler:
             raise InvalidQuery("no scheduled tick or midday pass: scheduling or automation is off")
         return up
 
-    def _live_settings(self) -> dict[str, tuple[bool, str, AutomationConfig]]:
+    def _live_settings(self) -> dict[str, tuple[bool, str | tuple[str, ...], AutomationConfig]]:
         s, automation = self._ctx.config.schedule, self._ctx.config.automation
-        return {TICK: (s.enabled, s.time, automation), MIDDAY: (s.enabled, s.midday_time, automation)}
+        return {TICK: (s.enabled, s.time, automation), MIDDAY: (s.enabled, s.midday_time, automation),
+                FILL: (s.enabled, s.fill_times, automation)}
 
     def _stamp(self) -> int | None:
         path = self._ctx.config_source

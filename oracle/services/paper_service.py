@@ -226,7 +226,7 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
     orders = PaperRepo(ctx.conn).pending(account)
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, strategy_rules(ctx),
-                     {o.symbol for o in orders})
+                     {o.symbol for o in orders}, _share_costs(ctx, [s for s in sizes if s not in holdings]))
     # One decision per listing: a sell or a pending order says more than a lean problem.
     covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == Action.SELL}
     decisions = [d for d in unusable if d.symbol not in covered] + decided
@@ -241,6 +241,19 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
                                 reports.get(d.symbol), d.needs_research)])
     return decisions
+
+
+def _share_costs(ctx: AppContext, symbols: list[str]) -> dict[str, float]:
+    """One share at the last close in the base currency; a listing with no close or rate is left out."""
+    out = {}
+    for symbol in symbols:
+        try:
+            last = price_history_in_base(ctx, symbol, days=1)
+        except UnknownSymbol:
+            continue
+        if last and last[-1].close_base is not None:
+            out[symbol] = last[-1].close_base
+    return out
 
 
 def _never_bought(ctx: AppContext, symbols: list[str]) -> set[str]:

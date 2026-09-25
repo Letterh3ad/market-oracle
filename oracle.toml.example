@@ -68,6 +68,7 @@ research_when_idle = false   # true: a tick researches only once the PC has sat 
 idle_minutes = 15            # 1 to 240; otherwise research waits for the next tick
 midday_time = "12:30"        # a midday pass (discovery, then stale research; no prices, no trades); "" off
 midday_budget_min = 60       # minutes the midday pass may start work in, discovery included (1 to 480)
+fill_times = ["09:30", "15:15"]  # fill passes (prices, FX, fills only) so orders fill at the open; [] off
 
 # The master switch for everything that starts by itself (scheduled ticks now, later AI
 # research refreshes and discovery). Off: nothing starts on its own; buttons still work.

@@ -196,6 +196,14 @@ async def test_a_strategy_step_buys_on_a_lean_and_logs_every_decision(ctx, yahoo
     assert logged["VOD.L"].reason.startswith("probability") and logged["AAPL"].action == "buy"
 
 
+async def test_a_step_never_places_a_buy_smaller_than_one_share_at_the_last_close(ctx):
+    seed(ctx, "AAPL", "buy", size_share=0.005)  # 50 GBP of a 10,000 account; one share is 80 GBP
+    watch(ctx, "AAPL")
+    [d] = strategy_step(ctx)
+    assert (d.action, d.reason) == ("skip", "one share costs more than the position size")
+    assert not account_view(ctx, "strategy").pending
+
+
 async def test_a_strategy_step_sells_on_a_sell_lean(ctx, yahoo, clock):
     watch(ctx, "AAPL")
     seed(ctx, "AAPL", "buy")

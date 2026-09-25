@@ -350,3 +350,30 @@ def test_a_file_whose_tick_time_is_the_midday_default_still_loads_with_the_midda
     s = load_config(path, cwd=tmp_path)[0].schedule
     assert (s.time, s.midday_time) == ("12:30", "")
     assert "midday pass is off" in caplog.text
+
+
+def test_fill_passes_default_to_half_past_nine_and_quarter_past_three_and_an_empty_list_turns_them_off(tmp_path):
+    assert load_config(None, cwd=tmp_path)[0].schedule.fill_times == ("09:30", "15:15")
+    path = tmp_path / "oracle.toml"
+    path.write_text("[schedule]\nfill_times = []\n", encoding="utf-8")
+    assert load_config(path, cwd=tmp_path)[0].schedule.fill_times == ()
+    for line in ('fill_times = ["25:00"]', 'fill_times = "09:30"', "fill_times = [930]"):
+        path.write_text(f"[schedule]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="schedule.fill_times"):
+            load_config(path, cwd=tmp_path)
+
+
+@pytest.mark.parametrize("fills", [["22:30"], ["22:10"], ["12:50"], ["09:30", "09:45"], ["23:55"]])
+def test_a_fill_time_within_half_an_hour_of_another_run_is_refused_on_write_and_dropped_on_load(fills, caplog):
+    from oracle.config import check_schedule
+    raw = {"time": "22:30", "midday_time": "12:30", "fill_times": ["00:10", *fills] if fills == ["23:55"] else fills}
+    with pytest.raises(ConfigError, match="schedule.fill_times"):
+        check_schedule(raw, strict=True)
+    kept = check_schedule(raw).fill_times
+    assert len(kept) == len(raw["fill_times"]) - 1 and "fill" in caplog.text
+
+
+def test_fill_times_half_an_hour_clear_of_every_run_are_kept_in_order():
+    from oracle.config import check_schedule
+    raw = {"time": "22:30", "midday_time": "", "fill_times": ["15:15", "09:30", "12:30"]}
+    assert check_schedule(raw, strict=True).fill_times == ("09:30", "12:30", "15:15")
