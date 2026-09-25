@@ -109,6 +109,13 @@ def test_an_unexpected_error_is_logged(tmp_path):
     assert code == 1 and "restart-app failed: RuntimeError('boom')" in w.cfg.log_file.read_text(encoding="utf-8")
 
 
+def test_a_fix_run_may_not_pass_its_own_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOLIDAY_WATCH_FIXRUN", "1")
+    w = watch(tmp_path)
+    code, out = run(w, "status", "--config", str(tmp_path / "evil.toml"))
+    assert code == 2 and "--config" in out
+
+
 def test_fix_run_supervises(tmp_path):
     system = FakeSystem()
     w = watch(tmp_path, system=system)

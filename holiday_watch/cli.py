@@ -14,7 +14,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from holiday_watch import config
-from holiday_watch.fixrun import supervise
+from holiday_watch.fixrun import FIXRUN_ENV, supervise
 from holiday_watch.report import write_report
 from holiday_watch.seams import HttpError, RealSystem, UrllibHttp, Watch, dry
 from holiday_watch.state import load_state, read_lock, read_pid
@@ -59,7 +59,11 @@ def main(argv: list[str] | None = None, make_watch: Callable[[Path | None, bool]
     sql = sub.add_parser("sql", parents=[common], help="query the live database, read only")
     sql.add_argument("query")
     args = parser.parse_args(argv)
-    w = make_watch(args.config, args.dry_run)
+    refused = bool(os.environ.get(FIXRUN_ENV)) and args.config is not None
+    w = make_watch(None if refused else args.config, args.dry_run)
+    if refused:
+        w.echo("--config is not allowed inside a fix run")
+        return 2
     try:
         return COMMANDS[args.command](w, args)
     except HttpError as exc:

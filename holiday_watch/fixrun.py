@@ -12,8 +12,16 @@ from holiday_watch.seams import Watch
 from holiday_watch.state import clear_lock, read_lock
 
 
+FIXRUN_ENV = "HOLIDAY_WATCH_FIXRUN"
+"""Set for a fix run's claude: its holiday_watch commands refuse --config."""
+HW_SUBCOMMANDS = ("status", "api:*", "restart-app", "start-ollama", "sql:*")
+FIX_TREE = ".claude/worktrees/holiday-fix"
+
+
 def hw_command(cfg: Config) -> str:
-    return f"{cfg.python.as_posix()} -m holiday_watch"
+    """-P keeps the current folder off sys.path, so an edited copy of the watch in a worktree is
+    never the one run; PYTHONPATH (set by `supervise`) points at the repo's."""
+    return f"{cfg.python.as_posix()} -P -m holiday_watch"
 
 
 def fix_prompt(cfg: Config, trigger: dict) -> str:
@@ -35,15 +43,18 @@ def _rules(tool: str, path: Path) -> list[str]:
 def fix_settings(cfg: Config) -> dict:
     """Allowed: read anything, act only through the holiday_watch command, edit only the
     holiday-fix worktree, commit there and run its tests. dontAsk refuses everything else."""
-    fix_tree = cfg.repo / ".claude" / "worktrees" / "holiday-fix"
-    allow = ["Read", "Grep", "Glob", f"Bash({hw_command(cfg)}:*)", f"Bash({cfg.python.as_posix()} -m pytest:*)",
-             "Bash(cd:*)", "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)",
-             "Bash(git branch:*)", "Bash(git worktree add:*)", "Bash(git worktree list:*)", "Bash(git add:*)",
-             "Bash(git commit:*)", *_rules("Edit", fix_tree), *_rules("Write", fix_tree)]
+    fix_tree = cfg.repo / FIX_TREE
+    allow = ["Read", "Grep", "Glob", *(f"Bash({hw_command(cfg)} {sub})" for sub in HW_SUBCOMMANDS),
+             f"Bash({cfg.python.as_posix()} -m pytest:*)", "Bash(cd:*)",
+             "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
+             "Bash(git checkout holiday-fix)", f"Bash(git worktree add {FIX_TREE} -b holiday-fix integration)",
+             f"Bash(git worktree add {FIX_TREE} holiday-fix)", *_rules("Edit", fix_tree), *_rules("Write", fix_tree)]
     deny = ["Bash(git push:*)", "Bash(git merge:*)", "Bash(git reset:*)", "Bash(git rebase:*)",
-            "Bash(git checkout:*)", "Bash(git switch:*)", "Bash(schtasks:*)", "Bash(taskkill:*)",
+            "Bash(git branch:*)", "Bash(git switch:*)", "Bash(schtasks:*)", "Bash(taskkill:*)", "Bash(*--config*)",
             "Edit(**/oracle.toml)", "Write(**/oracle.toml)", "Edit(**/*.db)", "Write(**/*.db)",
-            *_rules("Edit", cfg.live), *_rules("Write", cfg.live), "WebFetch", "WebSearch"]
+            "Edit(**/holiday_watch/**)", "Write(**/holiday_watch/**)",
+            *_rules("Edit", cfg.live), *_rules("Write", cfg.live), *_rules("Edit", cfg.reports),
+            *_rules("Write", cfg.reports), "WebFetch", "WebSearch"]
     return {"permissions": {"allow": allow, "deny": deny, "defaultMode": "dontAsk"}, "disableAllHooks": True}
 
 
@@ -61,7 +72,8 @@ def supervise(w: Watch, trigger_file: Path) -> int:
     settings.write_text(json.dumps(fix_settings(cfg), indent=1), encoding="utf-8")
     try:
         # The run's own `holiday_watch` commands read this watch's settings from any folder.
-        env = {"HOLIDAY_WATCH_CONFIG": str((w.config_path or DEFAULT_FILE).resolve())}
+        env = {"HOLIDAY_WATCH_CONFIG": str((w.config_path or DEFAULT_FILE).resolve()), FIXRUN_ENV: "1",
+               "PYTHONPATH": str(cfg.repo)}
         ran = w.system.run(fix_command(cfg, settings), fix_prompt(cfg, trigger), cfg.fix_timeout_min * 60, cfg.repo,
                            env=env)
         out = cfg.fixruns / trigger_file.with_suffix(".md").name
