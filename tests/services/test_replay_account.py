@@ -162,7 +162,7 @@ def test_the_status_score_carries_no_account_and_the_json_report_carries_returns
     make_study(ctx, all_buy())
     assert score_study(ctx, ReplayRepo(ctx.conn).current()).account is None
     out = replay_report(ctx).to_json()["account"]
-    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold"]
+    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum"]
     assert out["lines"][0]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
     assert out["lines"][0]["points"][0] == ["2026-06-01", 0.0]
 
@@ -171,10 +171,23 @@ def test_a_baseline_account_runs_through_the_same_engine(ctx, monkeypatch):
     def always(symbol, bars):
         return Lean(symbol, bars[-1].date, "buy", 0.9, "momentum")
 
-    monkeypatch.setattr(replay_account, "BASELINES", {"momentum": ("Momentum: always buys.", always)})
+    monkeypatch.setattr(replay_account, "BASELINES",
+                        {"momentum": lambda history, rules: ("Momentum", "Momentum: always buys.", always)})
     make_study(ctx, {})
     momentum = lines(replay_report(ctx).account)["momentum"]
     assert momentum.caption == "Momentum: always buys." and momentum.trades == 2
+
+
+def test_the_momentum_baseline_is_drawn_and_leaves_the_other_lines_unchanged(ctx, monkeypatch):
+    make_study(ctx, {**all_buy(), ("AAA", JUL): ("sell", 0.8)})
+    account = replay_report(ctx).account
+    momentum = lines(account)["momentum"]
+    assert momentum.label == "Momentum" and "top 10 listings by 12-1 momentum" in momentum.caption
+    # Both listings rank, and the top 10 of two is both: bought on the first day, as buy and hold is.
+    assert momentum.trades == 2 and momentum.points[0] == (JUN, 0.0)
+    monkeypatch.setattr(replay_account, "BASELINES", {})
+    without = replay_report(ctx).account
+    assert without.lines == account.lines[:3] and (without.trades, without.notes) == (account.trades, account.notes)
 
 
 def test_the_control_line_trades_every_verdict_as_a_buy_under_the_default_caps(default_ctx):
@@ -353,7 +366,7 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     assert s.account.listings == SYMBOLS
     large, small = s.by_size
     assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
-    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold"]
+    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum"]
     # BBB only rose, AAA fell after July: the smaller half did better.
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
     shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
