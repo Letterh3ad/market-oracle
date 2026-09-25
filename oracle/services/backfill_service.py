@@ -208,7 +208,8 @@ def closed_end_funds(ctx: AppContext, remove: bool = False) -> FundSweep:
             for x in gone:
                 repo.drop(x.symbol, ADDED)
                 repo.note_try(x.symbol, x.index_code, CLOSED_END_FUND, True, now)
-                keys.add(universe.remove(x.symbol))
+                # FinanceDatabase's own row of it, if it now has one, stays.
+                keys.add(universe.remove(x.symbol, BACKFILL))
             dead = HealthRepo(ctx.conn).dead_symbols()
             for key in keys - {None}:
                 universe.repick_primary(key, dead)

@@ -424,6 +424,15 @@ async def test_a_sweep_removes_them_but_never_a_watched_line(ctx, trusts, wiki, 
     assert "IAD.L" not in asked()
 
 
+async def test_a_sweep_never_removes_a_line_financedatabase_now_lists_itself(ctx, trusts, fdb):
+    fdb.sha = "def456"
+    fdb.files["equities.bz2"] = bz2_csv([*UNIVERSE, equity("IAD.L", "Invesco Asia Dragon Trust", "United Kingdom",
+                                                           "LSE")])
+    await refresh_universe(ctx)
+    closed_end_funds(ctx, remove=True)
+    assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None
+
+
 async def test_a_held_line_is_kept(ctx, trusts, monkeypatch):
     monkeypatch.setattr(PaperRepo, "held_symbols", lambda self, account=None: ["IAD.L"])
     sweep = closed_end_funds(ctx, remove=True)

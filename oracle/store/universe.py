@@ -184,10 +184,11 @@ class UniverseRepo:
             self._conn.execute("INSERT INTO listings_fts (rowid, symbol, name) VALUES (?, ?, ?)",
                                (cur.lastrowid, listing.symbol, listing.name))
 
-    def remove(self, symbol: str) -> str | None:
-        """Drop one line and its search entry; its company's key, or None if it was not listed."""
+    def remove(self, symbol: str, source: str) -> str | None:
+        """Drop one line from `source` and its search entry; its company's key, or None if no
+        such line is listed."""
         row = self._conn.execute("SELECT rowid, symbol, name, company_key FROM listings WHERE symbol = ? "
-                                 "COLLATE NOCASE", (symbol,)).fetchone()
+                                 "COLLATE NOCASE AND source = ?", (symbol, source)).fetchone()
         if row is None:
             return None
         with transaction(self._conn):
