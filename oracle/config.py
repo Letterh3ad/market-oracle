@@ -136,11 +136,16 @@ class ScheduleConfig:
     midday_budget_min: int = 60
     """How long the midday pass may start work, discovery included; a research run started
     near the end finishes past it."""
+    fill_times: tuple[str, ...] = ("09:30", "15:15")
+    """Weekday fill passes, local time: prices, FX and fills only, so an order placed by the
+    evening tick fills at the next open the same day; () off. Each at least
+    `FILL_CLEARANCE_MIN` from the tick, the midday pass and each other."""
 
 
 WARN_RANGE = (0, 120)
 IDLE_RANGE = (1, 240)
 MIDDAY_BUDGET_RANGE = (1, 480)
+FILL_CLEARANCE_MIN = 30
 BLANK_OFF = {("schedule", "midday_time")}
 """Keys an empty value turns off, rather than resetting to the default."""
 
@@ -810,8 +815,44 @@ def check_schedule(raw: Mapping[str, object], strict: bool = False) -> ScheduleC
             if strict:
                 raise ConfigError(clash)
             log.warning("%s; the midday pass is off until one of them changes", clash)
-            return replace(s, midday_time="")
-    return s
+            s = replace(s, midday_time="")
+    return replace(s, fill_times=_fill_times(s, strict))
+
+
+def _fill_times(s: ScheduleConfig, strict: bool) -> tuple[str, ...]:
+    """Sorted; one within `FILL_CLEARANCE_MIN` of the tick, the midday pass or an earlier fill
+    time is refused when `strict`, else dropped with a warning."""
+    fills = s.fill_times
+    if not (isinstance(fills, (list, tuple)) and all(isinstance(t, str) for t in fills)):
+        raise ConfigError(f'schedule.fill_times must be a list of 24-hour times like ["09:30", "15:15"] '
+                          f'or [] (off), got {fills!r}')
+    for t in fills:
+        check_schedule_time(t, "fill_times", " in a list, or [] (off)")
+    taken = {s.time: f"the tick ({s.time})", **({s.midday_time: f"the midday pass ({s.midday_time})"}
+                                                 if s.midday_time else {})}
+    kept: list[str] = []
+    for t in sorted(fills):
+        near = next((what for other, what in taken.items() if _minutes_apart(t, other) < FILL_CLEARANCE_MIN), None)
+        if near is None:
+            kept.append(t)
+            taken[t] = f"the fill pass at {t}"
+            continue
+        clash = f"schedule.fill_times: {t} is within {FILL_CLEARANCE_MIN} minutes of {near}"
+        if strict:
+            raise ConfigError(clash)
+        log.warning("%s; that fill pass is off until one of them changes", clash)
+    return tuple(kept)
+
+
+def _minutes_apart(a: str, b: str) -> int:
+    """Round the clock, so 23:55 and 00:10 are 15 minutes apart."""
+    diff = abs(_minutes(a) - _minutes(b))
+    return min(diff, 24 * 60 - diff)
+
+
+def _minutes(hhmm: str) -> int:
+    hours, minutes = hhmm.split(":")
+    return int(hours) * 60 + int(minutes)
 
 
 def check_schedule_time(value: object, key: str = "time", also: str = "") -> str:

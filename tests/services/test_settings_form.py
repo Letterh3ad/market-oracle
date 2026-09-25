@@ -115,6 +115,17 @@ def test_a_midday_time_equal_to_the_tick_time_is_refused_on_write(ctx):
     assert ctx.config_source.read_bytes() == before
 
 
+def test_fill_times_are_a_list_row_applied_live_and_a_clash_is_refused_on_write(ctx):
+    assert row(ctx, "schedule", "fill_times")["kind"] == "list"
+    assert set_setting(ctx, "schedule", "fill_times", ["15:15", "09:00"])["value"] == ["15:15", "09:00"]
+    assert ctx.config.schedule.fill_times == ("09:00", "15:15")
+    before = ctx.config_source.read_bytes()
+    with pytest.raises(InvalidQuery, match="fill_times: 22:15 is within 30 minutes of the tick"):
+        set_setting(ctx, "schedule", "fill_times", ["22:15"])
+    assert ctx.config_source.read_bytes() == before
+    assert set_setting(ctx, "schedule", "fill_times", [])["value"] == [] and ctx.config.schedule.fill_times == ()
+
+
 def test_a_slot_is_a_row_choosing_a_profile_that_applies_at_once(ctx):
     path = ctx.config_source
     path.write_text(path.read_text(encoding="utf-8") + '\n[models.big]\nprovider = "ollama"\nmodel = "qwen3:8b"\n',
