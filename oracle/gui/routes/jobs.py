@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_fill, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -53,6 +53,12 @@ async def tick(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(g
 async def midday(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """Discovery, then research on stale listings; no prices, steps or orders."""
     return shapes.job(submit_midday(ctx, runner))
+
+
+@router.post("/fill", status_code=202)
+async def fill(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Prices, FX and fills only, so orders waiting on an open fill now."""
+    return shapes.job(submit_fill(ctx, runner))
 
 
 @router.post("/universe", status_code=202)

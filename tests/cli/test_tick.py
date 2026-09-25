@@ -55,3 +55,10 @@ def test_exit_code_is_non_zero_only_when_every_stage_failed(run, monkeypatch):
     monkeypatch.setattr(tick_service, "STAGES", {name: boom for name in tick_service.STAGES})
     code, out, _ = run("tick")
     assert code == 1 and ": failed" in out and "broken" in out
+
+
+def test_tick_fill_runs_a_fill_pass_only(run):
+    code, out, _ = run("tick", "--fill")
+    assert code == 0 and out.startswith("fill pass ") and "(manual): ok" in out
+    assert [line.split()[0] for line in out.splitlines()[1:]] == ["prices", "fx", "fill"]
+    assert run("tick", "--last")[1].startswith("no tick has run yet")

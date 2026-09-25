@@ -130,6 +130,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "replay cutoff --model": "GET /api/replay/cutoff",
     "tick": "POST /api/jobs/tick",
     "tick --last": "GET /api/status",
+    "tick --fill": "POST /api/jobs/fill",  # Ticks panel, "Run fill pass now"
     "schedule": "GET /api/status",
     "schedule --on": "PUT /api/settings/schedule",
     "schedule --off": "PUT /api/settings/schedule",

@@ -21,6 +21,8 @@ const middayOn = el("input", { type: "checkbox" });
 const middayTime = el("input", { type: "time" });
 const middayBudget = el("input", { type: "number", min: "1", max: "480", step: "1", class: "tag-input" });
 const DEFAULT_MIDDAY = "12:30";
+const fillTimes = el("input", { type: "text", class: "tag-input", placeholder: "09:30, 15:15",
+  title: "24-hour local times, comma separated; empty: no fill passes" });
 let refreshAll = async () => {};
 
 // Every control here saves the same way: PUT, show any refusal, repaint.
@@ -59,6 +61,8 @@ function mount(refresh) {
   middayOn.addEventListener("change", saveMidday);
   middayTime.addEventListener("change", () => { if (middayTime.value && middayOn.checked) saveMidday(); });
   middayBudget.addEventListener("change", () => saveSetting("midday_budget_min", Number(middayBudget.value)));
+  fillTimes.addEventListener("change", () => saveSetting("fill_times",
+    fillTimes.value.split(",").map((t) => t.trim()).filter(Boolean)));
   document.getElementById("tick-controls").replaceChildren(
     runButton("Run tick now", "/api/jobs/tick"),
     el("label", null, toggle, " Run automatically on weekdays at "), time,
@@ -73,6 +77,11 @@ function mount(refresh) {
       middayOn, " Midday pass on weekdays at "), middayTime,
     el("label", null, ", starting research for up to ", middayBudget, " minutes"),
     el("span", { id: "midday-next", class: "dim small" }));
+  document.getElementById("fill-options").replaceChildren(
+    runButton("Run fill pass now", "/api/jobs/fill"),
+    el("label", { title: "Prices, FX and fills only, so an order placed by the evening tick fills at the next open. "
+      + "No analysis, research or steps." }, "Fill passes on weekdays at "), fillTimes,
+    el("span", { id: "fill-next", class: "dim small" }));
 }
 
 function showSchedule(schedule) {
@@ -87,6 +96,10 @@ function showSchedule(schedule) {
   document.getElementById("midday-next").textContent = schedule.midday_next
     ? `Next ${when(schedule.midday_next)}: discovery and research only, never trades.`
     : `Discovery and research only, never trades${schedule.midday_time ? "; runs while Run automatically is on" : ""}.`;
+  if (document.activeElement !== fillTimes) fillTimes.value = schedule.fill_times.join(", ");
+  document.getElementById("fill-next").textContent = schedule.fill_next
+    ? `Next ${when(schedule.fill_next)}: prices and fills only, so orders fill at the open.`
+    : `Prices and fills only${schedule.fill_times.length ? "; runs while Run automatically is on" : ": none set"}.`;
   let text;
   if (schedule.enabled) {
     text = `Next run ${when(schedule.next_run)}, while this app is open.`;
@@ -98,7 +111,7 @@ function showSchedule(schedule) {
   document.getElementById("schedule-next").textContent = text;
 }
 
-// One run, tick or midday pass: its outcome line and a row per stage.
+// One run, tick, midday or fill pass: its outcome line and a row per stage.
 function lastRun(run) {
   return [
     el("p", null, `Last ${run.label.toLowerCase()} ${when(run.started_at)} (${run.trigger}): `, outcome(run.outcome),
@@ -110,13 +123,14 @@ function lastRun(run) {
   ];
 }
 
-function show(tick, schedule, midday) {
+function show(tick, schedule, midday, fill) {
   showSchedule(schedule);
   document.getElementById("tick-state").replaceChildren(
     tick ? el("span", null, "Last tick ", outcome(tick.outcome), ` ${when(tick.started_at)}`) : "No tick yet");
   document.getElementById("tick-last").replaceChildren(
     ...(tick ? lastRun(tick) : [el("p", { class: "dim" }, "No tick has run yet.")]),
-    ...(midday ? lastRun(midday) : []));
+    ...(midday ? lastRun(midday) : []),
+    ...(fill ? lastRun(fill) : []));
 }
 
 function hhmm(iso) {
