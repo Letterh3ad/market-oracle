@@ -25,12 +25,13 @@ from oracle.services.prices_service import update_watched
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
 from oracle.store.replay import ReplayRepo
-from oracle.store.ticks import INTERRUPTED, MIDDAY, TICK, Stage, TickRepo, TickRun
+from oracle.store.ticks import FILL, INTERRUPTED, MIDDAY, TICK, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
-    "KIND_LABELS", "MIDDAY", "MIDDAY_STAGES", "STAGES", "Stage", "TICK", "TickRun", "discover_cap_min",
-    "discovery_line", "last_midday", "last_tick", "record_skipped", "run_midday", "run_tick", "ticked_since",
+    "FILL", "FILL_STAGES", "KIND_LABELS", "MIDDAY", "MIDDAY_STAGES", "STAGES", "Stage", "TICK", "TickRun",
+    "discover_cap_min", "discovery_line", "last_fill", "last_midday", "last_tick", "record_skipped", "run_fill",
+    "run_midday", "run_tick", "RUNS", "ticked_since",
 ]
 
 log = logging.getLogger(__name__)
@@ -48,9 +49,10 @@ StageRun = Callable[[AppContext, Say], Awaitable[tuple[str, str | None]]]
 it is, for a long stage's progress."""
 
 
-async def _prices(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+async def _prices(ctx: AppContext, _: Say, with_study: bool = True) -> tuple[str, str | None]:
+    """With `with_study`, the replay study's prices too (the tick's; a fill pass keeps to its own)."""
     run = await update_watched(ctx, fx=False)
-    study = await _study_prices(ctx)
+    study = await _study_prices(ctx) if with_study else ""
     if not run.listings:
         return "nothing watched" + study, None
     added = sum(o.added for o in run.listings)
@@ -236,7 +238,16 @@ def _midday_stages(started: datetime) -> dict[str, StageRun]:
 
 
 MIDDAY_STAGES = ("discover", "questions", "research")
-KIND_LABELS = {TICK: "Tick", MIDDAY: "Midday pass"}
+
+
+async def _fill_prices(ctx: AppContext, say: Say) -> tuple[str, str | None]:
+    return await _prices(ctx, say, with_study=False)
+
+
+FILL_RUN_STAGES: dict[str, StageRun] = {"prices": _fill_prices, "fx": _fx, "fill": _fill}
+"""Enough for an order waiting on the next open to fill: no analysis, research or steps."""
+FILL_STAGES = tuple(FILL_RUN_STAGES)
+KIND_LABELS = {TICK: "Tick", MIDDAY: "Midday pass", FILL: "Fill pass"}
 MIDDAY_RUN = KIND_LABELS[MIDDAY].lower()
 
 
@@ -251,6 +262,15 @@ async def run_midday(ctx: AppContext, trigger: str = "manual",
                      on_stage: Callable[[str], None] | None = None) -> TickRun:
     """Discovery, then research on stale listings, under the tick's lock so the two never overlap."""
     return await _run(ctx, MIDDAY, trigger, _midday_stages(ctx.clock.utcnow()), on_stage)
+
+
+async def run_fill(ctx: AppContext, trigger: str = "manual",
+                   on_stage: Callable[[str], None] | None = None) -> TickRun:
+    """Prices, FX and fills, under the tick's lock like the rest."""
+    return await _run(ctx, FILL, trigger, FILL_RUN_STAGES, on_stage)
+
+
+RUNS = {TICK: run_tick, MIDDAY: run_midday, FILL: run_fill}
 
 
 async def _run(ctx: AppContext, kind: str, trigger: str, run_stages: dict[str, StageRun],
@@ -325,3 +345,7 @@ def last_tick(ctx: AppContext, kind: str = TICK) -> TickRun | None:
 
 def last_midday(ctx: AppContext) -> TickRun | None:
     return last_tick(ctx, MIDDAY)
+
+
+def last_fill(ctx: AppContext) -> TickRun | None:
+    return last_tick(ctx, FILL)

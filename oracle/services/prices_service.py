@@ -129,9 +129,10 @@ async def update_listings(ctx: AppContext, symbols: Sequence[str], since: date) 
 
 
 async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
-    """Every watched listing, every listing a paper account holds and every configured
-    benchmark once, then (with `fx`) the FX their currencies need, in one process at a time.
-    Held listings are priced off every list too, so a stop can still sell them. A watched
+    """Every watched listing, every listing a paper account holds or has an order pending on,
+    and every configured benchmark once, then (with `fx`) the FX their currencies need, in one
+    process at a time. Held listings are priced off every list too, so a stop can still sell
+    them, and ordered ones so the order can fill. A watched
     listing that fails is reported as a failure; a held one or a benchmark not in the
     universe is skipped with a note instead (nobody's watchlist entry gone missing). Either
     way the rest carry on."""
@@ -141,6 +142,7 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
         watched = WatchlistRepo(ctx.conn).all_symbols()
         universe = UniverseRepo(ctx.conn)
         held = held_unwatched(ctx, watched)
+        held += sorted({o.symbol for o in PaperRepo(ctx.conn).pending()} - set(watched) - set(held))
         benchmarks = [s for s in ctx.config.compare.benchmarks if s not in watched and s not in held]
         also_benchmark = set(held) & set(ctx.config.compare.benchmarks)
         unlisted = {s: ("held and a benchmark, but no longer in the universe: not priced" if s in also_benchmark
