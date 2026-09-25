@@ -35,7 +35,7 @@ def test_refresh_then_status_shows_counts_and_commit(run):
     code, out, _ = run("universe", "refresh")
     assert code == 0
     assert "7 listings" in out and "4 companies" in out
-    assert "backfilling index members" in out
+    assert "oracle universe backfill" in out and "backfilling" not in out
     _, out, _ = run("universe", "status")
     assert "abc123" in out
     assert "1 delisted" in out

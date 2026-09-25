@@ -22,7 +22,7 @@ from oracle.services.universe_service import (
 def register(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="universe_command", required=True)
     sub.add_parser(
-        "refresh", help="download FinanceDatabase (~17MB), replace the local universe, then backfill"
+        "refresh", help="download FinanceDatabase (~17MB) and replace the local universe, keeping backfilled lines"
     ).set_defaults(handler=refresh)
     sub.add_parser(
         "backfill", help=f"add index members the universe lacks from Yahoo (up to {MAX_LOOKUPS} lookups a run)"
@@ -59,7 +59,9 @@ def register(parser: argparse.ArgumentParser) -> None:
 def refresh(ctx: AppContext, args: argparse.Namespace) -> int:
     print("downloading FinanceDatabase...", flush=True)
     _print(asyncio.run(refresh_universe(ctx)))
-    return backfill_cmd(ctx, args)
+    # Minutes of paced lookups: the GUI queues them as a job; here they wait to be asked for.
+    print("backfilled lines kept; `oracle universe backfill` looks up index members still missing")
+    return 0
 
 
 def backfill_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
