@@ -4,7 +4,7 @@ import pytest
 
 from oracle.market.yahoo import YahooProfile
 from oracle.universe.backfill import (
-    BACKFILL, apply_backfill, inherit_classification, is_closed_end_fund, listing_from_profile,
+    BACKFILL, apply_backfill, inherit_classification, listing_from_profile,
 )
 from oracle.universe.listings import Listing, group_companies
 
@@ -81,34 +81,3 @@ def test_a_delisted_line_lends_no_classification():
     assert {x.symbol: x for x in grouped}["066570.KS"].sector == "Information Technology"
 
 
-@pytest.mark.parametrize("name, exchange, industry, summary", [
-    # Yahoo gives London investment trusts no business profile at all.
-    ("Invesco Asia Dragon Trust Ord", "LSE", None, None),
-    ("JPMorgan Emerging Markets Growth & Income plc.", "LSE", None, None),
-    ("Alliance Witan Ord", "LSE", None, None),
-    ("Seraphim Space Investment Trust Ord", "LSE", "Asset Management", "Invests in space companies."),
-    ("Scottish Mortgage", "LSE", "Asset Management", "Scottish Mortgage is an investment trust managed by Baillie."),
-    ("Fidelity Emerging Markets Limited", "LSE", "Asset Management",
-     "Fidelity Emerging Markets Limited is a closed ended equity mutual fund launched by Genesis."),
-    ("Foresight Environmental Infrastructure Limited", "LSE", "Asset Management",
-     "John Laing Environmental Assets Group Limited is a fund of John Laing Capital Management Limited."),
-    ("Adams Diversified Equity Fund", "NYQ", None, None),
-    ("Some Growth Trust", "NMS", None, None),
-])
-def test_closed_end_funds_are_told_apart(name, exchange, industry, summary):
-    assert is_closed_end_fund(name, exchange, industry, summary)
-
-
-@pytest.mark.parametrize("name, exchange, industry, summary", [
-    ("Shawbrook Group PLC", "LSE", "Banks - Regional", "Shawbrook Group PLC provides lending."),
-    ("Sumitomo Mitsui Trust Group, Inc.", "JPX", "Banks - Regional", "Operates as a trust bank in Japan."),
-    ("Link Real Estate Investment Trust", "HKG", "REIT - Retail", "A real estate investor."),
-    ("ICG plc", "LSE", "Asset Management",
-     "ICG plc is a private equity firm specializing in direct and fund of fund investments."),
-    ("ISU Specialty Chemical Co., Ltd.", "KSC", None, None),
-    ("Hua Nan Financial Holdings Co., Ltd.", "TAI", "Banks - Regional",
-     "Hua Nan issues beneficiary certificates to raise investment trust funds and making securities investments."),
-    ("Northern Trust Corporation", "NMS", "Asset Management", "Provides wealth management services."),
-])
-def test_companies_are_not_taken_for_closed_end_funds(name, exchange, industry, summary):
-    assert not is_closed_end_fund(name, exchange, industry, summary)

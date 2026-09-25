@@ -50,9 +50,10 @@ function fundsPart() {
 
 function fundTable(lines) {
   return el("table", { class: "results" },
-    el("thead", null, el("tr", null, ...["Listing", "Name", "Index", ""].map((h) => el("th", null, h)))),
+    el("thead", null, el("tr", null, ...["Listing", "Name", "Index", "Why", ""].map((h) => el("th", null, h)))),
     el("tbody", null, ...lines.map((x) => el("tr", null, el("td", null, x.symbol), el("td", null, x.name),
-      el("td", null, x.index_code), el("td", { class: "dim small" }, x.kept ? `kept: ${x.kept}` : "")))));
+      el("td", null, x.index_code), el("td", { class: "dim small" }, x.why),
+      el("td", { class: "dim small" }, x.kept ? `kept: ${x.kept}` : "")))));
 }
 
 // The backfill's corrections, each undoable; the stored line keeps it until the next refresh.

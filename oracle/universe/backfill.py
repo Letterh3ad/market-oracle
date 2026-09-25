@@ -36,21 +36,33 @@ def listing_from_profile(p: YahooProfile, market: str | None, units_per_usd: flo
     )
 
 
-# A real estate investment trust is a company that owns property, not a fund.
-_TRUST = r"(?<!estate )\binvestment trust\b"
-# What the line is, not what it sells: a financial group "raises investment trust funds".
-_FUND_SUMMARY = re.compile(r"\bclosed[- ]end(?:ed)?\b|\bis an? (?:[\w-]+ ){0,4}(?:fund|investment trust)\b",
-                           re.IGNORECASE)
-_FUND_NAME = re.compile(r"\b(?:trust|fund|ord)\b", re.IGNORECASE)
+# A real estate investment trust (or fund) is a company that owns property or mortgages.
+_PROPERTY = re.compile(r"\b(?:reits?|real estate|realty|mortgage|propert(?:y|ies))\b", re.IGNORECASE)
+_NAMED_TRUST = re.compile(r"\binvestment trust\b", re.IGNORECASE)
+# What the line itself is, said near the start ("X is a closed ended equity mutual fund"),
+# not what it runs or holds ("launches ... closed-end mutual funds").
+_IS_FUND = re.compile(r"\bis an? ((?:[\w-]+ ){0,4}?(?:fund|investment trust)|(?:[\w-]+ ){0,2}closed[- ]end(?:ed)?)\b",
+                      re.IGNORECASE)
+_OPENING = 200
+# Yahoo names London trusts' shares "Ord"; "Growth & Income" is a trust's name, not a company's.
+_FUND_WORD = re.compile(r"\b(trust|fund|ord|income)\b", re.IGNORECASE)
 
 
-def is_closed_end_fund(name: str, exchange: str | None, industry: str | None, summary: str | None) -> bool:
-    """An investment trust or other closed-end fund, which Yahoo types EQUITY: its summary says
-    so, or it has no business profile (how Yahoo lists London's trusts) and is on London or
-    named a trust or fund."""
-    if re.search(_TRUST, name, re.IGNORECASE) or (summary and _FUND_SUMMARY.search(summary)):
-        return True
-    return not industry and not summary and (exchange == "LSE" or bool(_FUND_NAME.search(name)))
+def closed_end_fund(name: str, industry: str | None, summary: str | None) -> str | None:
+    """Why the line is an investment trust or other closed-end fund, which Yahoo types EQUITY,
+    or None when it is a company: named one, its Yahoo summary opens by saying so, or Yahoo
+    has no business profile for it (how it lists London's trusts) and a fund's word names it.
+    Never a REIT or mortgage trust."""
+    if (industry and _PROPERTY.search(industry)) or _PROPERTY.search(name):
+        return None
+    if _NAMED_TRUST.search(name):
+        return "named an investment trust"
+    if summary:
+        said = _IS_FUND.search(summary[:_OPENING])
+        return f"Yahoo: {said.group(0)}" if said and not _PROPERTY.search(said.group(1)) else None
+    if not industry and (word := _FUND_WORD.search(name)):
+        return f"no Yahoo profile, named {word.group(1)}"
+    return None
 
 
 def usd_value(p: YahooProfile, units_per_usd: float | None) -> float | None:

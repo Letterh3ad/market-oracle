@@ -103,7 +103,8 @@ def funds_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         print("no closed-end funds among the lines added")
         return 0
     for x in sweep.lines:
-        print(f"{x.symbol:<12}{cut(x.name, 40):<42}{x.index_code:<12}{f'kept: {x.kept}' if x.kept else ''}".rstrip())
+        kept = f"  kept: {x.kept}" if x.kept else ""
+        print(f"{x.symbol:<12}{cut(x.name, 40):<42}{x.index_code:<12}{x.why}{kept}")
     gone = sum(x.kept is None for x in sweep.lines)
     print(f"removed {gone}" if sweep.removed else f"{gone} to remove: run again with --remove")
     return 0

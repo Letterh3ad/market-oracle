@@ -42,7 +42,7 @@ def test_funds_lists_investment_trusts_added_and_removes_only_when_told(run, tmp
     _seed(run, tmp_path, Listing("IAD.L", "Invesco Asia Dragon Trust Ord", "equity", "United Kingdom", "LSE",
                                  source="backfill"))
     code, out, _ = run("universe", "funds")
-    assert code == 0 and "IAD.L" in out and "--remove" in out
+    assert code == 0 and "IAD.L" in out and "no Yahoo profile, named Trust" in out and "--remove" in out
     assert "IAD.L" in run("universe", "search", "invesco")[1]
     code, out, _ = run("universe", "funds", "--remove")
     assert code == 0 and "removed 1" in out

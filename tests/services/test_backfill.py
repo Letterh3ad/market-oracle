@@ -150,15 +150,16 @@ async def test_a_share_class_name_from_yahoo_keeps_the_line_in_its_company(ctx, 
     assert "008110.KS" not in {c.symbol for c in report.changes}
 
 
-async def test_a_wrong_code_with_other_lines_in_its_company_is_not_renamed(ctx, fdb, yahoo):
+async def test_a_misnamed_wrong_code_is_renamed_off_its_company_whatever_lines_it_has(ctx, fdb, yahoo):
     fdb.files["equities.bz2"] = bz2_csv([*UNIVERSE, equity("SCT.F", "Samsung C&T Corporation", "South Korea", "FRA",
                                                            currency="EUR")])
     yahoo.summaries["008110.KS"] = profile("Daidong Electronics Co., Ltd.", "KSC", "KRW", 30e9, "South Korea")
     await refresh_universe(ctx)
     await run(ctx, KR)
     rows = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}
-    assert rows["008110.KS"].name == "Samsung C&T Corporation"
-    assert rows["008110.KS"].company_key == rows["SCT.F"].company_key == rows["028260.KS"].company_key
+    assert rows["008110.KS"].name == "Daidong Electronics Co., Ltd."
+    assert rows["008110.KS"].company_key != rows["028260.KS"].company_key == rows["SCT.F"].company_key
+    assert rows["028260.KS"].is_primary
 
 
 async def test_tesla_is_never_looked_up_or_added(ctx, asked):
@@ -395,16 +396,20 @@ async def trusts(ctx):
     repo = BackfillRepo(ctx.conn)
     for x in (_trust("IAD.L", "Invesco Asia Dragon Trust Ord"),
               _trust("JMGI.L", "JPMorgan Emerging Markets Growth & Income plc."),
+              # A London company Yahoo gives no profile: no fund's word names it.
+              _trust("BT-A.L", "BT Group"),
               replace(_trust("SHAW.L", "Shawbrook Group PLC"), industry="Banks - Regional",
-                      summary="Shawbrook Group PLC provides lending.")):
+                      summary="Shawbrook Group PLC, through its subsidiary, Shawbrook Bank Limited, provides lending "
+                              "and savings products and services to private and business customers.")):
         repo.add(x, "ftse250", "in the FTSE 250", NOW)
     rebuild(ctx)
     return repo
 
 
-async def test_a_sweep_lists_the_investment_trusts_added_and_removes_nothing(ctx, trusts):
+async def test_a_sweep_lists_the_investment_trusts_added_and_why_and_removes_nothing(ctx, trusts):
     sweep = closed_end_funds(ctx)
-    assert [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", None), ("JMGI.L", None)]
+    assert [(x.symbol, x.kept, x.why) for x in sweep.lines] == [
+        ("IAD.L", None, "no Yahoo profile, named Trust"), ("JMGI.L", None, "no Yahoo profile, named Income")]
     assert not sweep.removed
     assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None
 
@@ -416,7 +421,7 @@ async def test_a_sweep_removes_them_but_never_a_watched_line(ctx, trusts, wiki, 
     repo = UniverseRepo(ctx.conn)
     assert repo.resolve("IAD.L") is None and search_universe(ctx, "Invesco Asia Dragon") == []
     assert repo.resolve("JMGI.L") is not None and repo.resolve("SHAW.L") is not None
-    assert [x.symbol for x in trusts.added()] == ["JMGI.L", "SHAW.L"]
+    assert [x.symbol for x in trusts.added()] == ["BT-A.L", "JMGI.L", "SHAW.L"]
     await refresh_universe(ctx)
     assert repo.resolve("IAD.L") is None
     wiki.pages["US_2"] = members_table(("IAD.L", "Invesco Asia Dragon Trust"))
@@ -440,6 +445,13 @@ async def test_a_held_line_is_kept(ctx, trusts, monkeypatch):
     assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None
 
 
+async def test_a_line_with_a_pending_order_is_kept(ctx, trusts):
+    PaperRepo(ctx.conn).add_order("ai", "jmgi.l", "buy", 1000.0, None, "2026-09-24T20:00:00Z", NOW.date(), "strategy")
+    sweep = closed_end_funds(ctx, remove=True)
+    assert [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", None), ("JMGI.L", "pending order")]
+    assert UniverseRepo(ctx.conn).resolve("JMGI.L") is not None
+
+
 async def test_corrections_are_listed_with_the_stale_correction_keys(ctx, monkeypatch):
     monkeypatch.setattr(universe_service, "CORRECTIONS", {
         "name:gone plc|United Kingdom|equity": Correction("Gone plc", "Industrials", "Capital Goods", "Machinery")})
@@ -458,6 +470,17 @@ async def test_an_undone_correction_is_gone_by_the_next_refresh(ctx):
     assert undone.symbol == "008110.KS" and corrections(ctx).rows == ()
     await refresh_universe(ctx)
     assert not {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}["008110.KS"].delisted
+
+
+async def test_a_correction_is_not_undone_while_a_backfill_or_refresh_runs(ctx):
+    from oracle.services.errors import JobAlreadyRunning
+    from oracle.services.jobs_service import single_flight
+
+    await refresh_universe(ctx)
+    await run(ctx, KR)
+    with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S), pytest.raises(JobAlreadyRunning):
+        undo_correction(ctx, "008110.KS")
+    assert [c.symbol for c in corrections(ctx).rows] == ["008110.KS"]
 
 
 async def test_undoing_a_correction_that_is_not_there_says_so(ctx):

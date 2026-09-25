@@ -4,7 +4,6 @@ Bounded per run and resumable: what one run leaves, the next picks up."""
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -28,7 +27,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe import indexes as index_pages
 from oracle.universe.backfill import (
-    BACKFILL, inherit_classification, is_closed_end_fund, listing_from_profile, major_currency, usd_value,
+    BACKFILL, closed_end_fund, inherit_classification, listing_from_profile, major_currency, usd_value,
 )
 from oracle.universe.indexes import INDEXES, IndexSpec, Member, Unreadable, page_url, parse_members
 from oracle.universe.listings import (
@@ -167,7 +166,7 @@ def refusal(p: YahooProfile, never) -> str | None:
     (closed-end ones included), a depositary receipt or the never list."""
     return (f"not a company's shares ({p.quote_type or 'no type'})" if p.quote_type != "EQUITY" else
             "a depositary receipt" if is_receipt(p.name or "") or is_receipt_symbol(p.symbol) else
-            CLOSED_END_FUND if is_closed_end_fund(p.name or "", p.exchange, p.industry, p.summary) else
+            CLOSED_END_FUND if closed_end_fund(p.name or "", p.industry, p.summary) else
             NEVER if is_never(p.name or "", never) else None)
 
 
@@ -176,8 +175,10 @@ class FundLine:
     symbol: str
     name: str
     index_code: str
+    why: str
+    """What marks it a closed-end fund, to read before removing it."""
     kept: str | None
-    """"held" or "watched" when the line stays for that; None when it goes."""
+    """"held", "pending order" or "watched" when the line stays for that; None when it goes."""
 
 
 @dataclass(frozen=True)
@@ -189,16 +190,17 @@ class FundSweep:
 
 def closed_end_funds(ctx: AppContext, remove: bool = False) -> FundSweep:
     """The closed-end funds the backfill or discovery added before it refused them, and with
-    `remove`, those no paper account holds and no watchlist tracks taken out of the universe
-    and noted as refused, so a backfill does not ask Yahoo for them again."""
+    `remove`, those no paper account holds or has an order pending for and no watchlist tracks
+    taken out of the universe and noted as refused, so a backfill does not ask Yahoo for them again."""
     repo = BackfillRepo(ctx.conn)
-    watched = {s.casefold() for s in WatchlistRepo(ctx.conn).all_symbols()}
-    held = {s.casefold() for s in PaperRepo(ctx.conn).held_symbols()}
+    paper = PaperRepo(ctx.conn)
+    kept = {**{s.casefold(): "watched" for s in WatchlistRepo(ctx.conn).all_symbols()},
+            **{o.symbol.casefold(): "pending order" for o in paper.pending()},
+            **{s.casefold(): "held" for s in paper.held_symbols()}}
     lines = tuple(
-        FundLine(r.symbol, r.fields["name"], r.index_code,
-                 "held" if r.symbol.casefold() in held else "watched" if r.symbol.casefold() in watched else None)
-        for r in repo.rows() if r.kind == ADDED and is_closed_end_fund(
-            r.fields["name"], r.fields.get("exchange"), r.fields.get("industry"), r.fields.get("summary")))
+        FundLine(r.symbol, r.fields["name"], r.index_code, why, kept.get(r.symbol.casefold()))
+        for r in repo.rows() if r.kind == ADDED and (why := closed_end_fund(
+            r.fields["name"], r.fields.get("industry"), r.fields.get("summary"))))
     gone = [x for x in lines if x.kept is None]
     if remove and gone:
         now = ctx.clock.utcnow()
@@ -236,7 +238,9 @@ def undo_correction(ctx: AppContext, symbol: str) -> BackfillRow:
     row = next((r for r in repo.rows() if r.kind == CORRECTED and r.symbol.casefold() == symbol.casefold()), None)
     if row is None:
         raise UnknownCorrection(f"no correction of {symbol}")
-    repo.drop(row.symbol, CORRECTED)
+    # Under the backfill's lock, so a running backfill cannot lay it back from what it read before.
+    with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
+        repo.drop(row.symbol, CORRECTED)
     return row
 
 
@@ -310,7 +314,6 @@ class _Run:
         lines = UniverseRepo(self.ctx.conn).all_listings()
         self.markets = UniverseRepo(self.ctx.conn).markets()
         self.by_symbol = {x.symbol.casefold(): x for x in lines}
-        self.company_lines = Counter(x.company_key for x in lines)
         self.by_name: dict[tuple, list[Listing]] = {}
         for x in lines:
             if x.source is None and not x.delisted:
@@ -379,9 +382,8 @@ class _Run:
         elif isinstance(p, str):
             return
         elif p.name and normalise_name(p.name) != normalise_name(x.name):
-            if _one_company(p.name, x.name) or self.company_lines[x.company_key] > 1:
-                # Another class of the company ("... Class B"), or a line its company's other
-                # lines vouch for: renaming it would split it off at the next regroup.
+            if _one_company(p.name, x.name):
+                # Another class of the company ("... Class B"): renaming it would split it off.
                 return
             band = await self.yahoo.band(p)
             fields = {"name": p.name, **({"market_cap": band} if band else {})}

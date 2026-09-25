@@ -17,9 +17,10 @@ REPORT = {"indexes": [KR, SP], "lookups": 12, "stopped": "Yahoo stopped answerin
                        "kind": "added", "note": "in the KOSPI 200; Large Cap"}]}
 
 
-FUNDS = [{"symbol": "IAD.L", "name": "Invesco Asia Dragon Trust Ord", "index_code": "ftse250", "kept": None},
+FUNDS = [{"symbol": "IAD.L", "name": "Invesco Asia Dragon Trust Ord", "index_code": "ftse250",
+          "why": "no Yahoo profile, named Trust", "kept": None},
          {"symbol": "JMGI.L", "name": "JPMorgan Emerging Markets Growth & Income plc.", "index_code": "ftse250",
-          "kept": "watched"}]
+          "why": "no Yahoo profile, named Income", "kept": "watched"}]
 
 
 CORRECTIONS = {"rows": [{"symbol": "008110.KS", "kind": "corrected", "index_code": "kospi200",
@@ -72,6 +73,7 @@ def test_investment_trusts_are_listed_first_and_removed_only_on_a_second_press()
         button(node, "Remove 1").fire("click"); await settle();
         console.log(JSON.stringify([listed, node.textContent, asked]));""")
     assert "Invesco Asia Dragon Trust Ord" in listed and "kept: watched" in listed
+    assert "no Yahoo profile, named Trust" in listed
     assert asked.count("POST /api/universe/funds/remove") == 1
     assert "Removed 1" in removed
 

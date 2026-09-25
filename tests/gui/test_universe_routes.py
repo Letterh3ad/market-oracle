@@ -157,7 +157,7 @@ async def test_investment_trusts_added_are_listed_then_removed_on_request(ctx, l
     rebuild(ctx)
     listed = (await loaded.get("/api/universe/funds")).json()
     assert listed == {"lines": [{"symbol": "IAD.L", "name": "Invesco Asia Dragon Trust Ord", "index_code": "ftse250",
-                                 "kept": None}], "removed": False}
+                                 "why": "no Yahoo profile, named Trust", "kept": None}], "removed": False}
     assert (await loaded.get("/api/universe/search", params={"q": "Invesco Asia"})).json()["hits"]
     removed = (await loaded.post("/api/universe/funds/remove")).json()
     assert removed["removed"] and [x["symbol"] for x in removed["lines"]] == ["IAD.L"]
