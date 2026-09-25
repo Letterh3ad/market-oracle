@@ -2438,3 +2438,42 @@ burst); a cap per name instead of per pass (a tick with many names still floods)
 **Context:** The study will run 5 days with nobody at the PC; session 15's gates left mediums and lows on the pacer, the cutoff pins and study prices.
 **Decision:** The pacer's memory (outage start, kind, last error, back-off count, resume time, the failures in a row, jobs it preempted or stopped as hung) is one JSON column, `replay_studies.pacer` (m0041), read at the start of every poll and written at its end, so a restart resumes a back-off and a replay the pacer stopped is never read as the user's cancel. A manual Retry (cell, all, Activity adopt) resets the cell's `refunds`. The hard cap times a replay from its job's start (an adopted Activity retry can wait in the queue), a done cell records that start so queue time is not replay time, and the message says whether the 45 minute floor or 3x the longest recent replay applied. Create refuses only when no price source answered; when one answered "no data" and another was down, the candidate is passed over, naming the down source, and not counted towards dead. A study listing whose whole-window fetch fails 3 times in a row rests a day (then one try, and another day on failure); it stays in `price_failures`, and the score, status interim, CLI, card and tick summary carry `price_backoff` (symbol: next try), an additive key. The tick's FX stage already fetches every currency stored bars use, study listings' included (a test pins it; no code). A study pins `{stage: [profile, provider, model]}` at create; `cannot_run` compares provider and model (a renamed profile is no change, the same name on another model pauses), studies from before compare profile names. Score, account, cell retry and the status `cutoff` use the pinned models' cutoff (each pinned model's probe, raised to its stored claim and any current profile's claim for that model), falling back to the slots' cutoff only if a pinned model has no probe or an old study's profile is gone. Activity Retry of a study cell goes through `cannot_run` first.
 **Alternatives:** A pacer state table (one row per study is what the column is); keeping the state in memory (a restart forgets a back-off and pauses on a preempted replay). Exponential price back-off (a day is simple and a study price only matters once a window closes). Replacing `price_failures` entries with text (the account and the holiday check read them as symbols). Adding study currencies to the FX stage explicitly (already covered by stored bars). Pinning only provider and model (the profile name still helps the reader).
+
+## 2026-09-25 - Holiday watch: a stdlib-only Python package, thin PowerShell launchers
+**Context:** The holiday watchdog must keep running when the app itself is broken, and the user
+wants its decisions (triggers, fix-run limits, which claude processes die) tested before leaving.
+**Decision:** `holiday_watch/` at the repo root, stdlib only, never importing `oracle` (a test
+checks), so an app import bug or a broken dependency cannot stop the watch, and every decision is
+a pure function tested with fakes. Side effects (HTTP, process list, spawn, kill, claude runs) sit
+behind one `System` and one `Http` seam; `--dry-run` swaps POST, spawn, kill and run for log lines
+and keeps its files in `holiday-reports/dry-run/`. Task Scheduler calls one thin `run.ps1`. Fix
+runs run under a detached supervisor (`fix-run`) holding a lock, so a pass never waits; the pass
+kills a run the supervisor failed to stop. Fix runs act only through `python -P -m holiday_watch`
+(`status`, `api` with GET anything and POST an allowlist, `restart-app`, `start-ollama`, a
+read-only `sql`), with a `dontAsk` settings file that allows edits only in the `holiday-fix`
+worktree. Each pass step fails alone into the log. A server is killed only when status failed
+three tries and its PID still has the start time status last reported, and either its port is
+closed and it was down on the pass before, or it has been down 4 passes in a row (about 2 h) with
+its port open: a hung event loop still accepts connections.
+**Alternatives:** Plain PowerShell scripts (the HANDOFF plan; untestable without real processes);
+reusing `oracle` code for API shapes (couples the watch to the app it guards); psutil for the
+process list (a dependency; PowerShell CIM gives CPU time and command lines).
+
+## 2026-09-25 - Holiday reaper kills headless claude only; fix-run pytest is an accepted hole
+**Context:** Gate round 1 on holiday-watch: a Remote Control session opened by hand with
+`/remote-control` leaves no mark in its command line, so the reaper could not tell it from any
+other interactive session and would kill it when idle; a `/T` kill could take a protected child
+with it; fix runs could run edited code through their own watch copy, `--config` or pytest.
+**Decision (coordinator):** `reaper.reap_interactive = false` by default: only headless claude
+(`-p`/`--print`) that is idle or past its limit is killed; an interactive one is logged once as
+"would reap". Idle interactive sessions cost no usage. A Remote Control session (PID file, or
+`--remote-control`, `--rc`, the `remote-control` subcommand) is never reaped, even with the flag on.
+A process whose tree holds a protected one (Remote Control, a fix run in its window, the watch's
+ancestors, the app server's tree) is only logged, never `/T`-killed. `claude.exe` is matched by
+executable name, node only when running Claude Code. Fix runs call the watch with `python -P` and
+PYTHONPATH at the repo, only its listed subcommands, never `--config` (refused in code and denied),
+never edit `holiday_watch/` or the reports. The fix run's `pytest` on the holiday-fix worktree
+stays allowed: fixing code needs it, and a test it writes can do anything the user's account can.
+The prompt forbids tests that open the real DB or the live worktree; that is the only guard.
+**Alternatives:** Killing idle interactive sessions (kills a hand-opened Remote Control session);
+no pytest for fix runs (a code fix could not be checked); a real sandbox (none on this PC).

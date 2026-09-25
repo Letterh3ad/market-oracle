@@ -1,0 +1,7 @@
+Below is today's holiday report for Market Oracle, built from the app's API and the watchdog log.
+Write a summary of at most 8 short lines for the user, who reads it on a phone: is everything
+running, what went wrong since yesterday and what was done about it, how far the replay study is,
+and anything the user must act on. Plain text or a short list; no headings; facts only from the
+report; say "nothing to act on" when that is true.
+
+$report
