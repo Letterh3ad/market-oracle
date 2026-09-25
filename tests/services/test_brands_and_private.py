@@ -524,3 +524,30 @@ async def test_tesla_found_on_yahoo_is_never_added(ctx, news, yahoo):
     yahoo.summaries["TSLAE"] = profile("Tesla Energy Inc.", "NMS", "USD", 1e11, "United States")
     view = await answered(ctx, news, "Tesla Energy ships grid batteries", "Tesla Energy")
     assert symbols(view) == [] and UniverseRepo(ctx.conn).resolve("TSLAE") is None
+
+
+async def test_an_unrelated_lone_lead_on_yahoo_is_not_added_or_matched(ctx, news, yahoo):
+    yahoo.quotes["Skild"] = [quote("8888.T", "Skildex Holdings", score=90000.0)]
+    yahoo.summaries["8888.T"] = profile("Skildex Holdings", "JPX", "USD", 2e8, "Japan", "Industrials")
+    yahoo.add("8888.T", "JPY", "Asia/Tokyo", [bar("2026-09-22", 10.0), bar("2026-09-23", 11.0)])
+    view = await answered(ctx, news, "Skild raises money for robot brains", "Skild")
+    assert symbols(view) == [] and UniverseRepo(ctx.conn).resolve("8888.T") is None
+    assert "added" not in left_off(view)["Skild"]
+
+
+async def test_a_big_lone_lead_on_yahoo_is_added(ctx, news, yahoo):
+    yahoo.quotes["Hanwha Aero"] = [quote("012450.KS", "Hanwha Aerospace Co., Ltd.", score=90000.0)]
+    yahoo.summaries["012450.KS"] = profile("Hanwha Aerospace Co., Ltd.", "KSC", "USD", 3e10, "South Korea",
+                                           "Industrials")
+    yahoo.add("012450.KS", "KRW", "Asia/Seoul", [bar("2026-09-22", 10.0), bar("2026-09-23", 11.0)])
+    view = await answered(ctx, news, "Hanwha Aero builds robot tanks", "Hanwha Aero")
+    assert symbols(view) == ["012450.KS"], left_off(view)
+    assert "added to the universe from Yahoo" in whys(view)["Hanwha Aero"]
+
+
+async def test_a_small_lead_already_in_the_universe_is_not_matched_or_claimed_added(ctx, news, yahoo):
+    yahoo.quotes["Figure"] = [quote("CXX.AX", "Cradle Resources Limited", score=90000.0)]
+    view = await answered(ctx, news, "Figure raises money for humanoids", "Figure")
+    assert "CXX.AX" not in symbols(view)
+    assert "added" not in left_off(view)["Figure"]
+    assert yahoo.profiled == []
