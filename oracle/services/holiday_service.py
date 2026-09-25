@@ -242,10 +242,10 @@ class Holiday:
         lock = cfg.reports / "arm.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
         try:
-            if lock.exists() and clock_time.time() - lock.stat().st_mtime > ARM_LOCK_STALE_S:
-                lock.unlink(missing_ok=True)
             fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
+            fd = _take_stale(lock)
+        if fd is None:
             yield False
             return
         os.write(fd, str(os.getpid()).encode())
@@ -602,6 +602,30 @@ class Holiday:
         except Exception as exc:  # noqa: BLE001
             return None, [head, f"  could not run: {exc}"]
         return code, [head, *(f"  {line}" for line in out.splitlines())]
+
+
+def _take_stale(lock: Path) -> int | None:
+    """Moves a stale lock aside, which only one caller can do to one file, then checks the moved file
+    is the stale one: another arm may have replaced it between the look and the move, and then gets
+    it back. The new lock's descriptor, or None when busy."""
+    try:
+        if clock_time.time() - lock.stat().st_mtime <= ARM_LOCK_STALE_S:
+            return None
+        aside = lock.with_name(f"{lock.name}.{os.getpid()}.{clock_time.monotonic_ns()}")
+        os.rename(lock, aside)
+    except OSError:
+        return None
+    try:
+        if clock_time.time() - aside.stat().st_mtime <= ARM_LOCK_STALE_S:
+            try:
+                os.rename(aside, lock)
+            except OSError:
+                aside.unlink(missing_ok=True)
+            return None
+        aside.unlink(missing_ok=True)
+        return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except OSError:
+        return None
 
 
 def _busy(armed: bool, cfg: WatchConfig) -> Report:
