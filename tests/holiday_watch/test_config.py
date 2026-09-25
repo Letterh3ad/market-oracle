@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from holiday_watch.config import EXAMPLE, load
 
 
@@ -75,3 +77,16 @@ def test_the_settings_file_is_the_env_one_else_beside_the_package(tmp_path, monk
     assert config_file() == DEFAULT_FILE
     monkeypatch.setenv("HOLIDAY_WATCH_CONFIG", str(tmp_path / "x.toml"))
     assert config_file() == tmp_path / "x.toml"
+
+
+def test_arm_away_days_default_six(tmp_path):
+    assert load(tmp_path / "missing.toml").arm_away_days == 6
+
+
+@pytest.mark.parametrize("line", ["pass_every_min = 0", "pass_every_min = 4", "pass_every_min = 1441",
+                                  'report_time = "7am"', 'report_time = "25:00"', "away_days = 0"])
+def test_bad_arm_values_are_refused_at_load(tmp_path, line):
+    path = tmp_path / "c.toml"
+    path.write_text(f"[arm]\n{line}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="arm"):
+        load(path)

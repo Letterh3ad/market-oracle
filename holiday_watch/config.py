@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,7 +47,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
     },
     "report": {"timeout_min": 10},
     "arm": {"min_free_gb": 20, "backups": "{repo}/../oracle-backups", "pass_every_min": 30, "report_time": "07:00",
-            "expect_symbols": []},
+            "expect_symbols": [], "away_days": 6},
 }
 
 
@@ -104,6 +105,8 @@ class Config:
     """"HH:MM" local: when the morning report task runs."""
     arm_expect_symbols: tuple[str, ...]
     """Listings the replay study must hold before arming."""
+    arm_away_days: float
+    """Windows Update must stay paused at least this long from arming."""
 
     @property
     def log_file(self) -> Path:
@@ -120,6 +123,18 @@ class Config:
     @property
     def state_file(self) -> Path:
         return self.reports / "state.json"
+
+
+def _check_arm(path: Path, arm: dict[str, object]) -> None:
+    """Refused at load, so arming fails on the settings check before anything is backed up or started."""
+    every = arm["pass_every_min"]
+    if not isinstance(every, int) or not 5 <= every <= 1440:
+        raise ValueError(f"{path}: arm.pass_every_min must be a whole number of minutes from 5 to 1440, not {every!r}")
+    at = str(arm["report_time"])
+    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", at):
+        raise ValueError(f"{path}: arm.report_time must be HH:MM, not {at!r}")
+    if not float(arm["away_days"]) > 0:  # type: ignore[arg-type]
+        raise ValueError(f"{path}: arm.away_days must be over 0")
 
 
 def config_file() -> Path:
@@ -150,6 +165,7 @@ def load(path: Path | None = None) -> Config:
     p, a, o, rc, c, fx, t, r = (raw[k] for k in ("paths", "app", "ollama", "remote_control", "claude", "fix",
                                                    "triggers", "reaper"))
     arm = raw["arm"]
+    _check_arm(path, arm)
     return Config(
         repo=Path(names["repo"]), live=Path(names["live"]), reports=Path(names["reports"]),
         python=Path(names["python"]), oracle_config=Path(names["oracle_config"]), db=Path(names["db"]),
@@ -173,4 +189,5 @@ def load(path: Path | None = None) -> Config:
         arm_min_free_gb=float(arm["min_free_gb"]), arm_backups=Path(s(arm["backups"])),
         arm_pass_every_min=int(arm["pass_every_min"]), arm_report_time=s(arm["report_time"]),
         arm_expect_symbols=tuple(str(x) for x in arm["expect_symbols"]),
+        arm_away_days=float(arm["away_days"]),
     )

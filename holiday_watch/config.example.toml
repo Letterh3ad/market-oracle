@@ -62,3 +62,4 @@ backups = "{repo}/../oracle-backups"   # arming backs the database up here first
 pass_every_min = 30   # the watchdog task's interval
 report_time = "07:00" # the morning report task's daily time, local
 expect_symbols = []   # listings the replay study must hold, e.g. ["2330.TW"]
+away_days = 6         # Windows Update must stay paused at least this long from arming
