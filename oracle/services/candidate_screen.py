@@ -21,6 +21,7 @@ from oracle.services.brands import (
     behind_quotes, is_place, named_whole, names_in, other_words, parents, sized, sounds_private, the_group,
     usable, written_before,
 )
+from oracle.services.backfill_service import ADDED_FROM_YAHOO, add_from_yahoo
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
@@ -320,7 +321,20 @@ class Screen:
         if any(q.symbol.upper().endswith(".PVT") and (own(q) or leads(q)) for q in quotes):
             return _Match(None, PRIVATE)
         listed = lead or next((q for q in equities if own(q) or ticker(q) or leads(q)), None)
-        return _Match(None, f"listed as {listed.name} ({listed.symbol}), not in the universe" if listed else PRIVATE)
+        if listed is None:
+            return _Match(None, PRIVATE)
+        return await self._added(name, listed) or _Match(
+            None, f"listed as {listed.name} ({listed.symbol}), not in the universe")
+
+    async def _added(self, name: str, q: Quote) -> _Match | None:
+        """Yahoo's line added to the universe under the index backfill's guards, on one of the
+        pass's lookups; None when none is left or the line may not join."""
+        if self._lookups >= MAX_LOOKUPS or is_never(q.name, self._never):
+            return None
+        self._lookups += 1
+        symbol, _ = await add_from_yahoo(self._ctx, q.symbol)
+        p = self._universe.profile(symbol) if symbol else None
+        return p and _Match(p, kind=LOOKUP, note=f"{name} is listed as {p.name} ({symbol}), {ADDED_FROM_YAHOO}")
 
     async def _quotes_for(self, name: str) -> list[Quote] | None:
         if name not in self._quotes:

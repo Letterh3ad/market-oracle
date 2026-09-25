@@ -16,7 +16,8 @@ from oracle.services.candidate_screen import MAX_LOOKUPS, Screen
 from oracle.services.context import open_context
 from oracle.services.discovery_chat_service import answer, ask, new_question
 from oracle.services.discovery_service import discover, theme_query
-from oracle.services.universe_service import refresh_universe
+from oracle.services.universe_service import refresh_universe, search_universe
+from oracle.store.universe import UniverseRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.gdelt import FakeGdelt
@@ -24,7 +25,7 @@ from tests.fakes.google_news import FakeGoogleNews
 from tests.fakes.llm import ScriptedModel
 from tests.fakes.web import FakeWeb
 from tests.fakes.web_search import FakePages, FakeSearcher
-from tests.fakes.yahoo import FakeYahoo, bar, quote
+from tests.fakes.yahoo import FakeYahoo, bar, profile, quote
 from tests.services.test_discovery import reasons, settings
 from tests.services.test_discovery_matching import QUERY, found, left_off
 
@@ -487,3 +488,39 @@ async def test_samsung_in_a_robotics_story_needs_the_model(ctx, news):
                                          "Samsung SDI Co., Ltd.")
     view = await answered(ctx, news, "Samsung shows a humanoid robot", "Samsung", picks={"company": 1})
     assert symbols(view) == ["005930.KS"], left_off(view)
+
+
+async def test_a_listing_the_universe_lacks_is_added_from_yahoo_and_screened(ctx, news, yahoo):
+    yahoo.quotes["Rainbow Robotics"] = [quote("277810.KQ", "Rainbow Robotics Co., Ltd.")]
+    yahoo.summaries["277810.KQ"] = profile("Rainbow Robotics Co., Ltd.", "KOE", "KRW", 4e12, "South Korea",
+                                           "Industrials", "Specialty Industrial Machinery")
+    yahoo.add("277810.KQ", "KRW", "Asia/Seoul", [bar("2026-09-22", 10.0), bar("2026-09-23", 11.0)])
+    view = await answered(ctx, news, "Rainbow Robotics ships humanoids", "Rainbow Robotics")
+    assert symbols(view) == ["277810.KQ"], left_off(view)
+    assert "added to the universe from Yahoo" in whys(view)["Rainbow Robotics"]
+    assert search_universe(ctx, "Rainbow Robotics")[0].symbol == "277810.KQ"
+
+
+async def test_a_listing_yahoo_names_as_a_fund_is_not_added(ctx, news, yahoo):
+    yahoo.quotes["Rainbow Robotics"] = [quote("277810.KQ", "Rainbow Robotics Co., Ltd.")]
+    yahoo.summaries["277810.KQ"] = profile("Rainbow Robotics Co., Ltd.", "KOE", "KRW", None, quote_type="ETF")
+    view = await answered(ctx, news, "Rainbow Robotics ships humanoids", "Rainbow Robotics")
+    assert left_off(view)["Rainbow Robotics"] == "listed as Rainbow Robotics Co., Ltd. (277810.KQ), not in the universe"
+    assert UniverseRepo(ctx.conn).resolve("277810.KQ") is None
+
+
+async def test_adding_from_yahoo_shares_the_answer_s_lookups(ctx, news, yahoo):
+    unknown = ["Figure", "Apptronik", "Agility", "Unitree", "Sanctuary", "Physical Intelligence", "Skild"]
+    for i, name in enumerate(unknown):
+        yahoo.quotes[name] = [quote(f"{i}0000.KQ", f"{name} Co., Ltd.")]
+        yahoo.summaries[f"{i}0000.KQ"] = profile(f"{name} Co., Ltd.", "KOE", "KRW", 1e12, "South Korea")
+    found(news, " and ".join(unknown) + " raise money")
+    await ask(ctx, ROBOTICS, model=naming(*names(*unknown)), searcher=FakeSearcher())
+    assert len(yahoo.searched) + len(yahoo.profiled) == MAX_LOOKUPS and yahoo.profiled
+
+
+async def test_tesla_found_on_yahoo_is_never_added(ctx, news, yahoo):
+    yahoo.quotes["Tesla Energy"] = [quote("TSLAE", "Tesla Energy Inc.")]
+    yahoo.summaries["TSLAE"] = profile("Tesla Energy Inc.", "NMS", "USD", 1e11, "United States")
+    view = await answered(ctx, news, "Tesla Energy ships grid batteries", "Tesla Energy")
+    assert symbols(view) == [] and UniverseRepo(ctx.conn).resolve("TSLAE") is None

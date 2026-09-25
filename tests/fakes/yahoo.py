@@ -39,6 +39,7 @@ class FakeYahoo:
         """search text -> the quotes Yahoo's search gives (see `quote`), or a raw body; other text answers 404."""
         self.search_status = 200
         self.searched: list[str] = []
+        self.profiled: list[str] = []
 
     def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
         self.series[symbol] = Series(currency, tz, bars, open_at)
@@ -105,6 +106,7 @@ class FakeYahoo:
             self.crumb = "expired"
             return unauthorised
         symbol = request.url.path.rsplit("/", 1)[1]
+        self.profiled.append(symbol)
         if symbol in self.fail:
             return httpx.Response(self.fail[symbol])
         modules = self.summaries.get(symbol)
