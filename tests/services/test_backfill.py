@@ -140,6 +140,27 @@ async def test_a_wrong_code_yahoo_names_otherwise_is_renamed(ctx, yahoo):
     assert rows["008110.KS"].company_key != rows["028260.KS"].company_key
 
 
+async def test_a_share_class_name_from_yahoo_keeps_the_line_in_its_company(ctx, yahoo):
+    yahoo.summaries["008110.KS"] = profile("Samsung C&T Corporation Class B", "KSC", "KRW", 30e9, "South Korea")
+    await refresh_universe(ctx)
+    report = await run(ctx, KR)
+    rows = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}
+    assert (rows["008110.KS"].name, rows["008110.KS"].delisted) == ("Samsung C&T Corporation", False)
+    assert rows["008110.KS"].company_key == rows["028260.KS"].company_key
+    assert "008110.KS" not in {c.symbol for c in report.changes}
+
+
+async def test_a_wrong_code_with_other_lines_in_its_company_is_not_renamed(ctx, fdb, yahoo):
+    fdb.files["equities.bz2"] = bz2_csv([*UNIVERSE, equity("SCT.F", "Samsung C&T Corporation", "South Korea", "FRA",
+                                                           currency="EUR")])
+    yahoo.summaries["008110.KS"] = profile("Daidong Electronics Co., Ltd.", "KSC", "KRW", 30e9, "South Korea")
+    await refresh_universe(ctx)
+    await run(ctx, KR)
+    rows = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}
+    assert rows["008110.KS"].name == "Samsung C&T Corporation"
+    assert rows["008110.KS"].company_key == rows["SCT.F"].company_key == rows["028260.KS"].company_key
+
+
 async def test_tesla_is_never_looked_up_or_added(ctx, asked):
     await refresh_universe(ctx)
     report = await run(ctx, US)

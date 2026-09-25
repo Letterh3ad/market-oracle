@@ -4,6 +4,7 @@ Bounded per run and resumable: what one run leaves, the next picks up."""
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -31,8 +32,9 @@ from oracle.universe.backfill import (
 )
 from oracle.universe.indexes import INDEXES, IndexSpec, Member, Unreadable, page_url, parse_members
 from oracle.universe.listings import (
-    MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name, place_line,
+    MARKET_CAP_BANDS, Listing, band_of_usd, blind_name, is_receipt, is_receipt_symbol, normalise_name, place_line,
 )
+from oracle.research.mentions import same_company
 
 __all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "CLOSED_END_FUND", "FundLine",
            "FundSweep", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo", "backfill_status", "backfill_universe",
@@ -232,7 +234,7 @@ def undo_correction(ctx: AppContext, symbol: str) -> BackfillRow:
     repo = BackfillRepo(ctx.conn)
     row = next((r for r in repo.rows() if r.kind == CORRECTED and r.symbol.casefold() == symbol.casefold()), None)
     if row is None:
-        raise UnknownCorrection(f"no correction of {symbol}: see `oracle universe corrections list`")
+        raise UnknownCorrection(f"no correction of {symbol}")
     repo.drop(row.symbol, CORRECTED)
     return row
 
@@ -307,6 +309,7 @@ class _Run:
         lines = UniverseRepo(self.ctx.conn).all_listings()
         self.markets = UniverseRepo(self.ctx.conn).markets()
         self.by_symbol = {x.symbol.casefold(): x for x in lines}
+        self.company_lines = Counter(x.company_key for x in lines)
         self.by_name: dict[tuple, list[Listing]] = {}
         for x in lines:
             if x.source is None and not x.delisted:
@@ -375,6 +378,10 @@ class _Run:
         elif isinstance(p, str):
             return
         elif p.name and normalise_name(p.name) != normalise_name(x.name):
+            if _one_company(p.name, x.name) or self.company_lines[x.company_key] > 1:
+                # Another class of the company ("... Class B"), or a line its company's other
+                # lines vouch for: renaming it would split it off at the next regroup.
+                return
             band = await self.yahoo.band(p)
             fields = {"name": p.name, **({"market_cap": band} if band else {})}
             note = f"Yahoo names it {p.name}; {lists}"
@@ -445,6 +452,12 @@ class _Yahoo:
 def _same_line(x: Listing) -> tuple:
     """Two live lines on one exchange with one company name are one company under two codes."""
     return normalise_name(x.name), x.country or "", x.exchange or ""
+
+
+def _one_company(a: str, b: str) -> bool:
+    """Names where one is the other's leading words, legal forms aside."""
+    blind_a, blind_b = blind_name(a), blind_name(b)
+    return bool(blind_a and blind_b) and same_company(blind_a, blind_b)
 
 
 def _apart(band: str, other: str | None) -> int:
