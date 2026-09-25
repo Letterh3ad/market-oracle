@@ -15,7 +15,8 @@ from oracle.research import edgar
 from oracle.research.tools import ToolError
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
-from oracle.services.research_tools.filings import submissions
+from oracle.services.research_tools.filings import NoFilings, submissions
+from oracle.services.research_tools.web import need_contact
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -28,12 +29,14 @@ HORIZONS = (1, 5, 20)
 LAST = 8
 """How many of the latest measured releases the summary covers."""
 MAX_AGE = timedelta(days=7)
+RETRY_AFTER = timedelta(hours=1)
 STALE = timedelta(days=7)
 """How far a close may sit from the day it stands for (holidays, halts)."""
 SEC_SOURCE = "SEC 8-K item 2.02"
 BREAK = "price series break, skipped"
 NO_BASE = "no stored close near the date"
 _KEY = "earnings_dates:"
+_TRIED = "earnings_dates_failed:"
 
 
 @dataclass(frozen=True)
@@ -99,11 +102,7 @@ async def earnings_study(ctx: AppContext, symbol: str, refresh: bool = True) -> 
         note = (f"no earnings dates source for {ticker}: SEC covers US listings only, and Yahoo gives "
                 "only the next date")
     elif refresh and (stored is None or _age(ctx, stored["fetched_at"]) >= MAX_AGE):
-        try:
-            stored = await _fetch(ctx, ticker)
-            meta.set(_KEY + ticker, json.dumps(stored))
-        except ToolError as exc:
-            note = f"could not refresh earnings dates: {exc}" if stored else str(exc)
+        stored, note = await _refresh(ctx, meta, ticker, stored)
     if stored is None:
         return EarningsStudy(listing.symbol, None, None, None, (), (), note or "earnings dates not fetched yet")
     releases = [edgar.Release(date.fromisoformat(d), before) for d, before in stored["releases"]]
@@ -113,6 +112,28 @@ async def earnings_study(ctx: AppContext, symbol: str, refresh: bool = True) -> 
     events = tuple(_event(r, bars, bench) for r in releases)
     return EarningsStudy(listing.symbol, stored["source"], stored["fetched_at"], benchmark, events,
                          tuple(_summary(events, i) for i in range(len(HORIZONS))), note)
+
+
+async def _refresh(ctx: AppContext, meta: MetaRepo, ticker: str, stored: dict | None) -> tuple[dict | None, str | None]:
+    """Fresh dates, or the stored ones and why not. A failure is not retried within RETRY_AFTER."""
+    try:
+        need_contact(ctx.config.research.contact)
+    except ToolError as exc:
+        return stored, str(exc)
+    tried = json.loads(meta.get(_TRIED + ticker) or "null")
+    if tried and _age(ctx, tried["at"]) < RETRY_AFTER:
+        return stored, tried["note"]
+    try:
+        fresh = await _fetch(ctx, ticker)
+    except ToolError as exc:
+        # The tools' own errors speak to the research model ("try another tool").
+        note = str(exc) if isinstance(exc, NoFilings) else (
+            f"could not reach SEC: kept the dates from {stored['fetched_at'][:10]}" if stored
+            else "could not reach SEC, try later")
+        meta.set(_TRIED + ticker, json.dumps({"at": to_utc_iso(ctx.clock.utcnow()), "note": note}))
+        return stored, note
+    meta.set(_KEY + ticker, json.dumps(fresh))
+    return fresh, None
 
 
 async def _fetch(ctx: AppContext, ticker: str) -> dict:
@@ -160,7 +181,8 @@ def _bench_change(bench: list[Bar], start: date, end: date) -> float | None:
     and the span between them is steady."""
     days = [b.date for b in bench]
     i, j = bisect_right(days, start) - 1, bisect_right(days, end) - 1
-    if i < 0 or start - days[i] > STALE or end - days[j] > STALE:
+    # One bar for both days: the benchmark lags, so its move is unknown, not zero.
+    if i < 0 or start - days[i] > STALE or end - days[j] > STALE or (j == i and end > start):
         return None
     span = bench[i:j + 1]
     if first_break([b.close for b in span]) is not None:

@@ -148,7 +148,29 @@ async def test_a_failed_fetch_keeps_the_stored_dates_and_says_why(priced, sec, c
     sec.filings.pop(CIK)
     study = await earnings_study(priced, "AAPL")
     assert len(study.events) == 4
-    assert "could not refresh" in study.note
+    assert study.note == "could not reach SEC: kept the dates from 2026-09-22"
+
+
+async def test_a_failed_fetch_is_not_retried_within_an_hour(priced, sec, web, clock):
+    sec.filings.pop(CIK)
+    first = await earnings_study(priced, "AAPL")
+    assert first.note == "could not reach SEC, try later" and first.events == ()
+    calls = len(web.requests_to("data.sec.gov"))
+    clock.advance(59 * 60)
+    await earnings_study(priced, "AAPL")
+    assert len(web.requests_to("data.sec.gov")) == calls
+    clock.advance(2 * 60)
+    await earnings_study(priced, "AAPL")
+    assert len(web.requests_to("data.sec.gov")) == calls + 1
+
+
+async def test_a_benchmark_lagging_the_listing_gives_no_excess(ctx):
+    store(ctx, closes("AAPL", {"2026-09-11": 1.02}))
+    store(ctx, [b for b in closes("VWRL.L", {}, currency="GBP") if b.date <= date(2026, 9, 10)])
+    study = await earnings_study(ctx, "AAPL")
+    sept = study.events[0]
+    assert (sept.windows[0].move, sept.windows[0].excess) == (pytest.approx(0.02), None)
+    assert study.summaries[0].beat == 0
 
 
 async def test_a_non_us_company_says_there_is_no_source(ctx, web):
