@@ -176,9 +176,9 @@ class Holiday:
         checks += [
             self._check("Automation", lambda: self._automation(ctx), "turn Automation on (the switch in the header)"),
             self._check("Replay study", lambda: self._study(ctx, cfg, arming),
-                        "create one on the Ledgers tab's Replay study card (`oracle replay create`); it starts paused"),
+                        "create one on the Ledgers tab's Replay study card; it starts paused"),
             self._check("Cutoff probed", lambda: self._cutoff(ctx),
-                        "Probe cutoff on the Ledgers tab's Replay study card (`oracle replay probe`)"),
+                        "Probe cutoff on the Ledgers tab's Replay study card"),
             self._check("Replay models", lambda: self._replay_models(ctx),
                         "point the model slots back to the study's, or create a new study"),
             self._check("Model settings", lambda: self._model_settings(ctx),
