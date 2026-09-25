@@ -182,7 +182,7 @@ def test_the_momentum_baseline_is_drawn_and_leaves_the_other_lines_unchanged(ctx
     make_study(ctx, {**all_buy(), ("AAA", JUL): ("sell", 0.8)})
     account = replay_report(ctx).account
     momentum = lines(account)["momentum"]
-    assert momentum.label == "Momentum" and "top 10 listings by 12-1 momentum" in momentum.caption
+    assert momentum.label == "Momentum" and "top 10 listings" in momentum.caption and "12-1 momentum" in momentum.caption
     # Both listings rank, and the top 10 of two is both: bought on the first day, as buy and hold is.
     assert momentum.trades == 2 and momentum.points[0] == (JUN, 0.0)
     monkeypatch.setattr(replay_account, "BASELINES", {})

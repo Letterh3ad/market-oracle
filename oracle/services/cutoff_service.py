@@ -19,7 +19,7 @@ from oracle.services.models_service import RESEARCH_STAGES, resolve_model, slot_
 from oracle.store.cutoff import AnswerRow, CutoffRepo, ProbeRow
 
 __all__ = ["VERSION", "CutoffProbe", "ModelFacts", "Pin", "ReplayCutoff", "Unprobed", "cannot_run",
-           "check_replay_from", "measured_cutoff", "month_back", "pin_stages", "pinned_cutoff", "pins", "probe_cutoff",
+           "check_replay_from", "measured_cutoff", "month_back", "pin_stages", "pinned_cutoff", "pinned_cutoff_by", "pins", "probe_cutoff",
            "probe_replay_models", "profile_model", "replay_cutoff", "replay_profiles", "stored_probe"]
 
 TRIES = 2
@@ -271,22 +271,32 @@ def cannot_run(ctx: AppContext, raw: str | None) -> tuple[str | None, ReplayCuto
 
 
 def pinned_cutoff(ctx: AppContext, raw: str | None) -> date | None:
-    """The latest cutoff of the models a study pinned (a claim raised since still counts); the
-    slots' when a pinned model is not probed or its profile is gone."""
+    """The one cutoff of a study, for its pacer, its Activity retries and its score alike."""
+    return pinned_cutoff_by(ctx, raw)[0]
+
+
+def pinned_cutoff_by(ctx: AppContext, raw: str | None) -> tuple[date | None, str | None]:
+    """The study's cutoff and the profile that set it: each pinned model's probe, raised to the
+    claims as they stand now of the profile the study pinned and of the stage's slot profile, when
+    they name that model (the run uses the slot's), never to a claim on some other profile of the
+    same model. The slots' cutoff when a pinned model is not probed or its profile is gone."""
     specs = model_profiles(ctx.config)
-    models = set()
-    for pin in pins(raw).values():
+    found: list[tuple[date, str]] = []
+    for stage, pin in pins(raw).items():
         if pin.model:
-            models.add((pin.provider, pin.model))
+            model = (pin.provider, pin.model)
         elif pin.profile in specs:
-            models.add((specs[pin.profile].provider, specs[pin.profile].model))
+            model = (specs[pin.profile].provider, specs[pin.profile].model)
         else:
-            return replay_cutoff(ctx).cutoff
-    cutoffs = []
-    for provider, model in models:
-        probe = CutoffRepo(ctx.conn).get(provider, model)
+            break
+        probe = CutoffRepo(ctx.conn).get(*model)
         if probe is None:
-            return replay_cutoff(ctx).cutoff
-        claims = [claimed_cutoff(p) for p in specs.values() if (p.provider, p.model) == (provider, model)]
-        cutoffs.append(max([probe.cutoff, probe.claimed, *claims]))
-    return max(cutoffs) if cutoffs else replay_cutoff(ctx).cutoff
+            break
+        found += [(max(probe.cutoff, probe.claimed), pin.profile)]
+        found += [(claimed_cutoff(specs[name]), name) for name in (pin.profile, slot_profile(ctx.config, stage))
+                  if name in specs and (specs[name].provider, specs[name].model) == model]
+    else:
+        if found:
+            return max(found, key=lambda x: x[0])
+    rc = replay_cutoff(ctx)
+    return rc.cutoff, rc.set_by

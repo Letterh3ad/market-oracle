@@ -3,7 +3,7 @@ from datetime import date
 
 from oracle.analysts.price_factors import ranked_at
 from oracle.broker.backtest import replay
-from oracle.broker.momentum import SOURCE, momentum_lean, rank_day
+from oracle.broker.momentum import SOURCE, caption, momentum_lean, rank_day
 from oracle.broker.orders import Side
 from oracle.market.bars import Bar
 from tests.broker.test_backtest import RISK, RULES, priced
@@ -93,3 +93,18 @@ def test_replayed_it_holds_the_leader_and_rotates_only_after_a_month_end_rank():
     earlier = ranked_at(history, rank_day(rank_day(switch)))
     assert earlier["A"].momentum_pct > earlier["B"].momentum_pct
     assert min(d for d, o in r.orders if o.symbol == "A" and o.action.value == "sell") >= switch
+
+
+def test_buys_lean_in_rank_order_so_the_rules_buy_the_leader_first():
+    history = {"A": climb("A", lambda i: 0.0005), "B": climb("B", lambda i: 0.001), "C": climb("C", lambda i: 0.0015)}
+    day = history["A"][300].date
+    lean = momentum_lean(history, top=3)
+    p = {s: lean(s, [b for b in rows if b.date <= day]).probability for s, rows in history.items()}
+    assert p["C"] > p["B"] > p["A"] >= 0.99
+
+
+def test_the_caption_says_how_many_positions_fit_and_that_a_stop_out_is_bought_back():
+    text = caption(RULES)
+    assert "top 10 listings" in text and "about 8 at full size under the cash floor" in text
+    assert "a stop-out is bought back while it stays in the top" in text
+    assert "about" not in caption(replace(RULES, max_positions=5))

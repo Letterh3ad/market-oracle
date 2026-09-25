@@ -109,8 +109,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
 
     r = run()
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
-    momentum = traded("momentum", momentum_caption(top),
-                      run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top)), "Momentum")
+    m = run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top))
+    momentum = traded("momentum", momentum_caption(rules), m, "Momentum")
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
@@ -123,8 +123,9 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
               ] if no_prices else []
     notes += [f"Left out of buy and hold, no {base} exchange rate from {start.isoformat()} on: {', '.join(no_rate)}."
               ] if no_rate else []
-    notes += [f"Could not fill: {note}." for note in r.rejected]
-    notes += [f"Still waiting to fill on the last day: {', '.join(r.unfilled)}."] if r.unfilled else []
+    for x, could, still in ((r, "Could", "Still"), (m, "Momentum could", "Momentum still")):
+        notes += [f"{could} not fill: {note}." for note in x.rejected]
+        notes += [f"{still} waiting to fill on the last day: {', '.join(x.unfilled)}."] if x.unfilled else []
     return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum), r.equity,
                     r.trades, tuple(notes))
 

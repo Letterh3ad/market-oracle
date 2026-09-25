@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from typing import TypeVar
 
+from holiday_watch.config import Config
 from holiday_watch.procs import Proc
 from holiday_watch.reaper import choose_kills, is_claude, is_remote_control, protected_pids, track_cpu
 from holiday_watch.seams import HttpError, Watch
@@ -29,6 +30,9 @@ STATUS_GAP_S = 20.0
 SAME_START = timedelta(minutes=10)
 """A process created this close to the server's reported start is that server."""
 RUN_START_SLACK = timedelta(minutes=2)
+SPAWN_STAMP_SLACK = timedelta(seconds=10)
+"""A process the watch spawned is created at most this long after its start time is stamped
+(clock granularity)."""
 
 
 def _step(w: Watch, name: str, fn: Callable[[], T], default: T) -> T:
@@ -51,14 +55,17 @@ def run_pass(w: Watch) -> None:
                 w.log(f"app is back up after {state['app_restarts']} pass(es) down")
             state["app_restarts"] = 0
             state.pop("down_since", None)
+            state.pop("app_spawned", None)
             server = status.get("server") or {}
             state["server_pid"], state["server_started_at"] = server.get("pid"), server.get("started_at")
         else:
             state.setdefault("down_since", iso(now))
         _step(w, "ollama", lambda: ensure_ollama(w), None)
         procs = _step(w, "process list", w.system.processes, None)
-        rc = _step(w, "remote control", lambda: ensure_remote_control(w, procs), set()) if procs is not None \
-            else set()
+        # Known sessions stay protected even when keeping one alive fails.
+        rc = (_step(w, "remote control", lambda: ensure_remote_control(w, procs), set())
+              | _step(w, "remote control PIDs", lambda: remote_control_pids(cfg, procs), set())) \
+            if procs is not None else set()
         # Unreadable, a lock counts as a run still going: no second fix run, no kill.
         lock = _step(w, "fix-run lock", lambda: _check_lock(w, procs, now), read_lock(cfg.lock_file)) \
             if procs is not None else read_lock(cfg.lock_file)
@@ -131,7 +138,7 @@ def app_status(w: Watch) -> dict | None:
 def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
     """The app server status last reported, if its PID still holds that process."""
     p = next((p for p in procs if p.pid == state.get("server_pid")), None)
-    if not p or "oracle" not in p.cmdline or "gui" not in p.cmdline:
+    if not p or not _is_app(p):
         return None
     started = state.get("server_started_at")
     if started and p.created and abs(p.created - parse(started)) > SAME_START:
@@ -139,11 +146,28 @@ def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
     return p
 
 
+def _started(state: dict, procs: Sequence[Proc]) -> Proc | None:
+    """The server this watch last started, if its PID still holds that process: one that binds
+    the port and hangs before it ever answers has no reported PID."""
+    spawned = state.get("app_spawned") or {}
+    p = next((p for p in procs if p.pid == spawned.get("pid")), None)
+    if not p or not _is_app(p) or not p.created:
+        return None
+    at = parse(spawned["at"])
+    # Created before `at` is stamped; a process made later holds a reused PID.
+    return p if at - RUN_START_SLACK <= p.created <= at + SPAWN_STAMP_SLACK else None
+
+
+def _is_app(p: Proc) -> bool:
+    return "oracle" in p.cmdline and "gui" in p.cmdline
+
+
 def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) -> None:
     """Start the app from the live worktree when nothing holds its port. The server status last
     reported is killed first when its port is closed and it was down on the pass before too, or,
-    port open (a hung event loop still accepts connections), after hung_passes passes down."""
-    server = _server(state, procs)
+    port open (a hung event loop still accepts connections), after hung_passes passes down. The
+    server this watch started counts as reported until one answers."""
+    server = _server(state, procs) or _started(state, procs)
     down_passes = state.get("app_restarts", 0) + 1
     if w.system.port_open(w.cfg.app_url):
         if not server or down_passes < w.cfg.hung_passes:
@@ -159,6 +183,7 @@ def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) ->
             return
         w.log(f"app server PID {server.pid} still does not answer: killing it: {w.system.kill_tree(server.pid)}")
     pid = w.system.spawn(w.cfg.app_start, w.cfg.live, log=w.cfg.reports / "app-start.log")
+    state["app_spawned"] = {"pid": pid, "at": iso(w.now())}
     w.log(f"app down ({w.api('/api/status')} failed): started it from {w.cfg.live} (PID {pid})")
 
 
@@ -170,19 +195,21 @@ def ensure_ollama(w: Watch) -> None:
         w.log(f"Ollama down ({exc}): started {' '.join(w.cfg.ollama_start)} (PID {pid})")
 
 
+def remote_control_pids(cfg: Config, procs: Sequence[Proc]) -> set[int]:
+    """The claude processes the PID file names or whose command line marks a Remote Control session."""
+    pid = read_pid(cfg.rc_pid_file)
+    return {p.pid for p in procs if is_claude(p, cfg) and (p.pid == pid or is_remote_control(p, cfg))}
+
+
 def ensure_remote_control(w: Watch, procs: Sequence[Proc]) -> set[int]:
     """Every Remote Control session: the PID file's and any claude whose command line marks one
     (never reaped). With none, the PID file adopts the oldest marked one, else a new session is
     launched in a console."""
     cfg = w.cfg
-    by_pid = {p.pid: p for p in procs}
     marked = sorted((p for p in procs if is_claude(p, cfg) and is_remote_control(p, cfg)),
                     key=lambda p: p.created or datetime.max.replace(tzinfo=w.now().tzinfo))
-    pids = {p.pid for p in marked}
-    pid = read_pid(cfg.rc_pid_file)
-    if pid in by_pid and is_claude(by_pid[pid], cfg):
-        return pids | {pid}
-    if not cfg.rc_launch:
+    pids, pid = remote_control_pids(cfg, procs), read_pid(cfg.rc_pid_file)
+    if pid in pids or not cfg.rc_launch:
         return pids
     if marked:
         if not w.dry_run:
