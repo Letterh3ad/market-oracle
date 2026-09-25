@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from oracle.analysts.breaks import first_break
 from oracle.analysts.factors import percentile
 from oracle.market.bars import Bar
 
@@ -59,6 +60,9 @@ def factors_at(bars: Sequence[Bar], day: date) -> PriceFactors:
         return PriceFactors(symbol, last, None, None, f"no price since {last.isoformat()}")
     window = [b for b in seen if b.date >= day - YEAR - MAX_GAP]
     close = _closes(window)
+    if (k := first_break(close)) is not None:
+        return PriceFactors(symbol, last, None, None,
+                            f"price series has a break on {window[k].date.isoformat()}: needs a full refetch")
     momentum, notes = None, []
     start, end = _anchor(window, day - YEAR), _anchor(window, day - MONTH)
     if start is None or end is None:
@@ -101,7 +105,9 @@ def _anchor(window: Sequence[Bar], target: date) -> int | None:
 
 
 def _closes(bars: Sequence[Bar]) -> list[float]:
-    # Adjusted closes carry splits and dividends. The ratio of two of them depends only on
-    # what happened between the two days, so later adjustments do not leak into the past.
+    # Adjusted closes carry splits and dividends. Within one fetch the ratio of two depends
+    # only on what happened between the two days; stored bars span several fetches, each on
+    # its own basis, so factors_at refuses a window with a break (see breaks.py). Smaller
+    # seams, such as a dividend's, stay in.
     adjusted = all(b.adj_close is not None and b.adj_close > 0 for b in bars)
     return [b.adj_close if adjusted else b.close for b in bars]

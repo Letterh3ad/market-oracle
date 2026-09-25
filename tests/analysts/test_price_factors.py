@@ -23,9 +23,9 @@ def run_up_to(day, first, value):
 
 
 def test_momentum_is_the_year_to_a_month_ago_return_skipping_the_last_month():
-    # 100 until a year ago, then 150 until a month ago, then a crash the skip leaves out.
+    # 100 until a year ago, then 150 until a month ago, then a fall the skip leaves out.
     def value(d):
-        return 100.0 if d <= DAY - timedelta(days=365) else 150.0 if d <= DAY - timedelta(days=30) else 50.0
+        return 100.0 if d <= DAY - timedelta(days=365) else 150.0 if d <= DAY - timedelta(days=30) else 90.0
     f = factors_at(run_up_to(DAY, DAY - timedelta(days=400), value), DAY)
     assert f.momentum == pytest.approx(0.5) and f.note is None
 
@@ -94,3 +94,28 @@ def test_percentiles_rank_strong_momentum_and_calm_prices_high():
 def test_a_lone_listing_has_nothing_to_rank_against():
     ranks = rank({"ONE": factors_at(run_up_to(DAY, DAY - timedelta(days=400), lambda d: 100.0), DAY)})
     assert ranks["ONE"].momentum_pct is None and ranks["ONE"].low_vol_pct is None
+
+
+def test_an_older_half_on_a_2x_basis_is_a_break_left_unranked():
+    # A split between fetches: the rows before the refetch overlap were never re-based.
+    seam = DAY - timedelta(days=90)
+    # A 2% fall on the seam day on top of the halving puts the move just past 0.5x.
+    bars = run_up_to(DAY, DAY - timedelta(days=400), lambda d: 200.0 if d < seam else 98.0)
+    f = factors_at(bars, DAY)
+    first_after = next(b.date for b in bars if b.date >= seam)
+    assert (f.momentum, f.volatility) == (None, None)
+    assert f.note == f"price series has a break on {first_after.isoformat()}: needs a full refetch"
+    calm = factors_at(run_up_to(DAY, DAY - timedelta(days=400), lambda d: 100.0), DAY)
+    assert rank({"S": f, "T": calm})["S"].momentum_pct is None
+
+
+def test_a_zero_close_is_a_break_not_a_crash():
+    bars = run_up_to(DAY, DAY - timedelta(days=400), lambda d: 100.0)
+    bars[-30] = replace(bars[-30], close=0.0, adj_close=0.0)
+    f = factors_at(bars, DAY)
+    assert f.momentum is None and f.note.startswith(f"price series has a break on {bars[-30].date.isoformat()}")
+
+
+def test_a_break_after_the_day_is_not_seen():
+    bars = run_up_to(DAY + timedelta(days=20), DAY - timedelta(days=400), lambda d: 100.0 if d <= DAY else 1.0)
+    assert factors_at(bars, DAY).note is None
