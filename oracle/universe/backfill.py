@@ -40,9 +40,12 @@ def listing_from_profile(p: YahooProfile, market: str | None, units_per_usd: flo
 _PROPERTY = re.compile(r"\b(?:reits?|real estate|realty|mortgage|propert(?:y|ies))\b", re.IGNORECASE)
 _NAMED_TRUST = re.compile(r"\binvestment trust\b", re.IGNORECASE)
 # What the line itself is, said near the start ("X is a closed ended equity mutual fund"),
-# not what it runs or holds ("launches ... closed-end mutual funds").
-_IS_FUND = re.compile(r"\bis an? ((?:[\w-]+ ){0,4}?(?:fund|investment trust)|(?:[\w-]+ ){0,2}closed[- ]end(?:ed)?)\b",
-                      re.IGNORECASE)
+# not what it runs or holds ("launches ... closed-end mutual funds"), sponsors ("a hedge fund
+# manager") or serves ("a provider of corporate and fund services"). "A fund of funds" is one.
+_IS_FUND = re.compile(
+    r"\bis an? ((?:(?!(?:of|and) )[\w-]+ ){0,4}?(?:fund|investment trust)\b"
+    r"(?! (?:sponsor|manager|management|services|administrat|compan))|(?:[\w-]+ ){0,2}closed[- ]end(?:ed)?\b)",
+    re.IGNORECASE)
 _OPENING = 200
 # Yahoo names London trusts' shares "Ord"; "Growth & Income" is a trust's name, not a company's.
 _FUND_WORD = re.compile(r"\b(trust|fund|ord|income)\b", re.IGNORECASE)

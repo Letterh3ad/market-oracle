@@ -65,6 +65,22 @@ COMPANIES = [
     ("Sumitomo Mitsui Trust Group, Inc.", "Banks - Regional",
      "Sumitomo Mitsui Trust Group, Inc. operates as a trust bank in Japan and internationally."),
     ("ISU Specialty Chemical Co., Ltd.", None, None),
+    # Asset managers Yahoo describes by the funds they run.
+    ("Platinum Investment Management Limited", "Capital Markets",
+     "Platinum Asset Management is a publicly owned hedge fund sponsor. The firm primarily provides its services to "
+     "pooled investment vehicles."),
+    ("N1 Technologies Inc.", "Chemicals",
+     "N1 Technologies Inc. is an employee owned hedge fund sponsor. The firm provides its services to individuals, "
+     "trusts, investment companies, and retirement accounts."),
+    ("Canso Select Opportunities Corporation", "Capital Markets",
+     "Canso Select Opportunities Corporation is a publicly owned hedge fund manager. The firm invests in the public "
+     "equity and fixed Income markets of Canada and across the globe."),
+    ("Alpine Select AG", "Capital Markets",
+     "Alpine Select AG is a publicly owned hedge fund manager. It provides its services to institutional and "
+     "individual investors."),
+    ("INTERTRUST NV INTERTRUST GROUP", None,
+     "INTERTRUST NV is a provider of corporate and fund services. The company offers trust, management, and "
+     "administrative services to multinational corporations, private equity firms, and other clients."),
 ]
 
 
