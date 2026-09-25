@@ -46,7 +46,9 @@ const RUN = { id: 7, ran_at: "2026-09-24T20:00:00Z", base_currency: "GBP", watch
   trades: [{ day: "2025-03-04", symbol: "AAPL", side: "buy", shares: 3, price: 150, currency: "USD", cash: -360,
     costs: 0.4, reason: "buy lean at 62%" }],
   notes: ["The main list is today's (survivorship bias).", "Each lean is at most 62.5%."] };
-const OLDER = { ...RUN, id: 6, start: "2024-01-02", lines: RUN.lines.map((l) => ({ ...l, points: undefined })) };
+const MOMENTUM = { name: "momentum", label: "Momentum", caption: "Momentum: the top 10.", return: 0.1, max_fall: -0.1,
+  trades: 4, costs: 2 };
+const OLDER = { ...RUN, id: 6, start: "2024-01-02", lines: [...RUN.lines, MOMENTUM].map((l) => ({ ...l, points: undefined })) };
 let ANSWERS = {
   "GET /api/watchlists": [{ name: "main" }, { name: "tech" }],
   "GET /api/backtests/span": { watchlist: "main", first: "2023-03-01", last: "2026-09-22", base_currency: "GBP" },
@@ -166,6 +168,7 @@ def test_an_earlier_run_can_be_picked_to_compare():
     """)
     options, last, text = shown
     assert options[0].startswith("main, 2025-03-03 to 2026-09-22: strategy +5.00%, buy and hold +20.00%")
+    assert options[1].startswith("main, 2024-01-02 to 2026-09-22: strategy +5.00%, buy and hold +20.00%, momentum +10.00%")
     assert len(options) == 2 and last == "GET /api/backtests/6"
     assert "The main list, 2024-01-02 to 2026-09-22" in text
 

@@ -57,14 +57,24 @@ def test_a_trending_list_is_bought_and_set_against_buy_and_hold(make_ctx):
     ctx = make_ctx({"UP": BARS})
     r = run_backtest(ctx, "TECH", START, END)
     assert r.watchlist == "tech" and r.listings == ("UP",)
-    strategy, held = r.lines
-    assert (strategy.name, held.name) == ("strategy", "buy_and_hold")
+    strategy, held, momentum = r.lines
+    assert (strategy.name, held.name, momentum.name) == ("strategy", "buy_and_hold", "momentum")
     assert strategy.trades == len(r.trades) >= 1 and r.trades[0].symbol == "UP"
     assert strategy.points[0] == (START, 0.0) and held.points[0] == (START, 0.0)
     assert held.return_ > strategy.return_ > 0
     assert strategy.costs == pytest.approx(sum(t.costs for t in r.trades))
     text = " ".join(r.notes)
     assert "survivorship" in text and "only today's" in text and "10 basis points" in text
+
+
+def test_the_momentum_line_holds_the_leader_under_the_same_costs(make_ctx):
+    # A year of history before the start, so the first month end ranks both.
+    up, slow = rising(400), rising(400, "SLOW", daily=0.001)
+    r = run_backtest(make_ctx({"UP": up, "SLOW": slow}), "tech", up[300].date, END, commission=2.0)
+    momentum = r.lines[2]
+    assert momentum.label == "Momentum" and momentum.trades >= 2 and momentum.costs >= 2 * 2.0
+    assert momentum.points[0] == (START, 0.0) and momentum.return_ > 0
+    assert "Momentum trades under the strategy's rules" in " ".join(r.notes)
 
 
 def test_a_backtest_changes_nothing_stored(make_ctx):

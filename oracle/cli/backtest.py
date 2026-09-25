@@ -11,7 +11,8 @@ from oracle.services.watch_service import DEFAULT_LIST
 
 def register(parser: argparse.ArgumentParser) -> None:
     parser.description = ("Replay the strategy's fixed rules over a watchlist's stored prices, against buying and "
-                          "holding the same listings. Nothing in the paper accounts changes.")
+                          "holding the same listings and against the momentum baseline (the top listings by "
+                          "12-1 momentum, re-picked monthly). Nothing in the paper accounts changes.")
     parser.add_argument("--list", default=DEFAULT_LIST, help=f"watchlist name (default {DEFAULT_LIST})")
     parser.add_argument("--from", dest="start", type=iso_day, required=True, metavar="YYYY-MM-DD",
                         help="the first day replayed")
