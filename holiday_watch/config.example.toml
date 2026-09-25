@@ -55,3 +55,10 @@ reap_interactive = false   # false: only headless claude (-p/--print) is killed;
 
 [report]
 timeout_min = 10      # the morning report's claude summary; the plain report is written anyway
+
+[arm]
+min_free_gb = 20      # arming refuses with less free space on the database's drive
+backups = "{repo}/../oracle-backups"   # arming backs the database up here first
+pass_every_min = 30   # the watchdog task's interval
+report_time = "07:00" # the morning report task's daily time, local
+expect_symbols = []   # listings the replay study must hold, e.g. ["2330.TW"]

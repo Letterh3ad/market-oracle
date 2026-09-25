@@ -55,3 +55,23 @@ def test_the_example_file_loads_and_names_every_setting():
         assert f"[{section}]" in text
         for key in keys:
             assert f"{key} =" in text, f"{section}.{key} missing from the example"
+
+
+def test_arm_settings_default_and_override(tmp_path):
+    cfg = load(tmp_path / "missing.toml")
+    assert cfg.arm_min_free_gb == 20 and cfg.arm_pass_every_min == 30 and cfg.arm_report_time == "07:00"
+    assert cfg.arm_backups == cfg.repo / ".." / "oracle-backups"
+    assert cfg.arm_expect_symbols == ()
+    path = tmp_path / "c.toml"
+    path.write_text('[paths]\nrepo = "D:/r"\n[arm]\nmin_free_gb = 5\nexpect_symbols = ["2330.TW"]\n'
+                    'backups = "{repo}/bk"\n', encoding="utf-8")
+    cfg = load(path)
+    assert (cfg.arm_min_free_gb, cfg.arm_expect_symbols, cfg.arm_backups) == (5, ("2330.TW",), Path("D:/r/bk"))
+
+
+def test_the_settings_file_is_the_env_one_else_beside_the_package(tmp_path, monkeypatch):
+    from holiday_watch.config import DEFAULT_FILE, config_file
+    monkeypatch.delenv("HOLIDAY_WATCH_CONFIG", raising=False)
+    assert config_file() == DEFAULT_FILE
+    monkeypatch.setenv("HOLIDAY_WATCH_CONFIG", str(tmp_path / "x.toml"))
+    assert config_file() == tmp_path / "x.toml"

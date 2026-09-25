@@ -45,6 +45,8 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "idle_min": 30, "idle_cpu_s": 2.0, "max_age_h": 3, "reap_interactive": False,
     },
     "report": {"timeout_min": 10},
+    "arm": {"min_free_gb": 20, "backups": "{repo}/../oracle-backups", "pass_every_min": 30, "report_time": "07:00",
+            "expect_symbols": []},
 }
 
 
@@ -93,6 +95,15 @@ class Config:
     reap_interactive: bool
     """False: only headless (-p/--print) claude is killed; an interactive one is logged."""
     report_timeout_min: float
+    arm_min_free_gb: float
+    """Arming refuses with less free space than this on the database's drive."""
+    arm_backups: Path
+    """Where arming backs the database up."""
+    arm_pass_every_min: int
+    arm_report_time: str
+    """"HH:MM" local: when the morning report task runs."""
+    arm_expect_symbols: tuple[str, ...]
+    """Listings the replay study must hold before arming."""
 
     @property
     def log_file(self) -> Path:
@@ -111,8 +122,13 @@ class Config:
         return self.reports / "state.json"
 
 
+def config_file() -> Path:
+    """The settings file `load` reads by default."""
+    return Path(os.environ.get("HOLIDAY_WATCH_CONFIG", DEFAULT_FILE))
+
+
 def load(path: Path | None = None) -> Config:
-    path = path or Path(os.environ.get("HOLIDAY_WATCH_CONFIG", DEFAULT_FILE))
+    path = path or config_file()
     raw = {k: dict(v) for k, v in DEFAULTS.items()}
     if path.exists():
         with path.open("rb") as f:
@@ -133,6 +149,7 @@ def load(path: Path | None = None) -> Config:
 
     p, a, o, rc, c, fx, t, r = (raw[k] for k in ("paths", "app", "ollama", "remote_control", "claude", "fix",
                                                    "triggers", "reaper"))
+    arm = raw["arm"]
     return Config(
         repo=Path(names["repo"]), live=Path(names["live"]), reports=Path(names["reports"]),
         python=Path(names["python"]), oracle_config=Path(names["oracle_config"]), db=Path(names["db"]),
@@ -153,4 +170,7 @@ def load(path: Path | None = None) -> Config:
         idle_cpu_s=float(r["idle_cpu_s"]), max_age_h=float(r["max_age_h"]),
         reap_interactive=bool(r["reap_interactive"]),
         report_timeout_min=float(raw["report"]["timeout_min"]),
+        arm_min_free_gb=float(arm["min_free_gb"]), arm_backups=Path(s(arm["backups"])),
+        arm_pass_every_min=int(arm["pass_every_min"]), arm_report_time=s(arm["report_time"]),
+        arm_expect_symbols=tuple(str(x) for x in arm["expect_symbols"]),
     )
