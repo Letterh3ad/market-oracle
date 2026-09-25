@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from oracle.analysts.price_factors import Ranked, ranked_at
 from oracle.broker.backtest import LeanSource
-from oracle.broker.rules import Lean
+from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar
 
 __all__ = ["SOURCE", "caption", "momentum_lean", "rank_day"]
@@ -24,11 +24,16 @@ def rank_day(day: date) -> date:
     return day.replace(day=1) - timedelta(days=1)
 
 
-def caption(top: int, low_vol_weight: float = 0.0) -> str:
+def caption(rules: Rules, low_vol_weight: float = 0.0) -> str:
+    """The top N is the position limit; the cash floor and position size may hold fewer."""
+    top = rules.max_positions
+    fits = min(top, int((1 - rules.cash_floor) / rules.max_position + 1e-9))
+    held = f" (at most {fits} held at once under the cash floor and position size)" if fits < top else ""
     blend = f", blended {low_vol_weight:.0%} with low volatility," if low_vol_weight else ""
-    return (f"Momentum: the top {top} listings by 12-1 momentum (the year's return leaving out the last month){blend} "
-            "ranked on each month's last day on closes up to it and held under the same rules, risk sizes and costs; "
-            "a listing that leaves the top is sold, and one with a price break in its year is not ranked.")
+    return (f"Momentum: the top {top} listings{held} by 12-1 momentum (the year's return leaving out the last month)"
+            f"{blend} ranked on each month's last day on closes up to it and held under the same rules, risk sizes "
+            "and costs, leaders bought first; a listing that leaves the top is sold, a stop-out is bought back while "
+            "it stays in the top, and one with a price break in its year is not ranked.")
 
 
 def momentum_lean(history: Mapping[str, Sequence[Bar]], top: int, low_vol_weight: float = 0.0) -> LeanSource:

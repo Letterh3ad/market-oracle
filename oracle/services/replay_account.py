@@ -39,7 +39,7 @@ the leans it trades."""
 
 def _momentum(history: Mapping[str, Sequence[Bar]], rules: Rules) -> tuple[str, str, LeanSource]:
     top = rules.max_positions
-    return "Momentum", momentum_caption(top), momentum_lean(history, top)
+    return "Momentum", momentum_caption(rules), momentum_lean(history, top)
 
 
 BASELINES: dict[str, Baseline] = {"momentum": _momentum}

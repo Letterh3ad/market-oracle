@@ -109,7 +109,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
 
     r = run()
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
-    momentum = traded("momentum", momentum_caption(top),
+    momentum = traded("momentum", momentum_caption(rules),
                       run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top)), "Momentum")
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)

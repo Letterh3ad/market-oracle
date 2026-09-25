@@ -3,7 +3,7 @@ from datetime import date
 
 from oracle.analysts.price_factors import ranked_at
 from oracle.broker.backtest import replay
-from oracle.broker.momentum import SOURCE, momentum_lean, rank_day
+from oracle.broker.momentum import SOURCE, caption, momentum_lean, rank_day
 from oracle.broker.orders import Side
 from oracle.market.bars import Bar
 from tests.broker.test_backtest import RISK, RULES, priced
@@ -101,3 +101,10 @@ def test_buys_lean_in_rank_order_so_the_rules_buy_the_leader_first():
     lean = momentum_lean(history, top=3)
     p = {s: lean(s, [b for b in rows if b.date <= day]).probability for s, rows in history.items()}
     assert p["C"] > p["B"] > p["A"] >= 0.99
+
+
+def test_the_caption_says_how_many_positions_fit_and_that_a_stop_out_is_bought_back():
+    text = caption(RULES)
+    assert "top 10 listings" in text and "at most 8 held at once" in text
+    assert "a stop-out is bought back while it stays in the top" in text
+    assert "at most" not in caption(replace(RULES, max_positions=5))
