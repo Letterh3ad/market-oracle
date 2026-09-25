@@ -551,3 +551,13 @@ async def test_a_small_lead_already_in_the_universe_is_not_matched_or_claimed_ad
     assert "CXX.AX" not in symbols(view)
     assert "added" not in left_off(view)["Figure"]
     assert yahoo.profiled == []
+
+
+async def test_a_small_tracked_lead_does_not_block_the_named_line_below_it(ctx, news, yahoo):
+    yahoo.quotes["Figure"] = [quote("CXX.AX", "Cradle Resources Limited", score=900000.0),
+                              quote("4444.T", "Figure Robotics Inc.", score=100.0)]
+    yahoo.summaries["4444.T"] = profile("Figure Robotics Inc.", "JPX", "USD", 5e9, "Japan", "Industrials")
+    yahoo.add("4444.T", "JPY", "Asia/Tokyo", [bar("2026-09-22", 10.0), bar("2026-09-23", 11.0)])
+    view = await answered(ctx, news, "Figure raises money for humanoids", "Figure")
+    assert symbols(view) == ["4444.T"], left_off(view)
+    assert "added to the universe from Yahoo" in whys(view)["Figure"]

@@ -324,13 +324,15 @@ class Screen:
         listed = lead or named or next((q for q in equities if ticker(q)), None)
         if listed is None:
             return _Match(None, PRIVATE)
-        if self._universe.profile(listed.symbol) is not None:
+        tracked = self._universe.profile(listed.symbol) is not None
+        if tracked and named is None:
             # The rules above passed it over (a small line Yahoo merely ranks first).
             return _Match(None, f"listed as {listed.name} ({listed.symbol}), not taken on Yahoo's ranking alone")
         # A line Yahoo only ranks first, not by the name, joins only when Yahoo sizes it big.
         added = named and await self._added(name, named) or (
-            lead and lead is not named and await self._added(name, lead, _BIG))
-        return added or _Match(None, f"listed as {listed.name} ({listed.symbol}), not in the universe")
+            lead and lead is not named and not tracked and await self._added(name, lead, _BIG))
+        shown = named if tracked else listed
+        return added or _Match(None, f"listed as {shown.name} ({shown.symbol}), not in the universe")
 
     async def _added(self, name: str, q: Quote, bands: frozenset[str] | None = None) -> _Match | None:
         """Yahoo's line added to the universe under the index backfill's guards (only in `bands`
