@@ -372,3 +372,22 @@ def test_a_real_backup_copies_a_database_and_checks_it(tmp_path):
     dest = tmp_path / "bk" / "copy.db"
     holiday_service.backup_db(src, dest)
     assert sqlite3.connect(dest).execute("SELECT x FROM t").fetchall() == [(1,)]
+
+
+async def test_a_disarm_step_that_fails_is_named_and_the_rest_still_run(ctx, study, holiday, system):  # noqa: F811
+    holiday.arm(ctx)
+
+    def stuck(name):
+        raise HolidayError("access denied")
+    system.delete_task = stuck
+    report = holiday.disarm(ctx)
+    assert not report.ok and report.lines[0] == "Disarm incomplete."
+    assert f"Could not delete task {WATCHDOG_TASK}: access denied" in report.lines
+    assert study_status(ctx).state == "paused"
+
+
+async def test_a_bad_report_time_refuses_before_the_study_starts(ctx, study, holiday, watch_file, system):  # noqa: F811
+    watch_file.write_text(watch_file.read_text(encoding="utf-8") + 'report_time = "7am"\n', encoding="utf-8")
+    report = holiday.arm(ctx)
+    assert not report.ok and system.tasks == {} and system.launched == []
+    assert study_status(ctx).state == "paused" and study_status(ctx).paused_reason is None

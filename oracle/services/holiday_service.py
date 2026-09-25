@@ -135,10 +135,11 @@ class Holiday:
         assert cfg and path
         lines: list[str] = []
         try:
+            tasks = self._task_xmls(ctx, cfg, path)
             self._keep_remote_control(cfg, lines)
             start_study(ctx)
             lines.append("Started the replay study.")
-            for name, xml in self._task_xmls(ctx, cfg, path):
+            for name, xml in tasks:
                 self.system.register_task(name, xml)
                 lines.append(f"Registered task {name}.")
         except Exception as exc:  # noqa: BLE001 (whatever broke, nothing is left half armed)
@@ -362,14 +363,17 @@ class Holiday:
                              else f"Task {name} was not registered.")
             except Exception as exc:  # noqa: BLE001
                 lines.append(f"Could not delete task {name}: {exc}")
-        study = ReplayRepo(ctx.conn).current()
-        if study is None:
-            lines.append("No replay study.")
-        elif study.state == PAUSED:
-            lines.append(f"The replay study was already paused ({study.paused_reason or 'by hand'}).")
-        else:
-            pause_study(ctx, reason)
-            lines.append("Paused the replay study.")
+        try:
+            study = ReplayRepo(ctx.conn).current()
+            if study is None:
+                lines.append("No replay study.")
+            elif study.state == PAUSED:
+                lines.append(f"The replay study was already paused ({study.paused_reason or 'by hand'}).")
+            else:
+                pause_study(ctx, reason)
+                lines.append("Paused the replay study.")
+        except Exception as exc:  # noqa: BLE001
+            lines.append(f"Could not pause the replay study: {exc}")
         return lines
 
     # Status
