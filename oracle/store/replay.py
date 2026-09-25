@@ -26,6 +26,8 @@ class StudyRow:
     waiting: str | None = None
     stages: str | None = None
     """JSON: each research stage and the profile it ran on at creation."""
+    pacer: str | None = None
+    """JSON: what the pacer keeps between polls, as its last poll left it."""
 
 
 @dataclass(frozen=True)
@@ -46,7 +48,7 @@ class CellRow:
     finished_at: datetime | None
 
 
-_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting, stages"
+_STUDY = "id, created_at, state, first_day, last_day, listings, paused_reason, polled_at, waiting, stages, pacer"
 _CELL = ("id, study_id, symbol, as_of, state, position, attempts, allowed, refunds, job_id, run_id, error, "
          "started_at, finished_at")
 
@@ -97,17 +99,17 @@ class ReplayRepo:
         if r is None:
             return None
         return StudyRow(r[0], datetime.fromisoformat(r[1]), r[2], date.fromisoformat(r[3]), date.fromisoformat(r[4]),
-                        r[5], r[6], _when(r[7]), r[8], r[9])
+                        r[5], r[6], _when(r[7]), r[8], r[9], r[10])
 
     def set_state(self, study_id: int, state: str, reason: str | None = None) -> None:
         with transaction(self._conn):
             self._conn.execute("UPDATE replay_studies SET state = ?, paused_reason = ? WHERE id = ?",
                                (state, reason, study_id))
 
-    def note_poll(self, study_id: int, at: datetime, waiting: str | None) -> None:
+    def note_poll(self, study_id: int, at: datetime, waiting: str | None, pacer: str | None = None) -> None:
         with transaction(self._conn):
-            self._conn.execute("UPDATE replay_studies SET polled_at = ?, waiting = ? WHERE id = ?",
-                               (to_utc_iso(at), waiting, study_id))
+            self._conn.execute("UPDATE replay_studies SET polled_at = ?, waiting = ?, pacer = COALESCE(?, pacer) "
+                               "WHERE id = ?", (to_utc_iso(at), waiting, pacer, study_id))
 
     def cells(self, study_id: int, state: str | None = None) -> list[CellRow]:
         """In queue order."""
@@ -159,11 +161,13 @@ class ReplayRepo:
         """A replay of the cell started outside the pacer (Activity's Retry): the cell follows
         that job, with room for one more attempt."""
         self._set(cell_id, "state = ?, job_id = ?, started_at = ?, finished_at = NULL, "
-                  "allowed = MAX(allowed, attempts + 1)", RUNNING, job_id, to_utc_iso(at))
+                  "allowed = MAX(allowed, attempts + 1), refunds = 0", RUNNING, job_id, to_utc_iso(at))
 
-    def mark_done(self, cell_id: int, run_id: int | None, at: datetime) -> None:
-        self._set(cell_id, "state = ?, run_id = ?, error = NULL, attempts = attempts + 1, finished_at = ?",
-                  DONE, run_id, to_utc_iso(at))
+    def mark_done(self, cell_id: int, run_id: int | None, at: datetime, started_at: datetime | None = None) -> None:
+        """`started_at`, when known, is when the job began running, so time queued is not replay time."""
+        self._set(cell_id, "state = ?, run_id = ?, error = NULL, attempts = attempts + 1, finished_at = ?, "
+                  "started_at = COALESCE(?, started_at)", DONE, run_id, to_utc_iso(at),
+                  to_utc_iso(started_at) if started_at else None)
 
     def mark_failed(self, cell_id: int, error: str, at: datetime) -> None:
         """Counts an attempt and keeps the error; with attempts left, back to pending at the
@@ -197,7 +201,7 @@ class ReplayRepo:
 
     def retry_failed(self, study_id: int, cell_id: int | None = None) -> int:
         """Failed cells (or the one) back to pending at the end of the queue, allowed one more
-        attempt than they have used. The count moved."""
+        attempt than they have used and their outage refunds again. The count moved."""
         with transaction(self._conn):
             end = self._conn.execute("SELECT COALESCE(MAX(position), 0) FROM replay_cells WHERE study_id = ?",
                                      (study_id,)).fetchone()[0]
@@ -205,7 +209,7 @@ class ReplayRepo:
                 "SELECT id FROM replay_cells WHERE study_id = ? AND state = ? AND (? IS NULL OR id = ?) "
                 "ORDER BY position, id", (study_id, FAILED, cell_id, cell_id))]
             self._conn.executemany(
-                "UPDATE replay_cells SET state = ?, allowed = attempts + 1, position = ? WHERE id = ?",
+                "UPDATE replay_cells SET state = ?, allowed = attempts + 1, refunds = 0, position = ? WHERE id = ?",
                 [(PENDING, end + n, i) for n, i in enumerate(ids, start=1)])
         return len(ids)
 

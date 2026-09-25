@@ -72,8 +72,13 @@ async def _study_prices(ctx: AppContext) -> str:
         log.exception("replay study prices failed")
         return f"; replay study prices failed: {exc}"
     failed = sum(1 for o in out if o.error)
-    return (f"; replay study: {len(out) - failed} of {len(out)} listings refetched"
-            + (f", {failed} failed" if failed else "")) if out else "; replay study prices current"
+    tried = sum(1 for o in out if not o.skipped)
+    skipped = len(out) - tried
+    if not out:
+        return "; replay study prices current"
+    parts = [f"{tried - failed} of {tried} listings refetched"] if tried else []
+    parts += [f"{failed} failed"] * bool(failed) + [f"{skipped} skipped"] * bool(skipped)
+    return "; replay study: " + ", ".join(parts)
 
 
 async def _fx(ctx: AppContext, _: Say) -> tuple[str, str | None]:

@@ -27,3 +27,15 @@ async def test_all_failed_says_whether_every_source_answered_no_data(outcomes, n
     with pytest.raises(AllFailed) as err:
         await first_success(sources, call, empty_is_no_data=True)
     assert err.value.no_data is no_data
+
+
+@pytest.mark.parametrize(("outcomes", "down"), [
+    ([NoData("no data"), SourceFailed("HTTP 429", 429)], ("s1",)),
+    ([SourceFailed("timed out"), ValueError("bad json")], ("s0", "s1")),
+    ([NoData("no data"), []], ()),
+])
+async def test_all_failed_names_the_sources_that_did_not_answer(outcomes, down):
+    sources = [Source(f"s{i}", o) for i, o in enumerate(outcomes)]
+    with pytest.raises(AllFailed) as err:
+        await first_success(sources, call, empty_is_no_data=True)
+    assert err.value.down == down and err.value.answered is (len(down) < len(outcomes))
