@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from oracle.net.client import RateLimitedClient
@@ -24,6 +25,7 @@ from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
 from oracle.universe.backfill import apply_backfill, inherit_classification
+from oracle.universe.corrections import CORRECTIONS
 from oracle.universe.listings import MARKET_CAP_BANDS, Listing, blind_link, group_companies, legal_form, rank_listings
 from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
@@ -40,6 +42,7 @@ LEASE_S = 1800.0
 MAX_LIMIT = 500
 _COMMIT = "universe_commit"
 _REFRESHED = "universe_refreshed_at"
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,19 @@ class UniverseStatus:
     """type -> (listings, companies)"""
     source_commit: str | None
     refreshed_at: datetime | None
+    stale_corrections: tuple[str, ...] = field(default=(), compare=False)
+    """After a refresh, as a report rather than state: sector corrections whose company key no company has any more."""
+
+
+def stale_corrections(ctx: AppContext) -> tuple[str, ...]:
+    """The corrections table's entries ("Name (key)") matching no active company, logged: a
+    regroup re-keyed the company, so its correction no longer applies."""
+    live = UniverseRepo(ctx.conn).live_company_keys(CORRECTIONS)
+    stale = tuple(f"{c.name} ({key})" for key, c in CORRECTIONS.items() if key not in live)
+    if stale:
+        _log.warning("sector corrections matching no company (re-key them in oracle/universe/corrections.py): %s",
+                     "; ".join(stale))
+    return stale
 
 
 @dataclass(frozen=True)
@@ -296,7 +312,7 @@ async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = la
             meta = MetaRepo(ctx.conn)
             meta.set(_COMMIT, sha)
             meta.set(_REFRESHED, to_utc_iso(ctx.clock.utcnow()))
-    return universe_status(ctx)
+    return replace(universe_status(ctx), stale_corrections=stale_corrections(ctx))
 
 
 def regroup(ctx: AppContext, listings: list[Listing]) -> list[Listing]:

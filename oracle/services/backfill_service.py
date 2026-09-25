@@ -95,6 +95,8 @@ class BackfillReport:
     lookups: int
     stopped: str | None
     """Why the run stopped early (Yahoo rate limiting it), when it did."""
+    stale_corrections: tuple[str, ...] = ()
+    """Sector corrections whose company key no company has after the regroup."""
 
 
 async def backfill_universe(ctx: AppContext, on_progress: Callable[[str], None] = lambda _: None, *,
@@ -111,7 +113,8 @@ async def backfill_universe(ctx: AppContext, on_progress: Callable[[str], None] 
         on_progress("saving")
         held.check()
         rebuild(ctx)
-    return BackfillReport(tuple(backfill_status(ctx, indexes)), tuple(run.changes), run.lookups, run.stopped)
+    return BackfillReport(tuple(backfill_status(ctx, indexes)), tuple(run.changes), run.lookups, run.stopped,
+                          universe_service.stale_corrections(ctx))
 
 
 async def add_from_yahoo(ctx: AppContext, symbol: str,

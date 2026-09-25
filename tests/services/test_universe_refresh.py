@@ -9,11 +9,13 @@ from oracle.jobs import JobLock
 from oracle.services.context import open_context
 from oracle.services.errors import JobAlreadyRunning, UniverseUnavailable
 from oracle.services.net_service import source_statuses
+from oracle.services import universe_service
 from oracle.services.universe_service import refresh_universe, universe_status
 from oracle.store.universe import UniverseRepo
+from oracle.universe.corrections import Correction
 from oracle.universe.regions import home_line
 from tests.fakes.clock import FakeClock
-from tests.fakes.financedatabase import BASIC, EQUITY_COLUMNS, FakeFinanceDatabase, bz2_csv, equity
+from tests.fakes.financedatabase import APPLE, BASIC, EQUITY_COLUMNS, FakeFinanceDatabase, bz2_csv, equity
 
 START = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
 
@@ -141,3 +143,13 @@ async def test_a_missing_home_line_is_added_only_when_absent_and_its_company_is_
             await refresh_universe(c)
             profile = UniverseRepo(c.conn).profile("2330.TW")
             assert (profile.market_cap if profile else None) == band
+
+
+async def test_a_refresh_names_the_correction_keys_matching_no_company(ctx, monkeypatch, caplog):
+    fixes = {f"isin:{APPLE}|equity": Correction("Apple Inc.", "Information Technology", "Technology Hardware & Equipment",
+                                                "Technology Hardware, Storage & Peripherals"),
+             "name:gone plc|United Kingdom|equity": Correction("Gone plc", "Industrials", "Capital Goods", "Machinery")}
+    monkeypatch.setattr(universe_service, "CORRECTIONS", fixes)
+    status = await refresh_universe(ctx)
+    assert status.stale_corrections == ("Gone plc (name:gone plc|United Kingdom|equity)",)
+    assert "Gone plc (name:gone plc|United Kingdom|equity)" in caplog.text

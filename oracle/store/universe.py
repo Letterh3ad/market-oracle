@@ -353,6 +353,13 @@ class UniverseRepo:
             "SELECT exchange, MAX(market) FROM listings WHERE exchange IS NOT NULL AND market IS NOT NULL "
             "GROUP BY exchange")}
 
+    def live_company_keys(self, company_keys: Iterable[str]) -> set[str]:
+        """Those of `company_keys` an active company has."""
+        keys = list(company_keys)
+        return {r[0] for r in self._conn.execute(
+            f"SELECT DISTINCT company_key FROM listings WHERE is_primary AND delisted = 0 "
+            f"AND company_key IN ({', '.join('?' * len(keys)) or 'NULL'})", keys)}
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]

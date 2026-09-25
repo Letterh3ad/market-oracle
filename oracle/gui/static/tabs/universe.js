@@ -5,7 +5,7 @@ import { sendJson, busyButton, runJob } from "../lib/ui.js";
 import { refresh as refreshHeader } from "../lib/status.js";
 import { repaint } from "../lib/repaint.js";
 import { fillPicker } from "../lib/watchlists.js";
-import { backfillSection } from "../lib/backfill.js";
+import { backfillSection, staleNote } from "../lib/backfill.js";
 
 const PAGE = 50;
 const LABELS = {
@@ -180,6 +180,7 @@ function refreshButton(pane) {
       pane.querySelector("#u-status-text").textContent = `Refreshed. ${describe(u)}`;
       refreshHeader();
       await start(pane);
+      if (u.stale_corrections?.length) showError(staleNote(u.stale_corrections));
     } catch (err) { showError(`universe refresh: ${err.message}`); }
   });
 }
