@@ -35,7 +35,7 @@ from oracle.services.research_service import (
 )
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.tick_service import (
-    KIND_LABELS, MIDDAY, TICK, last_tick, record_skipped, run_midday, run_tick, ticked_since,
+    FILL, KIND_LABELS, MIDDAY, RUNS, TICK, last_tick, record_skipped, ticked_since,
 )
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
@@ -44,7 +44,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
-           "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_fill", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -354,13 +354,13 @@ def submit_analyse(ctx: AppContext, runner: JobRunner, symbol: str | None = None
 
 def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False,
                 kind: str = TICK, due: datetime | None = None, deadline: datetime | None = None) -> Job:
-    """One tick (or midday pass) as a job; its progress is the stage it is on. With
+    """One tick (or midday or fill pass) as a job; its progress is the stage it is on. With
     `skip_if_busy` (scheduled runs), one held by another process is recorded as skipped
-    instead of failing. Both kinds share the tick queue, so they run one after the other.
+    instead of failing. Every kind shares the tick queue, so they run one after the other.
     A scheduled run passes its `due` time: one run or skipped since it was queued is not
     run again. Past `deadline` as it starts, it is recorded as missed instead."""
     stage: list[str] = []
-    run = run_midday if kind == MIDDAY else run_tick
+    run = RUNS[kind]
 
     async def work(c: AppContext):
         if due is not None and ticked_since(c, due, kind):
@@ -380,6 +380,10 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
 
 def submit_midday(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
     return submit_tick(ctx, runner, trigger, skip_if_busy, MIDDAY)
+
+
+def submit_fill(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
+    return submit_tick(ctx, runner, trigger, skip_if_busy, FILL)
 
 
 def submit_universe_refresh(runner: JobRunner) -> Job:
@@ -548,7 +552,7 @@ def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 def _retry_tick(ctx: AppContext, runner: JobRunner, job) -> Job:
     """Whatever started it before (scheduled or manual), a retry is asked for: a manual run of the same kind."""
-    return submit_tick(ctx, runner, kind=MIDDAY if job.subject == MIDDAY else TICK)
+    return submit_tick(ctx, runner, kind=job.subject if job.subject in RUNS else TICK)
 
 
 def _retry_universe(ctx: AppContext, runner: JobRunner, job) -> Job:

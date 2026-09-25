@@ -135,8 +135,9 @@ def fail_for_good(ctx, cell, error="boom"):
         repo.mark_failed(cell.id, error, NOW)
 
 
-def london(ctx, runner, hhmm, midday=""):
-    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time=hhmm, midday_time=midday))
+def london(ctx, runner, hhmm, midday="", fills=()):
+    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time=hhmm, midday_time=midday,
+                                                             fill_times=fills))
     return Scheduler(ctx, runner, tz=ZoneInfo("Europe/London"))
 
 
@@ -329,6 +330,20 @@ async def test_the_pacer_yields_to_a_tick_due_within_the_longest_replay_and_its_
     pacer = ReplayPacer(ctx, runner, london(ctx, runner, "13:10"))
     assert pacer.check() is None and pacer.waiting.startswith("a tick is due")
     assert ReplayPacer(ctx, runner, london(ctx, runner, "13:30")).check() is not None
+
+
+async def test_the_pacer_yields_to_a_fill_pass_as_to_a_tick(ctx, runner, research):
+    await started(ctx)
+    pacer = ReplayPacer(ctx, runner, london(ctx, runner, "22:30", fills=("09:30", "13:10")))
+    assert pacer.check() is None and pacer.waiting.startswith("a fill pass is due")
+    scheduler = london(ctx, runner, "22:30", fills=("13:30",))
+    pacer = ReplayPacer(ctx, runner, scheduler)
+    job = pacer.check()
+    await settle()
+    ctx.clock.advance(29 * 60 + 10)
+    assert pacer.check() is None and "the fill pass due at" in pacer.waiting
+    await settle()
+    assert job.state == "cancelled"
 
 
 async def test_the_pacer_holds_between_a_ticks_time_and_the_poll_that_submits_it(ctx, runner, research):

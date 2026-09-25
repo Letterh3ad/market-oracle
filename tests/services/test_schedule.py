@@ -46,8 +46,8 @@ MONDAY_EVENING = utc(2026, 9, 21, 20, 0)  # 21:00 BST, before the 22:30 run
 def ctx(tmp_path):
     path = tmp_path / "oracle.toml"
     path.write_text(f'db_path = "{(tmp_path / "o.db").as_posix()}"  # mine\n', encoding="utf-8")
-    # The midday pass is off here: tests/services/test_schedule_midday.py covers it.
-    config = Config(db_path=tmp_path / "o.db", schedule=ScheduleConfig(enabled=True, midday_time=""))
+    # The midday and fill passes are off here: test_schedule_midday.py and test_schedule_fill.py cover them.
+    config = Config(db_path=tmp_path / "o.db", schedule=ScheduleConfig(enabled=True, midday_time="", fill_times=()))
     with open_context(config, path, FakeClock(MONDAY_EVENING)) as c:
         yield c
 
