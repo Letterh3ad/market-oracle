@@ -87,9 +87,21 @@ def test_an_earlier_day_never_reads_later_bars(listed):
     assert all(r.as_of is None or r.as_of <= day for r in before.rows)
 
 
-def test_a_future_day_is_refused(listed):
+def test_a_day_ahead_is_clamped_to_today_for_time_zones_ahead_of_utc(listed):
+    assert factor_table(listed, as_of=TODAY + timedelta(days=1)).as_of == TODAY
+
+
+def test_a_later_day_is_refused(listed):
     with pytest.raises(InvalidQuery):
-        factor_table(listed, as_of=TODAY + timedelta(days=1))
+        factor_table(listed, as_of=TODAY + timedelta(days=2))
+
+
+def test_a_zero_close_leaves_one_listing_unranked_and_the_table_served(listed):
+    BarRepo(listed.conn).upsert([Bar("MID", TODAY - timedelta(days=3), 0.0, None, None, 0.0, 0.0, 1, "USD", "test")],
+                                "2026-09-25T20:00:00Z")
+    table = factor_table(listed)
+    mid = next(r for r in table.rows if r.symbol == "MID")
+    assert mid.momentum_pct is None and "break" in mid.note and table.ranked == 4
 
 
 def test_a_company_outside_the_set_is_ranked_against_it_and_says_so(listed):

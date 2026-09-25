@@ -50,7 +50,8 @@ function sortHeader(label, key, glossary, pane) {
 function factorCaption(f) {
   if (f.error) return el("p", { class: "dim small" }, `Price factors: ${f.error}`);
   return el("p", { class: "dim small" }, `Momentum and calm ranked across ${f.set_size} watched, held and discovered ` +
-    `listings as of ${f.as_of} (${f.ranked} with a year of prices). For reading only: research and the verdicts do not use them.`);
+    `listings as of ${f.as_of} (${f.ranked} with a year of prices; an earlier day still ranks today's set). ` +
+    "For reading only: research and the verdicts do not use them.");
 }
 
 function table(body, pane, factors) {
@@ -164,7 +165,7 @@ function render(pane) {
       jobButton("Analyse", "/api/jobs/analyse", analyseSummary, pane),
       el("span", { class: "dim small" }, "Both run for every watched listing, on all lists."),
       el("span", { class: "dim" }, "Factors as of"),
-      el("input", { type: "date", value: asOf, "aria-label": "Factors as of", onchange: (e) => { asOf = e.target.value; load(pane); } })),
+      el("input", { type: "date", value: asOf, max: new Date().toLocaleDateString("en-CA"), "aria-label": "Factors as of", onchange: (e) => { asOf = e.target.value; load(pane); } })),
     el("div", { id: "w-result", class: "result" }),
     el("div", { id: "w-table" }), el("div", { id: "w-credits" }),
     discoverySection(() => { if (pane.querySelector("#w-table")) load(pane); }));

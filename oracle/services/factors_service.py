@@ -79,10 +79,11 @@ def company_factors(ctx: AppContext, symbol: str, as_of: date | None = None) -> 
 
 
 def _day(ctx: AppContext, as_of: date | None) -> date:
+    # A day ahead of UTC is today somewhere east of it: clamped, not refused.
     today = ctx.clock.utcnow().date()
-    if as_of is not None and as_of > today:
+    if as_of is not None and as_of > today + timedelta(days=1):
         raise InvalidQuery(f"{as_of.isoformat()} is after today: factors read stored closes only")
-    return as_of or today
+    return min(as_of or today, today)
 
 
 def _ranks(ctx: AppContext, symbols: list[str], day: date) -> dict[str, Ranked]:
