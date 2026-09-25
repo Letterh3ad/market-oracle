@@ -395,8 +395,8 @@ class Screen:
         if siblings := live_siblings(self._ctx, failed):
             if not self.checks_left:
                 return
-            gone, why_not = await self._check_prices(siblings[0].symbol)
-            if not (gone and why_not):
+            gone, _ = await self._check_prices(siblings[0].symbol)
+            if not gone:
                 return
         health = HealthRepo(self._ctx.conn)
         health.mark_dead(lines, today)
