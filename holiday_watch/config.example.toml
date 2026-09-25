@@ -20,8 +20,8 @@ start = ["ollama", "serve"]
 
 [remote_control]
 launch = ["claude", "--remote-control", "holiday"]   # the one allowed interactive session
-marker = "--remote-control"                          # its command line must hold this
-pid_file = "{reports}/remote-control.pid"            # written at launch; the reaper spares this PID
+markers = ["--remote-control", "--rc", "remote-control"]   # command-line words of a Remote Control session
+pid_file = "{reports}/remote-control.pid"            # written at launch; never reaped, nor is any marked session
 
 [claude]
 command = "claude"
@@ -44,11 +44,13 @@ tick_grace_min = 45   # a weekday tick not seen this long after its time: fix ru
 stall_h = 6           # a running study with no replay done this long while idle: fix run
 
 [reaper]
-match = ["claude.exe", "@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"]   # name or command line, any case
+names = ["claude.exe", "claude"]                                   # executable names, any case
+node_scripts = ["@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"]   # a node.exe running these is claude
 spare = ["\\WindowsApps\\Claude_", " daemon run", "--bg-pty-host"]   # never reaped: the desktop app, Claude Code's daemon
 idle_min = 30         # kill a claude process using under idle_cpu_s of CPU over this long
 idle_cpu_s = 2.0
 max_age_h = 3         # kill any claude process older than this
+reap_interactive = false   # false: only headless claude (-p/--print) is killed; interactive ones are logged
 
 [report]
 timeout_min = 10      # the morning report's claude summary; the plain report is written anyway

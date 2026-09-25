@@ -77,24 +77,30 @@ def resolved(args: Sequence[str]) -> list[str]:
 
 
 class RealSystem:
+    breakaway_refused = False
     def processes(self) -> list[Proc]:
         return procs.list_processes()
 
     def spawn(self, args: Sequence[str], cwd: Path, *, console: bool = False, log: Path | None = None) -> int | None:
-        flags = NEW_CONSOLE if console else DETACHED | NO_WINDOW
+        if console:
+            # No handles given: the child uses its new console, which an interactive claude needs.
+            return self._popen(args, cwd, NEW_CONSOLE, {})
         out = open(log, "ab") if log else subprocess.DEVNULL  # noqa: SIM115 (the child keeps it)
         try:
-            try:
-                p = subprocess.Popen(resolved(args), cwd=cwd, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
-                                     creationflags=flags | BREAKAWAY, close_fds=True)
-            except OSError:
-                # A Task Scheduler job that forbids breakaway refuses the flag.
-                p = subprocess.Popen(resolved(args), cwd=cwd, stdin=subprocess.DEVNULL, stdout=out, stderr=out,
-                                     creationflags=flags, close_fds=True)
+            return self._popen(args, cwd, DETACHED | NO_WINDOW,
+                               {"stdin": subprocess.DEVNULL, "stdout": out, "stderr": out})
         finally:
             if log:
                 out.close()
-        return p.pid
+
+    def _popen(self, args: Sequence[str], cwd: Path, flags: int, handles: dict) -> int:
+        try:
+            return subprocess.Popen(resolved(args), cwd=cwd, creationflags=flags | BREAKAWAY, close_fds=True,
+                                    **handles).pid
+        except OSError:
+            # A Task Scheduler job that forbids breakaway refuses the flag; the child then ends with the task.
+            self.breakaway_refused = True
+            return subprocess.Popen(resolved(args), cwd=cwd, creationflags=flags, close_fds=True, **handles).pid
 
     def kill_tree(self, pid: int) -> str:
         return procs.kill_tree(pid)

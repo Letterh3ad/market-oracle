@@ -108,8 +108,36 @@ def test_the_reaper_kills_idle_and_old_claude_but_spares_remote_control(tmp_path
     assert "past its 3 h time limit" in line and "age 200 min" in line and "claude.exe -p something" in line
 
 
+def test_an_old_interactive_session_is_noted_once_not_killed(tmp_path):
+    session = proc(820, cmd="claude.exe --session-id abc", age_min=500)
+    w, system = with_rc(tmp_path, procs=[session])
+    run_pass(w)
+    run_pass(w)
+    assert system.killed == []
+    noted = [line for line in w.lines if "would reap claude PID 820" in line]
+    assert len(noted) == 1 and "reap_interactive is off" in noted[0]
+
+
+def test_a_hand_opened_remote_control_session_is_kept_and_not_doubled(tmp_path):
+    """`claude remote-control` (the subcommand) with no PID file: adopted, never reaped."""
+    rc = proc(830, cmd="claude.exe remote-control", age_min=5000)
+    system = FakeSystem([rc])
+    w = watch(tmp_path, system=system, reap_interactive=True)
+    run_pass(w)
+    assert system.spawned == [] and system.killed == []
+    assert w.cfg.rc_pid_file.read_text(encoding="utf-8") == "830"
+
+
+def test_claude_children_of_the_app_server_are_spared(tmp_path):
+    server = proc(321, name="python.exe", cmd="python -m oracle --config x gui", age_min=900)
+    child = proc(840, 321, cmd="claude.exe -p --model sonnet", age_min=500)
+    w, system = with_rc(tmp_path, procs=[server, child])
+    run_pass(w)
+    assert system.killed == []
+
+
 def test_idle_claude_is_reaped_on_a_later_pass(tmp_path):
-    idle = proc(810, cmd="claude.exe", age_min=40, cpu=3.0)
+    idle = proc(810, cmd="claude.exe -p x", age_min=40, cpu=3.0)
     w, system = with_rc(tmp_path, procs=[idle], now=NOW - timedelta(minutes=31))
     run_pass(w)
     assert system.killed == []

@@ -29,7 +29,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
     "ollama": {"url": "http://127.0.0.1:11434", "start": ["ollama", "serve"]},
     "remote_control": {
         "launch": ["claude", "--remote-control", "holiday"],
-        "marker": "--remote-control",
+        "markers": ["--remote-control", "--rc", "remote-control"],
         "pid_file": "{reports}/remote-control.pid",
     },
     "claude": {"command": "claude", "fix_model": "opus", "report_model": "sonnet"},
@@ -39,9 +39,10 @@ DEFAULTS: dict[str, dict[str, object]] = {
         "tick_time": "", "tick_grace_min": 45, "stall_h": 6,
     },
     "reaper": {
-        "match": ["claude.exe", "@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"],
+        "names": ["claude.exe", "claude"],
+        "node_scripts": ["@anthropic-ai/claude-code", "@anthropic-ai\\claude-code"],
         "spare": ["\\WindowsApps\\Claude_", " daemon run", "--bg-pty-host"],
-        "idle_min": 30, "idle_cpu_s": 2.0, "max_age_h": 3,
+        "idle_min": 30, "idle_cpu_s": 2.0, "max_age_h": 3, "reap_interactive": False,
     },
     "report": {"timeout_min": 10},
 }
@@ -60,7 +61,8 @@ class Config:
     ollama_url: str
     ollama_start: tuple[str, ...]
     rc_launch: tuple[str, ...]
-    rc_marker: str
+    rc_markers: tuple[str, ...]
+    """Command-line words that make a claude process a Remote Control session."""
     rc_pid_file: Path
     claude: str
     fix_model: str
@@ -77,12 +79,17 @@ class Config:
     """"HH:MM" local; "" takes the app's own schedule time from /api/status."""
     tick_grace_min: float
     stall_h: float
-    reaper_match: tuple[str, ...]
+    reaper_names: tuple[str, ...]
+    """Executable names that are claude."""
+    reaper_node_scripts: tuple[str, ...]
+    """A node.exe running one of these is claude too."""
     reaper_spare: tuple[str, ...]
     """Never reaped: the Claude desktop app and Claude Code's own daemon, which share the name."""
     idle_min: float
     idle_cpu_s: float
     max_age_h: float
+    reap_interactive: bool
+    """False: only headless (-p/--print) claude is killed; an interactive one is logged."""
     report_timeout_min: float
 
     @property
@@ -128,15 +135,18 @@ def load(path: Path | None = None) -> Config:
         python=Path(names["python"]), oracle_config=Path(names["oracle_config"]), db=Path(names["db"]),
         app_url=s(a["url"]).rstrip("/"), app_start=cmd(a["start"]),
         ollama_url=s(o["url"]).rstrip("/"), ollama_start=cmd(o["start"]),
-        rc_launch=cmd(rc["launch"]), rc_marker=s(rc["marker"]), rc_pid_file=Path(s(rc["pid_file"])),
+        rc_launch=cmd(rc["launch"]), rc_markers=tuple(str(m) for m in rc["markers"]),
+        rc_pid_file=Path(s(rc["pid_file"])),
         claude=s(c["command"]), fix_model=s(c["fix_model"]), report_model=s(c["report_model"]),
         fix_timeout_min=float(fx["timeout_min"]), fix_max_per_day=int(fx["max_per_day"]),
         fix_same_trigger_h=float(fx["same_trigger_h"]),
         app_restarts=int(t["app_restarts"]), failure_rate=float(t["failure_rate"]),
         failure_min=int(t["failure_min"]), same_error=int(t["same_error"]), job_max_h=float(t["job_max_h"]),
         tick_time=s(t["tick_time"]), tick_grace_min=float(t["tick_grace_min"]), stall_h=float(t["stall_h"]),
-        reaper_match=tuple(str(m) for m in r["match"]), reaper_spare=tuple(str(m) for m in r["spare"]),
+        reaper_names=tuple(str(m) for m in r["names"]),
+        reaper_node_scripts=tuple(str(m) for m in r["node_scripts"]), reaper_spare=tuple(str(m) for m in r["spare"]),
         idle_min=float(r["idle_min"]),
         idle_cpu_s=float(r["idle_cpu_s"]), max_age_h=float(r["max_age_h"]),
+        reap_interactive=bool(r["reap_interactive"]),
         report_timeout_min=float(raw["report"]["timeout_min"]),
     )
