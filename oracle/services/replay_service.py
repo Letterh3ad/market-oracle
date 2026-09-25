@@ -17,7 +17,7 @@ from oracle.jobs import pid_alive
 from oracle.services.activity_service import Job, JobRunner, submit_research
 from oracle.services.context import AppContext
 from oracle.services.cutoff_service import (
-    ReplayCutoff, check_replay_from, month_back, pin_stages, pinned_cutoff, pins, replay_cutoff,
+    ReplayCutoff, check_replay_from, month_back, pin_stages, pinned_cutoff, pinned_cutoff_by, pins, replay_cutoff,
 )
 from oracle.services.cutoff_service import cannot_run as _cannot_run
 from oracle.services.errors import InvalidQuery, PriceUnavailable, ServiceError, UnknownSymbol
@@ -578,13 +578,13 @@ class ReplayPacer:
         for good."""
         if repo.next_pending(study.id) is None:
             return None
-        why, rc = cannot_run(self._ctx, study)
+        why, _ = cannot_run(self._ctx, study)
         if why:
             repo.set_state(study.id, PAUSED, why)
             return None
-        cutoff = pinned_cutoff(self._ctx, study.stages)
+        cutoff, set_by = pinned_cutoff_by(self._ctx, study.stages)
         if cutoff and (early := [c.id for c in repo.cells(study.id, PENDING) if c.as_of <= cutoff]):
-            repo.stop_for_good(early, f"on or before the cutoff {cutoff} of {rc.set_by}", self._ctx.clock.utcnow())
+            repo.stop_for_good(early, f"on or before the cutoff {cutoff} of {set_by}", self._ctx.clock.utcnow())
         return repo.next_pending(study.id)
 
     def hold(self, repo: ReplayRepo, study: StudyRow) -> str | None:

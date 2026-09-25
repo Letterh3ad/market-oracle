@@ -969,19 +969,30 @@ async def test_a_raised_claim_on_the_pinned_profile_moves_pacer_and_score_togeth
     assert stopped == left_out == {("AAPL", FIRST), ("JPM", FIRST)}
 
 
-async def test_activity_retry_reads_the_pinned_profile_claim_as_the_pacer_does(ctx, runner, research):
+async def test_activity_retry_counts_the_claim_of_the_profile_the_slots_now_run_on(ctx, runner, research):
     await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
     pacer = ReplayPacer(ctx, runner)
     day = date(2026, 8, 3)
     await run_one(pacer, runner, research, "AAPL", day, "model down")
     job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
     model = ctx.config.llm.model
-    # The slots move to another profile of the same model claiming more: the study still reads its own pin.
+    # The slots move to another profile of the same model claiming more: the run now uses that claim, so it counts.
     ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", model),
                                              "other": ModelProfile("ollama", model, claimed_cutoff="2026-08-10")},
                          model_slots={stage: "other" for stage in STAGES})
-    assert study_status(ctx).cutoff < day
-    assert retry(ctx, runner, job.id) is not None
+    assert study_status(ctx).cutoff == date(2026, 8, 10)
+    with pytest.raises(InvalidQuery, match="on or before the measured cutoff 2026-08-10"):
+        retry(ctx, runner, job.id)
+
+
+async def test_the_pacer_names_the_profile_whose_claim_set_the_cutoff(ctx, runner, research):
+    await started(ctx, symbols=["AAPL"])
+    model = ctx.config.llm.model
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", model, claimed_cutoff="2026-06-15"),
+                                             "other": ModelProfile("ollama", model)},
+                         model_slots={stage: "other" for stage in STAGES})
+    assert ReplayPacer(ctx, runner).check().subject == "AAPL@2026-07-01"
+    assert [c.error for c in study_status(ctx).failed] == ["on or before the cutoff 2026-06-15 of default"]
 
 
 async def test_replace_after_the_cutoff_moved_makes_no_cell_on_or_before_it(ctx):
