@@ -2512,3 +2512,21 @@ ones the running app holds (or the file no longer loads); the study's pinned mod
 `oracle`); `schtasks /SC MINUTE /MO 30` flags (72 h default limit ends spawned children, no working
 folder); `run.ps1` via powershell (needs HOLIDAY_WATCH_PYTHON, which a task cannot set, and flashes a
 window); failing arm on zero Remote Control sessions (one more manual step at 18:00).
+
+## 2026-09-25 - Holiday arm gate round 1: updates paused, task limits, live worktree
+**Context:** Gate 02 round 1: a Windows Update restart would stop every logged-on task until sign-in;
+the live check could fail and still say "Armed"; a CLI arm ran the watch from the dev checkout;
+IgnoreNew with no time limit lets one stuck run block every later one.
+**Decision (coordinator):** Arm refuses while a restart is pending (RebootRequired / RebootPending
+keys) or while updates are not paused until at least now + `[arm] away_days` (6); the fix is Pause
+updates. Automatic sign-in after an update (ARSO) off or unreadable is a warning, never a refusal; no
+password is ever stored. Registry reads only, on the seam. The live check's exit code counts: a
+failing `pass --dry-run` fails "Live check" and undoes arming. Tasks and the live check run in
+`cfg.live`, which must hold `holiday_watch/__main__.py`; `--config` is absolute. IgnoreNew stays, with
+ExecutionTimeLimit PT20M (watchdog) and PT30M (report): spawned children break away, so the limit only
+ends a stuck pass; status warns past 25 min Running. A battery means the lid action on mains power must
+be Do nothing. A rollback closes a Remote Control console arm started; `arm.lock` keeps one arm or
+disarm at a time; disarm ends a running fix run first (it could start the study again).
+**Alternatives:** Parallel instances (reviewer's fallback if the live test shows a stuck instance);
+storing a password for "run whether logged on or not" (never); no time limit (a stuck pass blocks
+the watch for days).
