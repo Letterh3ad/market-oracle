@@ -48,12 +48,12 @@ class HealthRepo:
         return self.get(symbol)
 
     def mark_dead(self, symbols: list[str], day: date) -> None:
-        """Dead from `day` without waiting out the streak; a listing already dead keeps its day."""
+        """Dead from `day` without waiting out the streak, its no-data days kept."""
         with transaction(self._conn):
             for symbol in symbols:
                 self._conn.execute(
                     "INSERT INTO listing_health (symbol, no_data_days, dead_since) VALUES (?, '[]', ?) "
-                    "ON CONFLICT (symbol) DO UPDATE SET dead_since = COALESCE(dead_since, excluded.dead_since)",
+                    "ON CONFLICT (symbol) DO UPDATE SET dead_since = excluded.dead_since",
                     (symbol, day.isoformat()))
 
     def clear(self, symbol: str) -> bool:
@@ -63,5 +63,8 @@ class HealthRepo:
             self._conn.execute("DELETE FROM listing_health WHERE symbol = ?", (symbol,))
         return was_dead
 
-    def dead_symbols(self) -> set[str]:
-        return {r[0] for r in self._conn.execute("SELECT symbol FROM listing_health WHERE dead_since IS NOT NULL")}
+    def dead_symbols(self, since: date | None = None) -> set[str]:
+        """Dead listings; with `since`, only those dead from that day on."""
+        return {r[0] for r in self._conn.execute(
+            "SELECT symbol FROM listing_health WHERE dead_since IS NOT NULL AND (:s IS NULL OR dead_since >= :s)",
+            {"s": since and since.isoformat()})}

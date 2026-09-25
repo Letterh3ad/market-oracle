@@ -2,11 +2,13 @@
 sector, acquired companies still screened, name trade words against the question's sectors, and
 everyday theme words the universe does not use."""
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from oracle.config import Config
+from oracle.market.yahoo import Quote
+from oracle.services import candidate_screen
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.candidate_screen import Screen
 from oracle.services.context import open_context
@@ -15,7 +17,9 @@ from oracle.services.industry_words import classes
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_screen import industry, plan_filters, screen_universe
+from oracle.services.watch_service import watch
 from oracle.store.health import HealthRepo
+from oracle.store.paper import PaperRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.corrections import CORRECTIONS, corrected
@@ -88,8 +92,10 @@ UNIVERSE = [
     *company("aixa", "AIXTRON SE", "Germany", "Mid Cap", [("AIXA.DE", "GER", "EUR"), ("AIXA.F", "FRA", "EUR")]),
     # A single line whose last bars are months old.
     *company("stale", "Stalechip AG", "Germany", "Mid Cap", [("STAL.DE", "GER", "EUR")]),
+    # Closed for a week (Golden Week): stale, not gone.
+    *company("golden", "Shanghai Holidaychip Co., Ltd.", "China", "Mid Cap", [("600999.SS", "SHH", "CNY")]),
 ]
-GONE = {"DLG.DE", "DLG.F", "MGGT.L", "MGI.F", "AIXA.DE", "STAL.DE"}
+GONE = {"DLG.DE", "DLG.F", "MGGT.L", "MGI.F", "AIXA.DE", "STAL.DE", "600999.SS"}
 DAYS = [date(2026, 9, d) for d in (22, 23, 24)]
 
 
@@ -99,6 +105,7 @@ def yahoo():
     for s in {x.symbol for x in UNIVERSE} - GONE:
         y.add(s, "EUR", "Europe/Berlin", [bar(d.isoformat(), 10.0) for d in DAYS])
     y.add("STAL.DE", "EUR", "Europe/Berlin", [bar("2026-06-01", 5.0), bar("2026-06-02", 5.0)])
+    y.add("600999.SS", "CNY", "Asia/Shanghai", [bar("2026-09-17", 5.0), bar("2026-09-18", 5.0)])
     return y
 
 
@@ -193,27 +200,41 @@ def charted(web, prefix):
     return [r for r in web.requests if f"/chart/{prefix}" in r.url.path]
 
 
-async def test_an_acquired_company_is_marked_dead_once_and_then_screened_out_without_a_fetch(ctx, web):
-    first = await ask(ctx, "European chipmakers", model=model(), searcher=FakeSearcher())
+def no_data_yesterday(ctx, *symbols):
+    for s in symbols:
+        HealthRepo(ctx.conn).note_no_data(s, TODAY - timedelta(days=1), dead_after=99)
+
+
+async def chipmakers(ctx):
+    return await ask(ctx, "European chipmakers", model=model(), searcher=FakeSearcher())
+
+
+async def test_an_acquired_company_is_buried_on_its_second_day_of_no_data_then_skipped_without_a_fetch(ctx, web):
+    first = await chipmakers(ctx)
     assert "DLG.DE" not in [line.item.symbol for line in first.shortlist]
     health = HealthRepo(ctx.conn)
-    assert health.get("DLG.DE").since == TODAY and health.get("DLG.F").since == TODAY, "every line, at once"
+    assert not health.get("DLG.DE").dead, "one day of no data may be a hiccup"
+    ctx.clock.advance(86400)
+    await chipmakers(ctx)
+    today = TODAY + timedelta(days=1)
+    assert health.get("DLG.DE").since == today and health.get("DLG.F").since == today, "every line, at once"
     tried = len(charted(web, "DLG"))
-    assert tried == 2, "its home line, then one sibling for a second opinion"
+    assert tried == 3, "its home line on two days, then one sibling for a second opinion"
     assert "DLG.DE" not in screened(ctx, ["semiconductors"], ["Europe"])
-    await ask(ctx, "European chipmakers", model=model(), searcher=FakeSearcher())
+    await chipmakers(ctx)
     assert len(charted(web, "DLG")) == tried
 
 
 async def test_meggitt_leaves_a_defence_screen(ctx):
+    no_data_yesterday(ctx, "MGGT.L")
     await ask(ctx, "UK defence", model=model(("defence",), ("United Kingdom",)), searcher=FakeSearcher())
     assert HealthRepo(ctx.conn).get("MGGT.L").dead and HealthRepo(ctx.conn).get("MGI.F").dead
     assert screened(ctx, ["defence"], ["United Kingdom"]) == []
 
 
 async def test_a_sibling_with_prices_keeps_the_company_alive(ctx):
-    screen = Screen(ctx, 5)
-    line, why = await screen.priced_line(profile(ctx, "AIXA.DE"), "AIXA.DE")
+    no_data_yesterday(ctx, "AIXA.DE")
+    line, why = await Screen(ctx, 5).priced_line(profile(ctx, "AIXA.DE"), "AIXA.DE")
     assert line is None and why.startswith("no price data")
     assert not HealthRepo(ctx.conn).get("AIXA.DE").dead and not HealthRepo(ctx.conn).get("AIXA.F").dead
 
@@ -222,26 +243,85 @@ async def test_recent_stored_bars_on_any_line_keep_the_company_alive(ctx, yahoo)
     yahoo.add("DLG.F", "EUR", "Europe/Berlin", [bar(d.isoformat(), 10.0) for d in DAYS])
     await update_listing(ctx, "DLG.F")
     del yahoo.series["DLG.F"]
+    no_data_yesterday(ctx, "DLG.DE")
     line, _ = await Screen(ctx, 5).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
     assert line is None and not HealthRepo(ctx.conn).get("DLG.DE").dead
 
 
-async def test_bars_months_old_on_the_only_line_mark_it_dead(ctx):
+async def test_a_golden_week_gap_is_skipped_for_the_answer_never_buried(ctx):
+    line, why = await Screen(ctx, 5).priced_line(profile(ctx, "600999.SS"), "600999.SS")
+    assert line is None and why.startswith("its prices are out of date")
+    assert not HealthRepo(ctx.conn).get("600999.SS").dead
+
+
+async def test_a_last_bar_over_30_days_old_on_the_only_line_buries_it(ctx):
     line, why = await Screen(ctx, 5).priced_line(profile(ctx, "STAL.DE"), "STAL.DE")
     assert line is None and why.startswith("its prices are out of date")
     assert HealthRepo(ctx.conn).get("STAL.DE").since == TODAY
 
 
+async def test_a_held_company_is_never_buried(ctx, monkeypatch):
+    monkeypatch.setattr(PaperRepo, "held_symbols", lambda self, account=None: ["DLG.F"])
+    no_data_yesterday(ctx, "DLG.DE", "DLG.F")
+    line, _ = await Screen(ctx, 5).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
+    assert line is None and not HealthRepo(ctx.conn).get("DLG.DE").dead
+
+
+async def test_a_watched_company_is_never_buried(ctx):
+    watch(ctx, "DLG.F")
+    no_data_yesterday(ctx, "DLG.DE", "DLG.F")
+    line, _ = await Screen(ctx, 5).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
+    assert line is None and not HealthRepo(ctx.conn).get("DLG.DE").dead
+
+
+async def test_a_burial_expires_after_30_days_and_the_next_screen_checks_again(ctx, yahoo):
+    health = HealthRepo(ctx.conn)
+    health.mark_dead(["DLG.DE", "DLG.F"], TODAY - timedelta(days=29))
+    assert "DLG.DE" not in screened(ctx, ["semiconductors"], ["Europe"])
+    health.mark_dead(["DLG.DE", "DLG.F"], TODAY - timedelta(days=31))
+    assert "DLG.DE" in screened(ctx, ["semiconductors"], ["Europe"])
+    yahoo.add("DLG.DE", "EUR", "Europe/Berlin", [bar(d.isoformat(), 10.0) for d in DAYS])
+    view = await chipmakers(ctx)
+    assert "DLG.DE" in [line.item.symbol for line in view.shortlist] and not health.get("DLG.DE").dead
+
+
+async def test_an_expired_burial_still_gone_is_buried_again_from_today(ctx):
+    health = HealthRepo(ctx.conn)
+    health.mark_dead(["DLG.DE", "DLG.F"], TODAY - timedelta(days=31))
+    no_data_yesterday(ctx, "DLG.DE")
+    line, _ = await Screen(ctx, 5).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
+    assert line is None and health.get("DLG.DE").since == TODAY
+
+
+def test_an_expired_primary_is_the_live_line_again(ctx):
+    health = HealthRepo(ctx.conn)
+    health.mark_dead(["DLG.DE", "DLG.F"], TODAY - timedelta(days=31))
+    assert Screen(ctx, 5).live_line(profile(ctx, "DLG.DE")) == "DLG.DE"
+    health.mark_dead(["DLG.DE", "DLG.F"], TODAY)
+    assert Screen(ctx, 5).live_line(profile(ctx, "DLG.DE")) is None
+
+
 async def test_sources_down_mark_nothing_dead(ctx, yahoo):
     yahoo.fail["DLG.DE"] = 500
     yahoo.fail["DLG.F"] = 500
+    no_data_yesterday(ctx, "DLG.DE")
     line, _ = await Screen(ctx, 5).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
     assert line is None and not HealthRepo(ctx.conn).get("DLG.DE").dead
 
 
 async def test_with_no_check_left_for_a_second_opinion_nothing_is_marked(ctx):
+    no_data_yesterday(ctx, "DLG.DE")
     line, _ = await Screen(ctx, 1).priced_line(profile(ctx, "DLG.DE"), "DLG.DE")
     assert line is None and not HealthRepo(ctx.conn).get("DLG.DE").dead
+
+
+async def test_a_line_yahoo_adds_under_a_corrected_company_reads_the_correction(ctx, monkeypatch):
+    async def added(ctx, symbol, bands=None):
+        return "RHM.DE", None
+
+    monkeypatch.setattr(candidate_screen, "add_from_yahoo", added)
+    found = await Screen(ctx, 5)._added("Rheinmetall", Quote("RHM.DE", "Rheinmetall AG", "Rheinmetall", "EQUITY", 1.0))
+    assert found.profile.sector == "Industrials" and found.profile.industry == "Aerospace & Defense"
 
 
 # 3. Name trade words by sector.

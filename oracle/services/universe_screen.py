@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
+from oracle.services.candidate_screen import buried
 from oracle.services.context import AppContext
 from oracle.services.industry_words import Classes, classes
 from oracle.services.never_list import is_never, never_names
-from oracle.store.health import HealthRepo
 from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.corrections import CORRECTIONS
 from oracle.universe.exchanges import EXCHANGES, exchange_country
@@ -114,7 +114,7 @@ def screen_universe(ctx: AppContext, filters: Filters) -> Screening:
     found = universe.screen([(c.level, c.values) for c in filters.industries], filters.countries,
                             filters.market_caps, _UNTRUSTED, CORRECTIONS)
     listings = universe.listings_of(p.company_key for p in found)
-    dead = HealthRepo(ctx.conn).dead_symbols()
+    dead = buried(ctx)
     never = never_names(ctx, user=True)
     out = []
     for p in found:

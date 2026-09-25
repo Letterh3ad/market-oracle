@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from oracle.market.bars import is_stale
 from oracle.market.sources import NoData, SourceFailed
@@ -33,6 +33,7 @@ from oracle.services.universe_service import live_siblings, search_universe
 from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DISCOVERED_LIST, DiscoveryRepo
 from oracle.store.health import HealthRepo
+from oracle.store.paper import PaperRepo
 from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.corrections import corrected
@@ -63,6 +64,16 @@ MAX_LOOKUPS = 5
 MAX_NAMED_CANDIDATES = 4
 _DOTCOM = re.compile(r"\.com\b", re.IGNORECASE)
 EXACT, START, SYMBOL, LOOKUP, PARENT = "exact", "start", "symbol", "lookup", "parent"
+# A screen buries a company (every line dead) only on these, never on a holiday's gap or one
+# empty answer; the burial lapses after `BURIAL_DAYS` and the next screen meeting it checks again.
+BURY_AFTER_NO_DATA_DAYS = 2
+BURY_AFTER_OLD_DAYS = 30
+BURIAL_DAYS = 30
+
+
+def buried(ctx: AppContext) -> set[str]:
+    """The dead lines a screen skips: those whose burial has not yet expired."""
+    return HealthRepo(ctx.conn).dead_symbols(since=ctx.clock.utcnow().date() - timedelta(days=BURIAL_DAYS))
 
 
 class Screen:
@@ -346,7 +357,7 @@ class Screen:
             return None
         self._lookups += 1
         symbol, _ = await add_from_yahoo(self._ctx, q.symbol, bands)
-        p = self._universe.profile(symbol) if symbol else None
+        p = self.profile(symbol) if symbol else None
         return p and _Match(p, kind=LOOKUP, note=f"{name} is listed as {p.name} ({symbol}), {ADDED_FROM_YAHOO}")
 
     async def _quotes_for(self, name: str) -> list[Quote] | None:
@@ -385,40 +396,53 @@ class Screen:
         listing = line or self.live_line(profile)
         if listing is None:
             return None, "no listing with live prices"
-        gone, why_not = await self._check_prices(listing)
-        if gone:
+        checked = await self._check_prices(listing)
+        if checked.why_not and self._long_gone(listing, checked):
             await self._bury(profile, listing)
-        return (None, why_not) if why_not else (listing, None)
+        return (None, checked.why_not) if checked.why_not else (listing, None)
 
-    async def _check_prices(self, symbol: str) -> tuple[bool, str | None]:
-        """One price check: why the line has no recent prices (None when it has), and whether
-        the sources said so themselves (no data, or only old bars) rather than failing to answer."""
+    async def _check_prices(self, symbol: str) -> _Checked:
         self.checks += 1
         try:
             update = await update_listing(self._ctx, symbol)
         except PriceUnavailable as exc:
-            return exc.no_data, f"no price data ({exc})"
+            return _Checked(f"no price data ({exc})", no_data=exc.no_data)
         except ServiceError as exc:
-            return False, f"no price data ({exc})"
+            return _Checked(f"no price data ({exc})")
         if update.last_date is None or is_stale(update.last_date, self._today()):
-            return True, f"its prices are out of date (last {update.last_date})"
-        return False, None
+            return _Checked(f"its prices are out of date (last {update.last_date})", last=update.last_date)
+        return _Checked(None)
+
+    def _long_gone(self, symbol: str, checked: _Checked) -> bool:
+        """Death, not a hiccup or a holiday: no data from every source on `BURY_AFTER_NO_DATA_DAYS`
+        separate days, or a last bar older than `BURY_AFTER_OLD_DAYS`."""
+        if checked.no_data:
+            return HealthRepo(self._ctx.conn).get(symbol).streak >= BURY_AFTER_NO_DATA_DAYS
+        return self._too_old(checked)
+
+    def _too_old(self, checked: _Checked) -> bool:
+        return checked.last is not None and (self._today() - checked.last).days > BURY_AFTER_OLD_DAYS
 
     async def _bury(self, profile: ListingProfile, failed: str) -> None:
         """Mark every line of an acquired or dead company dead (Dialog Semiconductor, Meggitt),
-        so screens skip it from now on without a fetch: none has recent bars stored, and its
-        best other line, when it has one, answers no better. Left alone when that second
-        opinion cannot be had (no check left, or the sources not answering)."""
+        so screens skip it without a fetch until the burial expires: no line is watched or held,
+        none has recent bars stored, and its best other line, when it has one, answers no data
+        or only old bars too. Left alone when that second opinion cannot be had (no check left,
+        or the sources not answering)."""
         today = self._today()
         lines = [x.symbol for x in self._universe.company_listings(profile.company_key) if not x.delisted]
+        kept = {s.upper() for s in (*WatchlistRepo(self._ctx.conn).all_symbols(),
+                                    *PaperRepo(self._ctx.conn).held_symbols())}
+        if any(s.upper() in kept for s in lines):
+            return
         bars = BarRepo(self._ctx.conn)
         if any((last := bars.last_date(s)) and not is_stale(last, today) for s in lines):
             return
         if siblings := live_siblings(self._ctx, failed):
             if not self.checks_left:
                 return
-            gone, _ = await self._check_prices(siblings[0].symbol)
-            if not gone:
+            second = await self._check_prices(siblings[0].symbol)
+            if not (second.no_data or self._too_old(second)):
                 return
         health = HealthRepo(self._ctx.conn)
         health.mark_dead(lines, today)
@@ -428,9 +452,10 @@ class Screen:
         return self._ctx.clock.utcnow().date()
 
     def live_line(self, profile: ListingProfile) -> str | None:
-        """The primary line (home or most liquid), else its best live sibling."""
+        """The primary line (home or most liquid, checked again once its burial has expired),
+        else its best live sibling."""
         primary = profile.primary_symbol
-        if not HealthRepo(self._ctx.conn).get(primary).dead:
+        if primary.upper() not in {s.upper() for s in buried(self._ctx)}:
             return primary
         siblings = live_siblings(self._ctx, primary)
         return siblings[0].symbol if siblings else None
@@ -444,6 +469,17 @@ class Screen:
 
     def _keys(self, symbols) -> set[str]:
         return {r.company_key for s in symbols if (r := self._universe.resolve(s))}
+
+
+@dataclass(frozen=True)
+class _Checked:
+    """One price check: why the line has no recent prices (None when it has)."""
+
+    why_not: str | None
+    no_data: bool = False
+    """Every source answered that it has nothing, rather than failing to answer."""
+    last: date | None = None
+    """The last bar, when the sources gave only old ones."""
 
 
 @dataclass(frozen=True)
