@@ -391,7 +391,10 @@ def submit_universe_refresh(runner: JobRunner) -> Job:
     async def work(c: AppContext):
         status = await refresh_universe(c, on_stage=stage.append)
         # The work may run on a worker thread; the runner lives on the loop's.
-        loop.call_soon_threadsafe(submit_backfill, runner)
+        try:
+            loop.call_soon_threadsafe(submit_backfill, runner)
+        except RuntimeError:
+            pass  # the app closed while the refresh ran: it is saved, the backfill waits for the next
         return status
 
     return runner.submit("universe", "Refresh universe", work, subject="universe", link="#universe",

@@ -664,3 +664,20 @@ async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, mo
     job = submit_research(ctx, runner, "AAPL")
     await runner.wait(job.id)
     assert (job.state, job.error) == ("failed", "the model's answers were unusable")
+
+
+async def test_a_refresh_saved_as_the_app_closes_is_not_reported_failed(runner, monkeypatch):
+    from oracle.services import activity_service
+
+    closed = asyncio.new_event_loop()
+    closed.close()
+
+    async def refresh(c, on_stage):
+        return "status"
+
+    monkeypatch.setattr(activity_service, "refresh_universe", refresh)
+    with monkeypatch.context() as m:
+        m.setattr(activity_service.asyncio, "get_running_loop", lambda: closed)
+        job = activity_service.submit_universe_refresh(runner)
+    await runner.wait(job.id)
+    assert (job.state, job.result) == ("done", "status")
