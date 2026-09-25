@@ -20,6 +20,16 @@ def _public_dns(monkeypatch):
     monkeypatch.setattr("oracle.research.web.resolve", lambda host: ["93.184.216.34"])
 
 
+@pytest.fixture(autouse=True)
+def _no_real_holiday_seams(monkeypatch):
+    """Arming registers scheduled tasks, starts the study and reads power settings: a test that
+    reaches the real seams fails instead."""
+    def refuse():
+        raise AssertionError("tests never use the real holiday seams: pass a fake system to Holiday")
+
+    monkeypatch.setattr("oracle.services.holiday_service.real_holiday", refuse)
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")
