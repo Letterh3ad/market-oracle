@@ -1,6 +1,6 @@
 import pytest
 
-from oracle.universe.listings import is_receipt, is_receipt_symbol
+from oracle.universe.listings import Listing, band_of_usd, group_companies, is_receipt, is_receipt_symbol, place_line
 
 
 @pytest.mark.parametrize("name", ["Samsung Electronics GDR", "Infosys ADR", "Apple Inc. BDR", "Apple CDR (CAD Hedged)",
@@ -20,3 +20,22 @@ def test_a_companys_own_shares_are_not_receipts(name):
 ])
 def test_a_sao_paulo_receipt_is_told_by_its_ticker(symbol, receipt):
     assert is_receipt_symbol(symbol) is receipt
+
+
+@pytest.mark.parametrize("usd, band", [
+    (250e9, "Mega Cap"), (200e9, "Mega Cap"), (59e9, "Large Cap"), (10e9, "Large Cap"), (9.9e9, "Mid Cap"),
+    (2e9, "Mid Cap"), (1e9, "Small Cap"), (300e6, "Small Cap"), (100e6, "Micro Cap"), (49e6, "Nano Cap"), (0, "Nano Cap"),
+])
+def test_a_usd_market_cap_falls_in_financedatabases_band(usd, band):
+    assert band_of_usd(usd) == band
+
+
+def test_a_new_line_is_placed_in_the_company_a_regroup_would_give_it():
+    grouped = group_companies([Listing("LGLG.F", "LG Electronics Inc.", "equity", "South Korea", "FRA"),
+                               Listing("ENL.F", "ENEL S.p.A.", "equity", "Italy", "FRA", isin="IT0003128367")])
+    by_name = Listing("066570.KS", "LG Electronics Inc.", "equity", "South Korea", "KSC")
+    by_isin = Listing("ENEL.MI", "Enel SpA", "equity", "Italy", "MIL", isin="IT0003128367")
+    alone = Listing("277810.KQ", "Rainbow Robotics Co., Ltd.", "equity", "South Korea", "KOE")
+    for line in (by_name, by_isin, alone):
+        assert place_line(line, grouped) == {x.symbol: x.company_key for x in group_companies([*grouped, line])}[
+            line.symbol]

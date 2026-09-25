@@ -21,6 +21,7 @@ from oracle.services.brands import (
     behind_quotes, is_place, named_whole, names_in, other_words, parents, sized, sounds_private, the_group,
     usable, written_before,
 )
+from oracle.services.backfill_service import ADDED_FROM_YAHOO, add_from_yahoo
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
 from oracle.services.errors import ServiceError
@@ -319,8 +320,29 @@ class Screen:
         # Yahoo keeps private companies as ".PVT" lines ("Anthropic").
         if any(q.symbol.upper().endswith(".PVT") and (own(q) or leads(q)) for q in quotes):
             return _Match(None, PRIVATE)
-        listed = lead or next((q for q in equities if own(q) or ticker(q) or leads(q)), None)
-        return _Match(None, f"listed as {listed.name} ({listed.symbol}), not in the universe" if listed else PRIVATE)
+        named = next((q for q in equities if own(q) or leads(q)), None)
+        listed = lead or named or next((q for q in equities if ticker(q)), None)
+        if listed is None:
+            return _Match(None, PRIVATE)
+        tracked = self._universe.profile(listed.symbol) is not None
+        if tracked and named is None:
+            # The rules above passed it over (a small line Yahoo merely ranks first).
+            return _Match(None, f"listed as {listed.name} ({listed.symbol}), not taken on Yahoo's ranking alone")
+        # A line Yahoo only ranks first, not by the name, joins only when Yahoo sizes it big.
+        added = named and await self._added(name, named) or (
+            lead and lead is not named and not tracked and await self._added(name, lead, _BIG))
+        shown = named if tracked else listed
+        return added or _Match(None, f"listed as {shown.name} ({shown.symbol}), not in the universe")
+
+    async def _added(self, name: str, q: Quote, bands: frozenset[str] | None = None) -> _Match | None:
+        """Yahoo's line added to the universe under the index backfill's guards (only in `bands`
+        when given), on one of the pass's lookups; None when none is left or the line may not join."""
+        if self._lookups >= MAX_LOOKUPS or is_never(q.name, self._never):
+            return None
+        self._lookups += 1
+        symbol, _ = await add_from_yahoo(self._ctx, q.symbol, bands)
+        p = self._universe.profile(symbol) if symbol else None
+        return p and _Match(p, kind=LOOKUP, note=f"{name} is listed as {p.name} ({symbol}), {ADDED_FROM_YAHOO}")
 
     async def _quotes_for(self, name: str) -> list[Quote] | None:
         if name not in self._quotes:

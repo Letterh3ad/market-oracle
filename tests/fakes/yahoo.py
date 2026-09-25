@@ -39,6 +39,7 @@ class FakeYahoo:
         """search text -> the quotes Yahoo's search gives (see `quote`), or a raw body; other text answers 404."""
         self.search_status = 200
         self.searched: list[str] = []
+        self.profiled: list[str] = []
 
     def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
         self.series[symbol] = Series(currency, tz, bars, open_at)
@@ -105,6 +106,9 @@ class FakeYahoo:
             self.crumb = "expired"
             return unauthorised
         symbol = request.url.path.rsplit("/", 1)[1]
+        self.profiled.append(symbol)
+        if symbol in self.fail:
+            return httpx.Response(self.fail[symbol])
         modules = self.summaries.get(symbol)
         if modules is None:
             return httpx.Response(404, json={"quoteSummary": {"result": None, "error": {
@@ -141,3 +145,14 @@ def summary(currency: str, market_cap=None, **figures) -> dict:
     for name, value in figures.items():
         modules[where[name]][name] = {"raw": value, "fmt": "x"}
     return modules
+
+
+def profile(name: str, exchange: str, currency: str, market_cap: float | None, country: str | None = None,
+            sector: str | None = None, industry: str | None = None, quote_type: str = "EQUITY") -> dict:
+    """The price and assetProfile modules a listing's profile reads, shaped as captured 2026-09-24."""
+    price = {"longName": name, "shortName": name.upper()[:20], "exchange": exchange, "currency": currency,
+             "quoteType": quote_type}
+    if market_cap is not None:
+        price["marketCap"] = {"raw": market_cap, "fmt": "x", "longFmt": "x"}
+    asset = {k: v for k, v in (("country", country), ("sector", sector), ("industry", industry)) if v}
+    return {"price": price, **({"assetProfile": asset} if quote_type == "EQUITY" else {})}

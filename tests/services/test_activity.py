@@ -500,6 +500,39 @@ async def test_retrying_universe_and_merges(runner, ctx):
     assert retry(ctx, runner, merge_id).kind == "merges"
 
 
+async def test_retrying_a_backfill_backfills_again(runner, ctx):
+    from oracle.services.activity_service import retry
+    from oracle.store.job_history import JobHistoryRepo
+
+    repo = JobHistoryRepo(ctx.conn)
+    job_id = repo.add("universe", "Backfill index members", "backfill", "#universe", "queued", NOW, 999_999_999)
+    repo.update(job_id, "interrupted", "interrupted: app closed", NOW, NOW)
+    again = retry(ctx, runner, job_id)
+    assert (again.kind, again.subject, again.label) == ("universe", "backfill", "Backfill index members")
+
+
+async def test_a_universe_refresh_queues_a_backfill_after_it(runner, monkeypatch):
+    from oracle.services import activity_service
+
+    log = []
+
+    async def refresh(c, on_stage):
+        log.append("refresh")
+        return "status"
+
+    async def backfill(c, on_progress):
+        log.append("backfill")
+        return "report"
+
+    monkeypatch.setattr(activity_service, "refresh_universe", refresh)
+    monkeypatch.setattr(activity_service, "backfill_universe", backfill)
+    job = activity_service.submit_universe_refresh(runner)
+    await runner.wait(job.id)
+    follow = next(j for j in runner.current() if j.subject == "backfill")
+    await runner.wait(follow.id)
+    assert log == ["refresh", "backfill"] and follow.result == "report"
+
+
 async def test_retrying_fx_keeps_its_sources_or_the_default(runner, ctx):
     from oracle.services.activity_service import retry
     from oracle.store.job_history import JobHistoryRepo
@@ -631,3 +664,20 @@ async def test_a_research_run_that_ends_failed_fails_its_job_too(runner, ctx, mo
     job = submit_research(ctx, runner, "AAPL")
     await runner.wait(job.id)
     assert (job.state, job.error) == ("failed", "the model's answers were unusable")
+
+
+async def test_a_refresh_saved_as_the_app_closes_is_not_reported_failed(runner, monkeypatch):
+    from oracle.services import activity_service
+
+    closed = asyncio.new_event_loop()
+    closed.close()
+
+    async def refresh(c, on_stage):
+        return "status"
+
+    monkeypatch.setattr(activity_service, "refresh_universe", refresh)
+    with monkeypatch.context() as m:
+        m.setattr(activity_service.asyncio, "get_running_loop", lambda: closed)
+        job = activity_service.submit_universe_refresh(runner)
+    await runner.wait(job.id)
+    assert (job.state, job.result) == ("done", "status")

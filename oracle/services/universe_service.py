@@ -17,18 +17,20 @@ from oracle.services.errors import (
     UnknownSymbol,
 )
 from oracle.store.db import to_utc_iso, transaction
+from oracle.store.backfill import BackfillRepo
 from oracle.store.health import HealthRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.tags import TagRepo
 from oracle.store.universe import Facet, Resolved, SearchHit, UniverseRepo
 from oracle.universe import financedatabase
+from oracle.universe.backfill import apply_backfill, inherit_classification
 from oracle.universe.listings import MARKET_CAP_BANDS, Listing, blind_link, group_companies, legal_form, rank_listings
 from oracle.universe.tags import normalise_tag
 from oracle.universe.query import FILTER_FIELDS, SORTS, UniverseQuery, fts_match
 
 __all__ = [
     "FILTER_FIELDS", "FORMS_DIFFER", "NO_COUNTRY", "SORTS", "Facet", "MergeReport", "MergingCompany", "ProposedMerge", "Resolved", "SearchHit",
-    "Sibling", "UniverseBrief", "UniverseStatus", "facets", "live_siblings", "proposed_merges", "refresh_universe", "resolve_symbol", "search_universe", "universe_brief",
+    "Sibling", "UniverseBrief", "UniverseStatus", "facets", "live_siblings", "proposed_merges", "refresh_universe", "regroup", "require_loaded", "resolve_symbol", "search_universe", "universe_brief",
     "universe_status",
 ]
 
@@ -98,7 +100,7 @@ def search_universe(
     """Companies matching every word of `text` (as a prefix of a name or symbol word)
     and every filter; repeated values of one filter mean either, while every tag must be
     present. No text lists the whole filtered universe, biggest first."""
-    _require_loaded(ctx)
+    require_loaded(ctx)
     if sort is not None and sort not in SORTS:
         raise InvalidQuery(f"unknown sort {sort!r}")
     if descending and (sort == "relevance" or (sort is None and text.strip())):
@@ -118,14 +120,14 @@ def search_universe(
 
 
 def facets(ctx: AppContext, name: str) -> list[Facet]:
-    _require_loaded(ctx)
+    require_loaded(ctx)
     _check_field(name)
     return UniverseRepo(ctx.conn).facets(name)
 
 
 def resolve_symbol(ctx: AppContext, symbol: str) -> Resolved:
     """The listing as stored, or UnknownSymbol with search suggestions."""
-    _require_loaded(ctx)
+    require_loaded(ctx)
     found = UniverseRepo(ctx.conn).resolve(symbol)
     if found:
         return found
@@ -190,7 +192,7 @@ class MergeReport:
 def proposed_merges(ctx: AppContext) -> MergeReport:
     """The companies suffix-blind grouping would join on the stored universe. Reads only:
     seconds on the full universe, so frontends run it as a job."""
-    _require_loaded(ctx)
+    require_loaded(ctx)
     rows = UniverseRepo(ctx.conn).grouping_rows()
     joined: dict[str, list[Listing]] = {}
     for row, new in zip(rows, group_companies(rows, suffix_blind=True)):
@@ -229,7 +231,7 @@ def _distinct(values: Iterable[str | None]) -> tuple[str, ...]:
     return tuple(sorted({v for v in values if v}))
 
 
-def _require_loaded(ctx: AppContext) -> None:
+def require_loaded(ctx: AppContext) -> None:
     if MetaRepo(ctx.conn).get(_REFRESHED) is None:
         raise UniverseNotLoaded()
 
@@ -287,8 +289,7 @@ async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = la
         on_stage("downloading")
         sha, listings = await _download(ctx)
         on_stage("saving")
-        grouped = group_companies(listings, HealthRepo(ctx.conn).dead_symbols(),
-                                  suffix_blind=ctx.config.universe.suffix_blind_grouping)
+        grouped = regroup(ctx, listings)
         held.check()
         with transaction(ctx.conn):
             UniverseRepo(ctx.conn).replace_all(grouped)
@@ -296,6 +297,14 @@ async def refresh_universe(ctx: AppContext, on_stage: Callable[[str], None] = la
             meta.set(_COMMIT, sha)
             meta.set(_REFRESHED, to_utc_iso(ctx.clock.utcnow()))
     return universe_status(ctx)
+
+
+def regroup(ctx: AppContext, listings: list[Listing]) -> list[Listing]:
+    """FinanceDatabase's own `listings` with the index backfill laid over them, grouped into companies."""
+    stored = BackfillRepo(ctx.conn)
+    lines = apply_backfill(listings, stored.added(), stored.corrections())
+    return inherit_classification(group_companies(lines, HealthRepo(ctx.conn).dead_symbols(),
+                                                  suffix_blind=ctx.config.universe.suffix_blind_grouping))
 
 
 async def _download(ctx: AppContext) -> tuple[str, list[Listing]]:

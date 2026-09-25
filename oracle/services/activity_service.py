@@ -18,6 +18,7 @@ from oracle.jobs import pid_alive
 from oracle.research.trace import RunStatus
 from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
+from oracle.services.backfill_service import backfill_universe
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
 from oracle.services.cutoff_service import cannot_run, check_replay_from, probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
@@ -42,7 +43,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
+           "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
            "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
@@ -382,10 +383,33 @@ def submit_midday(ctx: AppContext, runner: JobRunner, trigger: str = "manual", s
 
 
 def submit_universe_refresh(runner: JobRunner) -> Job:
-    """Download and replace the universe; a second press joins the refresh already going."""
+    """Download and replace the universe, then queue the index backfill behind it; a second press
+    joins the refresh already going."""
     stage: list[str] = []
-    return runner.submit("universe", "Refresh universe", lambda c: refresh_universe(c, on_stage=stage.append),
-                         subject="universe", link="#universe", progress=lambda: stage[-1] if stage else None)
+    loop = asyncio.get_running_loop()
+
+    async def work(c: AppContext):
+        status = await refresh_universe(c, on_stage=stage.append)
+        # The work may run on a worker thread; the runner lives on the loop's.
+        try:
+            loop.call_soon_threadsafe(submit_backfill, runner)
+        except RuntimeError:
+            pass  # the app closed while the refresh ran: it is saved, the backfill waits for the next
+        return status
+
+    return runner.submit("universe", "Refresh universe", work, subject="universe", link="#universe",
+                         progress=lambda: stage[-1] if stage else None)
+
+
+BACKFILL_SUBJECT = "backfill"
+
+
+def submit_backfill(runner: JobRunner) -> Job:
+    """Add the index members the universe lacks, a bounded batch a run. It shares the refresh's
+    queue, so the two never run at once."""
+    stage: list[str] = []
+    return runner.submit("universe", "Backfill index members", lambda c: backfill_universe(c, stage.append),
+                         subject=BACKFILL_SUBJECT, link="#universe", progress=lambda: stage[-1] if stage else None)
 
 
 def submit_merges(runner: JobRunner) -> Job:
@@ -528,7 +552,7 @@ def _retry_tick(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_universe(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_universe_refresh(runner)
+    return submit_backfill(runner) if job.subject == BACKFILL_SUBJECT else submit_universe_refresh(runner)
 
 
 def _retry_merges(ctx: AppContext, runner: JobRunner, job) -> Job:

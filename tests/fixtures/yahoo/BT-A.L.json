@@ -1,0 +1,121 @@
+{
+ "quoteSummary": {
+  "result": [
+   {
+    "assetProfile": {
+     "address1": "1 Braham Street",
+     "city": "London",
+     "zip": "E1 8EE",
+     "country": "United Kingdom",
+     "phone": "44 20 7356 5000",
+     "website": "https://www.bt.com",
+     "industry": "Telecom Services",
+     "industryKey": "telecom-services",
+     "industryDisp": "Telecom Services",
+     "sector": "Communication Services",
+     "sectorKey": "communication-services",
+     "sectorDisp": "Communication Services",
+     "longBusinessSummary": "BT Group plc provides communications products and services in the United Kingdom, Europe, the Middle East, Africa, the Americas, and the Asia Pacific. The company operates through Consumer, Business, International, and Openreach segments. It builds, owns, and operates fixed and mobile networks; and designs, builds, markets, sells, and supports network access, connectivity, and related products. The company also offers mobile, broadband, and landline, as well as entertainment services to individuals and households; connectivity, networking, cybersecurity, collaboration tools, cloud connectivity, and cloud services to private and public sector businesses; and managed solutions for larger businesses and public sector customers. In addition, it provides fixed and IP voice; unified communications; mobile; fixed and networking; managed services; and security, and cloud and IoT solutions. Further, the company develops, manages, and leases network infrastructure, including mobile cell and switch sites; and offers handsets, network equipment, consumer electronics, gaming and insurance. It provides its products and services under the BT, EE, Plusnet, and Openreach brands. The company was formerly known as Newgate Telecommunications Limited and changed its name to BT Group plc in September 2001. BT Group plc was founded in 1846 and is headquartered in London, the United Kingdom.",
+     "fullTimeEmployees": 77200,
+     "auditRisk": 3,
+     "boardRisk": 4,
+     "compensationRisk": 1,
+     "shareHolderRightsRisk": 1,
+     "overallRisk": 2,
+     "governanceEpochDate": 1788220800,
+     "compensationAsOfEpochDate": 1798675200,
+     "irWebsite": "http://www.btplc.com/sharesandperformance/",
+     "executiveTeam": [],
+     "maxAge": 86400
+    },
+    "price": {
+     "maxAge": 1,
+     "preMarketChange": {},
+     "preMarketPrice": {},
+     "postMarketChange": {},
+     "postMarketPrice": {},
+     "regularMarketChangePercent": {
+      "raw": 0.008079165,
+      "fmt": "0.81%"
+     },
+     "regularMarketChange": {
+      "raw": 1.5499878,
+      "fmt": "1.55"
+     },
+     "regularMarketTime": 1790264127,
+     "priceHint": {
+      "raw": 2,
+      "fmt": "2",
+      "longFmt": "2"
+     },
+     "regularMarketPrice": {
+      "raw": 193.4,
+      "fmt": "193.40"
+     },
+     "regularMarketDayHigh": {
+      "raw": 195.1,
+      "fmt": "195.10"
+     },
+     "regularMarketDayLow": {
+      "raw": 191.05,
+      "fmt": "191.05"
+     },
+     "regularMarketVolume": {
+      "raw": 10354028,
+      "fmt": "10.35M",
+      "longFmt": "10,354,028.00"
+     },
+     "averageDailyVolume10Day": {},
+     "averageDailyVolume3Month": {},
+     "regularMarketPreviousClose": {
+      "raw": 191.85,
+      "fmt": "191.85"
+     },
+     "regularMarketSource": "DELAYED",
+     "regularMarketOpen": {
+      "raw": 192.45,
+      "fmt": "192.45"
+     },
+     "strikePrice": {},
+     "openInterest": {},
+     "fulldayChangePercent": {
+      "raw": 0.008079165,
+      "fmt": "0.81%"
+     },
+     "fulldayChange": {
+      "raw": 1.5499878,
+      "fmt": "1.55"
+     },
+     "fulldayPrice": {
+      "raw": 193.4,
+      "fmt": "193.40"
+     },
+     "exchange": "LSE",
+     "exchangeName": "LSE",
+     "exchangeDataDelayedBy": 15,
+     "marketState": "POSTPOST",
+     "quoteType": "EQUITY",
+     "symbol": "BT-A.L",
+     "underlyingSymbol": null,
+     "shortName": "BT GROUP PLC ORD 5P",
+     "longName": "BT Group plc",
+     "currency": "GBp",
+     "quoteSourceName": "Delayed Quote",
+     "currencySymbol": "£",
+     "fromCurrency": null,
+     "toCurrency": null,
+     "lastMarket": null,
+     "volume24Hr": {},
+     "volumeAllCurrencies": {},
+     "circulatingSupply": {},
+     "marketCap": {
+      "raw": 19056902144,
+      "fmt": "19.06B",
+      "longFmt": "19,056,902,144.00"
+     }
+    }
+   }
+  ],
+  "error": null
+ }
+}
