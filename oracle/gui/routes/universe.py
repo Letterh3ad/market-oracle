@@ -6,7 +6,7 @@ from dataclasses import asdict
 from fastapi import APIRouter, Depends, Query, Request
 
 from oracle.gui.deps import get_ctx
-from oracle.services.backfill_service import backfill_status, closed_end_funds
+from oracle.services.backfill_service import backfill_status, closed_end_funds, corrections, undo_correction
 from oracle.services.context import AppContext, worker_context
 from oracle.services.tags_service import list_tags
 from oracle.services.universe_service import FILTER_FIELDS, SORTS, facets, search_universe, universe_status
@@ -78,3 +78,14 @@ async def funds(ctx: AppContext = Depends(get_ctx)) -> dict:
 @router.post("/funds/remove")
 async def remove_funds(ctx: AppContext = Depends(get_ctx)) -> dict:
     return asdict(closed_end_funds(ctx, remove=True))
+
+
+@router.get("/corrections")
+async def get_corrections(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The backfill's corrections, and the sector correction keys matching no company."""
+    return asdict(corrections(ctx))
+
+
+@router.delete("/corrections/{symbol}")
+async def undo(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(undo_correction(ctx, symbol))

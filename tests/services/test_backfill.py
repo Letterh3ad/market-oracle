@@ -7,14 +7,14 @@ import pytest
 from oracle.config import Config
 from oracle.services.backfill_service import (
     ADDED_FROM_YAHOO, ALREADY_THERE, CLOSED_END_FUND, add_from_yahoo, backfill_status, backfill_universe,
-    closed_end_funds, rebuild,
+    closed_end_funds, corrections, rebuild, undo_correction,
 )
 from oracle.store.backfill import BackfillRepo
 from oracle.store.paper import PaperRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.listings import Listing
 from oracle.services.context import open_context
-from oracle.services.errors import UniverseNotLoaded
+from oracle.services.errors import UniverseNotLoaded, UnknownCorrection
 from oracle.services import universe_service
 from oracle.services.universe_service import refresh_universe, resolve_symbol, search_universe
 from oracle.store.universe import UniverseRepo
@@ -408,3 +408,29 @@ async def test_a_held_line_is_kept(ctx, trusts, monkeypatch):
     sweep = closed_end_funds(ctx, remove=True)
     assert [(x.symbol, x.kept) for x in sweep.lines] == [("IAD.L", "held"), ("JMGI.L", None)]
     assert UniverseRepo(ctx.conn).resolve("IAD.L") is not None
+
+
+async def test_corrections_are_listed_with_the_stale_correction_keys(ctx, monkeypatch):
+    monkeypatch.setattr(universe_service, "CORRECTIONS", {
+        "name:gone plc|United Kingdom|equity": Correction("Gone plc", "Industrials", "Capital Goods", "Machinery")})
+    await refresh_universe(ctx)
+    await run(ctx, KR)
+    listed = corrections(ctx)
+    assert [(c.symbol, c.index_code, c.fields) for c in listed.rows] == [("008110.KS", "kr", {"delisted": True})]
+    assert "028260.KS" in listed.rows[0].note
+    assert listed.stale == ("Gone plc (name:gone plc|United Kingdom|equity)",)
+
+
+async def test_an_undone_correction_is_gone_by_the_next_refresh(ctx):
+    await refresh_universe(ctx)
+    await run(ctx, KR)
+    undone = undo_correction(ctx, "008110.ks")
+    assert undone.symbol == "008110.KS" and corrections(ctx).rows == ()
+    await refresh_universe(ctx)
+    assert not {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}["008110.KS"].delisted
+
+
+async def test_undoing_a_correction_that_is_not_there_says_so(ctx):
+    await refresh_universe(ctx)
+    with pytest.raises(UnknownCorrection):
+        undo_correction(ctx, "NOPE")

@@ -17,10 +17,10 @@ from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.services import universe_service
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
-from oracle.services.errors import JobAlreadyRunning
+from oracle.services.errors import JobAlreadyRunning, UnknownCorrection
 from oracle.services.jobs_service import Held, single_flight
 from oracle.services.never_list import is_never, never_names
-from oracle.store.backfill import ADDED, CORRECTED, BackfillRepo
+from oracle.store.backfill import ADDED, CORRECTED, BackfillRepo, BackfillRow
 from oracle.store.health import HealthRepo
 from oracle.store.paper import PaperRepo
 from oracle.store.universe import UniverseRepo
@@ -36,7 +36,7 @@ from oracle.universe.listings import (
 
 __all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "CLOSED_END_FUND", "FundLine",
            "FundSweep", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo", "backfill_status", "backfill_universe",
-           "closed_end_funds"]
+           "closed_end_funds", "Corrections", "corrections", "undo_correction"]
 
 MAX_LOOKUPS = 150
 """Yahoo profiles one run asks for: about five minutes at Yahoo's pace."""
@@ -211,6 +211,30 @@ def closed_end_funds(ctx: AppContext, remove: bool = False) -> FundSweep:
             for key in keys - {None}:
                 universe.repick_primary(key, dead)
     return FundSweep(lines, remove)
+
+
+@dataclass(frozen=True)
+class Corrections:
+    rows: tuple[BackfillRow, ...]
+    """The backfill's corrections, laid over FinanceDatabase's lines on every refresh."""
+    stale: tuple[str, ...]
+    """Sector corrections whose company key no company has."""
+
+
+def corrections(ctx: AppContext) -> Corrections:
+    return Corrections(tuple(r for r in BackfillRepo(ctx.conn).rows() if r.kind == CORRECTED),
+                       universe_service.stale_corrections(ctx))
+
+
+def undo_correction(ctx: AppContext, symbol: str) -> BackfillRow:
+    """Drop the correction of `symbol`. The stored line keeps it until the next universe refresh
+    lays FinanceDatabase's own row back, since the row it replaced is not kept."""
+    repo = BackfillRepo(ctx.conn)
+    row = next((r for r in repo.rows() if r.kind == CORRECTED and r.symbol.casefold() == symbol.casefold()), None)
+    if row is None:
+        raise UnknownCorrection(f"no correction of {symbol}: see `oracle universe corrections list`")
+    repo.drop(row.symbol, CORRECTED)
+    return row
 
 
 def rebuild(ctx: AppContext) -> None:

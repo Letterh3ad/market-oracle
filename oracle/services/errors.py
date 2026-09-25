@@ -109,3 +109,7 @@ class NeverListed(ServiceError):
 
 class UnknownLink(ServiceError):
     pass
+
+
+class UnknownCorrection(ServiceError):
+    pass

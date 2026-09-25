@@ -21,7 +21,7 @@ export function backfillSection() {
     el("p", { class: "dim small" }, "Members of each market's main indexes that FinanceDatabase lacks, added from "
       + "Yahoo (never Tesla, only ordinary shares, no funds or investment trusts), and lines it has under the wrong code or far off in size, "
       + "corrected. Each press looks up a bounded batch; press again to carry on."),
-    el("div", { class: "row" }, button), out, fundsPart());
+    el("div", { class: "row" }, button), out, fundsPart(), correctionsPart());
   details.addEventListener("toggle", async () => {
     if (!details.open || out.childElementCount) return;
     try { show(await api("/api/universe/backfill")); } catch (err) { showError(err.message); }
@@ -53,6 +53,39 @@ function fundTable(lines) {
     el("thead", null, el("tr", null, ...["Listing", "Name", "Index", ""].map((h) => el("th", null, h)))),
     el("tbody", null, ...lines.map((x) => el("tr", null, el("td", null, x.symbol), el("td", null, x.name),
       el("td", null, x.index_code), el("td", { class: "dim small" }, x.kept ? `kept: ${x.kept}` : "")))));
+}
+
+// The backfill's corrections, each undoable; the stored line keeps it until the next refresh.
+function correctionsPart() {
+  const out = el("div");
+  const show = async (done) => {
+    try {
+      clearError();
+      const r = await api("/api/universe/corrections");
+      out.replaceChildren(
+        ...(done ? [el("p", { class: "dim small" }, `Undid the correction of ${done}. `
+          + "Refresh the universe to lay FinanceDatabase's own row back.")] : []),
+        ...(r.stale.length ? [staleCorrections(r.stale)] : []),
+        r.rows.length ? correctionTable(r.rows, undo) : el("p", { class: "dim small" }, "No corrections."));
+    } catch (err) { showError(`corrections: ${err.message}`); }
+  };
+  const undo = async (symbol) => {
+    try {
+      const row = await api(`/api/universe/corrections/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+      await show(row.symbol);
+    } catch (err) { showError(`undo: ${err.message}`); }
+  };
+  return el("div", null, el("div", { class: "row" },
+    el("button", { onclick: () => show(null) }, "Show corrections")), out);
+}
+
+function correctionTable(rows, undo) {
+  return el("table", { class: "results" },
+    el("thead", null, el("tr", null, ...["Listing", "Index", "Laid over", "Why", ""].map((h) => el("th", null, h)))),
+    el("tbody", null, ...rows.map((r) => el("tr", null, el("td", null, r.symbol), el("td", null, r.index_code),
+      el("td", null, Object.entries(r.fields).map(([k, v]) => `${k}=${v}`).join(", ")),
+      el("td", { class: "dim small" }, r.note),
+      el("td", null, el("button", { onclick: () => undo(r.symbol) }, "Undo"))))));
 }
 
 // A regroup can re-key a company, so its sector correction no longer applies.

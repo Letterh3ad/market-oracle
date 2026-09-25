@@ -50,6 +50,20 @@ def test_funds_lists_investment_trusts_added_and_removes_only_when_told(run, tmp
     assert "no closed-end funds" in run("universe", "funds")[1]
 
 
+def test_corrections_list_and_undo(run, tmp_path):
+    run("universe", "refresh")
+    with open_context(*load_settings(tmp_path / "oracle.toml")) as ctx:
+        BackfillRepo(ctx.conn).correct("AAPL", {"market_cap": "Mega Cap"}, "sp500", "in the S&P 500; Yahoo says Mega",
+                                       datetime(2026, 9, 23, tzinfo=timezone.utc))
+    code, out, _ = run("universe", "corrections", "list")
+    assert code == 0 and "AAPL" in out and "market_cap=Mega Cap" in out and "Yahoo says Mega" in out
+    code, out, _ = run("universe", "corrections", "undo", "aapl")
+    assert code == 0 and "undid the correction of AAPL" in out and "oracle universe refresh" in out
+    assert "no corrections" in run("universe", "corrections", "list")[1]
+    code, _, err = run("universe", "corrections", "undo", "AAPL")
+    assert code == 1 and "no correction of AAPL" in err
+
+
 def test_status_before_a_refresh_says_how_to_load(run):
     code, out, _ = run("universe", "status")
     assert code == 0

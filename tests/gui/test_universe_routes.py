@@ -162,3 +162,15 @@ async def test_investment_trusts_added_are_listed_then_removed_on_request(ctx, l
     removed = (await loaded.post("/api/universe/funds/remove")).json()
     assert removed["removed"] and [x["symbol"] for x in removed["lines"]] == ["IAD.L"]
     assert not (await loaded.get("/api/universe/search", params={"q": "Invesco Asia"})).json()["hits"]
+
+
+async def test_corrections_are_listed_and_undone_one_at_a_time(ctx, loaded):
+    BackfillRepo(ctx.conn).correct("AAPL", {"market_cap": "Mega Cap"}, "sp500", "in the S&P 500; Yahoo says Mega",
+                                   datetime(2026, 9, 23, tzinfo=timezone.utc))
+    listed = (await loaded.get("/api/universe/corrections")).json()
+    assert [(r["symbol"], r["fields"]) for r in listed["rows"]] == [("AAPL", {"market_cap": "Mega Cap"})]
+    assert isinstance(listed["stale"], list)
+    undone = await loaded.delete("/api/universe/corrections/AAPL")
+    assert undone.status_code == 200 and undone.json()["symbol"] == "AAPL"
+    assert (await loaded.get("/api/universe/corrections")).json()["rows"] == []
+    assert (await loaded.delete("/api/universe/corrections/AAPL")).status_code == 404
