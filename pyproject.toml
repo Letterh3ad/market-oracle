@@ -24,10 +24,11 @@ oracle = "oracle.cli.main:main"
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 
 [tool.setuptools.packages.find]
-include = ["oracle*"]
+include = ["oracle*", "holiday_watch"]
 
 [tool.setuptools.package-data]
 "oracle.gui" = ["static/*", "static/*/*"]
+"holiday_watch" = ["*.md", "*.txt", "*.ps1", "config.example.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

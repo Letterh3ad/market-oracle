@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { sendJson } from "./ui.js";
 import { el, showError } from "./dom.js";
+import { holidayCard } from "./holiday.js";
 
 const BACK_WITHIN_MS = 60_000;
 let status = null; // the last /api/status answer: server identity, versions, automation
@@ -175,6 +176,7 @@ function offerRestart() {
 
 function mount() {
   mountSettings();
+  document.getElementById("holiday-card").replaceChildren(holidayCard().node);
 }
 
 export { mount, show, offerRestart };

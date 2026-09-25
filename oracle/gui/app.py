@@ -11,13 +11,14 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import (
-    activity, backtests, companies, cutoff, discovery, fx, jobs, ledgers, models, questions, replay,
-    schedule as tick_schedule, settings, status, universe, watchlists,
+    activity, backtests, companies, cutoff, discovery, fx, holiday as holiday_routes, jobs, ledgers, models, questions,
+    replay, schedule as tick_schedule, settings, status, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
 from oracle.services.context import AppContext
+from oracle.services.holiday_service import Holiday
 from oracle.services.job_executor import ThreadExecutor
 from oracle.services.replay_service import ReplayPacer
 from oracle.services.schedule_service import Scheduler
@@ -35,11 +36,12 @@ class _Static(StaticFiles):
         return response
 
 
-def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | None = None) -> FastAPI:
+def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | None = None,
+              holiday: Holiday | None = None) -> FastAPI:
     """With `schedule`, the scheduler and the replay pacer poll for as long as the server does
     (tests leave them off, though postpone, skip and the replay card still answer). Jobs still
     running when the server stops are interrupted. `control` restarts the server; by default
-    it starts this server's own command."""
+    it starts this server's own command. `holiday` arms the holiday watch; by default the real one."""
     runner = JobRunner(ctx, ThreadExecutor(ctx))
     scheduler = Scheduler(ctx, runner=runner)
     pacer = ReplayPacer(ctx, runner, scheduler)
@@ -64,6 +66,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.state.scheduler = scheduler
     app.state.pacer = pacer
     app.state.control = control or AppControl(server_launch(ctx))
+    app.state.holiday = holiday
     install_error_handlers(app)
     app.include_router(status.router)
     app.include_router(activity.router)
@@ -82,6 +85,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(backtests.router)
     app.include_router(replay.router)
     app.include_router(cutoff.router)
+    app.include_router(holiday_routes.router)
     # Under a prefix, not a catch-all at "/", which would shadow the API.
     app.mount("/static", _Static(directory=STATIC_DIR), name="static")
 
