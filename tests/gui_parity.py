@@ -138,4 +138,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "gui --restart": "POST /api/app/restart",
     "gui --autostart": "PUT /api/app/autostart",
     "gui --install-shortcuts": "POST /api/app/shortcuts",
+    # App section, Holiday watch card.
+    "holiday arm": "POST /api/holiday/arm",
+    "holiday disarm": "POST /api/holiday/disarm",
+    "holiday status": "GET /api/holiday",
 }
