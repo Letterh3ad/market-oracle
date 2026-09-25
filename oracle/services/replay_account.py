@@ -7,14 +7,16 @@ from __future__ import annotations
 
 import re
 from bisect import bisect_right
-from collections.abc import Mapping, Sequence, Set
+from collections.abc import Callable, Mapping, Sequence, Set
 from dataclasses import asdict, dataclass, replace
 from datetime import date
 
 from oracle.broker.backtest import LeanSource, Replay, Trade, Venue, replay
 from oracle.broker.compare import max_fall
 from oracle.broker.fills import COSTS, costs_for, fee
-from oracle.broker.rules import Lean
+from oracle.broker.momentum import caption as momentum_caption
+from oracle.broker.momentum import momentum_lean
+from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
 from oracle.services.paper_service import Line, strategy_rules
@@ -30,9 +32,18 @@ SOURCE = "ai"
 NOTIONAL = 1_000_000.0
 """The capital every line starts from, in the base currency: at the AI account's own size a
 position of a few hundred pounds buys no share of the biggest names, which the study favours."""
-BASELINES: dict[str, tuple[str, LeanSource]] = {}
-"""Rule accounts drawn beside the verdicts' over the same listings, days and costs, by line
-name: a caption and the leans they trade. quant-basics adds its monthly momentum baseline here."""
+Baseline = Callable[[Mapping[str, Sequence[Bar]], Rules], tuple[str, str, LeanSource]]
+"""From every listing's bars (as the account prices them) and the rules: a label, a caption and
+the leans it trades."""
+
+
+def _momentum(history: Mapping[str, Sequence[Bar]], rules: Rules) -> tuple[str, str, LeanSource]:
+    top = rules.max_positions
+    return "Momentum", momentum_caption(top), momentum_lean(history, top)
+
+
+BASELINES: dict[str, Baseline] = {"momentum": _momentum}
+"""Rule accounts drawn beside the verdicts' over the same listings, days and costs, by line name."""
 
 Call = tuple[date, str, float]
 """(as-of day, verdict, confidence)."""
@@ -95,7 +106,8 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
         Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'}, bought at the "
                              "first close after the first as-of day, paying the same costs, and never sold.",
              _returns(held, capital), max_fall(held), entered, held_costs),
-        *(line(name, caption, run(lean), name) for name, (caption, lean) in BASELINES.items()))
+        *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
+          for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]))
     notes = [
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "

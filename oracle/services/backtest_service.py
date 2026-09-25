@@ -1,5 +1,5 @@
 """A backtest: the strategy's fixed rules replayed over a watchlist's stored history, in
-memory, against an equal-weight buy-and-hold. It only reads: the paper accounts, leans,
+memory, against an equal-weight buy-and-hold and the momentum baseline. It only reads: the paper accounts, leans,
 signals and decision log never change. AI verdicts are never backtested."""
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from oracle.analysts.indicators import YEAR
 from oracle.broker.backtest import Trade, replay
 from oracle.broker.baseline import ceiling
 from oracle.broker.compare import buy_and_hold, max_fall, returns_since
+from oracle.broker.momentum import caption as momentum_caption
+from oracle.broker.momentum import momentum_lean
 from oracle.broker.orders import Side
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
@@ -40,8 +42,9 @@ class Backtest:
     """Per trade, base currency."""
     listings: tuple[str, ...]
     """The list's listings with prices in the range; the rest are named in the notes."""
-    lines: tuple[Line, Line]
-    """The strategy, then buy and hold, each as its return since the first day."""
+    lines: tuple[Line, ...]
+    """The strategy, buy and hold, then the momentum baseline (runs kept before it have two),
+    each as its return since the first day."""
     equity: tuple[tuple[date, float], ...]
     """The strategy's cash plus positions at each day's close, base currency."""
     trades: tuple[Trade, ...]
@@ -94,11 +97,20 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     if not history:
         raise NoPrices(f"no stored prices for the {name} list from {start.isoformat()} to {end.isoformat()}")
     rules, capital, base = strategy_rules(ctx), ctx.config.risk.account, ctx.config.base_currency
-    r = replay(history, start, end, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
-               commission=commission)
-    strategy = Line("strategy", "Strategy: the fixed rules on technicals-only leans.",
-                    tuple(returns_since(r.equity, start)), max_fall(r.equity), len(r.trades),
-                    sum(t.costs for t in r.trades))
+    top = rules.max_positions
+
+    def run(lean=None):
+        return replay(history, start, end, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
+                      commission=commission, lean=lean)
+
+    def traded(name: str, caption: str, x, label: str = "") -> Line:
+        return Line(name, caption, tuple(returns_since(x.equity, start)), max_fall(x.equity), len(x.trades),
+                    sum(t.costs for t in x.trades), label)
+
+    r = run()
+    strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
+    momentum = traded("momentum", momentum_caption(top),
+                      run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top)), "Momentum")
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
@@ -113,7 +125,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
               ] if no_rate else []
     notes += [f"Could not fill: {note}." for note in r.rejected]
     notes += [f"Still waiting to fill on the last day: {', '.join(r.unfilled)}."] if r.unfilled else []
-    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line), r.equity,
+    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum), r.equity,
                     r.trades, tuple(notes))
 
 
@@ -178,6 +190,9 @@ def _notes(ctx: AppContext, name: str, start: date, end: date, slippage_bps: flo
         f"{slippage_bps:g} basis points worse, at that day's exchange rate, plus {commission:,.2f} {base} "
         "commission per trade. No FX spread, stamp duty or exchange fees.",
         "Only the fixed rules are replayed; AI verdicts are never backtested.",
+        "Momentum trades under the strategy's rules and costs. Its ranks read stored closes, which a split between "
+        "price updates can leave on two bases: a listing with a move outside 0.5x to 2x in the year before a month's "
+        "end is not ranked that month (a full price refetch fixes it).",
     ]
     short = [s for s, rows in history.items() if sum(1 for c in rows if c.bar.date < start) <= YEAR]
     if short:
