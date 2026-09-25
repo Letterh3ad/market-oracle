@@ -58,6 +58,25 @@ def test_the_report_quotes_status_study_score_account_and_the_last_day(tmp_path)
     assert "old news" not in text and "ancient" not in text and "[dry-run]" not in text
 
 
+
+def band(label, ret, lines=("ai", "momentum")):
+    return {"size": label.lower(), "label": label, "listings": ["A", "B"], "account": {
+        "currency": "GBP", "capital": 1000000.0, "lines": [
+            {"name": n, "caption": n, "label": "Momentum" if n == "momentum" else "", "return": ret, "max_fall": -0.1,
+             "trades": 5, "costs": 10.0} for n in lines]}}
+
+
+def test_the_report_shows_each_size_band_account_and_whatever_lines_it_returns(tmp_path):
+    w = seeded(tmp_path)
+    report = {**REPORT["report"], "by_size": [band("Large", 0.05), band("Mid and small", -0.02, ("ai", "later"))]}
+    report["account"] = {**report["account"], "lines": [*report["account"]["lines"], band("x", 0.07)["account"]["lines"][1]]}
+    w.http.routes[f"{APP}/api/replay/report"] = {"report": report}
+    text = build_report(w)
+    assert "momentum (Momentum): +7.00%" in text
+    large, small = text.index("## Account, Large"), text.index("## Account, Mid and small")
+    assert large < small < text.index("## Watchdog actions")
+    assert "momentum (Momentum): +5.00%" in text[large:small] and "later (later): -2.00%" in text[small:]
+
 def test_the_report_survives_the_app_being_down(tmp_path):
     w = watch(tmp_path, http=FakeHttp({}))
     text = build_report(w)

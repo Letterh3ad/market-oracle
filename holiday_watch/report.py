@@ -44,18 +44,25 @@ def build_report(w: Watch) -> str:
     else:
         out += _study(study)
     report = (_get(w, "/api/replay/report", timeout=120) or {}).get("report") if study else None
-    account = (report or {}).get("account")
-    if account:
-        out += ["", f"## Account ({account.get('currency')} {account.get('capital'):,.0f} notional per line)", ""]
-        out += [f"- {ln['name']} ({ln.get('label') or ln.get('caption')}): {_pct(ln.get('return'), True)},"
-                f" max fall {_pct(ln.get('max_fall'))}, {ln.get('trades')} trades, costs {ln.get('costs'):,.0f}"
-                for ln in account.get("lines", [])]
+    out += _account("Account", (report or {}).get("account"))
+    for size in (report or {}).get("by_size") or []:
+        out += _account(f"Account, {size.get('label')}", size.get("account"))
     out += ["", "## Watchdog actions (last 24 h)", ""]
     out += [f"- {line}" for line in _recent_log(w, now)] or ["- none"]
     out += ["", "## Fix runs (last 24 h)", ""]
     runs = _recent_fix_runs(w, now)
     out += runs or ["None."]
     return "\n".join(out).rstrip() + "\n"
+
+
+def _account(title: str, account: dict | None) -> list[str]:
+    """Every line the report returns (the verdicts', the controls, any baseline), not a fixed list."""
+    if not account:
+        return []
+    return ["", f"## {title} ({account.get('currency')} {account.get('capital'):,.0f} notional per line)", "",
+            *(f"- {ln['name']} ({ln.get('label') or ln.get('caption')}): {_pct(ln.get('return'), True)},"
+              f" max fall {_pct(ln.get('max_fall'))}, {ln.get('trades')} trades, costs {ln.get('costs'):,.0f}"
+              for ln in account.get("lines", []))]
 
 
 def _study(s: dict) -> list[str]:
