@@ -3,7 +3,7 @@ import { lineChart } from "../lib/chart.js";
 import { chartRangeCaption, chartRangeKey, chartRangeOptions } from "../lib/chart-range.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { factorSentence } from "../lib/factors.js";
-import { big, money } from "../lib/fmt.js";
+import { big, money, pct, tone } from "../lib/fmt.js";
 import { showLinks } from "../lib/links.js";
 import { repaint } from "../lib/repaint.js";
 import { researchSection } from "../lib/research.js";
@@ -139,6 +139,39 @@ async function peers(pane, symbol, message = "") {
       el("span", { class: "chip" }, companyLink(r.symbol), ` ${r.name}`))));
 }
 
+const TIMING = { true: "before open", false: "after open", null: "time unknown" };
+
+// Moves after past earnings, from stored closes; release dates are refetched when a week old.
+async function events(pane, symbol) {
+  const box = pane.querySelector("#c-events");
+  let s;
+  try {
+    s = await api(`/api/companies/${encodeURIComponent(symbol)}/events?refresh=true`);
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "dim" }, err.message));
+    return;
+  }
+  if (!pane.contains(box)) return;
+  const note = s.note ? el("p", { class: "dim small" }, s.note) : null;
+  if (!s.events.length) {
+    box.replaceChildren(note ?? el("p", { class: "dim" }, "No earnings dates found."));
+    return;
+  }
+  const cell = (v) => el("td", { class: `num ${tone(v)}` }, pct(v));
+  const vs = s.benchmark ? `against ${s.benchmark}` : "no benchmark prices stored";
+  box.replaceChildren(...[note,
+    s.headline ? el("p", null, s.headline) : null,
+    el("p", { class: "dim small" }, `Dates from ${s.source}, fetched ${s.fetched_at.slice(0, 10)}; ${vs}. `,
+      "Measured from the release day's close, or the day before's for a release before the open."),
+    el("table", { class: "results" },
+      el("thead", null, el("tr", null, el("th", null, "Release"), el("th", null, "Timing"), el("th", null, "From close"),
+        ...s.horizons.flatMap((h) => [el("th", { class: "num" }, `${h}d`), el("th", { class: "num" }, "vs")]))),
+      el("tbody", null, ...s.events.map((e) => el("tr", null,
+        el("td", { class: "mono" }, e.day), el("td", null, TIMING[e.before_open]), el("td", { class: "mono" }, e.base ?? ""),
+        ...(e.note ? [el("td", { class: "dim", colspan: String(2 * s.horizons.length) }, e.note)]
+          : e.windows.flatMap((w) => [cell(w.move), cell(w.excess)]))))))].filter(Boolean));
+}
+
 async function priceFactors(box, symbol) {
   try {
     const r = await api(`/api/factors/${encodeURIComponent(symbol)}`);
@@ -216,9 +249,10 @@ async function load(pane, symbol, refresh = false) {
     el("h3", null, "Fundamentals"), fundamentals(v),
     el("h3", null, tip("Linked companies", "linked_companies")), el("div", { id: "c-links" }),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),
+    el("h3", null, "After earnings"), el("div", { id: "c-events" }),
     ...v.credits.map((c) => el("p", { class: "dim small" }, c)),
     v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "",
-  ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current),
+  ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current), events(pane, current),
     priceFactors(pane.querySelector("#c-factors"), current), showLinks(pane.querySelector("#c-links"), current)]));
 }
 

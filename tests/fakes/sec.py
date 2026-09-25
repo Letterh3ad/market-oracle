@@ -16,7 +16,8 @@ class FakeSec:
         self.companies: dict[str, tuple[int, str]] = {}
         """ticker -> (cik, name)"""
         self.filings: dict[int, list[tuple]] = {}
-        """cik -> [(form, filing date "YYYY-MM-DD", accession "0000320193-26-000077", document, description)]"""
+        """cik -> [(form, filing date "YYYY-MM-DD", accession "0000320193-26-000077", document, description,
+        optionally items "2.02,9.01" and acceptanceDateTime "2026-07-30T16:30:12.000Z")]"""
         self.documents: dict[str, str] = {}
         """archive URL -> HTML"""
         self.failures: dict[str, httpx.Response | Exception] = {}
@@ -35,8 +36,9 @@ class FakeSec:
             rows = self.filings.get(int(m.group(1)))
             if rows is None:
                 return httpx.Response(404)
-            names = ("form", "filingDate", "accessionNumber", "primaryDocument", "primaryDocDescription")
-            recent = {n: [r[i] for r in rows] for i, n in enumerate(names)}
+            names = ("form", "filingDate", "accessionNumber", "primaryDocument", "primaryDocDescription", "items",
+                     "acceptanceDateTime")
+            recent = {n: [r[i] if i < len(r) else "" for r in rows] for i, n in enumerate(names)}
             return httpx.Response(200, json={"cik": m.group(1), "filings": {"recent": recent, "files": []}})
         failure = self.failures.get(str(request.url))
         if isinstance(failure, Exception):

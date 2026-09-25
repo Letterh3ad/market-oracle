@@ -130,6 +130,42 @@ def parse_filings(body: object, cik: int) -> list[Filing]:
     return out
 
 
+EARNINGS_ITEM = "2.02"
+MARKET_OPEN = "09:30"
+
+
+@dataclass(frozen=True)
+class Release:
+    """A day a company published its results (an 8-K under item 2.02)."""
+
+    day: date
+    before_open: bool | None
+    """Accepted before the New York open, so that day's close already reacted; None when
+    SEC gave no time."""
+
+
+def parse_earnings(body: object) -> list[Release]:
+    """Earnings releases from the submissions' recent list, newest first, one per day (the
+    earliest filing that day times it). SEC's acceptanceDateTime is New York time despite its
+    Z suffix."""
+    recent = body.get("filings", {}).get("recent", {}) if isinstance(body, dict) else {}
+    columns = [recent.get(k, []) for k in ("form", "filingDate", "items", "acceptanceDateTime")]
+    found: dict[date, bool | None] = {}
+    for form, filed, items, accepted in zip(*columns):
+        if form != EVENT or EARNINGS_ITEM not in str(items or "").replace(" ", "").split(","):
+            continue
+        stamp = str(accepted or "")
+        timed = re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d", stamp[:16]) is not None
+        try:
+            # Filed after 17:30 takes the next business day's filingDate; acceptance keeps the real day.
+            day = date.fromisoformat(stamp[:10] if timed else filed)
+        except (TypeError, ValueError):
+            continue
+        before = stamp[11:16] < MARKET_OPEN if timed else None
+        found[day] = before if found.get(day) is None else found[day] or bool(before)
+    return [Release(day, before) for day, before in sorted(found.items(), reverse=True)]
+
+
 def worth_reading(filings: list[Filing], day: date) -> list[Filing]:
     """From filings listed newest first, those filed by `day` worth reading: the latest
     quarterly or annual report, then 8-Ks from the 30 days before, newest first."""

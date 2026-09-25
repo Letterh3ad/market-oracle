@@ -11,6 +11,7 @@ from oracle.services.analysis_service import figure_meaning
 from oracle.services.company_service import FIGURES, CompanyView, company_view
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
+from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
 from oracle.services.links_service import CompanyLink, company_links, delete_link
 from oracle.services.peers_service import choose_peers
@@ -78,6 +79,13 @@ async def get_peers(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
         return {**shared, "basis": None, "fell_back": False, "peers": [], "note": str(exc)}
     return {**shared, "basis": choice.basis, "fell_back": choice.fell_back, "note": None,
             "peers": [{"symbol": r.symbol, "name": r.name, "market_cap": r.market_cap} for r in choice.rows]}
+
+
+@router.get("/{symbol}/events")
+async def get_events(symbol: str, refresh: bool = False, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Moves after past earnings from stored closes; `refresh` fetches release dates older than a week."""
+    study = await earnings_study(ctx, symbol, refresh=refresh)
+    return {**asdict(study), "headline": study.headline, "horizons": list(HORIZONS)}
 
 
 @router.get("/{symbol}/links")
