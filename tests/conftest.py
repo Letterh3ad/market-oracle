@@ -24,10 +24,11 @@ def _public_dns(monkeypatch):
 def _no_real_holiday_seams(monkeypatch):
     """Arming registers scheduled tasks, starts the study and reads power settings: a test that
     reaches the real seams fails instead."""
-    def refuse():
+    def refuse(*args, **kwargs):
         raise AssertionError("tests never use the real holiday seams: pass a fake system to Holiday")
 
     monkeypatch.setattr("oracle.services.holiday_service.real_holiday", refuse)
+    monkeypatch.setattr("oracle.services.holiday_service.RealHolidaySystem.__init__", refuse)
 
 
 @pytest.fixture
