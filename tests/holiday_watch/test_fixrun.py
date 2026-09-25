@@ -46,12 +46,14 @@ def test_settings_lock_the_run_down(tmp_path):
     reports = w.cfg.reports.resolve().as_posix()
     assert any(reports.split(":", 1)[-1] in d and d.startswith("Write(") for d in deny)
     git = sorted(a for a in allow if a.startswith("Bash(git"))
-    assert git == sorted(["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)",
-                          "Bash(git commit:*)", "Bash(git checkout holiday-fix)",
+    tree = (w.cfg.repo / ".claude/worktrees/holiday-fix").as_posix()
+    # add/commit only in the fix worktree: a commit in the main checkout would take the user's work
+    assert git == sorted(["Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", f"Bash(git -C {tree} add:*)",
+                          f"Bash(git -C {tree} commit:*)",
                           "Bash(git worktree add .claude/worktrees/holiday-fix -b holiday-fix integration)",
                           "Bash(git worktree add .claude/worktrees/holiday-fix holiday-fix)"])
     live = w.cfg.live.resolve().as_posix()
-    for rule in ("Bash(git push:*)", "Bash(git merge:*)", "Bash(schtasks:*)", "Edit(**/oracle.toml)",
+    for rule in ("Bash(*--output*)", "Bash(git push:*)", "Bash(git merge:*)", "Bash(schtasks:*)", "Edit(**/oracle.toml)",
                  "Write(**/*.db)"):
         assert rule in deny
     assert any(live.split(":", 1)[-1] in d and d.startswith("Edit(") for d in deny)

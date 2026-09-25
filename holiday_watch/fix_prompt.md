@@ -34,7 +34,7 @@ Rules:
   From $repo, create it with exactly `git worktree add .claude/worktrees/holiday-fix -b holiday-fix integration`
   the first time (or `git worktree add .claude/worktrees/holiday-fix holiday-fix` if only the branch
   exists), reuse it after. Add a test, run the suite there with
-  `$python -m pytest -q -m "not network"`, commit (no Co-Authored-By or any attribution line).
+  `$python -m pytest -q -m "not network"`, commit with `git -C $repo/.claude/worktrees/holiday-fix add` and `... commit` (no Co-Authored-By or any attribution line).
   The user reviews and deploys it after the holiday.
 - Tests and scripts you write must never open $repo/oracle.db, any other real database or the
   live worktree: use the test fixtures' temporary databases.

@@ -46,10 +46,11 @@ def fix_settings(cfg: Config) -> dict:
     fix_tree = cfg.repo / FIX_TREE
     allow = ["Read", "Grep", "Glob", *(f"Bash({hw_command(cfg)} {sub})" for sub in HW_SUBCOMMANDS),
              f"Bash({cfg.python.as_posix()} -m pytest:*)", "Bash(cd:*)",
-             "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git add:*)", "Bash(git commit:*)",
-             "Bash(git checkout holiday-fix)", f"Bash(git worktree add {FIX_TREE} -b holiday-fix integration)",
+             "Bash(git status:*)", "Bash(git diff:*)", "Bash(git log:*)",
+             f"Bash(git -C {fix_tree.as_posix()} add:*)", f"Bash(git -C {fix_tree.as_posix()} commit:*)", f"Bash(git worktree add {FIX_TREE} -b holiday-fix integration)",
              f"Bash(git worktree add {FIX_TREE} holiday-fix)", *_rules("Edit", fix_tree), *_rules("Write", fix_tree)]
-    deny = ["Bash(git push:*)", "Bash(git merge:*)", "Bash(git reset:*)", "Bash(git rebase:*)",
+    # --output lets git diff/log write any file, the live DB included
+    deny = ["Bash(*--output*)", "Bash(git push:*)", "Bash(git merge:*)", "Bash(git reset:*)", "Bash(git rebase:*)",
             "Bash(git branch:*)", "Bash(git switch:*)", "Bash(schtasks:*)", "Bash(taskkill:*)", "Bash(*--config*)",
             "Edit(**/oracle.toml)", "Write(**/oracle.toml)", "Edit(**/*.db)", "Write(**/*.db)",
             "Edit(**/holiday_watch/**)", "Write(**/holiday_watch/**)",
