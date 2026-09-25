@@ -16,6 +16,7 @@ from oracle.market.bars import Bar
 __all__ = ["SOURCE", "caption", "momentum_lean", "rank_day"]
 
 SOURCE = "momentum"
+RANK_STEP = 0.001
 
 
 def rank_day(day: date) -> date:
@@ -32,23 +33,25 @@ def caption(top: int, low_vol_weight: float = 0.0) -> str:
 
 def momentum_lean(history: Mapping[str, Sequence[Bar]], top: int, low_vol_weight: float = 0.0) -> LeanSource:
     """`history` is every listing's bars, oldest first; ranks read only bars on or before each
-    rank day (`ranked_at`), so later bars in it are never seen. The probability is 1.0: the
-    rule always acts, and the top N fit the position limit when `top` is at most it."""
-    picks: dict[date, tuple[frozenset[str], frozenset[str]]] = {}
+    rank day (`ranked_at`), so later bars in it are never seen. A buy's probability is just
+    under 1.0 and falls with rank (`RANK_STEP`), so when cash or slots run out the rules, which buy
+    by probability, buy the leaders first."""
+    picks: dict[date, dict[str, int]] = {}
 
-    def at(day: date) -> tuple[frozenset[str], frozenset[str]]:
+    def at(day: date) -> dict[str, int]:
         if day not in picks:
             scores = {s: v for s, r in ranked_at(history, day).items() if (v := _score(r, low_vol_weight)) is not None}
-            order = sorted(scores, key=lambda s: (-scores[s], s))
-            picks[day] = frozenset(order[:top]), frozenset(scores)
+            picks[day] = {s: i for i, s in enumerate(sorted(scores, key=lambda s: (-scores[s], s)))}
         return picks[day]
 
     def lean(symbol: str, bars: Sequence[Bar]) -> Lean | None:
         day = rank_day(bars[-1].date)
-        chosen, ranked = at(day)
-        if symbol not in ranked:
+        position = at(day).get(symbol)
+        if position is None:
             return None
-        return Lean(symbol, day, "buy" if symbol in chosen else "sell", 1.0, SOURCE)
+        if position >= top:
+            return Lean(symbol, day, "sell", 1.0, SOURCE)
+        return Lean(symbol, day, "buy", 1.0 - RANK_STEP * position, SOURCE)
 
     return lean
 
