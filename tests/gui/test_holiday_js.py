@@ -31,6 +31,7 @@ def test_status_asks_without_confirming_and_shows_each_check():
               "console.log(JSON.stringify({asked, text: node.textContent}));")
     assert out["asked"] == ["GET /api/holiday"]
     assert "okAppanswers" in out["text"] and "Registered task X." in out["text"]
+    assert "Warning: Automatic sign-in is off." in out["text"]
 
 
 def test_arm_asks_first_then_shows_the_refusal_with_its_fix():

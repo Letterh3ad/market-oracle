@@ -24,6 +24,8 @@ def _run(ctx: AppContext, command: str) -> int:
     report: Report = getattr(holiday_service.real_holiday(), command)(ctx)
     for c in report.checks:
         print(f"  {'ok  ' if c.ok else 'FAIL'}  {c.name}: {c.detail}" + ("" if c.ok else f"\n        fix: {c.fix}"))
+    for warning in report.warnings:
+        print(f"  WARN  {warning}")
     for line in report.lines:
         print(line)
     return 0 if report.ok else 1

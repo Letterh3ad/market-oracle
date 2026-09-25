@@ -4,7 +4,8 @@ from oracle.cli.main import main
 from oracle.services import holiday_service
 from oracle.services.holiday_service import Check, Report
 
-GOOD = Report(True, True, (Check("App", True, "answers"),), ("Armed.", "Registered task X."))
+GOOD = Report(True, True, (Check("App", True, "answers"),), ("Armed.", "Registered task X."),
+              ("Automatic sign-in is off.",))
 BAD = Report(False, False, (Check("App", True, "answers"), Check("Sleep", False, "sleeps after 30 min", "set Never")),
              ("Not armed: failed Sleep.",))
 
@@ -41,6 +42,7 @@ def test_each_command_prints_the_checks_and_lines(cfg, capsys, monkeypatch, comm
     out = capsys.readouterr().out
     assert fake.calls == [command]
     assert "ok    App: answers" in out and "Armed." in out and "Registered task X." in out
+    assert "WARN  Automatic sign-in is off." in out
 
 
 def test_a_refusal_names_the_failed_check_and_its_fix_and_fails(cfg, capsys, monkeypatch):

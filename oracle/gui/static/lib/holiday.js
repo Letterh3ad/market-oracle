@@ -16,6 +16,7 @@ function holidayCard() {
         el("td", { class: c.ok ? "up" : "down" }, c.ok ? "ok" : "FAIL"),
         el("th", null, c.name),
         el("td", null, c.detail, c.ok ? null : el("div", { class: "warn-text" }, `fix: ${c.fix}`)))))),
+      ...(report.warnings ?? []).map((w) => el("div", { class: "warn-text small" }, `Warning: ${w}`)),
       report.lines.length ? el("pre", { class: "observation" }, report.lines.join("\n")) : null);
   }
 
