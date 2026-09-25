@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 import time as clock_time
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta, timezone, tzinfo
 from pathlib import Path
@@ -617,10 +617,8 @@ def _take_stale(lock: Path) -> int | None:
         return None
     try:
         if clock_time.time() - aside.stat().st_mtime <= ARM_LOCK_STALE_S:
-            try:
+            with suppress(OSError):  # a third arm holds the name now: leave the live lock aside, never delete it
                 os.rename(aside, lock)
-            except OSError:
-                aside.unlink(missing_ok=True)
             return None
         aside.unlink(missing_ok=True)
         return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)

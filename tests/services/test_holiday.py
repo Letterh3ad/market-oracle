@@ -495,6 +495,32 @@ async def test_a_stale_lock_taken_over_by_another_arm_first_is_left_to_it(ctx, s
     assert [p.name for p in lock.parent.iterdir() if p.name.startswith("arm.lock")] == ["arm.lock"]
 
 
+async def test_a_live_lock_that_cannot_be_put_back_is_left_aside_never_deleted(ctx, study, holiday, system,  # noqa: F811
+                                                                                 tmp_path, monkeypatch):
+    lock = tmp_path / "reports" / "arm.lock"
+    lock.parent.mkdir()
+    lock.write_text("123", encoding="utf-8")
+    old = time.time() - 3600
+    os.utime(lock, (old, old))
+    rename, calls = os.rename, []
+
+    def two_other_arms(src, dst):
+        calls.append(src)
+        if len(calls) == 1:  # A took the stale lock over before our move
+            lock.unlink()
+            lock.write_text("456", encoding="utf-8")
+        else:  # C made its own while A's lock was aside
+            lock.write_text("789", encoding="utf-8")
+        rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", two_other_arms)
+    report = holiday.arm(ctx)
+    monkeypatch.setattr(os, "rename", rename)
+    assert not report.ok and system.tasks == {}
+    aside = [p for p in lock.parent.iterdir() if p.name.startswith("arm.lock.")]
+    assert lock.read_text(encoding="utf-8") == "789" and [p.read_text(encoding="utf-8") for p in aside] == ["456"]
+
+
 # Disarm and status
 
 async def test_disarm_pauses_the_study_and_deletes_both_tasks(ctx, study, holiday, system):  # noqa: F811
