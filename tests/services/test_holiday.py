@@ -183,6 +183,25 @@ async def test_the_tasks_run_from_the_live_worktree_logged_on_with_time_limits(
     assert report.find("t:Actions/t:Exec/t:Arguments", NS).text.startswith("-m holiday_watch report")
 
 
+async def test_a_cli_arm_from_another_folder_runs_the_watch_from_the_live_worktree(
+        ctx, study, system, watch_file, tmp_path, monkeypatch, capsys):  # noqa: F811
+    from oracle.cli.main import main
+
+    toml = tmp_path / "oracle.toml"
+    toml.write_text(f'db_path = "{Path(ctx.config.db_path).as_posix()}"\n', encoding="utf-8")
+    system.updates = replace(system.updates, paused_until=datetime.now(timezone.utc) + timedelta(days=30))
+    (tmp_path / "elsewhere").mkdir()
+    monkeypatch.chdir(tmp_path / "elsewhere")
+    relative = Path("..") / "watch.toml"
+    monkeypatch.setattr(holiday_service, "real_holiday",
+                        lambda: Holiday(system, lambda: (load_watch_config(relative), relative)))
+    assert main(["--config", str(toml), "holiday", "arm"]) == 0, capsys.readouterr().out
+    exe = ET.fromstring(system.tasks[WATCHDOG_TASK]).find("t:Actions/t:Exec", NS)
+    assert exe.find("t:WorkingDirectory", NS).text == str(tmp_path / "live")
+    assert exe.find("t:Arguments", NS).text == f"-m holiday_watch pass --config {watch_file.resolve()}"
+    assert {w[2] for w in system.watched} == {tmp_path / "live"}
+
+
 async def test_a_relative_settings_path_reaches_the_task_absolute(
         ctx, study, system, watch_file, tmp_path, monkeypatch):  # noqa: F811
     (tmp_path / "elsewhere").mkdir()
