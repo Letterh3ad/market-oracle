@@ -37,4 +37,15 @@ Everything it writes goes to `holiday-reports/` (gitignored).
 - **report**: status, last tick, study progress and failures, interim score, account lines, the
   day's watchdog actions and fix runs, with a short claude summary on top (the plain report is
   written anyway if claude fails).
-- Task Scheduler runs `holiday_watch/run.ps1 pass` and `run.ps1 report`; arming registers them.
+- **Arm / disarm** (App section, Holiday watch card; or `oracle holiday arm|disarm|status`):
+  arm runs every check first and refuses on any failure, naming it and the fix: watch settings
+  file present and on the app's database, app and Ollama answering, automation on, the replay
+  study paused with both size halves and `[arm] expect_symbols`, cutoff probed, study models
+  unchanged, no model change pending in `oracle.toml`, at most one Remote Control session, free
+  disk over `[arm] min_free_gb`, sleep and hibernate Never on mains power, plugged in. Then it
+  backs the database up (SQLite backup API into `[arm] backups`, `../oracle-backups/`), keeps or
+  starts the one Remote Control session (PID file), starts the study and registers two tasks
+  (`python[w] -m holiday_watch pass|report --config ...` from the app's code folder: every 30 min,
+  and daily at `[arm] report_time`; only while logged on, no time limit, on battery too), then
+  shows a `pass --dry-run` and `status` as the live check. Disarm pauses the study and deletes
+  both tasks. Status runs the checks with no side effects. `run.ps1` stays for running by hand.

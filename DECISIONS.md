@@ -2483,3 +2483,32 @@ no pytest for fix runs (a code fix could not be checked); a real sandbox (none o
 **Context:** FinanceDatabase lacks big home lines (LG Energy Solution, LG Chem, LG Corp, LG Electronics' 066570.KS) and files Samsung C&T under a wrong code as Micro Cap. The user wants the universe as full as possible, and discovery to add the listed companies it finds (discovery-universe/05).
 **Decision:** Each market's main index member lists are read from Wikipedia (the Wikimedia REST API, cached a week, CC BY-SA recorded in THIRD_PARTY.md) and each member whose line is missing is added from a Yahoo quoteSummary profile (band from Yahoo's market cap in USD, same cut-offs; the company's FinanceDatabase classification wins over Yahoo's). Only EQUITY lines that are not depositary receipts and not on the never list join. Added lines and corrections (a line under the wrong code, delisted only when Yahoo says it has no such line, or a band two or more bands off Yahoo's) live in their own tables (m0042; renumbered after holiday-hardening's m0041) and are laid over every FinanceDatabase refresh, which drops an added line once FinanceDatabase has it. The backfill is its own Activity job (kind `universe`, so it queues behind a refresh and never runs inside a tick), 150 Yahoo lookups a run, round robin over indexes, resumable (failed members rest 30 days), and a 429 stops the run keeping what was added. A GUI refresh queues one after it; `oracle universe refresh` keeps backfilled lines but leaves the minutes of lookups to `oracle universe backfill` (which the Universe tab's "Index backfill" section also runs by hand), so a scripted refresh stays quick. Discovery (brands' Yahoo lookup) adds a listing "not in the universe" through the same guards (and never an OTC line: PNK, OQX, OQB) only when the quote carries the name, or Yahoo ranks it far first and its Yahoo market cap is Mega or Large Cap, never a line already in the universe, each add spending one of the answer's MAX_LOOKUPS, reason "... added to the universe from Yahoo". That single add inserts the one row at once in the company `place_line` gives it (the first stored line sharing an ISIN or name and country) instead of a full regroup (about 11 s on 150k rows against about 2.5 s); the next refresh or backfill regroups it properly. It is skipped while a refresh holds the universe lock.
 **Alternatives:** Only copying existing rows (size-mix's `MISSING_HOME_LINES`, cannot add a line FinanceDatabase lacks). Paid constituent feeds. A full regroup per discovery add (five adds could cost a minute). Leaving the discovery reason as "not in the universe" and adding nothing (the user asked for adds).
+
+## 2026-09-25 - Holiday arm/disarm: preflight in a service, tasks from XML, pythonw direct
+**Context:** holiday-watch/02: one step at 18:00 (App-section card + `oracle holiday arm|disarm|status`)
+that refuses on any failed check, then starts the study and registers the watchdog and report tasks.
+Ticket 01's gate asked for tasks "only when logged on" with no execution time limit, and exactly one
+Remote Control session.
+**Decision:** `oracle/services/holiday_service.py` holds the checks and the steps; every side effect
+(HTTP, process list, disk, powercfg/GetSystemPowerStatus, SQLite backup, schtasks, the watch as a
+subprocess, the Remote Control console) is on a `HolidaySystem`; only `real_holiday()` builds the real
+one and the suite's conftest replaces it with one that raises. The service imports the stdlib
+`holiday_watch` package (its config, process list and reaper matchers) so the checks see what the
+watch will; `holiday_watch` is now packaged too. Arm settings live in the watch's config (`[arm]`:
+min_free_gb 20, backups `{repo}/../oracle-backups`, pass_every_min 30, report_time 07:00,
+expect_symbols). Tasks are registered from Task Scheduler XML (`schtasks /Create /XML`), since the
+schtasks flags cannot set "no time limit", battery behaviour or a working folder: InteractiveToken,
+ExecutionTimeLimit PT0S, IgnoreNew, runs on battery, WakeToRun, first pass 2 min after arming. The
+action runs the watch config's python (pythonw beside it when present, so no console flashes every
+30 min) with `-m holiday_watch pass|report --config <file>` in the folder holding the package (the
+live worktree when armed from the live app), not `run.ps1`: the live worktree has no `.venv`, which
+`run.ps1` falls back to. Status accepts a running study; arm needs it paused. A failure after the
+study starts deletes both tasks and pauses the study again. The live check is `pass --dry-run` then
+`status`. Zero Remote Control sessions is no failure: arm starts one in a new console and writes the
+PID file; two or more refuse. "Model change pending" = oracle.toml's model settings differ from the
+ones the running app holds (or the file no longer loads); the study's pinned models are the separate
+"Replay models" check.
+**Alternatives:** Arm inside the stdlib watch package (cannot read the study or cutoff without
+`oracle`); `schtasks /SC MINUTE /MO 30` flags (72 h default limit ends spawned children, no working
+folder); `run.ps1` via powershell (needs HOLIDAY_WATCH_PYTHON, which a task cannot set, and flashes a
+window); failing arm on zero Remote Control sessions (one more manual step at 18:00).
