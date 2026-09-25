@@ -30,6 +30,13 @@ const GLOSSARY = {
   lean:
     "The overall call (strong sell to strong buy) with how likely it is to be right. Baseline means it comes " +
     "from price patterns and company figures only, before any AI research. The strategy account trades on it.",
+  price_factors:
+    "12-1 momentum is the return from a year ago to a month ago, leaving out the last month. Volatility is how " +
+    "much the price swung over the last 60 trading days, as a yearly figure. Both are ranked against every " +
+    "watched, held and discovered listing, from stored closes only.",
+  momentum_rank:
+    "Where the 12-1 momentum ranks in the set: 100 is the strongest, 0 the weakest. Blank: less than a year of prices.",
+  calm_rank: "Where the 60-day volatility ranks in the set: 100 is the calmest, 0 the most volatile.",
   lean_stale: "Older than the latest price, so the strategy will not trade on it until you press Analyse.",
   score: "From -1 (strongly down) to +1 (strongly up). Between -0.2 and +0.2 counts as no clear direction.",
   confidence: "How much the analyst's own inputs agree with each other, from 0% to 100%.",
