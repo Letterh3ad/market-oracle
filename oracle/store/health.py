@@ -47,6 +47,15 @@ class HealthRepo:
             )
         return self.get(symbol)
 
+    def mark_dead(self, symbols: list[str], day: date) -> None:
+        """Dead from `day` without waiting out the streak; a listing already dead keeps its day."""
+        with transaction(self._conn):
+            for symbol in symbols:
+                self._conn.execute(
+                    "INSERT INTO listing_health (symbol, no_data_days, dead_since) VALUES (?, '[]', ?) "
+                    "ON CONFLICT (symbol) DO UPDATE SET dead_since = COALESCE(dead_since, excluded.dead_since)",
+                    (symbol, day.isoformat()))
+
     def clear(self, symbol: str) -> bool:
         """Forget the streak; True when the listing had been dead."""
         with transaction(self._conn):

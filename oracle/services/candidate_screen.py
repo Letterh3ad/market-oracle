@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 
 from oracle.market.bars import is_stale
 from oracle.market.sources import NoData, SourceFailed
@@ -23,15 +24,17 @@ from oracle.services.brands import (
 )
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
-from oracle.services.errors import ServiceError
+from oracle.services.errors import PriceUnavailable, ServiceError
 from oracle.services.http import open_client
 from oracle.services.never_list import is_never, never_company, never_names
 from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import live_siblings, search_universe
+from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DISCOVERED_LIST, DiscoveryRepo
 from oracle.store.health import HealthRepo
 from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
+from oracle.universe.corrections import corrected
 from oracle.universe.listings import MARKET_CAP_BANDS, blind_name, is_receipt
 from oracle.universe.regions import home_country
 
@@ -106,7 +109,7 @@ class Screen:
         business. (None, None) for a company already looked at in this pass."""
         if is_never(name, self._never):
             return None, NEVER
-        profile, why_not = (self._universe.profile(symbol), None) if symbol else await self._matched(name, named_in)
+        profile, why_not = (self.profile(symbol), None) if symbol else await self._matched(name, named_in)
         if profile is None:
             return None, why_not or NOT_FOUND
         if profile.company_key in self._seen:
@@ -119,7 +122,8 @@ class Screen:
         return profile, None
 
     def profile(self, symbol: str) -> ListingProfile | None:
-        return self._universe.profile(symbol)
+        """With the company's sector (and country) as the corrections table puts it right."""
+        return corrected(self._universe.profile(symbol))
 
     async def resolve(self, name: str, named_in: NamedIn | None = None) -> ListingProfile | None:
         """The company's own shares the name means, with no other rule applied and nothing
@@ -171,19 +175,19 @@ class Screen:
         want = blind_name(_DOTCOM.sub("", name))
         hits, names = self._search(want)
         if exact := [h for h in hits if want in names[h.symbol]]:
-            return _Match(self._universe.profile(exact[0].symbol), kind=EXACT)
+            return _Match(self.profile(exact[0].symbol), kind=EXACT)
         leading = [h for h in hits if any(same_company(n, want) for n in names[h.symbol])]
         if not leading and len(want) >= MIN_CUT_NAME and " " not in want:
             leading = [h for h in hits if any(n.split()[0].startswith(want) for n in names[h.symbol])]
         leading = behind_quotes(want, sized(leading), hits)
         if leading and (picked := self._picked(want, leading, named_in)):
-            return _Match(self._universe.profile(picked.symbol), kind=START)
+            return _Match(self.profile(picked.symbol), kind=START)
         symbol_as_written = name.strip()
-        if symbol_as_written.isupper() and (by_symbol := self._universe.profile(symbol_as_written)) is not None:
+        if symbol_as_written.isupper() and (by_symbol := self.profile(symbol_as_written)) is not None:
             return _Match(by_symbol, kind=SYMBOL)
         if leading:
             if picked := await self._model_pick(name, want, leading, named_in):
-                return _Match(self._universe.profile(picked.symbol), kind=START)
+                return _Match(self.profile(picked.symbol), kind=START)
             return _Match(None, _ambiguous(want, leading))
         if parent and (owner := await self._parent(name, named_in)):
             return owner
@@ -195,7 +199,8 @@ class Screen:
     def _search(self, want: str) -> tuple[list[SearchHit], dict[str, set[str]]]:
         """The usable hits for a name, each with every name its company's listings carry."""
         if want not in self._hits:
-            hits = usable(search_universe(self._ctx, want, filters={"type": ["equity"]}, limit=SEARCH_DEPTH))
+            hits = [corrected(h) for h in
+                    usable(search_universe(self._ctx, want, filters={"type": ["equity"]}, limit=SEARCH_DEPTH))]
             names = {h.symbol: {blind_name(n) for x in (h, *self._universe.company_listings(h.company_key))
                                 for n in (x.name, _DOTCOM.sub("", x.name))} for h in hits}
             self._hits[want] = hits, names
@@ -307,7 +312,7 @@ class Screen:
 
         for rule, big_only in ((own, False), (ticker, False), (lambda q: q is lead, True)):
             for q in equities:
-                p = self._universe.profile(q.symbol) if rule(q) else None
+                p = self.profile(q.symbol) if rule(q) else None
                 # Past a refused match, a tiny ticker twin is no better a guess than the ticker was.
                 if p is None or p.company_key == besides or (big_only and p.market_cap not in _BIG) or (
                         besides and rule is ticker and p.market_cap in _TINY):
@@ -358,14 +363,47 @@ class Screen:
         listing = line or self.live_line(profile)
         if listing is None:
             return None, "no listing with live prices"
+        gone, why_not = await self._check_prices(listing)
+        if gone:
+            await self._bury(profile, listing)
+        return (None, why_not) if why_not else (listing, None)
+
+    async def _check_prices(self, symbol: str) -> tuple[bool, str | None]:
+        """One price check: why the line has no recent prices (None when it has), and whether
+        the sources said so themselves (no data, or only old bars) rather than failing to answer."""
         self.checks += 1
         try:
-            update = await update_listing(self._ctx, listing)
+            update = await update_listing(self._ctx, symbol)
+        except PriceUnavailable as exc:
+            return exc.no_data, f"no price data ({exc})"
         except ServiceError as exc:
-            return None, f"no price data ({exc})"
-        if update.last_date is None or is_stale(update.last_date, self._ctx.clock.utcnow().date()):
-            return None, f"its prices are out of date (last {update.last_date})"
-        return listing, None
+            return False, f"no price data ({exc})"
+        if update.last_date is None or is_stale(update.last_date, self._today()):
+            return True, f"its prices are out of date (last {update.last_date})"
+        return False, None
+
+    async def _bury(self, profile: ListingProfile, failed: str) -> None:
+        """Mark every line of an acquired or dead company dead (Dialog Semiconductor, Meggitt),
+        so screens skip it from now on without a fetch: none has recent bars stored, and its
+        best other line, when it has one, answers no better. Left alone when that second
+        opinion cannot be had (no check left, or the sources not answering)."""
+        today = self._today()
+        lines = [x.symbol for x in self._universe.company_listings(profile.company_key) if not x.delisted]
+        bars = BarRepo(self._ctx.conn)
+        if any((last := bars.last_date(s)) and not is_stale(last, today) for s in lines):
+            return
+        if siblings := live_siblings(self._ctx, failed):
+            if not self.checks_left:
+                return
+            gone, why_not = await self._check_prices(siblings[0].symbol)
+            if not (gone and why_not):
+                return
+        health = HealthRepo(self._ctx.conn)
+        health.mark_dead(lines, today)
+        self._universe.repick_primary(profile.company_key, health.dead_symbols())
+
+    def _today(self) -> date:
+        return self._ctx.clock.utcnow().date()
 
     def live_line(self, profile: ListingProfile) -> str | None:
         """The primary line (home or most liquid), else its best live sibling."""

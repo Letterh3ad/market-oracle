@@ -7,9 +7,9 @@ from dataclasses import dataclass
 
 from oracle.store.universe import CLASSIFICATION_LEVELS
 
-# Words that name no sector or industry ("oil and gas sector").
+# Words that name no sector or industry ("oil and gas sector", "AI chips").
 NOT_A_SECTOR = frozenset({"and", "or", "the", "of", "a", "an", "sector", "sectors", "industry", "industries",
-                          "companies", "company", "stocks", "shares", "firms", "no", "not", "any"})
+                          "companies", "company", "stocks", "shares", "firms", "no", "not", "any", "ai"})
 # Everyday words for what the universe names otherwise, after plurals are folded.
 ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotechnology", "insurer": "insurance",
            "chip": "semiconductor", "chipmaker": "semiconductor", "healthcare": "health care",
@@ -17,7 +17,11 @@ ALIASES = {"tech": "technology", "pharma": "pharmaceutical", "biotech": "biotech
            "autos": "automobile", "telecom": "telecommunication", "telecoms": "telecommunication",
            "drug": "pharmaceutical", "drugmaker": "pharmaceutical", "carmaker": "automobile",
            "defence": "defense", "semiconducter": "semiconductor", "ev": "automobile",
-           "homebuilder": "household durable", "miner": "mining", "battery": "electrical"}
+           "homebuilder": "household durable", "housebuilder": "household durable",
+           "miner": "mining", "battery": "electrical", "evs": "automobile",
+           # Themes the universe has no class for, as the class holding most of their companies.
+           "robotic": "machinery", "robot": "machinery", "solar": "renewable electricity",
+           "fintech": "consumer finance"}
 _WORDS = re.compile(r"[a-z0-9]+")
 # "Tech" alone means the sector, not Health Care Technology or Technology Hardware.
 _WHOLE = {frozenset({"technology"}): frozenset({"information", "technology"})}

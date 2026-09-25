@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Sequence, Set
+from collections.abc import Iterable, Mapping, Sequence, Set
 from dataclasses import dataclass, fields
 
 from oracle.store.db import transaction
+from oracle.universe.corrections import Correction
 from oracle.universe.listings import MARKET_CAP_BANDS, Listing, pick_primary
 from oracle.universe.query import COMPANY_FIELDS, FILTER_FIELDS, UniverseQuery, fts_match
 
@@ -39,6 +40,36 @@ def _require_field(name: str) -> None:
 
 def _column(name: str) -> str:
     return f"p.{name}" if name in COMPANY_FIELDS else f"l.{name}"
+
+
+_FIXED = ("sector", "industry_group", "industry", "country")
+
+
+def _fix(corrections: Mapping[str, Correction]) -> tuple[str, list]:
+    """A `fix` table of `corrections` to LEFT JOIN on the primary `p`, with its parameters;
+    read a company field through it with `_fixed`."""
+    rows = [(key, c.sector, c.industry_group, c.industry, c.country) for key, c in corrections.items()]
+    values = ", ".join("(?, ?, ?, ?, ?)" for _ in rows) or "(NULL, NULL, NULL, NULL, NULL)"
+    return (f"WITH fix(company_key, {', '.join(_FIXED)}) AS (VALUES {values})",
+            [v for row in rows for v in row])
+
+
+def _fixed(name: str) -> str:
+    return f"COALESCE(f.{name}, p.{name})"
+
+
+def _fixed_in(names: Sequence[str], values: Sequence[Set[str]]) -> tuple[str, list]:
+    """Any of the fields `names` holding one of its `values`, read through `fix`: first as
+    stored or corrected at all (a filter on `p` alone, so the join runs on few rows), then
+    as corrected."""
+    def any_of(column) -> tuple[str, list]:
+        terms = [f"{column(n)} IN ({', '.join('?' * len(v))})" for n, v in zip(names, values)]
+        return " OR ".join(terms) or "0", [x for v in values for x in sorted(v)]
+
+    raw, raw_params = any_of(lambda n: f"p.{n}")
+    fixed, fixed_params = any_of(_fixed)
+    return (f"({raw} OR p.company_key IN (SELECT company_key FROM fix)) AND ({fixed})",
+            raw_params + fixed_params)
 
 
 @dataclass(frozen=True)
@@ -172,20 +203,25 @@ class UniverseRepo:
         ).fetchone()
         return ListingProfile(**dict(row)) if row else None
 
-    def peers(self, company_key: str, field: str, value: str, limit: int) -> list[PeerRow]:
+    def peers(self, company_key: str, field: str, value: str, limit: int,
+              corrections: Mapping[str, Correction] = {}) -> list[PeerRow]:
         """Other active equity companies sharing `field` (sector or industry_group), by
-        primary listing: biggest market-cap band first, then the most widely listed."""
+        primary listing: biggest market-cap band first, then the most widely listed. Each
+        company's field is read through `corrections`."""
         if field not in PEER_FIELDS:
             raise ValueError(f"peers are grouped by {' or '.join(PEER_FIELDS)}, not {field!r}")
+        fix, params = _fix(corrections)
+        matches, match_params = _fixed_in([field], [{value}])
         rows = self._conn.execute(
-            f"""SELECT p.symbol, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.market_cap, p.currency,
+            f"""{fix}
+                SELECT p.symbol, COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.market_cap, p.currency,
                        (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0) AS n
-                FROM listings p
+                FROM listings p LEFT JOIN fix f ON f.company_key = p.company_key
                 WHERE p.is_primary AND p.type = 'equity' AND p.delisted = 0
-                  AND p.{field} = :v AND p.company_key != :k
+                  AND {matches} AND p.company_key != ?
                 ORDER BY p.market_cap IS NULL, {_CAP_ORDER}, n DESC, name COLLATE NOCASE
-                LIMIT :limit""",
-            {"v": value, "k": company_key, "limit": limit},
+                LIMIT ?""",
+            [*params, *match_params, company_key, limit],
         )
         return [PeerRow(r["symbol"], r["name"], r["market_cap"], r["currency"]) for r in rows]
 
@@ -206,34 +242,36 @@ class UniverseRepo:
         return [Resolved(r["symbol"], r["company_key"], r["name"], r["currency"], r["market_cap"]) for r in rows]
 
     def screen(self, classes: Sequence[tuple[str, Set[str]]], countries: Set[str] | None, bands: Sequence[str],
-               untrusted_exchanges: Sequence[str] = ()) -> list[ListingProfile]:
+               untrusted_exchanges: Sequence[str] = (),
+               corrections: Mapping[str, Correction] = {}) -> list[ListingProfile]:
         """Active equity companies, by primary listing, in any of `classes` ((level, values)),
         based in `countries` (anywhere when None; also when their primary is on one of
         `untrusted_exchanges`, where the universe's country may be wrong), within `bands` (any
-        when empty): biggest band first, then the most widely listed, as peers are ranked."""
-        where, params = ["p.is_primary", "p.type = 'equity'", "p.delisted = 0"], []
-        matches = []
-        for level, values in classes:
-            if level not in CLASSIFICATION_LEVELS:
-                raise ValueError(f"not a classification level: {level!r}")
-            matches.append(f"p.{level} IN ({', '.join('?' * len(values))})")
-            params += sorted(values)
-        where.append(f"({' OR '.join(matches) or '0'})")
+        when empty): biggest band first, then the most widely listed, as peers are ranked.
+        Classes and countries are read, and returned, through `corrections`."""
+        if bad := [level for level, _ in classes if level not in CLASSIFICATION_LEVELS]:
+            raise ValueError(f"not a classification level: {bad[0]!r}")
+        fix, params = _fix(corrections)
+        matches, match_params = _fixed_in([level for level, _ in classes], [values for _, values in classes])
+        where = ["p.is_primary", "p.type = 'equity'", "p.delisted = 0", matches]
+        params += match_params
         if countries is not None:
-            where.append(f"(p.country IN ({', '.join('?' * len(countries))}) "
+            where.append(f"({_fixed('country')} IN ({', '.join('?' * len(countries))}) "
                          f"OR p.exchange IN ({', '.join('?' * len(untrusted_exchanges)) or 'NULL'}))")
             params += [*sorted(countries), *untrusted_exchanges]
         if bands:
             where.append(f"p.market_cap IN ({', '.join('?' * len(bands))})")
             params += bands
         rows = self._conn.execute(
-            f"""SELECT p.symbol, p.symbol AS primary_symbol, p.currency AS primary_currency, p.company_key,
-                       COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, p.country, p.sector,
-                       p.industry_group, p.industry, p.category, p.family, p.exchange,
+            f"""{fix}
+                SELECT p.symbol, p.symbol AS primary_symbol, p.currency AS primary_currency, p.company_key,
+                       COALESCE(NULLIF(p.name, ''), p.symbol) AS name, p.type, {_fixed('country')} AS country,
+                       {_fixed('sector')} AS sector, {_fixed('industry_group')} AS industry_group,
+                       {_fixed('industry')} AS industry, p.category, p.family, p.exchange,
                        (SELECT COUNT(*) FROM listings x WHERE x.company_key = p.company_key AND x.delisted = 0)
                          AS listings,
                        p.website, p.summary, p.market_cap
-                FROM listings p WHERE {" AND ".join(where)}
+                FROM listings p LEFT JOIN fix f ON f.company_key = p.company_key WHERE {" AND ".join(where)}
                 ORDER BY p.market_cap IS NULL, {_CAP_ORDER}, listings DESC, p.symbol""", params)
         return [ListingProfile(**dict(r)) for r in rows]
 
