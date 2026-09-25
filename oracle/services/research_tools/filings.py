@@ -58,32 +58,36 @@ class Filings:
         return dict(zip(ids, (f.form for f in filings)))
 
     async def _lookup(self, ticker: str) -> list[edgar.Filing]:
-        # Yahoo marks non-US listings with an exchange suffix (VOD.L, 7203.T); US share
-        # classes use a dash (BRK-B).
-        if "." in ticker:
-            raise NoFilings(f"No SEC filings: {ticker} is not a US listing.")
-        headers = {"User-Agent": edgar.user_agent(need_contact(self._contact))}
-        await self._refresh_tickers(headers)
-        found = self._tickers.lookup(ticker) or self._tickers.lookup(ticker.replace("-", "."))
-        if found is None:
-            raise NoFilings(f"No SEC filer with ticker {ticker}.")
-        cik, _ = found
-        return edgar.parse_filings(await self._json(edgar.submissions_url(cik), headers), cik)
+        cik, body = await submissions(self._client, self._tickers, self._clock, self._contact, ticker)
+        return edgar.parse_filings(body, cik)
 
-    async def _refresh_tickers(self, headers: dict) -> None:
-        fetched = self._tickers.fetched_at()
-        if fetched and self._clock.utcnow() - datetime.fromisoformat(fetched) < TICKERS_MAX_AGE:
-            return
-        tickers = edgar.parse_tickers(await self._json(edgar.TICKERS_URL, headers))
-        if tickers:
-            self._tickers.replace(tickers, to_utc_iso(self._clock.utcnow()))
 
-    async def _json(self, url: str, headers: dict) -> object:
-        resp = await fetch(self._client, "sec_edgar", "SEC", url, headers=headers)
-        try:
-            return resp.json()
-        except ValueError as exc:
-            raise ToolError(f"SEC sent something unreadable ({exc})") from exc
+async def submissions(client: RateLimitedClient, tickers: SecTickerRepo, clock: Clock, contact: str | None,
+                      ticker: str) -> tuple[int, object]:
+    """The filer's CIK and its submissions JSON; NoFilings when SEC has no such filer."""
+    # Yahoo marks non-US listings with an exchange suffix (VOD.L, 7203.T); US share
+    # classes use a dash (BRK-B).
+    if "." in ticker:
+        raise NoFilings(f"No SEC filings: {ticker} is not a US listing.")
+    headers = {"User-Agent": edgar.user_agent(need_contact(contact))}
+    fetched = tickers.fetched_at()
+    if not fetched or clock.utcnow() - datetime.fromisoformat(fetched) >= TICKERS_MAX_AGE:
+        found = edgar.parse_tickers(await _json(client, edgar.TICKERS_URL, headers))
+        if found:
+            tickers.replace(found, to_utc_iso(clock.utcnow()))
+    found = tickers.lookup(ticker) or tickers.lookup(ticker.replace("-", "."))
+    if found is None:
+        raise NoFilings(f"No SEC filer with ticker {ticker}.")
+    cik, _ = found
+    return cik, await _json(client, edgar.submissions_url(cik), headers)
+
+
+async def _json(client: RateLimitedClient, url: str, headers: dict) -> object:
+    resp = await fetch(client, "sec_edgar", "SEC", url, headers=headers)
+    try:
+        return resp.json()
+    except ValueError as exc:
+        raise ToolError(f"SEC sent something unreadable ({exc})") from exc
 
 
 async def press_exhibit(client: RateLimitedClient, contact: str | None, document_url: str) -> edgar.Exhibit | None:
