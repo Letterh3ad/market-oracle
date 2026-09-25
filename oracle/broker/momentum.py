@@ -25,10 +25,10 @@ def rank_day(day: date) -> date:
 
 
 def caption(rules: Rules, low_vol_weight: float = 0.0) -> str:
-    """The top N is the position limit; the cash floor and position size may hold fewer."""
+    """The top N is the position limit; at full size the cash floor may fit fewer."""
     top = rules.max_positions
     fits = min(top, int((1 - rules.cash_floor) / rules.max_position + 1e-9))
-    held = f" (at most {fits} held at once under the cash floor and position size)" if fits < top else ""
+    held = f" (about {fits} at full size under the cash floor; risk sizing can hold more)" if fits < top else ""
     blend = f", blended {low_vol_weight:.0%} with low volatility," if low_vol_weight else ""
     return (f"Momentum: the top {top} listings{held} by 12-1 momentum (the year's return leaving out the last month)"
             f"{blend} ranked on each month's last day on closes up to it and held under the same rules, risk sizes "

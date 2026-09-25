@@ -105,6 +105,6 @@ def test_buys_lean_in_rank_order_so_the_rules_buy_the_leader_first():
 
 def test_the_caption_says_how_many_positions_fit_and_that_a_stop_out_is_bought_back():
     text = caption(RULES)
-    assert "top 10 listings" in text and "at most 8 held at once" in text
+    assert "top 10 listings" in text and "about 8 at full size under the cash floor" in text
     assert "a stop-out is bought back while it stays in the top" in text
-    assert "at most" not in caption(replace(RULES, max_positions=5))
+    assert "about" not in caption(replace(RULES, max_positions=5))
