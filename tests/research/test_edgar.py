@@ -209,6 +209,11 @@ def test_two_earnings_8ks_on_one_day_are_one_release_timed_by_the_first():
     assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), True)]
 
 
+def test_a_filing_accepted_after_1730_is_released_on_its_acceptance_day():
+    body = _recent(("8-K", "2026-07-31", "2.02", "2026-07-30T18:05:00.000Z"))
+    assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), False)]
+
+
 def test_a_submissions_body_without_items_has_no_releases():
     assert edgar.parse_earnings({"filings": {"recent": {"form": ["8-K"], "filingDate": ["2026-07-30"]}}}) == []
     assert edgar.parse_earnings([]) == []

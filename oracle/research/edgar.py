@@ -154,12 +154,14 @@ def parse_earnings(body: object) -> list[Release]:
     for form, filed, items, accepted in zip(*columns):
         if form != EVENT or EARNINGS_ITEM not in str(items or "").replace(" ", "").split(","):
             continue
+        stamp = str(accepted or "")
+        timed = re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d", stamp[:16]) is not None
         try:
-            day = date.fromisoformat(filed)
+            # Filed after 17:30 takes the next business day's filingDate; acceptance keeps the real day.
+            day = date.fromisoformat(stamp[:10] if timed else filed)
         except (TypeError, ValueError):
             continue
-        clock = str(accepted or "")[11:16]
-        before = clock < MARKET_OPEN if re.fullmatch(r"\d\d:\d\d", clock) else None
+        before = stamp[11:16] < MARKET_OPEN if timed else None
         found[day] = before if found.get(day) is None else found[day] or bool(before)
     return [Release(day, before) for day, before in sorted(found.items(), reverse=True)]
 
