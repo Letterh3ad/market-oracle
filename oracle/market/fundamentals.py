@@ -6,9 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
-from urllib.parse import quote
 
-from oracle.market import eodhd, sources, yahoo
+from oracle.market import eodhd, yahoo
 from oracle.market.bars import major_unit
 from oracle.market.sources import Instrument, NoData, SourceFailed, first_present
 from oracle.net.client import RateLimitedClient
@@ -78,60 +77,17 @@ class FundamentalsSource(Protocol):
     async def fundamentals(self, instrument: Instrument, today: date) -> Fundamentals: ...
 
 
-# Yahoo answers its crumb endpoint with 429 to non-browser user agents (checked
-# 2026-09-22), so the crumb flow presents as a browser, as yfinance does.
-BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/128.0 Safari/537.36"
-)
 _YAHOO_MODULES = "price,summaryDetail,defaultKeyStatistics,financialData"
 
 
 class YahooFundamentals:
-    """quoteSummary needs a session cookie (from fc.yahoo.com) and a crumb bound to it.
-    The client keeps cookies, so one instance serves one session; a rejected crumb is
-    renewed once."""
-
     name = yahoo.SOURCE
 
     def __init__(self, client: RateLimitedClient) -> None:
-        self._client = client
-        self._crumb: str | None = None
+        self._summary = yahoo.QuoteSummary(client)
 
     async def fundamentals(self, instrument: Instrument, today: date) -> Fundamentals:
-        url = f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{quote(instrument.symbol, safe='')}"
-        for _ in range(2):
-            if self._crumb is None:
-                self._crumb = await self._new_crumb()
-            try:
-                resp = await self._get(url, {"modules": _YAHOO_MODULES, "crumb": self._crumb})
-            except SourceFailed as exc:
-                if exc.status != 401:
-                    raise
-                self._crumb = None
-                continue
-            return _from_yahoo(instrument.symbol, today, resp.json()["quoteSummary"]["result"][0])
-        raise SourceFailed("crumb rejected twice")
-
-    async def _new_crumb(self) -> str:
-        try:
-            await self._get("https://fc.yahoo.com")
-        except NoData:
-            pass
-        except SourceFailed as exc:
-            # A 4xx still sets the cookie (404 is the usual answer and lands above).
-            if exc.status is None or exc.status == 429 or exc.status >= 500:
-                raise SourceFailed(f"no crumb ({exc})") from None
-        try:
-            resp = await self._get("https://query2.finance.yahoo.com/v1/test/getcrumb")
-        except (NoData, SourceFailed) as exc:
-            raise SourceFailed(f"no crumb ({exc})") from None
-        if not resp.text.strip():
-            raise SourceFailed("no crumb (empty answer)")
-        return resp.text.strip()
-
-    async def _get(self, url: str, params: dict | None = None):
-        return await sources.get(self._client, self.name, url, params, headers={"User-Agent": BROWSER_UA})
+        return _from_yahoo(instrument.symbol, today, await self._summary.modules(instrument.symbol, _YAHOO_MODULES))
 
 
 def _from_yahoo(symbol: str, today: date, modules: dict) -> Fundamentals:

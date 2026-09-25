@@ -11,7 +11,8 @@ from tests.fakes.financedatabase import BASIC, ETF_COLUMNS, ETFS, FakeFinanceDat
 def run(tmp_path, capsys, monkeypatch):
     """`oracle --config ... <argv>` against a fake FinanceDatabase, fast-paced."""
     cfg = tmp_path / "oracle.toml"
-    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n", encoding="utf-8")
+    cfg.write_text("[sources.financedatabase]\nrate_per_second = 1000\n[sources.wikipedia]\nrate_per_second = 1000\n",
+                   encoding="utf-8")
     fdb = FakeFinanceDatabase(BASIC)
     monkeypatch.setattr(cli_main, "open_context", partial(open_context, transport=fdb.transport))
 
@@ -34,6 +35,7 @@ def test_refresh_then_status_shows_counts_and_commit(run):
     code, out, _ = run("universe", "refresh")
     assert code == 0
     assert "7 listings" in out and "4 companies" in out
+    assert "oracle universe backfill" in out and "backfilling" not in out
     _, out, _ = run("universe", "status")
     assert "abc123" in out
     assert "1 delisted" in out
@@ -193,3 +195,14 @@ def test_merges_lists_what_suffix_blind_grouping_would_join(run):
     assert out.index("CHECK legal forms differ; no country") < out.index("Valaris") < out.index("BT GROUP PLC")
     assert "matched on bt group, United Kingdom" in out and "BTQ.DE" in out
     assert "United Kingdom  GB0030913577" in out
+
+
+def test_backfill_prints_each_index_with_its_counts(run):
+    run("universe", "refresh")
+    code, out, _ = run("universe", "backfill")
+    assert code == 0
+    lines = out.splitlines()
+    head = next(i for i, line in enumerate(lines) if line.startswith("index "))
+    assert lines[head].split() == ["index", "members", "present", "added", "corrected", "failed", "waiting"]
+    assert any(line.startswith("S&P 500") and "HTTP 404" in line for line in lines)
+    assert "0 Yahoo lookups" in out

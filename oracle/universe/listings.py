@@ -20,6 +20,15 @@ LEGAL_FORMS = frozenset({
 
 # FinanceDatabase's bands, largest first.
 MARKET_CAP_BANDS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap")
+_BAND_FLOORS_USD = (200e9, 10e9, 2e9, 300e6, 50e6, 0.0)
+"""Where each band starts, as FinanceDatabase cuts them."""
+
+
+def band_of_usd(market_cap: float) -> str:
+    """The band a market cap in US dollars falls in."""
+    return next(band for band, floor in zip(MARKET_CAP_BANDS, _BAND_FLOORS_USD) if market_cap >= floor)
+
+
 SIZES: dict[str, tuple[str, ...]] = {"large": MARKET_CAP_BANDS[:2], "mid-small": MARKET_CAP_BANDS[2:]}
 """The two sizes a comparison splits companies into, by band."""
 
@@ -53,6 +62,8 @@ class Listing:
     family: str | None = None
     company_key: str = ""
     is_primary: bool = False
+    source: str | None = None
+    """Where a line FinanceDatabase lacks came from (the index backfill); None for its own."""
 
 
 def normalise_name(name: str) -> str:
@@ -145,6 +156,15 @@ def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
         for i in members:
             out[i] = replace(items[i], company_key=key, is_primary=items[i].symbol == primary)
     return out
+
+
+def place_line(line: Listing, grouped: Iterable[Listing]) -> str:
+    """The company key of the first `grouped` line `line` shares an ISIN or a name and country
+    with, else the key it would have alone: where a regroup would put it, short of the
+    placeholder and suffix-blind rules, which the next regroup applies."""
+    mine = set(_links(line))
+    joined = next((x.company_key for x in grouped if x.company_key and mine.intersection(_links(x))), None)
+    return joined or _company_key([line], set())
 
 
 def blind_link(x: Listing) -> tuple | None:
