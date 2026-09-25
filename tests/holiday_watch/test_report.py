@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from holiday_watch.report import build_report, write_report
-from holiday_watch.seams import DryRunSystem, Ran
+from holiday_watch.seams import Ran, dry
 
 from tests.holiday_watch.fakes import APP, NOW, FakeHttp, FakeSystem, healthy_routes, watch
 
@@ -37,7 +37,9 @@ def seeded(tmp_path, **kw):
     w.cfg.fixruns.mkdir(parents=True)
     w.cfg.log_file.write_text(
         f"{(NOW - timedelta(hours=30)).isoformat()} app down: old news\n"
-        f"{(NOW - timedelta(hours=2)).isoformat()} reaped claude PID 800 (idle for 31 min)\n", encoding="utf-8")
+        f"{(NOW - timedelta(hours=2)).isoformat()} reaped claude PID 800 (idle for 31 min)\n"
+        f"{(NOW - timedelta(hours=1)).isoformat()} [dry-run] would kill the process tree of PID 9\n",
+        encoding="utf-8")
     (w.cfg.fixruns / "2026-09-26-0100-long_job.md").write_text("# Fix run: long_job\n\nCancelled job 7.\n",
                                                                 encoding="utf-8")
     (w.cfg.fixruns / "2026-09-24-0100-app_down.md").write_text("# Fix run: app_down\n\nancient\n", encoding="utf-8")
@@ -53,7 +55,7 @@ def test_the_report_quotes_status_study_score_account_and_the_last_day(tmp_path)
                   "Price failures: X.L", "ai (The verdicts): +3.40%", "all_buy (Every verdict a buy): +2.10%",
                   "reaped claude PID 800", "Cancelled job 7."):
         assert piece in text, piece
-    assert "old news" not in text and "ancient" not in text
+    assert "old news" not in text and "ancient" not in text and "[dry-run]" not in text
 
 
 def test_the_report_survives_the_app_being_down(tmp_path):
@@ -84,8 +86,7 @@ def test_a_failed_summary_still_writes_the_plain_report(tmp_path):
 def test_dry_run_prints_the_report_and_writes_nothing(tmp_path):
     real = FakeSystem()
     w = seeded(tmp_path, system=real)
-    w.dry_run = True
-    w.system = DryRunSystem(say=w.log, real=real)
+    dry(w)
     assert write_report(w) is None
     assert real.ran == [] and not (w.cfg.reports / "2026-09-26.md").exists()
     assert any("120 of 540 done" in line for line in w.lines)

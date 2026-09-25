@@ -22,7 +22,7 @@ LOCK_SLACK = timedelta(minutes=5)
 
 def run_pass(w: Watch) -> None:
     cfg, now = w.cfg, w.now()
-    state_file = cfg.state_file(w.dry_run)
+    state_file = cfg.state_file
     state = load_state(state_file)
     status = _get(w, "/api/status", quiet=True)
     app_up = status is not None

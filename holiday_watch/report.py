@@ -103,7 +103,7 @@ def _recent_log(w: Watch, now: datetime) -> list[str]:
             at = datetime.fromisoformat(stamp)
         except ValueError:
             continue
-        if at.tzinfo and now - at <= DAY:
+        if at.tzinfo and now - at <= DAY and "[dry-run]" not in line:
             keep.append(line)
     return keep
 

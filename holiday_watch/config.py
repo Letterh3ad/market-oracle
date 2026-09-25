@@ -104,8 +104,9 @@ class Config:
     def lock_file(self) -> Path:
         return self.reports / "fixrun.lock"
 
-    def state_file(self, dry_run: bool = False) -> Path:
-        return self.reports / ("state.dry.json" if dry_run else "state.json")
+    @property
+    def state_file(self) -> Path:
+        return self.reports / "state.json"
 
 
 def load(path: Path | None = None) -> Config:

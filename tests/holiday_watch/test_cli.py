@@ -3,19 +3,18 @@ import sqlite3
 import pytest
 
 from holiday_watch.cli import api_allowed, main
-from holiday_watch.seams import DryRunSystem
+from holiday_watch.seams import dry
 from holiday_watch.state import write_lock
 
-from tests.holiday_watch.fakes import APP, NOW, FakeHttp, FakeSystem, healthy_routes, watch
+from tests.holiday_watch.fakes import APP, NOW, FakeHttp, FakeSystem, healthy_routes, proc, watch
 
 
 def run(w, *argv):
     made = []
 
     def factory(config_path, dry_run):
-        w.dry_run = dry_run
         if dry_run:
-            w.system = DryRunSystem(say=w.log, real=w.system)
+            dry(w)
         made.append(w)
         return w
     code = main(list(argv), make_watch=factory)
@@ -83,7 +82,7 @@ def test_sql_is_read_only(tmp_path):
 def test_status_prints_the_watch_state(tmp_path):
     w = watch(tmp_path)
     w.cfg.reports.mkdir(parents=True)
-    w.cfg.state_file().write_text(json.dumps({"app_restarts": 1, "fix_runs": [
+    w.cfg.state_file.write_text(json.dumps({"app_restarts": 1, "fix_runs": [
         {"kind": "long_job", "key": "long_job:7", "at": NOW.isoformat()}]}), encoding="utf-8")
     write_lock(w.cfg.lock_file, {"pid": 5, "started_at": NOW.isoformat(), "trigger_file": "x.json"})
     w.cfg.log_file.write_text("line one\nline two\n", encoding="utf-8")
@@ -116,3 +115,34 @@ def test_report_command_writes_the_file(tmp_path):
     assert run(w, "report")[0] == 0
     assert (w.cfg.reports / "2026-09-26.md").exists()
 
+
+
+def real_files(reports):
+    return sorted(p.relative_to(reports).as_posix() for p in reports.rglob("*")
+                  if p.is_file() and "dry-run" not in p.parts)
+
+
+@pytest.mark.parametrize("argv,up", [
+    (["pass"], False), (["pass"], True), (["report"], True), (["status"], True), (["restart-app"], True),
+    (["restart-app"], False), (["start-ollama"], False), (["api", "POST", "/api/replay/start"], True),
+    (["api", "POST", "/api/replay/retry", '{"cell_id": 1}'], True), (["api", "GET", "/api/replay"], True),
+    (["fix-run", "TRIGGER"], True),
+])
+def test_dry_run_posts_starts_kills_and_runs_nothing(tmp_path, argv, up):
+    http = FakeHttp(healthy_routes() if up else {})
+    system = FakeSystem([proc(800, cmd="claude.exe -p x", age_min=500),
+                         proc(321, name="python.exe", cmd="python -m oracle gui")])
+    w = watch(tmp_path, http=http, system=system)
+    reports = w.cfg.reports
+    reports.mkdir(parents=True)
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321, "down_since": "2026-09-26T02:00:00Z"}),
+                                encoding="utf-8")
+    trigger = tmp_path / "t.json"
+    trigger.write_text(json.dumps({"kind": "k", "key": "k:1", "detail": "d", "at": "a"}), encoding="utf-8")
+    before = real_files(reports)
+    code, out = run(w, *[str(trigger) if a == "TRIGGER" else a for a in argv], "--dry-run")
+    assert code == 0, out
+    assert http.posts == [] and system.spawned == [] and system.killed == [] and system.ran == []
+    assert real_files(reports) == before
+    if argv[0] in ("restart-app", "api") and argv[1:2] != ["GET"]:
+        assert "[dry-run] would" in out

@@ -16,7 +16,7 @@ from pathlib import Path
 from holiday_watch import config
 from holiday_watch.fixrun import supervise
 from holiday_watch.report import write_report
-from holiday_watch.seams import DryRunSystem, HttpError, RealSystem, UrllibHttp, Watch
+from holiday_watch.seams import HttpError, RealSystem, UrllibHttp, Watch, dry
 from holiday_watch.state import load_state, read_lock, read_pid
 from holiday_watch.timeutil import parse
 from holiday_watch.watchdog import ensure_ollama, restart_app, run_pass
@@ -35,11 +35,8 @@ def api_allowed(method: str, path: str) -> bool:
 
 
 def make_watch(config_path: Path | None, dry_run: bool) -> Watch:
-    w = Watch(config.load(config_path), UrllibHttp(), RealSystem(), dry_run=dry_run, own_pid=os.getpid(),
-              config_path=config_path)
-    if dry_run:
-        w.system = DryRunSystem(say=w.log)
-    return w
+    w = Watch(config.load(config_path), UrllibHttp(), RealSystem(), own_pid=os.getpid(), config_path=config_path)
+    return dry(w) if dry_run else w
 
 
 def main(argv: list[str] | None = None, make_watch: Callable[[Path | None, bool], Watch] = make_watch) -> int:
@@ -101,7 +98,7 @@ def _restart_app(w: Watch, args: argparse.Namespace) -> int:
     try:
         w.http.get(w.api("/api/status"))
     except HttpError:
-        restart_app(w, load_state(w.cfg.state_file(w.dry_run)).get("server_pid"), w.system.processes())
+        restart_app(w, load_state(w.cfg.state_file).get("server_pid"), w.system.processes())
         return 0
     answer = w.http.post(w.api("/api/app/restart"))
     w.log(f"app asked to restart: {answer}")
@@ -134,7 +131,7 @@ def _sql(w: Watch, args: argparse.Namespace) -> int:
 
 def _status(w: Watch, args: argparse.Namespace) -> int:
     cfg, now = w.cfg, w.now()
-    state = load_state(cfg.state_file(w.dry_run))
+    state = load_state(cfg.state_file)
     say = w.echo
     for name, url in (("App", w.api("/api/status")), ("Ollama", f"{cfg.ollama_url}/api/tags")):
         try:

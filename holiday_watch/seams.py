@@ -11,7 +11,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
 from typing import Protocol
@@ -144,6 +144,20 @@ class DryRunSystem:
 
 
 @dataclass
+class DryRunHttp:
+    """Reads for real; every POST is only said."""
+    real: Http
+    say: Callable[[str], None]
+
+    def get(self, url: str, timeout: float = 15.0) -> dict:
+        return self.real.get(url, timeout)
+
+    def post(self, url: str, body: dict | None = None, timeout: float = 15.0) -> dict:
+        self.say(f"would POST {url} {json.dumps(body) if body else ''}".rstrip())
+        return {"dry_run": True}
+
+
+@dataclass
 class Watch:
     """What one command runs with."""
     cfg: Config
@@ -168,3 +182,17 @@ class Watch:
 
     def api(self, path: str) -> str:
         return f"{self.cfg.app_url}{path}"
+
+
+DRY_DIR = "dry-run"
+
+
+def dry(w: Watch) -> Watch:
+    """Make `w` a dry run: POSTs, starts, kills and claude runs are only logged, and its state,
+    log, lock and fix-run files live in reports/dry-run/, which the morning report never reads.
+    The Remote Control PID file is still read from the real place, never written."""
+    w.dry_run = True
+    w.cfg = replace(w.cfg, reports=w.cfg.reports / DRY_DIR)
+    w.system = DryRunSystem(say=w.log, real=w.system)
+    w.http = DryRunHttp(w.http, w.log)
+    return w

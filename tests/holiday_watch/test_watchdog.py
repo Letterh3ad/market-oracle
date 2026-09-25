@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 
-from holiday_watch.seams import DryRunSystem, HttpError
+from holiday_watch.seams import HttpError, dry
 from holiday_watch.state import load_state, read_lock
 from holiday_watch.watchdog import run_pass
 
@@ -23,7 +23,7 @@ def test_a_healthy_pass_does_nothing_and_remembers_the_server(tmp_path):
     w, system = with_rc(tmp_path)
     run_pass(w)
     assert system.spawned == [] and system.killed == []
-    state = load_state(w.cfg.state_file())
+    state = load_state(w.cfg.state_file)
     assert state["server_pid"] == 321 and state["app_restarts"] == 0
 
 
@@ -32,9 +32,9 @@ def test_app_down_is_restarted_from_the_live_worktree_then_a_fix_run_after_two(t
     w, system = with_rc(tmp_path, http=http)
     run_pass(w)
     assert system.spawned == [(w.cfg.app_start, w.cfg.live, False)]
-    assert load_state(w.cfg.state_file())["app_restarts"] == 1
+    assert load_state(w.cfg.state_file)["app_restarts"] == 1
     run_pass(w)
-    assert load_state(w.cfg.state_file())["app_restarts"] == 2
+    assert load_state(w.cfg.state_file)["app_restarts"] == 2
     run_pass(w)  # still down after two restarts: restart again and start a fix run
     kinds = [s[0][2:4] for s in system.spawned]
     assert ("holiday_watch", "fix-run") in kinds and system.spawned[-1][0] == w.cfg.app_start
@@ -42,7 +42,7 @@ def test_app_down_is_restarted_from_the_live_worktree_then_a_fix_run_after_two(t
     assert lock["pid"] == system.next_pid - 1
     trigger = json.loads(open(lock["trigger_file"], encoding="utf-8").read())
     assert trigger["kind"] == "app_down"
-    state = load_state(w.cfg.state_file())
+    state = load_state(w.cfg.state_file)
     assert [r["kind"] for r in state["fix_runs"]] == ["app_down"] and trigger["key"] in state["fired"]
     assert any("fix run started" in line for line in w.lines)
 
@@ -50,9 +50,9 @@ def test_app_down_is_restarted_from_the_live_worktree_then_a_fix_run_after_two(t
 def test_the_app_coming_back_resets_the_restart_count(tmp_path):
     w, _ = with_rc(tmp_path)
     w.cfg.reports.mkdir(parents=True, exist_ok=True)
-    w.cfg.state_file().write_text(json.dumps({"app_restarts": 2, "down_since": "x"}), encoding="utf-8")
+    w.cfg.state_file.write_text(json.dumps({"app_restarts": 2, "down_since": "x"}), encoding="utf-8")
     run_pass(w)
-    state = load_state(w.cfg.state_file())
+    state = load_state(w.cfg.state_file)
     assert state["app_restarts"] == 0 and "down_since" not in state
     assert any("back up" in line for line in w.lines)
 
@@ -61,7 +61,7 @@ def test_a_hung_server_is_killed_before_the_restart(tmp_path):
     http = FakeHttp({k: v for k, v in healthy_routes().items() if "/api/status" not in k})
     hung = proc(321, name="python.exe", cmd="python -m oracle --config x gui")
     w, system = with_rc(tmp_path, procs=[hung], http=http)
-    w.cfg.state_file().write_text(json.dumps({"server_pid": 321}), encoding="utf-8")
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321}), encoding="utf-8")
     run_pass(w)
     assert system.killed == [321]
     assert system.spawned[0][0] == w.cfg.app_start
@@ -71,7 +71,7 @@ def test_a_reused_server_pid_is_not_killed(tmp_path):
     http = FakeHttp({k: v for k, v in healthy_routes().items() if "/api/status" not in k})
     other = proc(321, name="notepad.exe", cmd="notepad")
     w, system = with_rc(tmp_path, procs=[other], http=http)
-    w.cfg.state_file().write_text(json.dumps({"server_pid": 321}), encoding="utf-8")
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321}), encoding="utf-8")
     run_pass(w)
     assert system.killed == []
 
@@ -173,13 +173,15 @@ def test_dry_run_only_says_what_it_would_do(tmp_path):
     http = FakeHttp({k: v for k, v in healthy_routes().items() if "/api/status" not in k and OLLAMA not in k})
     real = FakeSystem([proc(800, cmd="claude.exe -p x", age_min=500)])
     w = watch(tmp_path, http=http, system=real)
-    w.dry_run = True
-    w.system = DryRunSystem(say=w.log, real=real)
+    reports = w.cfg.reports
+    dry(w)
     run_pass(w)
     assert real.spawned == [] and real.killed == []
+    assert w.cfg.reports == reports / "dry-run"
     text = w.cfg.log_file.read_text(encoding="utf-8")
     assert "[dry-run] would start" in text and "[dry-run] would kill the process tree of PID 800" in text
-    assert w.cfg.state_file(dry_run=True).exists() and not w.cfg.state_file().exists()
+    assert w.cfg.state_file.exists() and not (reports / "state.json").exists()
+    assert not (reports / "watchdog.log").exists()
     assert not w.cfg.rc_pid_file.exists() and not w.cfg.lock_file.exists()
 
 

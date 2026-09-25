@@ -56,6 +56,7 @@ def fix_command(cfg: Config, settings: Path) -> tuple[str, ...]:
 def supervise(w: Watch, trigger_file: Path) -> int:
     cfg = w.cfg
     trigger = json.loads(trigger_file.read_text(encoding="utf-8"))
+    cfg.fixruns.mkdir(parents=True, exist_ok=True)
     settings = cfg.fixruns / "settings.json"
     settings.write_text(json.dumps(fix_settings(cfg), indent=1), encoding="utf-8")
     try:
@@ -63,7 +64,7 @@ def supervise(w: Watch, trigger_file: Path) -> int:
         env = {"HOLIDAY_WATCH_CONFIG": str((w.config_path or DEFAULT_FILE).resolve())}
         ran = w.system.run(fix_command(cfg, settings), fix_prompt(cfg, trigger), cfg.fix_timeout_min * 60, cfg.repo,
                            env=env)
-        out = trigger_file.with_suffix(".md")
+        out = cfg.fixruns / trigger_file.with_suffix(".md").name
         how = f"killed after {cfg.fix_timeout_min:g} min" if ran.timed_out else f"finished (exit {ran.code})"
         out.write_text(f"# Fix run: {trigger['kind']}\n\nTrigger: {trigger['detail']}\nRaised: {trigger['at']}\n"
                        f"Ended: {w.now().isoformat(timespec='seconds')}, {how}\n\n{ran.out.strip()}\n",
