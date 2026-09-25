@@ -463,6 +463,14 @@ async def test_a_listing_yahoo_ranks_first_outside_the_universe_is_not_private(c
     assert left_off(view)["Foxconn"] == "listed as Hon Hai Precision Industry Co., Ltd. (2317.TW), not in the universe"
 
 
+async def test_a_named_line_already_tracked_but_passed_over_says_so(ctx, news, yahoo):
+    yahoo.quotes["LG Hausys Interior"] = [quote("108670.KS", "LG Hausys, Ltd.", score=30000.0),
+                                          quote("9999.KS", "Hausys Other Co., Ltd.", score=20000.0)]
+    view = await answered(ctx, news, "LG Hausys Interior builds robot kitchens", "LG Hausys Interior")
+    assert left_off(view)["LG Hausys Interior"] == "listed as LG Hausys, Ltd. (108670.KS), already in the universe"
+    assert "108670.KS" not in yahoo.profiled
+
+
 async def test_yahoo_s_private_company_line_says_private(ctx, news, yahoo):
     yahoo.quotes["Anthropic"] = [quote("ANTH.PVT", "Anthropic", kind="PRIVATE_COMPANY", score=90000.0)]
     view = await answered(ctx, news, "Anthropic ships a robot model", "Anthropic")

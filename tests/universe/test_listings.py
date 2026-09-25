@@ -39,3 +39,17 @@ def test_a_new_line_is_placed_in_the_company_a_regroup_would_give_it():
     for line in (by_name, by_isin, alone):
         assert place_line(line, grouped) == {x.symbol: x.company_key for x in group_companies([*grouped, line])}[
             line.symbol]
+
+
+def test_a_new_line_never_joins_by_a_placeholder_name_or_isin():
+    placeholders = [Listing(f"P{i}.F", "Deutsche Bank Placeholder", "equity", "Germany", "FRA",
+                            isin=f"DE000000000{i:02d}" if i else "XX0000000001") for i in range(31)]
+    shared_isin = [Listing(f"S{i}.F", f"Subsidiary {i}", "equity", "Germany", "FRA", isin="XX0000000009")
+                   for i in range(31)]
+    grouped = group_companies([*placeholders, *shared_isin])
+    by_name = Listing("NEW.DE", "Deutsche Bank Placeholder", "equity", "Germany", "FRA")
+    by_isin = Listing("NEW2.DE", "Brand New AG", "equity", "Germany", "FRA", isin="XX0000000009")
+    for line in (by_name, by_isin):
+        placed = place_line(line, grouped)
+        assert placed == {x.symbol: x.company_key for x in group_companies([*grouped, line])}[line.symbol]
+        assert placed not in {x.company_key for x in grouped}

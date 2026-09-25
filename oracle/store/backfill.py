@@ -91,6 +91,11 @@ class BackfillRepo:
                 "INSERT OR REPLACE INTO backfill_rows (symbol, kind, index_code, note, data, at) "
                 "VALUES (?, ?, ?, ?, ?, ?)", (symbol, kind, index_code, note, json.dumps(fields), to_utc_iso(at)))
 
+    def drop(self, symbol: str, kind: str) -> bool:
+        with transaction(self._conn):
+            return self._conn.execute("DELETE FROM backfill_rows WHERE symbol = ? COLLATE NOCASE AND kind = ?",
+                                      (symbol, kind)).rowcount > 0
+
     def rows(self) -> list[BackfillRow]:
         return [BackfillRow(r[0], r[1], r[2], r[3], json.loads(r[4])) for r in self._conn.execute(
             "SELECT symbol, kind, index_code, note, data FROM backfill_rows ORDER BY at, symbol")]

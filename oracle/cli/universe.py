@@ -4,7 +4,9 @@ import argparse
 import asyncio
 
 from oracle.cli.common import cut
-from oracle.services.backfill_service import MAX_LOOKUPS, BackfillReport, backfill_universe
+from oracle.services.backfill_service import (
+    MAX_LOOKUPS, BackfillReport, backfill_universe, closed_end_funds, corrections, undo_correction,
+)
 from oracle.services.context import AppContext
 from oracle.services.universe_service import (
     FILTER_FIELDS,
@@ -27,6 +29,18 @@ def register(parser: argparse.ArgumentParser) -> None:
     sub.add_parser(
         "backfill", help=f"add index members the universe lacks from Yahoo (up to {MAX_LOOKUPS} lookups a run)"
     ).set_defaults(handler=backfill_cmd)
+    funds = sub.add_parser(
+        "funds", help="investment trusts the backfill added before it refused them (lists only, unless --remove)"
+    )
+    funds.add_argument("--remove", action="store_true", help="remove them, except any held or watched")
+    funds.set_defaults(handler=funds_cmd)
+    fixes = sub.add_parser("corrections", help="the backfill's corrections to FinanceDatabase's lines").add_subparsers(
+        dest="corrections_command", required=True)
+    fixes.add_parser("list", help="each correction, and sector correction keys matching no company").set_defaults(
+        handler=corrections_list)
+    undo = fixes.add_parser("undo", help="drop one correction (FinanceDatabase's row returns at the next refresh)")
+    undo.add_argument("symbol", help="the corrected line's symbol, as listed")
+    undo.set_defaults(handler=corrections_undo)
     sub.add_parser("status", help="what is loaded and when it was refreshed").set_defaults(handler=status)
     search = sub.add_parser(
         "search", help="find companies by name or symbol, or browse with filters"
@@ -81,6 +95,36 @@ def _print_backfill(r: BackfillReport) -> None:
         print(f"{ch.kind:<10}{ch.symbol:<12}{cut(ch.name, 30):<32}{ch.note}")
     print(f"{r.lookups} Yahoo lookups" + (f"; stopped early: {r.stopped}" if r.stopped else ""))
     _print_stale(r.stale_corrections)
+
+
+def funds_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
+    sweep = closed_end_funds(ctx, remove=args.remove)
+    if not sweep.lines:
+        print("no closed-end funds among the lines added")
+        return 0
+    for x in sweep.lines:
+        kept = f"  kept: {x.kept}" if x.kept else ""
+        print(f"{x.symbol:<12}{cut(x.name, 40):<42}{x.index_code:<12}{x.why}{kept}")
+    gone = sum(x.kept is None for x in sweep.lines)
+    print(f"removed {gone}" if sweep.removed else f"{gone} to remove: run again with --remove")
+    return 0
+
+
+def corrections_list(ctx: AppContext, args: argparse.Namespace) -> int:
+    listed = corrections(ctx)
+    if not listed.rows:
+        print("no corrections")
+    for r in listed.rows:
+        fields = ", ".join(f"{k}={v}" for k, v in r.fields.items())
+        print(f"{r.symbol:<12}{r.index_code:<12}{fields}  ({r.note})")
+    _print_stale(listed.stale)
+    return 0
+
+
+def corrections_undo(ctx: AppContext, args: argparse.Namespace) -> int:
+    row = undo_correction(ctx, args.symbol)
+    print(f"undid the correction of {row.symbol}; `oracle universe refresh` lays FinanceDatabase's row back")
+    return 0
 
 
 def _print_stale(stale: tuple[str, ...]) -> None:

@@ -3,7 +3,9 @@ from dataclasses import replace
 import pytest
 
 from oracle.market.yahoo import YahooProfile
-from oracle.universe.backfill import BACKFILL, apply_backfill, inherit_classification, listing_from_profile
+from oracle.universe.backfill import (
+    BACKFILL, apply_backfill, inherit_classification, listing_from_profile,
+)
 from oracle.universe.listings import Listing, group_companies
 
 LGES = YahooProfile("373220.KS", "LG Energy Solution, Ltd.", "EQUITY", "KSC", "KRW", 82_250_997_694_464.0,
@@ -77,3 +79,5 @@ def test_a_delisted_line_lends_no_classification():
     dead = replace(FD[0], delisted=True)
     grouped = inherit_classification(group_companies([dead, LGE]))
     assert {x.symbol: x for x in grouped}["066570.KS"].sector == "Information Technology"
+
+

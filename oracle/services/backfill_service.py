@@ -17,23 +17,27 @@ from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.services import universe_service
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
-from oracle.services.errors import JobAlreadyRunning
+from oracle.services.errors import JobAlreadyRunning, UnknownCorrection
 from oracle.services.jobs_service import Held, single_flight
 from oracle.services.never_list import is_never, never_names
-from oracle.store.backfill import CORRECTED, BackfillRepo
+from oracle.store.backfill import ADDED, CORRECTED, BackfillRepo, BackfillRow
 from oracle.store.health import HealthRepo
+from oracle.store.paper import PaperRepo
 from oracle.store.universe import UniverseRepo
+from oracle.store.watchlists import WatchlistRepo
 from oracle.universe import indexes as index_pages
 from oracle.universe.backfill import (
-    BACKFILL, inherit_classification, listing_from_profile, major_currency, usd_value,
+    BACKFILL, closed_end_fund, inherit_classification, listing_from_profile, major_currency, usd_value,
 )
 from oracle.universe.indexes import INDEXES, IndexSpec, Member, Unreadable, page_url, parse_members
 from oracle.universe.listings import (
-    MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name, place_line,
+    MARKET_CAP_BANDS, Listing, band_of_usd, blind_name, is_receipt, is_receipt_symbol, normalise_name, place_line,
 )
+from oracle.research.mentions import same_company
 
-__all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo",
-           "backfill_status", "backfill_universe"]
+__all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "CLOSED_END_FUND", "FundLine",
+           "FundSweep", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo", "backfill_status", "backfill_universe",
+           "closed_end_funds", "Corrections", "corrections", "undo_correction"]
 
 MAX_LOOKUPS = 150
 """Yahoo profiles one run asks for: about five minutes at Yahoo's pace."""
@@ -53,6 +57,7 @@ FROM_YAHOO = "yahoo"
 """The index code of a line discovery found on Yahoo rather than in an index."""
 ADDED_FROM_YAHOO = "added to the universe from Yahoo"
 ALREADY_THERE = "already in the universe"
+CLOSED_END_FUND = "a closed-end fund (investment trust)"
 # Yahoo names OTC ADR lines ("...Y" tickers) without "ADR"; a home line is never one of these.
 OTC_EXCHANGES = frozenset({"PNK", "OQX", "OQB"})
 
@@ -157,11 +162,86 @@ async def add_from_yahoo(ctx: AppContext, symbol: str,
 
 
 def refusal(p: YahooProfile, never) -> str | None:
-    """Why Yahoo's line may not join the universe: only a company's own shares, never a fund,
-    a depositary receipt or the never list."""
+    """Why Yahoo's line may not join the universe: only a company's own shares, never a fund
+    (closed-end ones included), a depositary receipt or the never list."""
     return (f"not a company's shares ({p.quote_type or 'no type'})" if p.quote_type != "EQUITY" else
             "a depositary receipt" if is_receipt(p.name or "") or is_receipt_symbol(p.symbol) else
+            CLOSED_END_FUND if closed_end_fund(p.name or "", p.industry, p.summary) else
             NEVER if is_never(p.name or "", never) else None)
+
+
+@dataclass(frozen=True)
+class FundLine:
+    symbol: str
+    name: str
+    index_code: str
+    why: str
+    """What marks it a closed-end fund, to read before removing it."""
+    kept: str | None
+    """"held", "pending order" or "watched" when the line stays for that; None when it goes."""
+
+
+@dataclass(frozen=True)
+class FundSweep:
+    lines: tuple[FundLine, ...]
+    removed: bool
+    """Whether the lines not kept were removed, or only listed."""
+
+
+def closed_end_funds(ctx: AppContext, remove: bool = False) -> FundSweep:
+    """The closed-end funds the backfill or discovery added before it refused them, and with
+    `remove`, those no paper account holds or has an order pending for and no watchlist tracks
+    taken out of the universe and noted as refused, so a backfill does not ask Yahoo for them again."""
+    repo = BackfillRepo(ctx.conn)
+    paper = PaperRepo(ctx.conn)
+    kept = {**{s.casefold(): "watched" for s in WatchlistRepo(ctx.conn).all_symbols()},
+            **{o.symbol.casefold(): "pending order" for o in paper.pending()},
+            **{s.casefold(): "held" for s in paper.held_symbols()}}
+    lines = tuple(
+        FundLine(r.symbol, r.fields["name"], r.index_code, why, kept.get(r.symbol.casefold()))
+        for r in repo.rows() if r.kind == ADDED and (why := closed_end_fund(
+            r.fields["name"], r.fields.get("industry"), r.fields.get("summary"))))
+    gone = [x for x in lines if x.kept is None]
+    if remove and gone:
+        now = ctx.clock.utcnow()
+        with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
+            universe = UniverseRepo(ctx.conn)
+            keys = set()
+            for x in gone:
+                repo.drop(x.symbol, ADDED)
+                repo.note_try(x.symbol, x.index_code, CLOSED_END_FUND, True, now)
+                # FinanceDatabase's own row of it, if it now has one, stays.
+                keys.add(universe.remove(x.symbol, BACKFILL))
+            dead = HealthRepo(ctx.conn).dead_symbols()
+            for key in keys - {None}:
+                universe.repick_primary(key, dead)
+    return FundSweep(lines, remove)
+
+
+@dataclass(frozen=True)
+class Corrections:
+    rows: tuple[BackfillRow, ...]
+    """The backfill's corrections, laid over FinanceDatabase's lines on every refresh."""
+    stale: tuple[str, ...]
+    """Sector corrections whose company key no company has."""
+
+
+def corrections(ctx: AppContext) -> Corrections:
+    return Corrections(tuple(r for r in BackfillRepo(ctx.conn).rows() if r.kind == CORRECTED),
+                       universe_service.stale_corrections(ctx))
+
+
+def undo_correction(ctx: AppContext, symbol: str) -> BackfillRow:
+    """Drop the correction of `symbol`. The stored line keeps it until the next universe refresh
+    lays FinanceDatabase's own row back, since the row it replaced is not kept."""
+    repo = BackfillRepo(ctx.conn)
+    row = next((r for r in repo.rows() if r.kind == CORRECTED and r.symbol.casefold() == symbol.casefold()), None)
+    if row is None:
+        raise UnknownCorrection(f"no correction of {symbol}")
+    # Under the backfill's lock, so a running backfill cannot lay it back from what it read before.
+    with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
+        repo.drop(row.symbol, CORRECTED)
+    return row
 
 
 def rebuild(ctx: AppContext) -> None:
@@ -302,6 +382,9 @@ class _Run:
         elif isinstance(p, str):
             return
         elif p.name and normalise_name(p.name) != normalise_name(x.name):
+            if _one_company(p.name, x.name):
+                # Another class of the company ("... Class B"): renaming it would split it off.
+                return
             band = await self.yahoo.band(p)
             fields = {"name": p.name, **({"market_cap": band} if band else {})}
             note = f"Yahoo names it {p.name}; {lists}"
@@ -372,6 +455,12 @@ class _Yahoo:
 def _same_line(x: Listing) -> tuple:
     """Two live lines on one exchange with one company name are one company under two codes."""
     return normalise_name(x.name), x.country or "", x.exchange or ""
+
+
+def _one_company(a: str, b: str) -> bool:
+    """Names where one is the other's leading words, legal forms aside."""
+    blind_a, blind_b = blind_name(a), blind_name(b)
+    return bool(blind_a and blind_b) and same_company(blind_a, blind_b)
 
 
 def _apart(band: str, other: str | None) -> int:

@@ -132,8 +132,7 @@ def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
         return i
 
     links = [_links(x) for x in items]
-    per_exchange = Counter((link, x.exchange) for x, ls in zip(items, links) for link in ls)
-    untrusted = {link for (link, _), n in per_exchange.items() if n > MAX_LINES_PER_EXCHANGE}
+    untrusted = _untrusted(items, links)
 
     first_seen: dict[tuple, int] = {}
     for i, ls in enumerate(links):
@@ -158,13 +157,23 @@ def group_companies(listings: Iterable[Listing], dead: Set[str] = frozenset(),
     return out
 
 
+def _untrusted(items: list[Listing], links: list[list[tuple]]) -> set[tuple]:
+    """Links spread over more than MAX_LINES_PER_EXCHANGE lines of one exchange."""
+    per_exchange = Counter((link, x.exchange) for x, ls in zip(items, links) for link in ls)
+    return {link for (link, _), n in per_exchange.items() if n > MAX_LINES_PER_EXCHANGE}
+
+
 def place_line(line: Listing, grouped: Iterable[Listing]) -> str:
-    """The company key of the first `grouped` line `line` shares an ISIN or a name and country
-    with, else the key it would have alone: where a regroup would put it, short of the
-    placeholder and suffix-blind rules, which the next regroup applies."""
-    mine = set(_links(line))
-    joined = next((x.company_key for x in grouped if x.company_key and mine.intersection(_links(x))), None)
-    return joined or _company_key([line], set())
+    """The company key of the first `grouped` line `line` shares a trusted ISIN or name and
+    country with, else the key it would have alone: where a regroup would put it, short of the
+    suffix-blind rule, which the next regroup applies."""
+    items = [*grouped, line]
+    links = [_links(x) for x in items]
+    untrusted = _untrusted(items, links)
+    mine = set(links[-1]) - untrusted
+    joined = next((x.company_key for x, ls in zip(items[:-1], links) if x.company_key and mine.intersection(ls)),
+                  None)
+    return joined or _company_key([line], untrusted)
 
 
 def blind_link(x: Listing) -> tuple | None:

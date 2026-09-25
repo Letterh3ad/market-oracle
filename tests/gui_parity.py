@@ -40,6 +40,12 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "universe merges": "POST /api/jobs/merges",  # Universe tab, "Proposed merges"
     # Universe tab, "Backfill from indexes"; a refresh queues one after it too.
     "universe backfill": "POST /api/jobs/backfill",
+    # Universe tab, Index backfill, "Find investment trusts" then "Remove".
+    "universe funds": "GET /api/universe/funds",
+    "universe funds --remove": "POST /api/universe/funds/remove",
+    # Universe tab, Index backfill, "Show corrections" and each row's Undo.
+    "universe corrections list": "GET /api/universe/corrections",
+    "universe corrections undo": "DELETE /api/universe/corrections/{symbol}",
     "universe facets": "GET /api/universe/facets/{field}",
     "tag add": "POST /api/companies/{symbol}/tags",
     "tag remove": "DELETE /api/companies/{symbol}/tags/{tag}",

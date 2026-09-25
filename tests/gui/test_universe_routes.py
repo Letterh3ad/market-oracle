@@ -1,5 +1,10 @@
 import asyncio
 import threading
+from datetime import datetime, timezone
+
+from oracle.services.backfill_service import rebuild
+from oracle.store.backfill import BackfillRepo
+from oracle.universe.listings import Listing
 
 import oracle.gui.routes.universe as universe_routes
 
@@ -144,3 +149,28 @@ async def test_the_backfill_runs_as_a_job_and_its_counts_can_be_read(loaded):
     assert (first["code"], first["members"]) == ("sp500", 0) and "HTTP 404" in first["error"]
     counts = (await loaded.get("/api/universe/backfill")).json()
     assert [c["code"] for c in counts] == [c["code"] for c in job["result"]["indexes"]]
+
+
+async def test_investment_trusts_added_are_listed_then_removed_on_request(ctx, loaded):
+    BackfillRepo(ctx.conn).add(Listing("IAD.L", "Invesco Asia Dragon Trust Ord", "equity", "United Kingdom", "LSE",
+                                       source="backfill"), "ftse250", "in the FTSE 250", datetime(2026, 9, 23, tzinfo=timezone.utc))
+    rebuild(ctx)
+    listed = (await loaded.get("/api/universe/funds")).json()
+    assert listed == {"lines": [{"symbol": "IAD.L", "name": "Invesco Asia Dragon Trust Ord", "index_code": "ftse250",
+                                 "why": "no Yahoo profile, named Trust", "kept": None}], "removed": False}
+    assert (await loaded.get("/api/universe/search", params={"q": "Invesco Asia"})).json()["hits"]
+    removed = (await loaded.post("/api/universe/funds/remove")).json()
+    assert removed["removed"] and [x["symbol"] for x in removed["lines"]] == ["IAD.L"]
+    assert not (await loaded.get("/api/universe/search", params={"q": "Invesco Asia"})).json()["hits"]
+
+
+async def test_corrections_are_listed_and_undone_one_at_a_time(ctx, loaded):
+    BackfillRepo(ctx.conn).correct("AAPL", {"market_cap": "Mega Cap"}, "sp500", "in the S&P 500; Yahoo says Mega",
+                                   datetime(2026, 9, 23, tzinfo=timezone.utc))
+    listed = (await loaded.get("/api/universe/corrections")).json()
+    assert [(r["symbol"], r["fields"]) for r in listed["rows"]] == [("AAPL", {"market_cap": "Mega Cap"})]
+    assert isinstance(listed["stale"], list)
+    undone = await loaded.delete("/api/universe/corrections/AAPL")
+    assert undone.status_code == 200 and undone.json()["symbol"] == "AAPL"
+    assert (await loaded.get("/api/universe/corrections")).json()["rows"] == []
+    assert (await loaded.delete("/api/universe/corrections/AAPL")).status_code == 404
