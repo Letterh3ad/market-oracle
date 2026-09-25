@@ -30,6 +30,9 @@ STATUS_GAP_S = 20.0
 SAME_START = timedelta(minutes=10)
 """A process created this close to the server's reported start is that server."""
 RUN_START_SLACK = timedelta(minutes=2)
+SPAWN_STAMP_SLACK = timedelta(seconds=10)
+"""A process the watch spawned is created at most this long after its start time is stamped
+(clock granularity)."""
 
 
 def _step(w: Watch, name: str, fn: Callable[[], T], default: T) -> T:
@@ -135,7 +138,7 @@ def app_status(w: Watch) -> dict | None:
 def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
     """The app server status last reported, if its PID still holds that process."""
     p = next((p for p in procs if p.pid == state.get("server_pid")), None)
-    if not p or "oracle" not in p.cmdline or "gui" not in p.cmdline:
+    if not p or not _is_app(p):
         return None
     started = state.get("server_started_at")
     if started and p.created and abs(p.created - parse(started)) > SAME_START:
@@ -148,9 +151,15 @@ def _started(state: dict, procs: Sequence[Proc]) -> Proc | None:
     the port and hangs before it ever answers has no reported PID."""
     spawned = state.get("app_spawned") or {}
     p = next((p for p in procs if p.pid == spawned.get("pid")), None)
-    if not p or not p.created or abs(p.created - parse(spawned["at"])) > RUN_START_SLACK:
+    if not p or not _is_app(p) or not p.created:
         return None
-    return p
+    at = parse(spawned["at"])
+    # Created before `at` is stamped; a process made later holds a reused PID.
+    return p if at - RUN_START_SLACK <= p.created <= at + SPAWN_STAMP_SLACK else None
+
+
+def _is_app(p: Proc) -> bool:
+    return "oracle" in p.cmdline and "gui" in p.cmdline
 
 
 def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) -> None:

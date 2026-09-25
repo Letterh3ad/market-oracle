@@ -116,7 +116,7 @@ def test_a_listening_server_down_for_four_passes_is_killed_as_hung(tmp_path):
 
 
 
-def a_server_the_watch_started_that_never_answers(tmp_path, age_min):
+def a_server_the_watch_started_that_never_answers(tmp_path, age_min, cmd="python -m oracle --config x gui"):
     """Down for two passes, no known server: the watch starts one, which binds the port and hangs."""
     w, system = with_rc(tmp_path, http=down_http())
     w.cfg.state_file.write_text(json.dumps({"down_since": "2026-09-26T01:30:00Z", "app_restarts": 2}),
@@ -124,7 +124,7 @@ def a_server_the_watch_started_that_never_answers(tmp_path, age_min):
     run_pass(w)  # third pass down: nothing listens, so the watch starts the app
     assert system.spawned[-1][0] == w.cfg.app_start
     pid = system.next_pid
-    system.procs.append(proc(pid, name="python.exe", cmd="python launch.py", age_min=age_min))
+    system.procs.append(proc(pid, name="python.exe", cmd=cmd, age_min=age_min))
     system.port_answers = True
     run_pass(w)  # fourth
     return w, system, pid
@@ -138,6 +138,16 @@ def test_a_server_the_watch_started_that_binds_and_never_answers_is_killed_as_hu
 
 def test_a_reused_pid_of_a_server_the_watch_started_is_never_killed(tmp_path):
     _, system, _ = a_server_the_watch_started_that_never_answers(tmp_path, age_min=300)
+    assert system.killed == []
+
+
+def test_a_pid_reused_30_s_after_the_spawn_is_never_killed(tmp_path):
+    _, system, _ = a_server_the_watch_started_that_never_answers(tmp_path, age_min=-0.5)
+    assert system.killed == []
+
+
+def test_a_pid_the_watch_started_now_holding_another_program_is_never_killed(tmp_path):
+    _, system, _ = a_server_the_watch_started_that_never_answers(tmp_path, age_min=0, cmd="msedge.exe --type=gpu")
     assert system.killed == []
 
 def test_a_listening_process_that_is_not_the_reported_server_is_never_killed(tmp_path):
