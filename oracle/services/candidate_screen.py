@@ -28,12 +28,11 @@ from oracle.services.context import AppContext
 from oracle.services.errors import PriceUnavailable, ServiceError
 from oracle.services.http import open_client
 from oracle.services.never_list import is_never, never_company, never_names
-from oracle.services.prices_service import update_listing
+from oracle.services.prices_service import held_or_watched, update_listing
 from oracle.services.universe_service import live_siblings, search_universe
 from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DISCOVERED_LIST, DiscoveryRepo
 from oracle.store.health import HealthRepo
-from oracle.store.paper import PaperRepo
 from oracle.store.universe import ListingProfile, SearchHit, UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
 from oracle.universe.corrections import corrected
@@ -431,8 +430,7 @@ class Screen:
         or the sources not answering)."""
         today = self._today()
         lines = [x.symbol for x in self._universe.company_listings(profile.company_key) if not x.delisted]
-        kept = {s.upper() for s in (*WatchlistRepo(self._ctx.conn).all_symbols(),
-                                    *PaperRepo(self._ctx.conn).held_symbols())}
+        kept = {s.upper() for s in held_or_watched(self._ctx)}
         if any(s.upper() in kept for s in lines):
             return
         bars = BarRepo(self._ctx.conn)

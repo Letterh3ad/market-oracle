@@ -33,14 +33,17 @@ class HealthRepo:
             return ListingHealth(symbol, 0, None)
         return ListingHealth(symbol, len(json.loads(row[0])), row[1] and date.fromisoformat(row[1]))
 
-    def note_no_data(self, symbol: str, day: date, dead_after: int) -> ListingHealth:
-        """Count `day` once, and mark the listing dead at `dead_after` distinct days."""
+    def note_no_data(self, symbol: str, day: date, dead_after: int | None) -> ListingHealth:
+        """Count `day` once, and mark the listing dead at `dead_after` distinct days.
+        `dead_after=None` still counts the day but never newly marks it dead (a held or
+        watched line: it must keep being fetched so its stop can fire)."""
         with transaction(self._conn):
             row = self._conn.execute(
                 "SELECT no_data_days, dead_since FROM listing_health WHERE symbol = ?", (symbol,)
             ).fetchone()
             days = sorted(set(json.loads(row[0]) if row else []) | {day.isoformat()})
-            dead = row[1] if row and row[1] else (days[0] if len(days) >= dead_after else None)
+            newly_dead = dead_after is not None and len(days) >= dead_after
+            dead = row[1] if row and row[1] else (days[0] if newly_dead else None)
             self._conn.execute(
                 "INSERT OR REPLACE INTO listing_health (symbol, no_data_days, dead_since) VALUES (?, ?, ?)",
                 (symbol, json.dumps(days), dead),

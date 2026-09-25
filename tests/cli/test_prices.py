@@ -59,7 +59,7 @@ def test_sources_lists_the_chain_and_why_a_source_is_off(run, monkeypatch):
     assert rows == [["1", "yahoo", "on"], ["2", "eodhd", "off (no key)"]]
 
 
-def test_a_dead_listing_is_skipped_not_failed_and_says_how_to_check_again(run, monkeypatch):
+def test_a_watched_listing_marked_dead_is_still_updated(run, monkeypatch):
     from datetime import date
 
     from oracle.services import prices_service
@@ -73,6 +73,6 @@ def test_a_dead_listing_is_skipped_not_failed_and_says_how_to_check_again(run, m
 
     run("watch", "add", "AAPL")
     monkeypatch.setattr(prices_service, "WatchlistRepo", dead_first)
-    code, out, _ = run("prices", "update")
-    assert code == 0
-    assert "AAPL: skipped: no source has data since 2026-09-01 (check again with `oracle prices update AAPL`)" in out
+    _, out, _ = run("prices", "update")
+    # the fake has no AAPL series, so the fetch itself may fail; a watched or held line is never skipped for a dead flag, so a lost feed cannot silence its stop
+    assert "AAPL: skipped" not in out
