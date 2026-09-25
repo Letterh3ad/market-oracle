@@ -60,12 +60,17 @@ class Decision:
     """The listing has no verdict yet, or it is too old: researching it would let the AI account act."""
 
 
+ONE_SHARE = "one share costs more than the position size"
+
+
 def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Position], cash: float, equity: float,
-           sizes: Mapping[str, float], rules: Rules, pending: set[str]) -> list[Decision]:
+           sizes: Mapping[str, float], rules: Rules, pending: set[str],
+           share_costs: Mapping[str, float] | None = None) -> list[Decision]:
     """Sells first (stops, then sell leans), then buys by probability. `sizes` is the risk
     analyst's suggested share of equity per listing; sell proceeds are not counted until
     they fill. `cash` excludes what pending buys will spend, and a pending buy takes a
-    position slot."""
+    position slot. `share_costs` (one share at the last close, in the cash's currency) skips
+    a buy too small for one share, which would only be rejected at the fill."""
     out = [Decision(s, Action.SKIP, None, PENDING) for s in sorted(pending)]
     for symbol, h in sorted(holdings.items()):
         if symbol in pending:
@@ -87,6 +92,9 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Position], cash: fl
             continue
         amount = min(sizes[lean.symbol], rules.max_position) * equity
         amount = min(amount, spendable)
+        if amount < (share_costs or {}).get(lean.symbol, 0.0):
+            out.append(Decision(lean.symbol, Action.SKIP, None, ONE_SHARE))
+            continue
         spendable -= amount
         positions += 1
         out.append(Decision(lean.symbol, Action.BUY, amount, f"{lean.source} lean {lean.label} at {lean.probability:.0%}"))

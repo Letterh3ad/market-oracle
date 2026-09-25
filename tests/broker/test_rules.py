@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -75,3 +76,14 @@ def test_a_pending_buy_takes_a_position_slot():
     holdings = [Position(f"H{i}", 1, 100.0, 100.0) for i in range(9)]
     d = run([lean("A")], holdings, cash=9000.0, pending=["P"])
     assert d["A"].action == "skip" and "10 positions" in d["A"].reason
+
+
+
+@pytest.mark.parametrize("max_positions", [10, 1])
+def test_a_buy_smaller_than_one_share_is_skipped_and_holds_no_slot_or_cash(max_positions):
+    leans = {x.symbol: x for x in (lean("ASML", probability=0.9), lean("B", probability=0.8))}
+    d = {x.symbol: x for x in decide(leans, {}, 10_000.0, 10_000.0, {"ASML": 0.10, "B": 0.10},
+                                     replace(RULES, max_positions=max_positions), set(),
+                                     share_costs={"ASML": 1_300.0, "B": 50.0})}
+    assert (d["ASML"].action, d["ASML"].reason) == ("skip", "one share costs more than the position size")
+    assert (d["B"].action, d["B"].cash) == ("buy", pytest.approx(1000.0))
