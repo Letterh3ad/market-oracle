@@ -115,6 +115,31 @@ def test_a_listening_server_down_for_four_passes_is_killed_as_hung(tmp_path):
     assert any("hung" in line and "4 passes" in line and "PID 321" in line for line in w.lines)
 
 
+
+def a_server_the_watch_started_that_never_answers(tmp_path, age_min):
+    """Down for two passes, no known server: the watch starts one, which binds the port and hangs."""
+    w, system = with_rc(tmp_path, http=down_http())
+    w.cfg.state_file.write_text(json.dumps({"down_since": "2026-09-26T01:30:00Z", "app_restarts": 2}),
+                                encoding="utf-8")
+    run_pass(w)  # third pass down: nothing listens, so the watch starts the app
+    assert system.spawned[-1][0] == w.cfg.app_start
+    pid = system.next_pid
+    system.procs.append(proc(pid, name="python.exe", cmd="python launch.py", age_min=age_min))
+    system.port_answers = True
+    run_pass(w)  # fourth
+    return w, system, pid
+
+
+def test_a_server_the_watch_started_that_binds_and_never_answers_is_killed_as_hung(tmp_path):
+    w, system, pid = a_server_the_watch_started_that_never_answers(tmp_path, age_min=0)
+    assert system.killed == [pid] and system.spawned[-1][0] == w.cfg.app_start
+    assert any("hung" in line and f"PID {pid}" in line for line in w.lines)
+
+
+def test_a_reused_pid_of_a_server_the_watch_started_is_never_killed(tmp_path):
+    _, system, _ = a_server_the_watch_started_that_never_answers(tmp_path, age_min=300)
+    assert system.killed == []
+
 def test_a_listening_process_that_is_not_the_reported_server_is_never_killed(tmp_path):
     w, system = with_rc(tmp_path, procs=[hung_server(started_min=5)], http=down_http())
     system.port_answers = True

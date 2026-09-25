@@ -52,6 +52,7 @@ def run_pass(w: Watch) -> None:
                 w.log(f"app is back up after {state['app_restarts']} pass(es) down")
             state["app_restarts"] = 0
             state.pop("down_since", None)
+            state.pop("app_spawned", None)
             server = status.get("server") or {}
             state["server_pid"], state["server_started_at"] = server.get("pid"), server.get("started_at")
         else:
@@ -142,11 +143,22 @@ def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
     return p
 
 
+def _started(state: dict, procs: Sequence[Proc]) -> Proc | None:
+    """The server this watch last started, if its PID still holds that process: one that binds
+    the port and hangs before it ever answers has no reported PID."""
+    spawned = state.get("app_spawned") or {}
+    p = next((p for p in procs if p.pid == spawned.get("pid")), None)
+    if not p or not p.created or abs(p.created - parse(spawned["at"])) > RUN_START_SLACK:
+        return None
+    return p
+
+
 def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) -> None:
     """Start the app from the live worktree when nothing holds its port. The server status last
     reported is killed first when its port is closed and it was down on the pass before too, or,
-    port open (a hung event loop still accepts connections), after hung_passes passes down."""
-    server = _server(state, procs)
+    port open (a hung event loop still accepts connections), after hung_passes passes down. The
+    server this watch started counts as reported until one answers."""
+    server = _server(state, procs) or _started(state, procs)
     down_passes = state.get("app_restarts", 0) + 1
     if w.system.port_open(w.cfg.app_url):
         if not server or down_passes < w.cfg.hung_passes:
@@ -162,6 +174,7 @@ def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) ->
             return
         w.log(f"app server PID {server.pid} still does not answer: killing it: {w.system.kill_tree(server.pid)}")
     pid = w.system.spawn(w.cfg.app_start, w.cfg.live, log=w.cfg.reports / "app-start.log")
+    state["app_spawned"] = {"pid": pid, "at": iso(w.now())}
     w.log(f"app down ({w.api('/api/status')} failed): started it from {w.cfg.live} (PID {pid})")
 
 
