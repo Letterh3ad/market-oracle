@@ -80,6 +80,13 @@ def _print_backfill(r: BackfillReport) -> None:
     for ch in r.changes:
         print(f"{ch.kind:<10}{ch.symbol:<12}{cut(ch.name, 30):<32}{ch.note}")
     print(f"{r.lookups} Yahoo lookups" + (f"; stopped early: {r.stopped}" if r.stopped else ""))
+    _print_stale(r.stale_corrections)
+
+
+def _print_stale(stale: tuple[str, ...]) -> None:
+    if stale:
+        print(f"sector corrections matching no company (re-key them in oracle/universe/corrections.py): "
+              f"{'; '.join(stale)}")
 
 
 def status(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -163,3 +170,4 @@ def _print(s: UniverseStatus) -> None:
         print(f"  {type_:<8}{listings:>8} listings{companies:>8} {noun}")
     print(f"FinanceDatabase commit {s.source_commit}")
     print(f"refreshed {s.refreshed_at:%Y-%m-%d %H:%M} UTC")
+    _print_stale(s.stale_corrections)

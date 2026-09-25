@@ -7,8 +7,10 @@ from oracle.config import Config
 from oracle.services.backfill_service import ADDED_FROM_YAHOO, ALREADY_THERE, add_from_yahoo, backfill_status, backfill_universe
 from oracle.services.context import open_context
 from oracle.services.errors import UniverseNotLoaded
+from oracle.services import universe_service
 from oracle.services.universe_service import refresh_universe, resolve_symbol, search_universe
 from oracle.store.universe import UniverseRepo
+from oracle.universe.corrections import Correction
 from oracle.universe.indexes import BY_CODE, IndexSpec
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, bz2_csv, equity
@@ -321,3 +323,11 @@ async def test_a_lead_only_line_is_added_only_when_yahoo_sizes_it_big(ctx, yahoo
     assert symbol is None and "Micro Cap" in why
     assert UniverseRepo(ctx.conn).resolve("8888.T") is None
     assert (await add_from_yahoo(ctx, "066570.KS", bands=("Mega Cap", "Large Cap")))[0] == "066570.KS"
+
+
+async def test_a_backfill_names_the_correction_keys_matching_no_company(ctx, monkeypatch):
+    monkeypatch.setattr(universe_service, "CORRECTIONS", {
+        "name:gone plc|United Kingdom|equity": Correction("Gone plc", "Industrials", "Capital Goods", "Machinery")})
+    await refresh_universe(ctx)
+    report = await run(ctx)
+    assert report.stale_corrections == ("Gone plc (name:gone plc|United Kingdom|equity)",)

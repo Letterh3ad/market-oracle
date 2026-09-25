@@ -346,7 +346,7 @@ def _seeds(ctx: AppContext) -> list[str]:
 
 def _peers(ctx: AppContext, seed: str, errors: list[str]) -> list[_Candidate]:
     try:
-        rows = choose_peers(ctx, seed).rows
+        rows = choose_peers(ctx, seed, corrected=True).rows
     except ServiceError as exc:
         errors.append(f"peers of {seed}: {exc}")
         return []

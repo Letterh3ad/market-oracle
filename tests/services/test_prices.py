@@ -2,12 +2,15 @@ from datetime import date, datetime, time, timezone
 
 import pytest
 
+from oracle.broker.orders import Side
 from oracle.config import Config
 from oracle.services.context import open_context
 from oracle.services.errors import PriceUnavailable, UnknownSymbol
 from oracle.services.prices_service import price_history, update_listing, update_listings
-from oracle.store.health import HealthRepo
 from oracle.services.universe_service import refresh_universe
+from oracle.store.health import HealthRepo
+from oracle.store.paper import FillRow, PaperRepo
+from oracle.store.watchlists import WatchlistRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
@@ -89,6 +92,29 @@ async def test_several_listings_refetched_skipping_dead_ones_and_reporting_failu
     assert [(o.symbol, o.added) for o in out] == [("AAPL", 3), ("BP.L", 0), ("BHP.AX", 0)]
     assert out[1].error and out[2].skipped and out[2].error is None
     assert not any("BHP" in str(r.url) for r in web.requests_to("query2.finance.yahoo.com"))
+
+
+async def _hold(ctx, symbol) -> None:
+    repo = PaperRepo(ctx.conn)
+    order = repo.add_order("manual", symbol, Side.BUY, 100.0, None, "t", date(2026, 9, 18), "manual")
+    repo.record_fill(FillRow(order.id, "manual", symbol, Side.BUY, date(2026, 9, 18), 1, 100.0, "USD",
+                             1.0, -100.0, 0.0, 0.0, 0.0, 0.0))
+
+
+async def test_a_held_line_with_three_no_data_days_is_still_fetched_and_not_marked_dead(ctx):
+    await _hold(ctx, "BHP.AX")
+    for day in (date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)):
+        out = await update_listings(ctx, ["BHP.AX"], day)
+        assert out[0].skipped is None, "a held line is never skipped for being dead"
+    assert not HealthRepo(ctx.conn).get("BHP.AX").dead
+
+
+async def test_a_watched_line_with_three_no_data_days_is_still_fetched_and_not_marked_dead(ctx):
+    WatchlistRepo(ctx.conn).add("main", "BP.L", "2026-09-01T00:00:00Z")
+    for day in (date(2026, 9, 1), date(2026, 9, 2), date(2026, 9, 3)):
+        out = await update_listings(ctx, ["BP.L"], day)
+        assert out[0].skipped is None, "a watched line is never skipped for being dead"
+    assert not HealthRepo(ctx.conn).get("BP.L").dead
 
 
 async def test_a_partial_last_bar_is_overwritten_by_the_next_update(ctx, yahoo):

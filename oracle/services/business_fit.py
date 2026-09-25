@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from oracle.services.brands import rest_words
 from oracle.services.industry_words import universe_words, word_list
 from oracle.store.universe import ListingProfile, UniverseRepo
+from oracle.universe.corrections import corrected
 from oracle.universe.exchanges import EXCHANGES
 from oracle.universe.listings import legal_form
 from oracle.universe.regions import countries_of, place_of
@@ -62,6 +63,7 @@ class BusinessFit:
 
     def misfit(self, p: ListingProfile, name: str, named_in: NamedIn) -> str | None:
         """Why the company cannot be the one `name` means, or None when nothing says so."""
+        p = corrected(p)
         homes = [h for item in named_in.items for h in _homes(item, name)]
         if homes and p.country and self._trusted_home(p) and not any(_holds(h, p.country) for h in homes):
             return f"a different company: {p.name} is from {p.country}, but the news names {', '.join(homes)}"
@@ -83,7 +85,7 @@ class BusinessFit:
         to take "robots" for "robotics") or their sectors ("bancorp" in a question about banks)."""
         asked = self.sectors_asked(named_in.asked)
         said = {w[:_STEM] for text in (named_in.asked, *named_in.items) for x in word_list(text)
-                for w in universe_words(x)}
+                for w in (x, *universe_words(x))}
         return [w for w in words if w[:_STEM] not in said and not asked & {
             *self._vocabulary().get(w, ()), *filter(None, [_NAMED_TRADES.get(w)])}]
 

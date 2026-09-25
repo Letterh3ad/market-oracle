@@ -1,7 +1,9 @@
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
 
+from oracle.broker.orders import Side
 from oracle.config import Config
 from oracle.services.company_service import company_view
 from oracle.services.context import open_context
@@ -10,6 +12,7 @@ from oracle.services.prices_service import listing_health, update_listing, updat
 from oracle.services.routine_service import update_listing_prices
 from oracle.services.universe_service import refresh_universe, search_universe
 from oracle.services.watch_service import watch
+from oracle.store.paper import FillRow, PaperRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.financedatabase import BASIC, FakeFinanceDatabase
 from tests.fakes.web import FakeWeb
@@ -32,9 +35,18 @@ async def ctx(tmp_path, yahoo):
     web = FakeWeb(FakeFinanceDatabase(BASIC), yahoo)
     with open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport) as c:
         await refresh_universe(c)
-        watch(c, "AAPL")
         watch(c, "TM")
+        # AAPL is neither held nor watched: it stands in for an ordinary dead listing.
+        # Watched (TM) and held cases are covered separately below.
+        c.config = replace(c.config, compare=replace(c.config.compare, benchmarks=("AAPL",)))
         yield c
+
+
+async def _hold(ctx, symbol) -> None:
+    repo = PaperRepo(ctx.conn)
+    order = repo.add_order("manual", symbol, Side.BUY, 100.0, None, "t", NOW.date(), "manual")
+    repo.record_fill(FillRow(order.id, "manual", symbol, Side.BUY, NOW.date(), 1, 100.0, "USD",
+                             1.0, -100.0, 0.0, 0.0, 0.0, 0.0))
 
 
 async def primary(ctx):
@@ -104,8 +116,20 @@ async def test_a_dead_listing_is_greyed_in_search_and_never_the_primary(ctx):
     assert (await primary(ctx)) != "AAPL" and listing_health(ctx, "AAPL").dead
 
 
-async def test_a_listing_with_history_that_starts_answering_empty_still_dies(ctx, yahoo):
+async def test_a_watched_listing_that_starts_answering_empty_is_still_fetched_and_never_marked_dead(ctx, yahoo):
     await update_watched(ctx, fx=False)  # TM stores its bars
     yahoo.series["TM"].bars = []  # Yahoo keeps the symbol but serves no bars (BTQ.DE)
     await no_data_days(ctx, 3)
-    assert listing_health(ctx, "TM").dead
+    run = await update_watched(ctx, fx=False)
+    tm = next(o for o in run.listings if o.symbol == "TM")
+    assert tm.skipped is None, "a watched line is never skipped for being dead"
+    assert not listing_health(ctx, "TM").dead
+
+
+async def test_a_held_listing_with_three_no_data_days_is_still_fetched_and_never_marked_dead(ctx):
+    await _hold(ctx, "AAPL")
+    await no_data_days(ctx, 3)
+    run = await update_watched(ctx, fx=False)
+    aapl = next(o for o in run.listings if o.symbol == "AAPL")
+    assert aapl.skipped is None, "a held line is never skipped for being dead"
+    assert not listing_health(ctx, "AAPL").dead

@@ -8,6 +8,7 @@ export function backfillSection() {
   const show = (indexes, r) => out.replaceChildren(
     ...(r ? [el("p", { class: "dim small" }, `${r.lookups} Yahoo lookups this run`
       + (r.stopped ? `; stopped early: ${r.stopped}` : "") + ".")] : []),
+    ...(r?.stale_corrections?.length ? [staleCorrections(r.stale_corrections)] : []),
     backfillTable(indexes), ...(r?.changes.length ? [changeTable(r.changes)] : []));
   const button = busyButton("Backfill from indexes", async (onState) => {
     try {
@@ -26,6 +27,15 @@ export function backfillSection() {
     try { show(await api("/api/universe/backfill")); } catch (err) { showError(err.message); }
   });
   return details;
+}
+
+// A regroup can re-key a company, so its sector correction no longer applies.
+export function staleNote(stale) {
+  return `Sector corrections matching no company (re-key them in oracle/universe/corrections.py): ${stale.join("; ")}`;
+}
+
+function staleCorrections(stale) {
+  return el("p", { class: "dim small" }, staleNote(stale));
 }
 
 function backfillTable(indexes) {

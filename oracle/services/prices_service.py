@@ -26,7 +26,7 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "benchmark_history_in_base", "day_change", "held_unwatched", "listing_health", "price_history",
+    "benchmark_history_in_base", "day_change", "held_or_watched", "held_unwatched", "listing_health", "price_history",
     "price_history_in_base", "price_sources", "update_listing", "update_listings", "update_watched",
 ]
 
@@ -93,6 +93,13 @@ def held_unwatched(ctx: AppContext, watched: Sequence[str]) -> list[str]:
     return [s for s in PaperRepo(ctx.conn).held_symbols() if s not in watched]
 
 
+def held_or_watched(ctx: AppContext) -> set[str]:
+    """Every symbol some paper ledger holds or some watchlist tracks: never buried
+    (`candidate_screen._bury`) and never skipped by a price update for being dead, since
+    either one needs fresh prices for its stop to fire."""
+    return set(WatchlistRepo(ctx.conn).all_symbols()) | set(PaperRepo(ctx.conn).held_symbols())
+
+
 async def update_listing(ctx: AppContext, symbol: str, since: date | None = None) -> PriceUpdate:
     """Fetch new daily bars for one listing from the first configured source that has
     them. Nothing is stored unless a source succeeds. `since` refetches from that day,
@@ -105,10 +112,11 @@ async def update_listings(ctx: AppContext, symbols: Sequence[str], since: date) 
     """Each listing refetched from `since` over one client; a dead listing is skipped with a
     note, a failure reported, and either way the rest carry on."""
     health = HealthRepo(ctx.conn)
+    kept = held_or_watched(ctx)
     outcomes = []
     async with open_client(ctx) as client:
         for symbol in symbols:
-            if (h := health.get(symbol)).dead:
+            if symbol not in kept and (h := health.get(symbol)).dead:
                 outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
                 continue
             try:
@@ -138,13 +146,14 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
         unlisted = {s: ("held and a benchmark, but no longer in the universe: not priced" if s in also_benchmark
                         else "held, but no longer in the universe: not priced") for s in held}
         unlisted |= {s: "not in the universe: benchmark skipped" for s in benchmarks}
+        kept = set(watched) | set(held)
         async with open_client(ctx) as client:
             for symbol in watched + held + benchmarks:
                 lease.check()
                 if symbol in unlisted and universe.resolve(symbol) is None:
                     outcomes.append(ListingOutcome(symbol, 0, None, None, unlisted[symbol]))
                     continue
-                if (h := health.get(symbol)).dead:
+                if symbol not in kept and (h := health.get(symbol)).dead:
                     outcomes.append(ListingOutcome(symbol, 0, None, None, f"no source has data since {h.since}"))
                     continue
                 try:
@@ -241,9 +250,12 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str, since
 
 
 def _note_no_data(ctx: AppContext, listing: Resolved, day: date) -> None:
+    """Record the no-data day always; only let it turn the line dead when the line is
+    neither held nor watched (see `held_or_watched`)."""
     health = HealthRepo(ctx.conn)
     was_dead = health.get(listing.symbol).dead
-    if health.note_no_data(listing.symbol, day, DEAD_AFTER_DAYS).dead and not was_dead:
+    dead_after = None if listing.symbol in held_or_watched(ctx) else DEAD_AFTER_DAYS
+    if health.note_no_data(listing.symbol, day, dead_after).dead and not was_dead:
         UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())
 
 

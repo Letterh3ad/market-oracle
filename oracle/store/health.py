@@ -33,19 +33,31 @@ class HealthRepo:
             return ListingHealth(symbol, 0, None)
         return ListingHealth(symbol, len(json.loads(row[0])), row[1] and date.fromisoformat(row[1]))
 
-    def note_no_data(self, symbol: str, day: date, dead_after: int) -> ListingHealth:
-        """Count `day` once, and mark the listing dead at `dead_after` distinct days."""
+    def note_no_data(self, symbol: str, day: date, dead_after: int | None) -> ListingHealth:
+        """Count `day` once, and mark the listing dead at `dead_after` distinct days.
+        `dead_after=None` still counts the day but never newly marks it dead (a held or
+        watched line: it must keep being fetched so its stop can fire)."""
         with transaction(self._conn):
             row = self._conn.execute(
                 "SELECT no_data_days, dead_since FROM listing_health WHERE symbol = ?", (symbol,)
             ).fetchone()
             days = sorted(set(json.loads(row[0]) if row else []) | {day.isoformat()})
-            dead = row[1] if row and row[1] else (days[0] if len(days) >= dead_after else None)
+            newly_dead = dead_after is not None and len(days) >= dead_after
+            dead = row[1] if row and row[1] else (days[0] if newly_dead else None)
             self._conn.execute(
                 "INSERT OR REPLACE INTO listing_health (symbol, no_data_days, dead_since) VALUES (?, ?, ?)",
                 (symbol, json.dumps(days), dead),
             )
         return self.get(symbol)
+
+    def mark_dead(self, symbols: list[str], day: date) -> None:
+        """Dead from `day` without waiting out the streak, its no-data days kept."""
+        with transaction(self._conn):
+            for symbol in symbols:
+                self._conn.execute(
+                    "INSERT INTO listing_health (symbol, no_data_days, dead_since) VALUES (?, '[]', ?) "
+                    "ON CONFLICT (symbol) DO UPDATE SET dead_since = excluded.dead_since",
+                    (symbol, day.isoformat()))
 
     def clear(self, symbol: str) -> bool:
         """Forget the streak; True when the listing had been dead."""
@@ -54,5 +66,8 @@ class HealthRepo:
             self._conn.execute("DELETE FROM listing_health WHERE symbol = ?", (symbol,))
         return was_dead
 
-    def dead_symbols(self) -> set[str]:
-        return {r[0] for r in self._conn.execute("SELECT symbol FROM listing_health WHERE dead_since IS NOT NULL")}
+    def dead_symbols(self, since: date | None = None) -> set[str]:
+        """Dead listings; with `since`, only those dead from that day on."""
+        return {r[0] for r in self._conn.execute(
+            "SELECT symbol FROM listing_health WHERE dead_since IS NOT NULL AND (:s IS NULL OR dead_since >= :s)",
+            {"s": since and since.isoformat()})}

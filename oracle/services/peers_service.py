@@ -10,6 +10,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.fundamentals_service import PEER_MAX_AGE, fetch_fundamentals
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.universe import ListingProfile, PeerRow, UniverseRepo
+from oracle.universe.corrections import CORRECTIONS, corrected as correct
 
 __all__ = ["Peer", "PeerChoice", "PeerGroup", "choose_peers", "peer_group", "with_fundamentals"]
 
@@ -64,19 +65,22 @@ def with_fundamentals(choice: PeerChoice, found: Mapping[str, tuple[Fundamentals
     return PeerGroup(choice.company.primary_symbol, choice.basis, choice.fell_back, peers)
 
 
-def choose_peers(ctx: AppContext, symbol: str) -> PeerChoice:
+def choose_peers(ctx: AppContext, symbol: str, corrected: bool = False) -> PeerChoice:
+    """`corrected` reads sectors through the corrections table. Off for research and the factor
+    analysts (and the pages showing their peers) while the research loop is frozen."""
+    fixes = CORRECTIONS if corrected else {}
     repo = UniverseRepo(ctx.conn)
-    profile = repo.profile(resolve_symbol(ctx, symbol).symbol)
+    profile = correct(repo.profile(resolve_symbol(ctx, symbol).symbol), fixes)
     if profile.type != "equity":
         raise InvalidQuery(f"{profile.symbol} is a fund; peers are for companies")
     limit = ctx.config.analysts.peers
     rows, basis, fell_back = [], "", False
     if profile.industry_group:
-        rows = repo.peers(profile.company_key, "industry_group", profile.industry_group, limit)
+        rows = repo.peers(profile.company_key, "industry_group", profile.industry_group, limit, fixes)
         basis = f"industry group {profile.industry_group}"
     if len(rows) < MIN_PEERS and profile.sector:
         fell_back = bool(profile.industry_group)
-        rows = repo.peers(profile.company_key, "sector", profile.sector, limit)
+        rows = repo.peers(profile.company_key, "sector", profile.sector, limit, fixes)
         basis = f"sector {profile.sector}" + (f" ({profile.industry_group} has too few)" if fell_back else "")
     if not rows:
         raise InvalidQuery(f"{profile.symbol} has no sector in the universe, so no peers")
