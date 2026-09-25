@@ -77,6 +77,14 @@ def test_the_momentum_line_holds_the_leader_under_the_same_costs(make_ctx):
     assert "Momentum trades under the strategy's rules" in " ".join(r.notes)
 
 
+
+def test_a_momentum_buy_that_cannot_fill_is_named(make_ctx):
+    big = [replace(b, open=b.open * 1000, high=b.high * 1000, low=b.low * 1000, close=b.close * 1000,
+                   adj_close=None if b.adj_close is None else b.adj_close * 1000) for b in rising(400, "BIG")]
+    r = run_backtest(make_ctx({"BIG": big, "SLOW": rising(400, "SLOW", daily=0.001)}), "tech", big[300].date,
+                     big[-1].date)
+    assert any(n.startswith("Momentum could not fill: ") and "BIG" in n and "no whole share" in n for n in r.notes)
+
 def test_a_backtest_changes_nothing_stored(make_ctx):
     ctx = make_ctx({"UP": BARS})
     place_buy(ctx, "UP", 500.0)
