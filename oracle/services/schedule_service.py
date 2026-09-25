@@ -1,6 +1,6 @@
 """Ticks on a timer inside the GUI server: weekdays at one local time, plus the midday pass
-at a second and the fill passes at their own. The scheduler polls rather than sleeping until the due time, so a changed
-setting or a woken laptop is noticed within a poll."""
+at a second and the fill passes at their own. The scheduler polls rather than sleeping until
+the due time, so a changed setting or a woken laptop is noticed within a poll."""
 
 from __future__ import annotations
 
@@ -276,7 +276,7 @@ class Scheduler:
             raise InvalidQuery("no scheduled tick or midday pass: scheduling or automation is off")
         return up
 
-    def _live_settings(self) -> dict[str, tuple[bool, str, AutomationConfig]]:
+    def _live_settings(self) -> dict[str, tuple[bool, str | tuple[str, ...], AutomationConfig]]:
         s, automation = self._ctx.config.schedule, self._ctx.config.automation
         return {TICK: (s.enabled, s.time, automation), MIDDAY: (s.enabled, s.midday_time, automation),
                 FILL: (s.enabled, s.fill_times, automation)}
