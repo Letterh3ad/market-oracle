@@ -20,7 +20,7 @@ from oracle.services.context import AppContext
 from oracle.services.analysis_service import WatchedAnalysis, analyse_listing, analyse_watched
 from oracle.services.backfill_service import backfill_universe
 from oracle.services.backtest_service import check_backtest, keep_backtest, run_backtest
-from oracle.services.cutoff_service import cannot_run, check_replay_from, probe_replay_models, replay_cutoff
+from oracle.services.cutoff_service import cannot_run, pinned_cutoff, probe_replay_models, replay_cutoff
 from oracle.services.discovery_chat_service import (
     Question, answer, answer_progress, new_question, saved_question, sweep_interrupted_answers,
 )
@@ -515,13 +515,13 @@ def _refused_replay(ctx: AppContext, job) -> str | None:
     symbol, day = (job.subject or "").split("@", 1)
     if _study_cell(ctx, job, symbol, date.fromisoformat(day)) is None:
         return None
-    why, _ = cannot_run(ctx, ReplayRepo(ctx.conn).current().stages)
+    stages = ReplayRepo(ctx.conn).current().stages
+    why, _ = cannot_run(ctx, stages)
     if why:
         return why
-    try:
-        check_replay_from(ctx, date.fromisoformat(day))
-    except InvalidQuery as exc:
-        return str(exc)
+    cutoff = pinned_cutoff(ctx, stages)
+    if cutoff and date.fromisoformat(day) <= cutoff:
+        return f"{day} is on or before the measured cutoff {cutoff}: a replay then could see ahead"
     return None
 
 

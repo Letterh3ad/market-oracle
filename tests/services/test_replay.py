@@ -940,6 +940,50 @@ async def test_a_raised_claim_stops_earlier_cells_too(ctx, runner, research):
     assert [c.as_of for c in study_status(ctx).failed] == [date(2026, 6, 1), date(2026, 7, 1)]
 
 
+def stopped_and_left_out(ctx):
+    """The cells the pacer stopped for the cutoff, and the cells the score leaves out for it."""
+    s = study_status(ctx)
+    stopped = {(c.symbol, c.as_of) for c in s.failed if c.error.startswith("on or before the cutoff")}
+    return stopped, {(c.symbol, c.as_of) for c in cells(ctx) if s.cutoff and c.as_of <= s.cutoff}
+
+
+async def test_a_claim_on_another_profile_of_the_pinned_model_moves_neither_pacer_nor_score(ctx, runner, research):
+    await started(ctx, symbols=["AAPL"])
+    model = ctx.config.llm.model
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", model),
+                                             "other": ModelProfile("ollama", model, claimed_cutoff="2026-07-31")})
+    pacer = ReplayPacer(ctx, runner)
+    await run_one(pacer, runner, research, "AAPL", FIRST)
+    assert stopped_and_left_out(ctx) == (set(), set())
+    assert study_status(ctx).score.excluded == 0
+
+
+async def test_a_raised_claim_on_the_pinned_profile_moves_pacer_and_score_together(ctx, runner, research):
+    await started(ctx, symbols=["AAPL", "JPM"])
+    model = ctx.config.llm.model
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", model, claimed_cutoff="2026-06-15"),
+                                             "other": ModelProfile("ollama", model, claimed_cutoff="2026-07-31")})
+    pacer = ReplayPacer(ctx, runner)
+    assert pacer.check().subject == "AAPL@2026-07-01"
+    stopped, left_out = stopped_and_left_out(ctx)
+    assert stopped == left_out == {("AAPL", FIRST), ("JPM", FIRST)}
+
+
+async def test_activity_retry_reads_the_pinned_profile_claim_as_the_pacer_does(ctx, runner, research):
+    await started(ctx, date(2026, 8, 1), symbols=["AAPL"])
+    pacer = ReplayPacer(ctx, runner)
+    day = date(2026, 8, 3)
+    await run_one(pacer, runner, research, "AAPL", day, "model down")
+    job = await run_one(pacer, runner, research, "AAPL", day, "bad reply")
+    model = ctx.config.llm.model
+    # The slots move to another profile of the same model claiming more: the study still reads its own pin.
+    ctx.config = replace(ctx.config, models={"default": ModelProfile("ollama", model),
+                                             "other": ModelProfile("ollama", model, claimed_cutoff="2026-08-10")},
+                         model_slots={stage: "other" for stage in STAGES})
+    assert study_status(ctx).cutoff < day
+    assert retry(ctx, runner, job.id) is not None
+
+
 async def test_replace_after_the_cutoff_moved_makes_no_cell_on_or_before_it(ctx):
     await create_study(ctx, FIRST, symbols=["AAPL", "JPM"])
     store_probe(ctx.conn, ctx.config, date(2026, 7, 15))

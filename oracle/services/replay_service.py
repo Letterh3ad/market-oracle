@@ -582,8 +582,9 @@ class ReplayPacer:
         if why:
             repo.set_state(study.id, PAUSED, why)
             return None
-        if early := [c.id for c in repo.cells(study.id, PENDING) if c.as_of <= rc.cutoff]:
-            repo.stop_for_good(early, f"on or before the cutoff {rc.cutoff} of {rc.set_by}", self._ctx.clock.utcnow())
+        cutoff = pinned_cutoff(self._ctx, study.stages)
+        if cutoff and (early := [c.id for c in repo.cells(study.id, PENDING) if c.as_of <= cutoff]):
+            repo.stop_for_good(early, f"on or before the cutoff {cutoff} of {rc.set_by}", self._ctx.clock.utcnow())
         return repo.next_pending(study.id)
 
     def hold(self, repo: ReplayRepo, study: StudyRow) -> str | None:

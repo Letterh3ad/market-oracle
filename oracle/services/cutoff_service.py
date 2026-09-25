@@ -271,22 +271,24 @@ def cannot_run(ctx: AppContext, raw: str | None) -> tuple[str | None, ReplayCuto
 
 
 def pinned_cutoff(ctx: AppContext, raw: str | None) -> date | None:
-    """The latest cutoff of the models a study pinned (a claim raised since still counts); the
-    slots' when a pinned model is not probed or its profile is gone."""
+    """The one cutoff of a study, for its pacer, its Activity retries and its score alike: each
+    pinned model's probe, raised to the claim as it stands now of the profile the study pinned
+    (the stage's slot profile when that one is gone or names another model), never to a claim on
+    some other profile of the same model. The slots' cutoff when a pinned model is not probed or
+    its profile is gone."""
     specs = model_profiles(ctx.config)
-    models = set()
-    for pin in pins(raw).values():
+    cutoffs = []
+    for stage, pin in pins(raw).items():
         if pin.model:
-            models.add((pin.provider, pin.model))
+            model = (pin.provider, pin.model)
         elif pin.profile in specs:
-            models.add((specs[pin.profile].provider, specs[pin.profile].model))
+            model = (specs[pin.profile].provider, specs[pin.profile].model)
         else:
             return replay_cutoff(ctx).cutoff
-    cutoffs = []
-    for provider, model in models:
-        probe = CutoffRepo(ctx.conn).get(provider, model)
+        probe = CutoffRepo(ctx.conn).get(*model)
         if probe is None:
             return replay_cutoff(ctx).cutoff
-        claims = [claimed_cutoff(p) for p in specs.values() if (p.provider, p.model) == (provider, model)]
+        claims = [claimed_cutoff(specs[name]) for name in (pin.profile, slot_profile(ctx.config, stage))
+                  if name in specs and (specs[name].provider, specs[name].model) == model][:1]
         cutoffs.append(max([probe.cutoff, probe.claimed, *claims]))
     return max(cutoffs) if cutoffs else replay_cutoff(ctx).cutoff
