@@ -189,6 +189,17 @@ def test_an_unknown_remote_control_session_is_adopted_not_doubled(tmp_path):
     assert w.cfg.rc_pid_file.read_text(encoding="utf-8") == "710"
 
 
+
+def test_a_failed_remote_control_step_still_spares_the_session_tree(tmp_path):
+    """Adopting fails (the PID file cannot be written): the marked session's headless child is still spared."""
+    child = proc(850, 710, cmd="claude.exe -p x", age_min=500)
+    system = FakeSystem([proc(710, cmd=RC, age_min=600), child])
+    w = watch(tmp_path, system=system)
+    w.cfg.rc_pid_file.mkdir(parents=True)
+    run_pass(w)
+    assert any("step remote control failed" in line for line in w.lines)
+    assert system.killed == [] and system.spawned == []
+
 def test_the_reaper_kills_idle_and_old_claude_but_spares_remote_control(tmp_path):
     old = proc(800, cmd="claude.exe -p something", age_min=200)
     w, system = with_rc(tmp_path, procs=[old])

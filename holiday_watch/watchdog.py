@@ -10,6 +10,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from typing import TypeVar
 
+from holiday_watch.config import Config
 from holiday_watch.procs import Proc
 from holiday_watch.reaper import choose_kills, is_claude, is_remote_control, protected_pids, track_cpu
 from holiday_watch.seams import HttpError, Watch
@@ -57,8 +58,10 @@ def run_pass(w: Watch) -> None:
             state.setdefault("down_since", iso(now))
         _step(w, "ollama", lambda: ensure_ollama(w), None)
         procs = _step(w, "process list", w.system.processes, None)
-        rc = _step(w, "remote control", lambda: ensure_remote_control(w, procs), set()) if procs is not None \
-            else set()
+        # Known sessions stay protected even when keeping one alive fails.
+        rc = (_step(w, "remote control", lambda: ensure_remote_control(w, procs), set())
+              | _step(w, "remote control PIDs", lambda: remote_control_pids(cfg, procs), set())) \
+            if procs is not None else set()
         # Unreadable, a lock counts as a run still going: no second fix run, no kill.
         lock = _step(w, "fix-run lock", lambda: _check_lock(w, procs, now), read_lock(cfg.lock_file)) \
             if procs is not None else read_lock(cfg.lock_file)
@@ -170,19 +173,21 @@ def ensure_ollama(w: Watch) -> None:
         w.log(f"Ollama down ({exc}): started {' '.join(w.cfg.ollama_start)} (PID {pid})")
 
 
+def remote_control_pids(cfg: Config, procs: Sequence[Proc]) -> set[int]:
+    """The claude processes the PID file names or whose command line marks a Remote Control session."""
+    pid = read_pid(cfg.rc_pid_file)
+    return {p.pid for p in procs if is_claude(p, cfg) and (p.pid == pid or is_remote_control(p, cfg))}
+
+
 def ensure_remote_control(w: Watch, procs: Sequence[Proc]) -> set[int]:
     """Every Remote Control session: the PID file's and any claude whose command line marks one
     (never reaped). With none, the PID file adopts the oldest marked one, else a new session is
     launched in a console."""
     cfg = w.cfg
-    by_pid = {p.pid: p for p in procs}
     marked = sorted((p for p in procs if is_claude(p, cfg) and is_remote_control(p, cfg)),
                     key=lambda p: p.created or datetime.max.replace(tzinfo=w.now().tzinfo))
-    pids = {p.pid for p in marked}
-    pid = read_pid(cfg.rc_pid_file)
-    if pid in by_pid and is_claude(by_pid[pid], cfg):
-        return pids | {pid}
-    if not cfg.rc_launch:
+    pids, pid = remote_control_pids(cfg, procs), read_pid(cfg.rc_pid_file)
+    if pid in pids or not cfg.rc_launch:
         return pids
     if marked:
         if not w.dry_run:
