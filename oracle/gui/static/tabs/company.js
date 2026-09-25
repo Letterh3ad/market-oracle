@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { lineChart } from "../lib/chart.js";
 import { chartRangeCaption, chartRangeKey, chartRangeOptions } from "../lib/chart-range.js";
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
+import { factorSentence } from "../lib/factors.js";
 import { big, money, pct, tone } from "../lib/fmt.js";
 import { showLinks } from "../lib/links.js";
 import { repaint } from "../lib/repaint.js";
@@ -171,6 +172,16 @@ async function events(pane, symbol) {
           : e.windows.flatMap((w) => [cell(w.move), cell(w.excess)]))))))].filter(Boolean));
 }
 
+async function priceFactors(box, symbol) {
+  try {
+    const r = await api(`/api/factors/${encodeURIComponent(symbol)}`);
+    box.replaceChildren(el("p", null, factorSentence(r, r.set_size)),
+      el("p", { class: "dim small" }, "For reading only: research and the verdicts do not use these yet."));
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "dim" }, err.message));
+  }
+}
+
 function rangePicker(pane, symbol, base) {
   return el("select", { "aria-label": "Chart range", onchange: (e) => {
     chartDays = Number(e.target.value);
@@ -234,6 +245,7 @@ async function load(pane, symbol, refresh = false) {
     el("div", { id: "c-chart", class: "card" }),
     researchSection(current),
     el("h3", null, "Analysts"), signals(v),
+    el("h3", null, tip("Price factors", "price_factors")), el("div", { id: "c-factors" }),
     el("h3", null, "Fundamentals"), fundamentals(v),
     el("h3", null, tip("Linked companies", "linked_companies")), el("div", { id: "c-links" }),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),
@@ -241,7 +253,7 @@ async function load(pane, symbol, refresh = false) {
     ...v.credits.map((c) => el("p", { class: "dim small" }, c)),
     v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "",
   ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current), events(pane, current),
-    showLinks(pane.querySelector("#c-links"), current)]));
+    priceFactors(pane.querySelector("#c-factors"), current), showLinks(pane.querySelector("#c-links"), current)]));
 }
 
 function render(pane, arg) {

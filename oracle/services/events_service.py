@@ -9,14 +9,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from statistics import median
 
+from oracle.analysts.breaks import first_break, is_price
 from oracle.market.bars import Bar
 from oracle.research import edgar
 from oracle.research.tools import ToolError
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
 from oracle.services.research_tools.filings import submissions
-# TODO(quant-factors): import the shared split guard from oracle.analysts once it lands there.
-from oracle.services.replay_score import STALE, _price, _steady
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -29,6 +28,8 @@ HORIZONS = (1, 5, 20)
 LAST = 8
 """How many of the latest measured releases the summary covers."""
 MAX_AGE = timedelta(days=7)
+STALE = timedelta(days=7)
+"""How far a close may sit from the day it stands for (holidays, halts)."""
 SEC_SOURCE = "SEC 8-K item 2.02"
 BREAK = "price series break, skipped"
 NO_BASE = "no stored close near the date"
@@ -134,7 +135,7 @@ def _event(release: edgar.Release, bars: list[Bar], bench: list[Bar]) -> Earning
     if i < 0 or release.day - days[i] > STALE:
         return EarningsEvent(release.day, release.before_open, None, empty, NO_BASE)
     span = bars[i:i + max(HORIZONS) + 1]
-    if not all(_price(b.close) for b in span) or not _steady(span):
+    if first_break([b.close for b in span]) is not None:
         return EarningsEvent(release.day, release.before_open, days[i], empty, BREAK)
     windows = []
     for h in HORIZONS:
@@ -149,7 +150,7 @@ def _event(release: edgar.Release, bars: list[Bar], bench: list[Bar]) -> Earning
 
 def _change(a: Bar, b: Bar) -> float:
     # Adjusted closes only as a pair: one end adjusted and the other not would be a made-up move.
-    if _price(a.adj_close) and _price(b.adj_close):
+    if is_price(a.adj_close) and is_price(b.adj_close):
         return b.adj_close / a.adj_close - 1
     return b.close / a.close - 1
 
@@ -162,7 +163,7 @@ def _bench_change(bench: list[Bar], start: date, end: date) -> float | None:
     if i < 0 or start - days[i] > STALE or end - days[j] > STALE:
         return None
     span = bench[i:j + 1]
-    if not all(_price(b.close) for b in span) or not _steady(span):
+    if first_break([b.close for b in span]) is not None:
         return None
     return _change(bench[i], bench[j])
 

@@ -14,6 +14,8 @@ from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
+from oracle.analysts.breaks import is_price as _price
+from oracle.analysts.breaks import steady
 from oracle.market.bars import Bar
 from oracle.research.trace import VERDICTS
 from oracle.services.context import AppContext
@@ -37,8 +39,6 @@ BAND_EDGES = (0.6, 0.8)
 BANDS = ("under 0.60", "0.60 to 0.80", "0.80 and up")
 STALE = timedelta(days=7)
 """A close further than this from the day it stands for is a gap in the bars, not that day's price."""
-SPLIT_RATIOS = (0.5, 2.0)
-"""A day-over-day move outside these is taken for a split the stored bars were not re-based for."""
 SIZE_HISTORY = timedelta(days=400)
 """Bars before the study the account's risk sizes read: a year of trading days, with room."""
 MIN_N = 10
@@ -362,8 +362,7 @@ def _unpriced(bars: Sequence[Bar], first: date, fetched: date | None) -> str | N
 
 
 def _steady(bars: Sequence[Bar]) -> bool:
-    low, high = SPLIT_RATIOS
-    return all(low <= b.close / a.close <= high for a, b in zip(bars, bars[1:]))
+    return steady([b.close for b in bars])
 
 
 def _sizing_from(bars: Sequence[Bar], first: date) -> list[Bar]:
@@ -492,10 +491,6 @@ def _target(as_of: date, months: int) -> date:
     return _weekday_on_or_after(_months_after(as_of, months))
 
 
-def _price(close: float | None) -> bool:
-    return close is not None and close > 0
-
-
 class _Prices:
     def __init__(self, ctx: AppContext, symbols: Sequence[str], start: date) -> None:
         repo = BarRepo(ctx.conn)
@@ -516,8 +511,7 @@ class _Prices:
             return _Move(UNPRICED)
         if not all(_price(bars[k].close) for k in range(i, j + 1)):
             return _Move(UNPRICED)
-        low, high = SPLIT_RATIOS
-        if any(not low <= bars[k + 1].close / bars[k].close <= high for k in range(i, j)):
+        if not _steady(bars[i:j + 1]):
             return _Move(UNPRICED)
         entry, exit_ = bars[i], bars[j]
         # Adjusted closes only as a pair: one end adjusted and the other not would be a made-up move.

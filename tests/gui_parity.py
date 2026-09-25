@@ -65,6 +65,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "analyse": "POST /api/jobs/analyse",
     "peers": "GET /api/companies/{symbol}/peers",
     "events": "GET /api/companies/{symbol}/events",  # Company tab, "After earnings"
+    # Watchlist tab: the momentum and calm columns (sortable) and the "Factors as of" day.
+    # The Company tab reads one listing's from GET /api/factors/{symbol}.
+    "factors": "GET /api/factors",
+    "factors --list": "GET /api/factors",
+    "factors --as-of": "GET /api/factors",
     "research": "POST /api/jobs/research",
     "research --as-of": "POST /api/jobs/research",  # Company tab, "Replay as of"
     "research --history": "GET /api/companies/{symbol}/research/history",
