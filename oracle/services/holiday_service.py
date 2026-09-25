@@ -48,6 +48,7 @@ LIMITS_MIN = {WATCHDOG_TASK: 20, REPORT_TASK: 30}
 STUCK = timedelta(minutes=25)
 """A task Running longer is reported: with IgnoreNew it would skip every later run."""
 DISARMED = "holiday disarmed"
+DETAILS_UNAVAILABLE = "registered (details unavailable)"
 FIRST_PASS_IN = timedelta(minutes=2)
 """The first real watchdog pass, soon enough to watch it land in watchdog.log before leaving."""
 ARM_LOCK_STALE_S = 30 * 60
@@ -180,7 +181,7 @@ class Holiday:
             return self._refused([*checks, *more], warnings)
         with self._exclusive(cfg) as mine:
             if not mine:
-                return _busy(self._armed())
+                return _busy(self._armed(), cfg)
             return self._arm(ctx, cfg, path, checks)
 
     def disarm(self, ctx: AppContext) -> Report:
@@ -188,7 +189,7 @@ class Holiday:
         if cfg is None:
             return self._disarm(ctx, None)
         with self._exclusive(cfg) as mine:
-            return self._disarm(ctx, cfg) if mine else _busy(self._armed())
+            return self._disarm(ctx, cfg) if mine else _busy(self._armed(), cfg)
 
     # Arming and undoing
 
@@ -323,10 +324,13 @@ class Holiday:
         if not lock:
             return ""
         pid = lock.get("pid")
-        running = any(p.pid == pid and "fix-run" in p.cmdline for p in self.system.processes())
+        running = any(p.pid == pid and "holiday_watch" in p.cmdline and "fix-run" in p.cmdline
+                      for p in self.system.processes())
         if not running:
             return f"A fix-run lock names PID {pid}, which is gone; left for the watch."
         said = self.system.kill(pid)
+        if "SUCCESS" not in said:
+            raise HolidayError(f"PID {pid} may still be running (taskkill said: {said})")
         clear_lock(cfg.lock_file)
         return f"Ended the fix run PID {pid} (started {lock.get('started_at')}): {said}"
 
@@ -600,8 +604,10 @@ class Holiday:
         return code, [head, *(f"  {line}" for line in out.splitlines())]
 
 
-def _busy(armed: bool) -> Report:
-    return Report(False, armed, (), ("An arm or disarm is already running: wait for it, then look again.",))
+def _busy(armed: bool, cfg: WatchConfig) -> Report:
+    return Report(False, armed, (), (
+        f"An arm or disarm is already running ({cfg.reports / 'arm.lock'}): wait for it, then look again. A lock "
+        f"older than {ARM_LOCK_STALE_S // 60} min is taken as stale, left by a crash, and taken over.",))
 
 
 def _when(at: datetime | None) -> str:
@@ -777,7 +783,7 @@ class RealHolidaySystem:
             raise HolidayError(f"schtasks could not register {name}: {out.strip()}")
 
     def delete_task(self, name: str) -> bool:
-        if self.task_info(name) is None:
+        if not self._exists(name):
             return False
         code, out = self._run(["schtasks", "/Delete", "/TN", name, "/F"])
         if code != 0:
@@ -785,16 +791,25 @@ class RealHolidaySystem:
         return True
 
     def task_info(self, name: str) -> TaskInfo | None:
+        """Existence from schtasks' exit code; the details from PowerShell, which may fail on its own."""
+        if not self._exists(name):
+            return None
         code, out = self._run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
                                TASK_SCRIPT.format(name=name.replace("'", "''"))])
-        if code != 0:
-            return None
-        raw = json.loads(out)
+        try:
+            if code != 0:
+                raise ValueError(out)
+            raw = json.loads(out)
 
-        def at(text: str | None) -> datetime | None:
-            return datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", text)) if text else None
+            def at(text: str | None) -> datetime | None:
+                return datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", text)) if text else None
 
-        return TaskInfo(raw["state"], at(raw.get("last")), at(raw.get("next")), raw.get("result"))
+            return TaskInfo(raw["state"], at(raw.get("last")), at(raw.get("next")), raw.get("result"))
+        except (ValueError, KeyError, TypeError):
+            return TaskInfo(DETAILS_UNAVAILABLE, None, None, None)
+
+    def _exists(self, name: str) -> bool:
+        return self._run(["schtasks", "/Query", "/TN", name])[0] == 0
 
     def watch(self, args: Sequence[str], python: Path, cwd: Path) -> tuple[int, str]:
         # A pipe gets the ANSI code page from the child, not UTF-8.

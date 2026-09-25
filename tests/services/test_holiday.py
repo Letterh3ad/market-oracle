@@ -458,6 +458,7 @@ async def test_a_second_arm_while_one_runs_is_refused(ctx, study, holiday, syste
     (tmp_path / "reports" / "arm.lock").write_text("123", encoding="utf-8")
     report = holiday.arm(ctx)
     assert not report.ok and "already running" in report.lines[0]
+    assert "arm.lock" in report.lines[0] and "stale" in report.lines[0]
     assert system.backups == [] and system.tasks == {}
     assert holiday.disarm(ctx).ok is False
 
@@ -494,6 +495,19 @@ async def test_disarm_ends_a_running_fix_run_before_pausing(ctx, study, holiday,
     report = holiday.disarm(ctx)
     assert report.ok and system.killed == [FIX_PID]
     assert any(f"Ended the fix run PID {FIX_PID}" in line for line in report.lines)
+    assert study_status(ctx).state == "paused"
+
+
+async def test_a_fix_run_taskkill_could_not_end_is_named_and_its_lock_kept(
+        ctx, study, holiday, system, tmp_path):  # noqa: F811
+    holiday.arm(ctx)
+    system.procs.append(Proc(FIX_PID, 1, "python.exe", "python -m holiday_watch fix-run t.json", None, 1.0))
+    lock = tmp_path / "reports" / "fixrun.lock"
+    lock.write_text(json.dumps({"pid": FIX_PID, "started_at": "2026-09-24T11:50:00+00:00"}), encoding="utf-8")
+    system.kill = lambda pid: "ERROR: Access is denied."
+    report = holiday.disarm(ctx)
+    assert not report.ok and lock.exists()
+    assert any(line.startswith("Could not end the fix run") and "Access is denied" in line for line in report.lines)
     assert study_status(ctx).state == "paused"
 
 
