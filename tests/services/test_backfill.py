@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from oracle.config import Config
-from oracle.services.backfill_service import ADDED_FROM_YAHOO, add_from_yahoo, backfill_status, backfill_universe
+from oracle.services.backfill_service import ADDED_FROM_YAHOO, ALREADY_THERE, add_from_yahoo, backfill_status, backfill_universe
 from oracle.services.context import open_context
 from oracle.services.errors import UniverseNotLoaded
 from oracle.services.universe_service import refresh_universe, resolve_symbol, search_universe
@@ -276,3 +276,48 @@ async def test_no_listing_is_added_while_the_universe_is_being_refreshed(ctx):
         symbol, why = await add_from_yahoo(ctx, "066570.KS")
     assert symbol is None and "already running" in why
     assert UniverseRepo(ctx.conn).resolve("066570.KS") is None
+
+
+@pytest.mark.parametrize("answer", [{"price": "garbage"}, 500])
+async def test_a_wrong_code_is_delisted_only_when_yahoo_says_it_has_no_such_line(ctx, yahoo, answer):
+    if isinstance(answer, int):
+        yahoo.fail["008110.KS"] = answer
+    else:
+        yahoo.summaries["008110.KS"] = answer
+    await refresh_universe(ctx)
+    await run(ctx, KR)
+    rows = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}
+    assert not rows["008110.KS"].delisted
+
+
+async def test_wrong_code_lookups_count_against_the_cap(ctx, asked):
+    await refresh_universe(ctx)
+    first = await run(ctx, KR, max_lookups=3)
+    assert first.lookups <= 3 and len(asked()) <= 3
+    assert UniverseRepo(ctx.conn).resolve("028260.KS") is None
+    await run(ctx, KR)
+    rows = {x.symbol: x for x in UniverseRepo(ctx.conn).all_listings()}
+    assert rows["008110.KS"].delisted and rows["028260.KS"].is_primary
+
+
+async def test_a_line_already_in_the_universe_is_not_added_again(ctx, asked):
+    await refresh_universe(ctx)
+    assert await add_from_yahoo(ctx, "008110.KS") == (None, ALREADY_THERE)
+    assert asked() == []
+
+
+@pytest.mark.parametrize("exchange", ["PNK", "OQX", "OQB"])
+async def test_an_otc_line_found_on_yahoo_is_not_added(ctx, yahoo, exchange):
+    yahoo.summaries["LGEAY"] = profile("LG Electronics Inc.", exchange, "USD", 9e9, "South Korea")
+    await refresh_universe(ctx)
+    symbol, why = await add_from_yahoo(ctx, "LGEAY")
+    assert symbol is None and "over the counter" in why
+
+
+async def test_a_lead_only_line_is_added_only_when_yahoo_sizes_it_big(ctx, yahoo):
+    yahoo.summaries["8888.T"] = profile("Skildex Holdings", "JPX", "USD", 2e8, "Japan")
+    await refresh_universe(ctx)
+    symbol, why = await add_from_yahoo(ctx, "8888.T", bands=("Mega Cap", "Large Cap"))
+    assert symbol is None and "Micro Cap" in why
+    assert UniverseRepo(ctx.conn).resolve("8888.T") is None
+    assert (await add_from_yahoo(ctx, "066570.KS", bands=("Mega Cap", "Large Cap")))[0] == "066570.KS"

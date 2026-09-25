@@ -4,7 +4,7 @@ Bounded per run and resumable: what one run leaves, the next picks up."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from itertools import chain, zip_longest
@@ -32,7 +32,7 @@ from oracle.universe.listings import (
     MARKET_CAP_BANDS, Listing, band_of_usd, is_receipt, is_receipt_symbol, normalise_name, place_line,
 )
 
-__all__ = ["ADDED_FROM_YAHOO", "BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo",
+__all__ = ["ADDED_FROM_YAHOO", "ALREADY_THERE", "BackfillChange", "BackfillReport", "IndexCounts", "MAX_LOOKUPS", "add_from_yahoo",
            "backfill_status", "backfill_universe"]
 
 MAX_LOOKUPS = 150
@@ -52,6 +52,9 @@ CHECKED = "size checked"
 FROM_YAHOO = "yahoo"
 """The index code of a line discovery found on Yahoo rather than in an index."""
 ADDED_FROM_YAHOO = "added to the universe from Yahoo"
+ALREADY_THERE = "already in the universe"
+# Yahoo names OTC ADR lines ("...Y" tickers) without "ADR"; a home line is never one of these.
+OTC_EXCHANGES = frozenset({"PNK", "OQX", "OQB"})
 
 
 @dataclass(frozen=True)
@@ -111,11 +114,15 @@ async def backfill_universe(ctx: AppContext, on_progress: Callable[[str], None] 
     return BackfillReport(tuple(backfill_status(ctx, indexes)), tuple(run.changes), run.lookups, run.stopped)
 
 
-async def add_from_yahoo(ctx: AppContext, symbol: str) -> tuple[str | None, str]:
+async def add_from_yahoo(ctx: AppContext, symbol: str,
+                         bands: Collection[str] | None = None) -> tuple[str | None, str]:
     """Add the line Yahoo lists as `symbol` to the universe at once, under the index backfill's
-    guards, in the company a regroup would give it, and kept by every refresh after. Returns
-    (the symbol, ADDED_FROM_YAHOO), or (None, why not)."""
+    guards and never over the counter, only in one of `bands` when given, in the company a
+    regroup would give it, and kept by every refresh after. Returns (the symbol,
+    ADDED_FROM_YAHOO), or (None, why not: ALREADY_THERE for a line the universe has)."""
     universe_service.require_loaded(ctx)
+    if UniverseRepo(ctx.conn).resolve(symbol) is not None:
+        return None, ALREADY_THERE
     now = ctx.clock.utcnow()
     async with open_client(ctx) as client:
         yahoo = _Yahoo(client, now)
@@ -127,15 +134,20 @@ async def add_from_yahoo(ctx: AppContext, symbol: str) -> tuple[str | None, str]
             return None, p
         if why := refusal(p, never_names(ctx, user=True)):
             return None, why
+        if p.exchange in OTC_EXCHANGES:
+            return None, f"traded over the counter ({p.exchange})"
         line = await yahoo.line(p, UniverseRepo(ctx.conn).markets())
+    if bands is not None and line.market_cap not in bands:
+        return None, f"{line.market_cap or 'size unknown'} on Yahoo, too small to take on its ranking alone"
     try:
         with single_flight(ctx, universe_service.JOB, universe_service.LEASE_S):
             repo = UniverseRepo(ctx.conn)
-            if repo.resolve(line.symbol) is None:
-                BackfillRepo(ctx.conn).add(line, FROM_YAHOO, ADDED_FROM_YAHOO, now)
-                key = place_line(line, repo.grouping_rows())
-                repo.add(inherit_classification([*repo.company_lines(key), replace(line, company_key=key)])[-1])
-                repo.repick_primary(key, HealthRepo(ctx.conn).dead_symbols())
+            if repo.resolve(line.symbol) is not None:
+                return None, ALREADY_THERE
+            BackfillRepo(ctx.conn).add(line, FROM_YAHOO, ADDED_FROM_YAHOO, now)
+            key = place_line(line, repo.grouping_rows())
+            repo.add(inherit_classification([*repo.company_lines(key), replace(line, company_key=key)])[-1])
+            repo.repick_primary(key, HealthRepo(ctx.conn).dead_symbols())
     except JobAlreadyRunning as exc:
         return None, str(exc)
     return line.symbol, ADDED_FROM_YAHOO
@@ -179,6 +191,10 @@ def backfill_status(ctx: AppContext, indexes: Sequence[IndexSpec] = INDEXES) -> 
 
 class _Stop(Exception):
     pass
+
+
+class _Full(Exception):
+    """The run's lookups cannot cover the next add and its wrong-code checks."""
 
 
 class _Run:
@@ -252,6 +268,8 @@ class _Run:
             except _Stop as exc:
                 self.stopped = str(exc)
                 return
+            except _Full:
+                return
 
     async def _add(self, spec: IndexSpec, m: Member) -> None:
         p = await self._profile(m.symbol)
@@ -261,19 +279,25 @@ class _Run:
             return self._fail(spec, m.symbol, p.name or m.name, why)
         line = await self.yahoo.line(p, self.markets)
         line = replace(line, isin=m.isin) if m.isin else line
+        twins = [x for x in self.by_name.get(_same_line(line), []) if x.symbol.casefold() != line.symbol.casefold()]
+        if self.lookups + len(twins) > self.max_lookups:
+            # Stored only with its wrong-code checks, so the next run adds and checks it together.
+            raise _Full
         note = f"in the {spec.name}; {line.market_cap or 'size unknown'}"
         self.repo.add(line, spec.code, note, self.now)
         self.changes.append(BackfillChange(line.symbol, line.name, spec.name, "added", note))
         self.by_symbol[line.symbol.casefold()] = line
-        for x in [x for x in self.by_name.get(_same_line(line), []) if x.symbol.casefold() != line.symbol.casefold()]:
+        for x in twins:
             await self._wrong_code(spec, line, x)
 
     async def _wrong_code(self, spec: IndexSpec, line: Listing, x: Listing) -> None:
         """`x` carries `line`'s company name on its exchange under another code."""
         p = await self._profile(x.symbol)
         lists = f"the {spec.name} lists {line.name} as {line.symbol}"
-        if isinstance(p, str):
+        if p == NOT_ON_YAHOO:
             fields, note = {"delisted": True}, f"{p}; {lists}"
+        elif isinstance(p, str):
+            return
         elif p.name and normalise_name(p.name) != normalise_name(x.name):
             band = await self.yahoo.band(p)
             fields = {"name": p.name, **({"market_cap": band} if band else {})}
