@@ -22,7 +22,7 @@ from oracle.services.brands import (
     behind_quotes, is_place, named_whole, names_in, other_words, parents, sized, sounds_private, the_group,
     usable, written_before,
 )
-from oracle.services.backfill_service import ADDED_FROM_YAHOO, add_from_yahoo
+from oracle.services.backfill_service import ADDED_FROM_YAHOO, ALREADY_THERE, add_from_yahoo
 from oracle.services.business_fit import BusinessFit, NamedIn
 from oracle.services.context import AppContext
 from oracle.services.errors import PriceUnavailable, ServiceError
@@ -347,7 +347,8 @@ class Screen:
         added = named and await self._added(name, named) or (
             lead and lead is not named and not tracked and await self._added(name, lead, _BIG))
         shown = named if tracked else listed
-        return added or _Match(None, f"listed as {shown.name} ({shown.symbol}), not in the universe")
+        where = ALREADY_THERE if self._universe.profile(shown.symbol) is not None else "not in the universe"
+        return added or _Match(None, f"listed as {shown.name} ({shown.symbol}), {where}")
 
     async def _added(self, name: str, q: Quote, bands: frozenset[str] | None = None) -> _Match | None:
         """Yahoo's line added to the universe under the index backfill's guards (only in `bands`
