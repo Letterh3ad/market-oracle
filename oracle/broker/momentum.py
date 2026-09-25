@@ -1,0 +1,63 @@
+"""The factor baseline account's leans: hold the top N listings by 12-1 momentum (optionally
+blended with low volatility), ranked on the last day of each month on closes up to that day.
+Through the month the top N lean buy and the rest of the ranked set sell, so the rules rotate
+out of names that left the top at the first chance and fill freed slots as cash allows."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from datetime import date, timedelta
+
+from oracle.analysts.price_factors import Ranked, ranked_at
+from oracle.broker.backtest import LeanSource
+from oracle.broker.rules import Lean
+from oracle.market.bars import Bar
+
+__all__ = ["SOURCE", "caption", "momentum_lean", "rank_day"]
+
+SOURCE = "momentum"
+
+
+def rank_day(day: date) -> date:
+    """The last day of the month before `day`'s: every lean in a month reads that day's ranks."""
+    return day.replace(day=1) - timedelta(days=1)
+
+
+def caption(top: int, low_vol_weight: float = 0.0) -> str:
+    blend = f", blended {low_vol_weight:.0%} with low volatility," if low_vol_weight else ""
+    return (f"Momentum: the top {top} listings by 12-1 momentum (the year's return leaving out the last month){blend} "
+            "ranked on each month's last day on closes up to it and held under the same rules, risk sizes and costs; "
+            "a listing that leaves the top is sold, and one with a price break in its year is not ranked.")
+
+
+def momentum_lean(history: Mapping[str, Sequence[Bar]], top: int, low_vol_weight: float = 0.0) -> LeanSource:
+    """`history` is every listing's bars, oldest first; ranks read only bars on or before each
+    rank day (`ranked_at`), so later bars in it are never seen. The probability is 1.0: the
+    rule always acts, and the top N fit the position limit when `top` is at most it."""
+    picks: dict[date, tuple[frozenset[str], frozenset[str]]] = {}
+
+    def at(day: date) -> tuple[frozenset[str], frozenset[str]]:
+        if day not in picks:
+            scores = {s: v for s, r in ranked_at(history, day).items() if (v := _score(r, low_vol_weight)) is not None}
+            order = sorted(scores, key=lambda s: (-scores[s], s))
+            picks[day] = frozenset(order[:top]), frozenset(scores)
+        return picks[day]
+
+    def lean(symbol: str, bars: Sequence[Bar]) -> Lean | None:
+        day = rank_day(bars[-1].date)
+        chosen, ranked = at(day)
+        if symbol not in ranked:
+            return None
+        return Lean(symbol, day, "buy" if symbol in chosen else "sell", 1.0, SOURCE)
+
+    return lean
+
+
+def _score(r: Ranked, low_vol_weight: float) -> float | None:
+    if r.momentum_pct is None:
+        return None
+    if not low_vol_weight:
+        return r.momentum_pct
+    if r.low_vol_pct is None:
+        return None
+    return (1 - low_vol_weight) * r.momentum_pct + low_vol_weight * r.low_vol_pct
