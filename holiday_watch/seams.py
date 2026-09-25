@@ -7,7 +7,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
+import time
+import urllib.parse
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Sequence
@@ -66,6 +69,8 @@ class System(Protocol):
     def spawn(self, args: Sequence[str], cwd: Path, *, console: bool = False, log: Path | None = None) -> int | None:
         """Start a process that outlives the watch; hidden unless `console`. Its PID, or None."""
     def kill_tree(self, pid: int) -> str: ...
+    def port_open(self, url: str) -> bool:
+        """Something accepts connections on the URL's host and port."""
     def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
             env: dict[str, str] | None = None) -> Ran:
         """Run hidden to the end, killing its whole tree past `timeout_s`."""
@@ -105,6 +110,14 @@ class RealSystem:
     def kill_tree(self, pid: int) -> str:
         return procs.kill_tree(pid)
 
+    def port_open(self, url: str) -> bool:
+        u = urllib.parse.urlsplit(url)
+        try:
+            with socket.create_connection((u.hostname, u.port or 80), timeout=5):
+                return True
+        except OSError:
+            return False
+
     def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
             env: dict[str, str] | None = None) -> Ran:
         p = subprocess.Popen(resolved(args), cwd=cwd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -136,6 +149,9 @@ class DryRunSystem:
     def kill_tree(self, pid: int) -> str:
         self.say(f"would kill the process tree of PID {pid}")
         return "dry-run"
+
+    def port_open(self, url: str) -> bool:
+        return self.real.port_open(url)
 
     def run(self, args: Sequence[str], stdin: str, timeout_s: float, cwd: Path,
             env: dict[str, str] | None = None) -> Ran:
@@ -170,6 +186,7 @@ class Watch:
     own_pid: int = 0
     config_path: Path | None = None
     echo: Callable[[str], None] = print
+    sleep: Callable[[float], None] = time.sleep
 
     def log(self, message: str) -> None:
         """One line per action to watchdog.log, echoed."""

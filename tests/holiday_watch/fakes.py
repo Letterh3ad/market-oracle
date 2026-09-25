@@ -21,6 +21,8 @@ class FakeHttp:
 
     def get(self, url: str, timeout: float = 15.0) -> dict:
         answer = self.routes.get(url, HttpError(f"{url}: connection refused"))
+        if isinstance(answer, list):
+            answer = answer.pop(0) if len(answer) > 1 else answer[0]
         if isinstance(answer, Exception):
             raise answer
         return answer  # type: ignore[return-value]
@@ -42,6 +44,8 @@ class FakeSystem:
     envs: list[dict | None] = field(default_factory=list)
     result: Ran = Ran(0, "all fixed")
     next_pid: int = 5000
+    port_answers: bool = False
+    breakaway_refused: bool = False
 
     def processes(self) -> list[Proc]:
         return list(self.procs)
@@ -50,6 +54,9 @@ class FakeSystem:
         self.spawned.append((tuple(args), Path(cwd), console))
         self.next_pid += 1
         return self.next_pid
+
+    def port_open(self, url: str) -> bool:
+        return self.port_answers
 
     def kill_tree(self, pid: int) -> str:
         self.killed.append(pid)
@@ -81,6 +88,6 @@ def watch(tmp_path: Path, http=None, system=None, now=NOW, **cfg) -> Watch:
                 rc_pid_file=tmp_path / "reports" / "rc.pid", **cfg)
     lines: list[str] = []
     w = Watch(c, http or FakeHttp(healthy_routes()), system or FakeSystem(), now=lambda: now, tz=UTC,
-              own_pid=1, echo=lines.append)
+              own_pid=1, echo=lines.append, sleep=lambda s: None)
     w.lines = lines  # type: ignore[attr-defined]
     return w

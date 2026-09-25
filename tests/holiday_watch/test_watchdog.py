@@ -57,14 +57,76 @@ def test_the_app_coming_back_resets_the_restart_count(tmp_path):
     assert any("back up" in line for line in w.lines)
 
 
-def test_a_hung_server_is_killed_before_the_restart(tmp_path):
-    http = FakeHttp({k: v for k, v in healthy_routes().items() if "/api/status" not in k})
-    hung = proc(321, name="python.exe", cmd="python -m oracle --config x gui")
-    w, system = with_rc(tmp_path, procs=[hung], http=http)
+def down_http():
+    return FakeHttp({k: v for k, v in healthy_routes().items() if "/api/status" not in k})
+
+
+def hung_server(started_min=60):
+    return proc(321, name="python.exe", cmd="python -m oracle --config x gui", age_min=started_min)
+
+
+def test_status_is_retried_before_the_app_counts_as_down(tmp_path):
+    routes = healthy_routes()
+    routes[f"{APP}/api/status"] = [HttpError("timed out"), HttpError("timed out"), routes[f"{APP}/api/status"]]
+    slept = []
+    w, system = with_rc(tmp_path, http=FakeHttp(routes))
+    w.sleep = slept.append
+    run_pass(w)
+    assert system.spawned == [] and load_state(w.cfg.state_file)["app_restarts"] == 0
+    assert sum(slept) >= 30
+
+
+def test_a_hung_server_is_killed_only_when_down_on_the_pass_before_and_its_port_is_closed(tmp_path):
+    w, system = with_rc(tmp_path, procs=[hung_server()], http=down_http())
     w.cfg.state_file.write_text(json.dumps({"server_pid": 321}), encoding="utf-8")
+    run_pass(w)  # first pass down: only noted
+    assert system.killed == [] and system.spawned == []
+    assert any("next pass" in line for line in w.lines)
     run_pass(w)
     assert system.killed == [321]
     assert system.spawned[0][0] == w.cfg.app_start
+
+
+def test_a_slow_server_whose_port_answers_is_left_running(tmp_path):
+    w, system = with_rc(tmp_path, procs=[hung_server()], http=down_http())
+    system.port_answers = True
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321, "down_since": "2026-09-26T02:00:00Z"}),
+                                encoding="utf-8")
+    run_pass(w)
+    assert system.killed == [] and system.spawned == []
+    assert any("port answers" in line for line in w.lines)
+
+
+def test_a_server_pid_from_another_start_is_not_killed(tmp_path):
+    """Same PID and command line, but created long after the server that status reported."""
+    w, system = with_rc(tmp_path, procs=[hung_server(started_min=5)], http=down_http())
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321, "down_since": "2026-09-26T02:00:00Z",
+                                            "server_started_at": "2026-09-25T20:00:00Z"}), encoding="utf-8")
+    run_pass(w)
+    assert system.killed == [] and system.spawned[0][0] == w.cfg.app_start
+
+
+def test_a_failing_step_is_logged_and_the_pass_goes_on(tmp_path):
+    class Broken(FakeSystem):
+        def processes(self):
+            raise RuntimeError("WMI hiccup")
+    system = Broken()
+    w = watch(tmp_path, http=down_http(), system=system)
+    run_pass(w)
+    assert system.spawned == [(w.cfg.app_start, w.cfg.live, False)]  # no Remote Control launch blind
+    log = w.cfg.log_file.read_text(encoding="utf-8")
+    assert "step process list failed: RuntimeError('WMI hiccup')" in log
+    assert load_state(w.cfg.state_file)["app_restarts"] == 1
+
+
+def test_a_bad_api_row_does_not_stop_the_reaper(tmp_path):
+    routes = healthy_routes()
+    routes[f"{APP}/api/activity"] = {"jobs": [{"state": "running", "started_at": "not a time"}]}
+    old = proc(800, cmd="claude.exe -p x", age_min=500)
+    w, system = with_rc(tmp_path, procs=[old], http=FakeHttp(routes))
+    run_pass(w)
+    assert system.killed == [800]
+    assert any("step triggers failed" in line for line in w.lines)
 
 
 def test_a_reused_server_pid_is_not_killed(tmp_path):
@@ -151,7 +213,7 @@ def test_a_stale_lock_is_cleared_and_an_overrun_fix_run_killed(tmp_path):
     w.cfg.lock_file.write_text(json.dumps({"pid": 900, "started_at": NOW.isoformat()}), encoding="utf-8")
     run_pass(w)
     assert not w.cfg.lock_file.exists() and system.killed == []
-    system.procs.append(proc(901, name="python.exe", cmd="python -m holiday_watch fix-run x", age_min=40))
+    system.procs.append(proc(901, name="python.exe", cmd="python -m holiday_watch fix-run x", age_min=36))
     w.cfg.lock_file.write_text(json.dumps({"pid": 901, "started_at": (NOW - timedelta(minutes=36)).isoformat()}),
                                encoding="utf-8")
     run_pass(w)
@@ -162,7 +224,8 @@ def test_a_running_fix_run_holds_new_triggers(tmp_path):
     routes = healthy_routes()
     routes[f"{APP}/api/replay"] = {"study": {"id": 1, "state": "running", "done": 7, "failed": [{}, {}],
                                              "top_failures": [], "finished": False}}
-    w, system = with_rc(tmp_path, procs=[proc(902, name="python.exe", cmd="python fix-run")], http=FakeHttp(routes))
+    run = proc(902, name="python.exe", cmd="python -m holiday_watch fix-run x", age_min=0)
+    w, system = with_rc(tmp_path, procs=[run], http=FakeHttp(routes))
     w.cfg.lock_file.write_text(json.dumps({"pid": 902, "started_at": NOW.isoformat()}), encoding="utf-8")
     run_pass(w)
     assert system.spawned == []
@@ -191,3 +254,28 @@ def test_an_app_api_error_after_status_is_logged_not_fatal(tmp_path):
     w, system = with_rc(tmp_path, http=FakeHttp(routes))
     run_pass(w)
     assert any("boom" in line for line in w.lines)
+
+
+def test_a_lock_whose_pid_now_belongs_to_another_process_is_cleared_not_killed(tmp_path):
+    other = proc(903, name="notepad.exe", cmd="notepad", age_min=60)
+    w, system = with_rc(tmp_path, procs=[other])
+    w.cfg.lock_file.write_text(json.dumps({"pid": 903, "started_at": (NOW - timedelta(minutes=40)).isoformat()}),
+                               encoding="utf-8")
+    run_pass(w)
+    assert system.killed == [] and not w.cfg.lock_file.exists()
+
+
+def test_a_reused_lock_pid_started_after_the_run_is_not_the_run(tmp_path):
+    later = proc(904, name="python.exe", cmd="python -m holiday_watch fix-run y", age_min=10)
+    w, system = with_rc(tmp_path, procs=[later])
+    w.cfg.lock_file.write_text(json.dumps({"pid": 904, "started_at": (NOW - timedelta(minutes=40)).isoformat()}),
+                               encoding="utf-8")
+    run_pass(w)
+    assert system.killed == [] and not w.cfg.lock_file.exists()
+
+
+def test_a_refused_breakaway_is_logged(tmp_path):
+    w, system = with_rc(tmp_path, http=down_http())
+    system.breakaway_refused = True
+    run_pass(w)
+    assert any("breakaway" in line for line in w.lines)

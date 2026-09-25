@@ -100,6 +100,15 @@ def test_pass_dry_run_uses_the_dry_system(tmp_path):
     assert code == 0 and system.spawned == [] and "[dry-run] would start" in out
 
 
+def test_an_unexpected_error_is_logged(tmp_path):
+    class Broken(FakeSystem):
+        def processes(self):
+            raise RuntimeError("boom")
+    w = watch(tmp_path, http=FakeHttp({}), system=Broken())
+    code, out = run(w, "restart-app")
+    assert code == 1 and "restart-app failed: RuntimeError('boom')" in w.cfg.log_file.read_text(encoding="utf-8")
+
+
 def test_fix_run_supervises(tmp_path):
     system = FakeSystem()
     w = watch(tmp_path, system=system)

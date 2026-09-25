@@ -34,7 +34,7 @@ max_per_day = 3
 same_trigger_h = 4    # the same kind of trigger never starts two fix runs within this
 
 [triggers]
-app_restarts = 2      # still down after this many restarts: fix run
+app_restarts = 2      # still down after this many passes down (each tries a restart): fix run
 failure_rate = 0.2    # failed / (done + failed) over this: fix run
 failure_min = 5       # ...once done + failed reaches this
 same_error = 3        # one error on this many failed cells: fix run

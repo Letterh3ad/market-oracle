@@ -1,12 +1,14 @@
 """One watchdog pass: keep the app, Ollama and the Remote Control session up, start a fix run
-when something needs one, and reap stray claude processes."""
+when something needs one, and reap stray claude processes. Each step runs on its own: a failure is
+logged and the rest of the pass goes on."""
 
 from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
+from typing import TypeVar
 
 from holiday_watch.procs import Proc
 from holiday_watch.reaper import choose_kills, is_claude, is_remote_control, protected_pids, track_cpu
@@ -16,47 +18,81 @@ from holiday_watch.state import (clear_lock, load_state, read_lock, read_pid, sa
 from holiday_watch.timeutil import iso, parse
 from holiday_watch.triggers import Trigger, find_triggers, gate, track_replay
 
+T = TypeVar("T")
+
 LOCK_SLACK = timedelta(minutes=5)
 """Past the fix-run limit plus this, the supervisor failed to stop its run: the pass does."""
+STATUS_TRIES = 3
+STATUS_TIMEOUT_S = 20.0
+STATUS_GAP_S = 20.0
+"""A busy server can take a while to answer: about a minute of tries before it counts as down."""
+SAME_START = timedelta(minutes=10)
+"""A process created this close to the server's reported start is that server."""
+RUN_START_SLACK = timedelta(minutes=2)
+
+
+def _step(w: Watch, name: str, fn: Callable[[], T], default: T) -> T:
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 (one broken step must not stop the watch)
+        w.log(f"step {name} failed: {exc!r}")
+        return default
 
 
 def run_pass(w: Watch) -> None:
     cfg, now = w.cfg, w.now()
-    state_file = cfg.state_file
-    state = load_state(state_file)
-    status = _get(w, "/api/status", quiet=True)
-    app_up = status is not None
-    if app_up:
-        if state.get("app_restarts"):
-            w.log(f"app is back up after {state['app_restarts']} restart(s)")
-        state["app_restarts"] = 0
-        state.pop("down_since", None)
-        state["server_pid"] = (status.get("server") or {}).get("pid")
-    else:
-        state.setdefault("down_since", iso(now))
-    ensure_ollama(w)
-    procs = w.system.processes()
-    rc_pids = ensure_remote_control(w, procs)
-    lock = _check_lock(w, procs, now)
+    state = load_state(cfg.state_file)
+    was_down = "down_since" in state
+    try:
+        status = _step(w, "app check", lambda: app_status(w), None)
+        app_up = status is not None
+        if app_up:
+            if state.get("app_restarts"):
+                w.log(f"app is back up after {state['app_restarts']} pass(es) down")
+            state["app_restarts"] = 0
+            state.pop("down_since", None)
+            server = status.get("server") or {}
+            state["server_pid"], state["server_started_at"] = server.get("pid"), server.get("started_at")
+        else:
+            state.setdefault("down_since", iso(now))
+        _step(w, "ollama", lambda: ensure_ollama(w), None)
+        procs = _step(w, "process list", w.system.processes, None)
+        rc = _step(w, "remote control", lambda: ensure_remote_control(w, procs), set()) if procs is not None \
+            else set()
+        # Unreadable, a lock counts as a run still going: no second fix run, no kill.
+        lock = _step(w, "fix-run lock", lambda: _check_lock(w, procs, now), read_lock(cfg.lock_file)) \
+            if procs is not None else read_lock(cfg.lock_file)
+        lock = _step(w, "triggers", lambda: _triggers(w, state, now, status, lock), lock)
+        if not app_up:
+            _step(w, "app restart", lambda: restart_app(w, state, procs or [], was_down), None)
+            state["app_restarts"] = state.get("app_restarts", 0) + 1
+        if procs is not None:
+            _step(w, "reaper", lambda: _reap(w, state, procs, rc, lock, now), None)
+        if getattr(w.system, "breakaway_refused", False):
+            w.log("Task Scheduler refused CREATE_BREAKAWAY_FROM_JOB: started processes end with the task")
+    finally:
+        _step(w, "save state", lambda: save_state(cfg.state_file, state, now), None)
 
+
+def _triggers(w: Watch, state: dict, now: datetime, status: dict | None, lock: dict | None) -> dict | None:
     replay = activity = None
-    if app_up:
+    if status is not None:
         replay, activity = _get(w, "/api/replay"), _get(w, "/api/activity")
         track_replay(state, now, replay)
-    for t in find_triggers(cfg, now, state, app_up=app_up, status=status, replay=replay, activity=activity,
-                           tz=w.tz):
-        held = gate(cfg, now, state, t, lock_busy=lock is not None, tz=w.tz)
+    for t in find_triggers(w.cfg, now, state, app_up=status is not None, status=status, replay=replay,
+                           activity=activity, tz=w.tz):
+        held = gate(w.cfg, now, state, t, lock_busy=lock is not None, tz=w.tz)
         if held:
             w.log(f"trigger {t.kind} held: {held} ({t.detail})")
         else:
-            lock = start_fix_run(w, state, t)
+            lock = _step(w, "fix-run launch", lambda t=t: start_fix_run(w, state, t), lock)
+    return lock
 
-    if not app_up:
-        restart_app(w, state.get("server_pid"), procs)
-        state["app_restarts"] = state.get("app_restarts", 0) + 1
 
+def _reap(w: Watch, state: dict, procs: Sequence[Proc], rc: set[int], lock: dict | None, now: datetime) -> None:
+    cfg = w.cfg
     state["cpu"] = track_cpu(state.get("cpu", {}), procs, now, cfg)
-    protected = protected_pids(procs, now, cfg, rc_pids=rc_pids, lock=lock, own_pid=w.own_pid,
+    protected = protected_pids(procs, now, cfg, rc_pids=rc, lock=lock, own_pid=w.own_pid,
                                server_pid=state.get("server_pid"))
     noted = {}
     for k in choose_kills(procs, now, state["cpu"], protected, cfg):
@@ -70,24 +106,52 @@ def run_pass(w: Watch) -> None:
         if key not in state.get("noted", {}):
             w.log(f"would reap {what}, left alone: {k.why_not}")
     state["noted"] = noted
-    save_state(state_file, state, now)
 
 
-def _get(w: Watch, path: str, quiet: bool = False) -> dict | None:
+def _get(w: Watch, path: str) -> dict | None:
     try:
         return w.http.get(w.api(path))
     except HttpError as exc:
-        if not quiet:
-            w.log(f"GET {path} failed: {exc}")
+        w.log(f"GET {path} failed: {exc}")
         return None
 
 
-def restart_app(w: Watch, server_pid: int | None, procs: Sequence[Proc]) -> None:
-    """Start the app from the live worktree; a server that still holds its PID but does not
-    answer is killed first, or the new one could not bind the port."""
-    hung = next((p for p in procs if p.pid == server_pid), None)
-    if hung and "oracle" in hung.cmdline and "gui" in hung.cmdline:
-        w.log(f"app server PID {hung.pid} does not answer: killing it: {w.system.kill_tree(hung.pid)}")
+def app_status(w: Watch) -> dict | None:
+    """/api/status, tried a few times; None when it never answered."""
+    for attempt in range(STATUS_TRIES):
+        if attempt:
+            w.sleep(STATUS_GAP_S)
+        try:
+            return w.http.get(w.api("/api/status"), timeout=STATUS_TIMEOUT_S)
+        except HttpError:
+            continue
+    return None
+
+
+def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
+    """The app server status last reported, if its PID still holds that process."""
+    p = next((p for p in procs if p.pid == state.get("server_pid")), None)
+    if not p or "oracle" not in p.cmdline or "gui" not in p.cmdline:
+        return None
+    started = state.get("server_started_at")
+    if started and p.created and abs(p.created - parse(started)) > SAME_START:
+        return None
+    return p
+
+
+def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) -> None:
+    """Start the app from the live worktree when nothing holds its port. A server that still holds
+    its PID and a closed port is killed first, but only once it was down on the pass before too."""
+    if w.system.port_open(w.cfg.app_url):
+        w.log("app does not answer /api/status but its port answers: left running, not restarted")
+        return
+    server = _server(state, procs)
+    if server:
+        if not was_down:
+            w.log(f"app server PID {server.pid} does not answer and its port is closed: killed only if still"
+                  f" down next pass")
+            return
+        w.log(f"app server PID {server.pid} still does not answer: killing it: {w.system.kill_tree(server.pid)}")
     pid = w.system.spawn(w.cfg.app_start, w.cfg.live, log=w.cfg.reports / "app-start.log")
     w.log(f"app down ({w.api('/api/status')} failed): started it from {w.cfg.live} (PID {pid})")
 
@@ -126,13 +190,26 @@ def ensure_remote_control(w: Watch, procs: Sequence[Proc]) -> set[int]:
     return {new} if new is not None else set()
 
 
+def _run_process(lock: dict, procs: Sequence[Proc]) -> Proc | None:
+    """The lock's supervisor, if its PID still holds it: a holiday_watch fix-run started no
+    earlier than the lock."""
+    p = next((p for p in procs if p.pid == lock["pid"]), None)
+    if not p or "holiday_watch" not in p.cmdline or "fix-run" not in p.cmdline:
+        return None
+    if p.created and p.created < parse(lock["started_at"]) - RUN_START_SLACK:
+        return None
+    if p.created and p.created > parse(lock["started_at"]) + RUN_START_SLACK:
+        return None
+    return p
+
+
 def _check_lock(w: Watch, procs: Sequence[Proc], now: datetime) -> dict | None:
     """The running fix run's lock, or None once it is gone, stale or overrun."""
     lock = read_lock(w.cfg.lock_file)
     if not lock:
         return None
-    if lock["pid"] not in {p.pid for p in procs}:
-        w.log(f"fix-run lock of PID {lock['pid']} cleared: the process is gone")
+    if _run_process(lock, procs) is None:
+        w.log(f"fix-run lock of PID {lock['pid']} cleared: that fix run is gone")
         clear_lock(w.cfg.lock_file)
         return None
     if now - parse(lock["started_at"]) > timedelta(minutes=w.cfg.fix_timeout_min) + LOCK_SLACK:

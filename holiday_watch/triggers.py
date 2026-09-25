@@ -35,7 +35,7 @@ def find_triggers(cfg: Config, now: datetime, state: dict, *, app_up: bool, stat
     if not app_up:
         if state.get("app_restarts", 0) >= cfg.app_restarts:
             found.append(Trigger("app_down", f"app_down:{state.get('down_since')}",
-                                 f"{cfg.app_url}/api/status still fails after {state['app_restarts']} restarts"))
+                                 f"{cfg.app_url}/api/status still fails, down on {state['app_restarts']} passes"))
     else:
         jobs = (activity or {}).get("jobs") or []
         found += _study(cfg, now, state, (replay or {}).get("study"), idle=not jobs)

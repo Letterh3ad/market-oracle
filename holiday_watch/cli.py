@@ -65,6 +65,9 @@ def main(argv: list[str] | None = None, make_watch: Callable[[Path | None, bool]
     except HttpError as exc:
         w.echo(f"error: {exc}")
         return 1
+    except Exception as exc:  # noqa: BLE001 (Task Scheduler's output is never read: the log is)
+        w.log(f"{args.command} failed: {exc!r}")
+        return 1
 
 
 def _pass(w: Watch, args: argparse.Namespace) -> int:
@@ -98,7 +101,8 @@ def _restart_app(w: Watch, args: argparse.Namespace) -> int:
     try:
         w.http.get(w.api("/api/status"))
     except HttpError:
-        restart_app(w, load_state(w.cfg.state_file).get("server_pid"), w.system.processes())
+        state = load_state(w.cfg.state_file)
+        restart_app(w, state, w.system.processes(), was_down="down_since" in state)
         return 0
     answer = w.http.post(w.api("/api/app/restart"))
     w.log(f"app asked to restart: {answer}")
