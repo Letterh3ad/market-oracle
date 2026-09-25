@@ -82,3 +82,24 @@ async def test_a_dead_listing_says_so_and_check_again_clears_it(ctx, priced):
     assert next(h for h in hits if h["symbol"] == "AAPL")["dead"]
     await run_job(priced, "/api/jobs/prices", symbol="AAPL")  # Check again: data is back
     assert (await priced.get("/api/companies/AAPL")).json()["dead_since"] is None
+
+
+async def test_events_list_moves_after_stored_earnings_dates(ctx, analysed):
+    import json
+
+    from oracle.store.meta import MetaRepo
+
+    MetaRepo(ctx.conn).set("earnings_dates:AAPL", json.dumps({
+        "source": "SEC 8-K item 2.02", "fetched_at": "2026-09-23T00:00:00+00:00",
+        "releases": [[DAYS[-3].isoformat(), False]]}))
+    body = (await analysed.get("/api/companies/aapl/events")).json()
+    assert (body["symbol"], body["source"], body["horizons"]) == ("AAPL", "SEC 8-K item 2.02", [1, 5, 20])
+    event = body["events"][0]
+    assert (event["day"], event["before_open"], event["base"]) == (DAYS[-3].isoformat(), False, DAYS[-3].isoformat())
+    assert event["windows"][0]["move"] == pytest.approx(0.001) and event["windows"][2]["move"] is None
+    assert body["headline"] == "after the last 1 earnings: median +0.1% next day, 1 of 1 up"
+
+
+async def test_events_without_a_sec_contact_say_so(analysed):
+    body = (await analysed.get("/api/companies/AAPL/events?refresh=true")).json()
+    assert body["events"] == [] and "contact" in body["note"]

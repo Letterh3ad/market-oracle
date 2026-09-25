@@ -180,3 +180,40 @@ def test_a_report_without_item_or_mdna_headings_skips_its_cover_and_contents():
         kept = key_text(form, plain)
         assert kept.startswith("This Quarterly Report on Form 10-Q should be read"), form
         assert "check mark" not in kept and "Balance Sheet Overview\n12" not in kept
+
+
+def _recent(*rows):
+    names = ("form", "filingDate", "items", "acceptanceDateTime")
+    return {"filings": {"recent": {n: [r[i] for r in rows] for i, n in enumerate(names)}}}
+
+
+def test_earnings_releases_are_8ks_with_item_2_02_timed_against_the_open():
+    body = _recent(
+        ("8-K", "2026-07-30", "2.02,9.01", "2026-07-30T16:31:02.000Z"),
+        ("8-K", "2026-06-02", "5.07", "2026-06-02T16:00:00.000Z"),
+        ("8-K/A", "2026-05-02", "2.02", "2026-05-02T08:00:00.000Z"),
+        ("10-Q", "2026-05-01", "", "2026-05-01T06:00:00.000Z"),
+        ("8-K", "2026-05-01", "2.02,7.01,9.01", "2026-05-01T06:45:00.000Z"),
+        ("8-K", "2026-01-29", "2.02", ""),
+    )
+    assert edgar.parse_earnings(body) == [
+        edgar.Release(date(2026, 7, 30), False),
+        edgar.Release(date(2026, 5, 1), True),
+        edgar.Release(date(2026, 1, 29), None),
+    ]
+
+
+def test_two_earnings_8ks_on_one_day_are_one_release_timed_by_the_first():
+    body = _recent(("8-K", "2026-07-30", "2.02", "2026-07-30T16:31:02.000Z"),
+                   ("8-K", "2026-07-30", "2.02,9.01", "2026-07-30T07:00:00.000Z"))
+    assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), True)]
+
+
+def test_a_filing_accepted_after_1730_is_released_on_its_acceptance_day():
+    body = _recent(("8-K", "2026-07-31", "2.02", "2026-07-30T18:05:00.000Z"))
+    assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), False)]
+
+
+def test_a_submissions_body_without_items_has_no_releases():
+    assert edgar.parse_earnings({"filings": {"recent": {"form": ["8-K"], "filingDate": ["2026-07-30"]}}}) == []
+    assert edgar.parse_earnings([]) == []
