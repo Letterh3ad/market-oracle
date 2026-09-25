@@ -333,6 +333,14 @@ async def test_the_lid_matters_only_with_a_battery(ctx, study, holiday, system):
     assert "Lid" not in failed(holiday.arm(ctx))
 
 
+async def test_a_power_scheme_without_a_lid_setting_passes_and_says_keep_it_open(ctx, study, holiday, system):  # noqa: F811
+    # Some laptops expose no LIDACTION in powercfg, so what the lid does cannot be read or refused on.
+    system.power_state = Power(0, 0, True, battery=True, lid_ac=None)
+    lid = {c.name: c for c in holiday.status(ctx).checks}["Lid"]
+    assert lid.ok and "keep the lid open" in lid.detail
+    assert "Lid" not in failed(holiday.arm(ctx))
+
+
 @pytest.mark.parametrize("sign_in, says", [(False, "is off"), (None, "could not tell")])
 async def test_auto_sign_in_after_updates_off_or_unknown_is_a_warning_not_a_refusal(
         ctx, study, holiday, system, sign_in, says):  # noqa: F811

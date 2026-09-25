@@ -538,10 +538,12 @@ class Holiday:
             p, sleep, plug = None, [f"could not read the power settings: {exc}"], [f"could not read: {exc}"]
         checks = [Check("Sleep", not sleep, "; ".join(sleep) or "Never on mains power", SLEEP_FIX if sleep else ""),
                   Check("Plugged in", not plug, "; ".join(plug) or "on mains power", "plug the PC in" if plug else "")]
-        if p and p.battery:
-            lid = ("could not read what closing the lid does" if p.lid_ac is None else
-                   "" if p.lid_ac == 0 else
-                   f"closing the lid on mains power {LID_ACTIONS.get(p.lid_ac, f'does action {p.lid_ac}')}")
+        if p and p.battery and p.lid_ac is None:
+            # Some laptops' power schemes have no lid setting, so there is nothing to read or refuse on.
+            checks.append(Check("Lid", True, "this power scheme has no lid setting to read: keep the lid open", ""))
+        elif p and p.battery:
+            lid = "" if p.lid_ac == 0 else \
+                f"closing the lid on mains power {LID_ACTIONS.get(p.lid_ac, f'does action {p.lid_ac}')}"
             checks.append(Check("Lid", not lid, lid or "closing it does nothing on mains power",
                                 LID_FIX if lid else ""))
         return checks
