@@ -36,7 +36,7 @@ DEFAULTS: dict[str, dict[str, object]] = {
     "fix": {"timeout_min": 30, "max_per_day": 3, "same_trigger_h": 4},
     "triggers": {
         "app_restarts": 2, "failure_rate": 0.2, "failure_min": 5, "same_error": 3, "job_max_h": 2,
-        "tick_time": "", "tick_grace_min": 45, "stall_h": 6,
+        "tick_time": "", "tick_grace_min": 45, "stall_h": 6, "hung_passes": 4,
     },
     "reaper": {
         "names": ["claude.exe", "claude"],
@@ -79,6 +79,8 @@ class Config:
     """"HH:MM" local; "" takes the app's own schedule time from /api/status."""
     tick_grace_min: float
     stall_h: float
+    hung_passes: int
+    """Down this many passes in a row with its port still open: the server is hung and killed."""
     reaper_names: tuple[str, ...]
     """Executable names that are claude."""
     reaper_node_scripts: tuple[str, ...]
@@ -144,6 +146,7 @@ def load(path: Path | None = None) -> Config:
         app_restarts=int(t["app_restarts"]), failure_rate=float(t["failure_rate"]),
         failure_min=int(t["failure_min"]), same_error=int(t["same_error"]), job_max_h=float(t["job_max_h"]),
         tick_time=s(t["tick_time"]), tick_grace_min=float(t["tick_grace_min"]), stall_h=float(t["stall_h"]),
+        hung_passes=int(t["hung_passes"]),
         reaper_names=tuple(str(m) for m in r["names"]),
         reaper_node_scripts=tuple(str(m) for m in r["node_scripts"]), reaper_spare=tuple(str(m) for m in r["spare"]),
         idle_min=float(r["idle_min"]),

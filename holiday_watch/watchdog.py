@@ -140,13 +140,19 @@ def _server(state: dict, procs: Sequence[Proc]) -> Proc | None:
 
 
 def restart_app(w: Watch, state: dict, procs: Sequence[Proc], was_down: bool) -> None:
-    """Start the app from the live worktree when nothing holds its port. A server that still holds
-    its PID and a closed port is killed first, but only once it was down on the pass before too."""
-    if w.system.port_open(w.cfg.app_url):
-        w.log("app does not answer /api/status but its port answers: left running, not restarted")
-        return
+    """Start the app from the live worktree when nothing holds its port. The server status last
+    reported is killed first when its port is closed and it was down on the pass before too, or,
+    port open (a hung event loop still accepts connections), after hung_passes passes down."""
     server = _server(state, procs)
-    if server:
+    down_passes = state.get("app_restarts", 0) + 1
+    if w.system.port_open(w.cfg.app_url):
+        if not server or down_passes < w.cfg.hung_passes:
+            w.log(f"app does not answer /api/status but its port answers: left running, not restarted"
+                  f" (down {down_passes} pass(es))")
+            return
+        w.log(f"app server PID {server.pid} hung: no /api/status answer for {down_passes} passes though its"
+              f" port accepts connections: killing it: {w.system.kill_tree(server.pid)}")
+    elif server:
         if not was_down:
             w.log(f"app server PID {server.pid} does not answer and its port is closed: killed only if still"
                   f" down next pass")

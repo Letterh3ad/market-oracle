@@ -42,6 +42,7 @@ job_max_h = 2         # a job running longer: fix run
 tick_time = ""        # "HH:MM" local; "" uses the app's schedule time
 tick_grace_min = 45   # a weekday tick not seen this long after its time: fix run
 stall_h = 6           # a running study with no replay done this long while idle: fix run
+hung_passes = 4       # down this many passes in a row with its port open: the server is hung, killed and restarted
 
 [reaper]
 names = ["claude.exe", "claude"]                                   # executable names, any case

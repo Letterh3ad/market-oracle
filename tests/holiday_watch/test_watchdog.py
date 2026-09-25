@@ -97,6 +97,34 @@ def test_a_slow_server_whose_port_answers_is_left_running(tmp_path):
     assert any("port answers" in line for line in w.lines)
 
 
+def started(w, system):
+    """The app was started (a fix run may be spawned too: the app is down)."""
+    return any(s[0] == w.cfg.app_start for s in system.spawned)
+
+
+def test_a_listening_server_down_for_four_passes_is_killed_as_hung(tmp_path):
+    """A hung event loop still accepts connections: after 4 passes down it is killed anyway."""
+    w, system = with_rc(tmp_path, procs=[hung_server()], http=down_http())
+    system.port_answers = True
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321, "down_since": "2026-09-26T01:30:00Z",
+                                            "app_restarts": 2}), encoding="utf-8")
+    run_pass(w)  # third pass down: left running
+    assert system.killed == [] and not started(w, system)
+    run_pass(w)  # fourth
+    assert system.killed == [321] and system.spawned[-1][0] == w.cfg.app_start
+    assert any("hung" in line and "4 passes" in line and "PID 321" in line for line in w.lines)
+
+
+def test_a_listening_process_that_is_not_the_reported_server_is_never_killed(tmp_path):
+    w, system = with_rc(tmp_path, procs=[hung_server(started_min=5)], http=down_http())
+    system.port_answers = True
+    w.cfg.state_file.write_text(json.dumps({"server_pid": 321, "down_since": "2026-09-26T01:00:00Z",
+                                            "app_restarts": 5, "server_started_at": "2026-09-25T20:00:00Z"}),
+                                encoding="utf-8")
+    run_pass(w)
+    assert system.killed == [] and not started(w, system)
+
+
 def test_a_server_pid_from_another_start_is_not_killed(tmp_path):
     """Same PID and command line, but created long after the server that status reported."""
     w, system = with_rc(tmp_path, procs=[hung_server(started_min=5)], http=down_http())

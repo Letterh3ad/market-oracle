@@ -2452,8 +2452,9 @@ kills a run the supervisor failed to stop. Fix runs act only through `python -P 
 (`status`, `api` with GET anything and POST an allowlist, `restart-app`, `start-ollama`, a
 read-only `sql`), with a `dontAsk` settings file that allows edits only in the `holiday-fix`
 worktree. Each pass step fails alone into the log. A server is killed only when status failed
-three tries, its port is closed, it was down on the pass before and its PID still has the start
-time status reported.
+three tries and its PID still has the start time status last reported, and either its port is
+closed and it was down on the pass before, or it has been down 4 passes in a row (about 2 h) with
+its port open: a hung event loop still accepts connections.
 **Alternatives:** Plain PowerShell scripts (the HANDOFF plan; untestable without real processes);
 reusing `oracle` code for API shapes (couples the watch to the app it guards); psutil for the
 process list (a dependency; PowerShell CIM gives CPU time and command lines).
