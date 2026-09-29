@@ -11,9 +11,6 @@ from holiday_watch.config import HERE
 from holiday_watch.seams import HttpError, Watch
 
 DAY = timedelta(hours=24)
-ROTATION = "rotation"
-"""How a regime-v2 rotation sale's reason starts (`oracle.broker.regime.ROTATION`); the watchdog
-reads the app only over HTTP, so it does not import it."""
 FIX_RUN_CHARS = 3000
 """Of each fix run's account, its end: the account comes last."""
 
@@ -96,13 +93,13 @@ def _mood(name: str, card: dict) -> list[str]:
 
 
 def _rotations(card: dict) -> list[str]:
-    """How many holdings regime-v2's last step sold to make room for a stronger buy."""
-    decisions = card.get("decisions") or []
-    if not decisions:
+    """How many holdings regime-v2's last step sold to make room for a stronger buy: the server's
+    own count, not `decisions`, which a busy step's window can push rotation sales out of."""
+    day = card.get("day")
+    if not day:
         return []
-    last = max(d.get("day") or "" for d in decisions)
-    n = sum(1 for d in decisions if d.get("day") == last and (d.get("reason") or "").startswith(ROTATION))
-    return [f"Regime-v2 rotated {n} holding{'' if n == 1 else 's'} out on its last step ({last})"]
+    n = card.get("rotated_last_step") or 0
+    return [f"Regime-v2 rotated {n} holding{'' if n == 1 else 's'} out on its last step ({day})"]
 
 
 def _tilt(card: dict) -> list[str]:

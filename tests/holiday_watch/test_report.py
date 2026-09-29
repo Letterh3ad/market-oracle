@@ -122,15 +122,12 @@ def test_the_report_gives_the_regime_ai_tilt_or_why_there_was_none_and_any_lag(t
 def test_the_report_gives_regime_v2s_mood_and_its_last_steps_rotations(tmp_path):
     w = seeded(tmp_path)
     w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
-    sold = {"day": "2026-09-26", "action": "sell", "reason": "rotation: held 31 trading days at score +0.02, 0.25 "
-                                                              "or more under NVDA at +0.41; sold to make room for NVDA"}
     w.http.routes[f"{APP}/api/ledgers/regime-v2"] = {
         "day": "2026-09-25", "note": None, "state": {"mood": "calm_up", "flags": []}, "lag": "behind",
-        "decisions": [sold, {**sold, "reason": "stop: 9% below cost"},
-                      {**sold, "day": "2026-09-19"}]}
+        "decisions": [], "rotated_last_step": 2}
     text = build_report(w)
     assert "Regime-v2 mood on 2026-09-25: calm_up" in text
-    assert "Regime-v2 rotated 1 holding out on its last step (2026-09-26)" in text
+    assert "Regime-v2 rotated 2 holdings out on its last step (2026-09-25)" in text
     assert "Regime-v2 WARNING: behind" in text
     w.http.routes[f"{APP}/api/ledgers/regime-v2"] = {"day": None, "note": "the regime-v2 account is off", "state": None}
     assert "Regime-v2: the regime-v2 account is off" in build_report(w)

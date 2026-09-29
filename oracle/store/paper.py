@@ -161,3 +161,13 @@ class DecisionRepo:
         )
         return [LoggedDecision(r[0], date.fromisoformat(r[1]), r[2], Action(r[3]), *r[4:8], bool(r[8]),
                                None if r[9] is None else json.loads(r[9])) for r in rows]
+
+    def count_on_last_day(self, account: str, prefix: str) -> int:
+        """Rows whose reason starts with `prefix`, logged on the account's most recent decision
+        day; independent of any window `recent` is asked for."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM strategy_decisions WHERE account = ? AND reason LIKE ? AND day = "
+            "(SELECT MAX(day) FROM strategy_decisions WHERE account = ?)",
+            (account, f"{prefix}%", account),
+        ).fetchone()
+        return row[0]

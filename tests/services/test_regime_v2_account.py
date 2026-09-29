@@ -14,7 +14,7 @@ from oracle.services.watch_service import watch
 from oracle.broker.orders import Action, Side
 from oracle.broker.rules import Decision
 from oracle.services.tick_service import line_summary
-from oracle.store.paper import FillRow, PaperRepo
+from oracle.store.paper import DecisionRepo, FillRow, LoggedDecision, PaperRepo
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
@@ -107,6 +107,17 @@ def test_the_card_names_its_rotation_rule(ctx, monkeypatch):
     card = regime_card(ctx, account="regime-v2")
     assert (card.account, card.day, card.rotation) == ("regime-v2", DAY, {"min_hold": 20, "margin": 0.25, "most": 2})
     assert regime_card(ctx).rotation is None and regime_card(ctx, account="regime-ai").rotation is None
+
+
+def test_the_card_reports_rotations_a_busy_steps_decision_window_would_hide(ctx):
+    day = date(2026, 9, 22)
+    rows = [LoggedDecision("regime-v2", day, "AAPL", Action.SELL, None, f"{ROTATION}: sold to make room for X", None),
+           LoggedDecision("regime-v2", day, "MSFT", Action.SELL, None, f"{ROTATION}: sold to make room for Y", None)]
+    rows += [LoggedDecision("regime-v2", day, f"S{i}", Action.SKIP, None, "already 10 positions", None)
+            for i in range(25)]
+    DecisionRepo(ctx.conn).log(rows)
+    card = regime_card(ctx, account="regime-v2")
+    assert card.rotated_last_step == 2
 
 
 def test_the_tick_summary_counts_the_steps_rotations(ctx):

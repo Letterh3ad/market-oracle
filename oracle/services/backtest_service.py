@@ -16,11 +16,11 @@ from oracle.broker.compare import buy_and_hold, max_fall, returns_since
 from oracle.broker.momentum import caption as momentum_caption
 from oracle.broker.momentum import momentum_lean
 from oracle.broker.orders import Side
+from oracle.broker.regime import ROTATION
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
-from oracle.broker.regime import ROTATION
 from oracle.services.regime_lines import LINE_LABELS, REGIME_LINE, REGIME_V2_LINE, regime_lines
 from oracle.services.watch_service import watchlist_symbols
 from oracle.store.backtests import BacktestRepo

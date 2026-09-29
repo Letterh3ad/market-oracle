@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
-    LABEL_SCORES, SIGN_INFO, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
+    LABEL_SCORES, ROTATION, SIGN_INFO, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
     rotation_from, settings_from, v2_settings,
 )
 from oracle.broker.rules import Decision, Lean
@@ -104,6 +104,8 @@ class RegimeCard:
     """regime-ai: the research slot's profile, which "" means."""
     rotation: dict | None = None
     """regime-v2: its rotation settings (min_hold, margin, most)."""
+    rotated_last_step: int | None = None
+    """regime-v2: rotation sales on its most recent decision day, whatever `decisions`' limit is."""
 
 
 def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs,
@@ -261,7 +263,9 @@ def regime_card(ctx: AppContext, limit: int = 20, account: str = REGIME) -> Regi
                       stored.state if stored else None, decisions,
                       lag_warning(stored.day, date.fromisoformat(stored.at[:10])) if stored else None)
     if account == REGIME_V2:
-        return dataclasses.replace(card, rotation=asdict(rotation_from(asdict(ctx.config.regime_v2))))
+        rotated = DecisionRepo(ctx.conn).count_on_last_day(account, ROTATION)
+        return dataclasses.replace(card, rotation=asdict(rotation_from(asdict(ctx.config.regime_v2))),
+                                   rotated_last_step=rotated)
     if account != REGIME_AI:
         return card
     tilt = TiltRepo(ctx.conn).get(account, stored.day) if stored else None
