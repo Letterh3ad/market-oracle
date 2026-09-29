@@ -21,10 +21,13 @@ function shiftYears(day, years) {
 
 const DEFAULT_YEARS = 5;
 
+// Runs kept before the momentum or regime line have fewer lines, so each is found by name.
+const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime"];
+
 function runLabel(r) {
-  const [strategy, held, momentum] = r.lines;
-  return `${r.watchlist}, ${r.start} to ${r.end}: strategy ${pct(strategy.return)}, buy and hold ${pct(held.return)}`
-    + (momentum ? `, momentum ${pct(momentum.return)}` : "") + ` (run ${String(r.ran_at).slice(0, 10)})`;
+  const figures = RUN_LINES.map((name) => r.lines.find((l) => l.name === name)).filter((l) => l)
+    .map((l) => `${l.name.replaceAll("_", " ")} ${pct(l.return)}`);
+  return `${r.watchlist}, ${r.start} to ${r.end}: ${figures.join(", ")} (run ${String(r.ran_at).slice(0, 10)})`;
 }
 
 function trades(r) {
@@ -195,8 +198,9 @@ function backtestSection() {
     el("h2", null, tip("Backtest", "backtest")),
     el("p", { class: "dim small" }, "Replays the strategy account's fixed rules over prices already stored, day by "
       + "day as if it had been trading then, and sets that against simply buying the same companies and holding "
-      + "them, and against holding the ones with the strongest momentum, re-picked each month. Fake money: nothing "
-      + "in your accounts changes."),
+      + "them, against holding the ones with the strongest momentum, re-picked each month, and against the regime "
+      + "line, a blend of known methods weighted by the market's mood (its caption names the inputs it had). Fake "
+      + "money: nothing in your accounts changes."),
     el("div", { class: "row" }, "List ", list, " from ", from, " to ", to),
     el("div", { class: "row" }, tip("Slippage", "slippage"), slippage, " basis points, ",
       tip("commission", "commission"), commission, " ", currency, " per trade ", run),

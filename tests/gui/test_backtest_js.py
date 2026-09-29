@@ -48,13 +48,17 @@ const RUN = { id: 7, ran_at: "2026-09-24T20:00:00Z", base_currency: "GBP", watch
   notes: ["The main list is today's (survivorship bias).", "Each lean is at most 62.5%."] };
 const MOMENTUM = { name: "momentum", label: "Momentum", caption: "Momentum: the top 10.", return: 0.1, max_fall: -0.1,
   trades: 4, costs: 2 };
-const OLDER = { ...RUN, id: 6, start: "2024-01-02", lines: [...RUN.lines, MOMENTUM].map((l) => ({ ...l, points: undefined })) };
+const REGIME = { name: "regime", label: "Regime", caption: "Regime: trend, 12-1 momentum; no AI verdicts.",
+  return: -0.03, max_fall: -0.15, trades: 9, costs: 4, points: [["2024-01-02", 0], ["2026-09-22", -0.03]] };
+const OLDER = { ...RUN, id: 6, start: "2024-01-02",
+  lines: [...RUN.lines, MOMENTUM, REGIME].map((l) => ({ ...l, points: undefined })) };
 let ANSWERS = {
   "GET /api/watchlists": [{ name: "main" }, { name: "tech" }],
   "GET /api/backtests/span": { watchlist: "main", first: "2023-03-01", last: "2026-09-22", base_currency: "GBP" },
   "GET /api/backtests": { runs: [RUN, OLDER], keep: 10 },
   "GET /api/backtests/7": RUN,
-  "GET /api/backtests/6": { ...RUN, id: 6, start: "2024-01-02" },
+  "GET /api/backtests/6": { ...RUN, id: 6, start: "2024-01-02", lines: [...RUN.lines, { ...MOMENTUM,
+    points: [["2024-01-02", 0], ["2026-09-22", 0.1]] }, REGIME] },
   "GET /api/activity": { jobs: [], elsewhere: [] },
   "POST /api/jobs/backtest": { id: 1, kind: "backtest", state: "done", result: RUN },
 };
@@ -168,9 +172,11 @@ def test_an_earlier_run_can_be_picked_to_compare():
     """)
     options, last, text = shown
     assert options[0].startswith("main, 2025-03-03 to 2026-09-22: strategy +5.00%, buy and hold +20.00%")
-    assert options[1].startswith("main, 2024-01-02 to 2026-09-22: strategy +5.00%, buy and hold +20.00%, momentum +10.00%")
+    assert options[1].startswith("main, 2024-01-02 to 2026-09-22: strategy +5.00%, buy and hold +20.00%, momentum "
+                                 "+10.00%, regime -3.00%")
     assert len(options) == 2 and last == "GET /api/backtests/6"
     assert "The main list, 2024-01-02 to 2026-09-22" in text
+    assert "Regime" in text and "-3.00%" in text and "no AI verdicts" in text
 
 
 def test_a_backtest_already_running_is_followed_to_its_result():
