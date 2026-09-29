@@ -37,6 +37,9 @@ def build_report(w: Watch) -> str:
                    f"{'on' if (status.get('automation') or {}).get('enabled') else 'OFF'}")
         out.append(f"Last tick: {tick.get('started_at')} ({tick.get('outcome')})"
                    + (f", first error: {tick['first_error']}" if tick.get("first_error") else ""))
+    out += ["", "## Paper accounts", ""]
+    ledgers = _get(w, "/api/ledgers") if status else None
+    out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None)
     out += ["", "## Replay study", ""]
     study = (_get(w, "/api/replay") or {}).get("study") if status else None
     if not study:
@@ -53,6 +56,24 @@ def build_report(w: Watch) -> str:
     runs = _recent_fix_runs(w, now)
     out += runs or ["None."]
     return "\n".join(out).rstrip() + "\n"
+
+
+def _paper(ledgers: dict | None, regime: dict | None) -> list[str]:
+    """Every paper account the app lists, then the regime account's last mood reading."""
+    if not ledgers:
+        return ["No ledgers (or the app is down)."]
+    base = ledgers.get("base_currency")
+    out = [f"- {a['name']}: equity {a.get('equity'):,.0f} {base}, {_pct(a.get('return'), True)} since start, "
+           f"largest fall {_pct(a.get('max_fall'))}, {len(a.get('positions') or [])} positions, "
+           f"{len(a.get('pending') or [])} waiting" for a in ledgers.get("accounts", [])]
+    if regime:
+        state = regime.get("state") or {}
+        if state.get("mood"):
+            flags = ", ".join(state.get("flags") or [])
+            out.append(f"Regime mood on {regime.get('day')}: {state['mood']}" + (f" ({flags})" if flags else ""))
+        if regime.get("note"):
+            out.append(f"Regime: {regime['note']}")
+    return out
 
 
 def _account(title: str, account: dict | None) -> list[str]:

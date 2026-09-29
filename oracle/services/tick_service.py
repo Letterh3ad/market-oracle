@@ -1,5 +1,5 @@
-"""The daily routine as one run: prices, FX, fills, analysis, discovery, AI research, strategy
-step, AI step. Each stage runs even when an earlier one failed, since each works from
+"""The daily routine as one run: prices, FX, fills, analysis, regime step, discovery, AI
+research, strategy step, AI step. Each stage runs even when an earlier one failed, since each works from
 whatever is stored. The midday pass reuses the discovery and research stages, with the auto
 questions answered again between them."""
 
@@ -20,8 +20,9 @@ from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, Di
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import ai_step, fill_pending, strategy_step, traded_by
+from oracle.services.paper_service import REGIME, ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
+from oracle.services.regime_service import regime_step
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
 from oracle.store.replay import ReplayRepo
@@ -207,6 +208,16 @@ async def _ai_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     return f"{_decided(ctx, 'ai', decisions)} {UNVALIDATED_TAG}", None
 
 
+async def _regime_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+    run = regime_step(ctx)
+    if run is None:
+        return "regime account off: nothing decided", None
+    if run.day is None:
+        return "no prices stored: nothing decided", None
+    mood = f"mood {run.mood}" + (f" ({', '.join(run.flags)})" if run.flags else "") if run.mood else "no mood yet"
+    return f"{mood} on {run.day.isoformat()}: {_decided(ctx, REGIME, run.decisions)}", None
+
+
 def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
     counts = Counter(d.action.value for d in decisions)
     # The rules say nothing about a listing they leave as it is.
@@ -214,8 +225,11 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
     return ", ".join(f"{counts[a]} {a}" for a in ("buy", "sell", "skip")) + f", {unchanged} no change"
 
 
+# The regime step runs straight after analysis (its risk sizes), before discovery and the long
+# research stage, so a tick stopped part way through research has still stepped it.
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
-                               "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
+                               "regime_step": _regime_step, "discover": _discover, "research": _research,
+                               "step": _step, "ai_step": _ai_step}
 OFF = "AI account off"
 
 

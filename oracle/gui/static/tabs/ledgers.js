@@ -6,6 +6,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
+import { regimeCard } from "../lib/regime.js";
 import { replaySection } from "../lib/replay.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
@@ -51,6 +52,14 @@ function aiRules(r, ai) {
     `A verdict older than ${ai.max_verdict_age_days} days is never traded. While it is on, each tick first researches ` +
     "the listings whose report is missing, too old or behind a price move, then runs the AI step. " +
     "Unvalidated: its record is how we find out whether the research adds anything.";
+}
+
+function regimeRules(r) {
+  const p = (v) => `${Math.round(v * 100)}%`;
+  return "Trades by itself on a blend of known methods (trend, momentum, mean reversion, low volatility, value and " +
+    "quality, earnings drift, buy and hold, the research verdict) weighted by the market's mood, under the strategy's " +
+    `rules: buy the strongest blends at ${p(r.min_probability)} or more, sell on a sell blend or ${p(r.stop_loss)} ` +
+    "below cost. Same listings as the AI account. Its reading and switch are in the Regime reading card below.";
 }
 
 // How ticks keep the research fresh: saved to oracle.toml, used from the next tick.
@@ -157,7 +166,8 @@ function column(a, base, rules, ai, stale, discovery) {
       el("td", { class: `num ${tone(s.realised)}` }, signed(s.realised)))),
     "Nothing sold yet.");
   const title = manual ? tip("Manual", "manual_account")
-    : a.name === "ai" ? tipText("AI", aiRules(rules, ai)) : tipText("Strategy", strategyRules(rules));
+    : a.name === "ai" ? tipText("AI", aiRules(rules, ai))
+      : a.name === "regime" ? tipText("Regime", regimeRules(rules)) : tipText("Strategy", strategyRules(rules));
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
@@ -231,11 +241,16 @@ function jobs(base) {
   const strategyLines = (r) => stepLines("strategy", r, "Nothing to decide: watch listings and analyse them first.");
   const aiLines = (r) => (r.off ? [r.off] : [r.badge[0].toUpperCase() + r.badge.slice(1),
     ...stepLines("ai", r.decisions, "Nothing to decide: watch listings and research them first.")]);
+  const regimeLines = (r) => (r.off ? [r.off] : [
+    r.mood ? `Regime: mood ${r.mood}${r.flags.length ? ` (${r.flags.join(", ")})` : ""} on ${r.day}.` : null,
+    ...stepLines("regime", r.decisions, "Nothing to decide: watch listings first.")].filter(Boolean));
   return el("div", null,
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
+      run("Regime step", "/api/ledgers/regime/step", regimeLines),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
-        + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts.")),
+        + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts; "
+        + "Regime step lets the regime account act on the regime blend.")),
     out);
 }
 
@@ -246,10 +261,10 @@ function refresh() {
 
 async function load(mine) {
   const asked = ++loads;
-  let body, log, aiLog, stale;
+  let body, log, aiLog, stale, regime;
   try {
-    [body, log, aiLog, stale] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
-      api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale")]);
+    [body, log, aiLog, stale, regime] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
+      api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale"), api("/api/ledgers/regime")]);
   } catch (err) {
     if (asked !== loads || !pane.contains(mine)) return;
     if (mine.dataset.painted) showError(`Could not reload the ledgers: ${err.message}`);
@@ -265,6 +280,7 @@ async function load(mine) {
     compared.card,
     el("div", { class: "row ledgers" }, ...body.accounts.map((a) => column(a, base, body.rules, body.ai_account, stale, body.discovery))),
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
+    regimeCard(regime, base, refresh),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
