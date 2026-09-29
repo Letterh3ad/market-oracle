@@ -123,3 +123,18 @@ def test_history_compares_every_line_since_the_ai_started(run):
     [hold] = [line for line in out.splitlines() if line.startswith("buy_and_hold")]
     assert hold.split()[1:5] == ["+10.00%", "0.0%", "0", "0.00"]
     assert "2026-09-21" in out and "+10.00%" in out
+
+
+def test_the_regime_step_prints_its_mood_the_log_its_largest_parts_and_off_says_so(run, monkeypatch):
+    from tests.fakes.regime import use_stub
+
+    parts = {"trend": -0.2, "hold": 0.05, "momentum": 0.4, "low_vol": 0.01}
+    use_stub(monkeypatch, leans={"VOD.L": ("buy", 0.9, parts)}, flags=frozenset({"rebound"}))
+    code, out, _ = run("paper", "step", "--account", "regime")
+    assert code == 0 and out.startswith("Regime: mood calm_up (rebound) on 2026-09-17\nVOD.L: skip")
+    _, out, _ = run("paper", "log", "--account", "regime")
+    assert out.rstrip().endswith("[calm_up: momentum +0.40, trend -0.20, hold +0.05]")
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[regime_account]\nenabled = false\n",
+                          encoding="utf-8")
+    _, out, _ = run("paper", "step", "--account", "regime")
+    assert out.startswith("the regime account is off")

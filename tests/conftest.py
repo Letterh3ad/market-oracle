@@ -31,6 +31,19 @@ def _no_real_holiday_seams(monkeypatch):
     monkeypatch.setattr("oracle.services.holiday_service.RealHolidaySystem.__init__", refuse)
 
 
+@pytest.fixture(autouse=True)
+def _regime_book_until_core_lands(monkeypatch):
+    """Phase A only: the regime core (ticket 01) is not merged yet, so ticks step a stub book
+    with no mood. Removed once oracle.broker.regime exists."""
+    import importlib.util
+
+    if importlib.util.find_spec("oracle.broker.regime") is None:
+        from tests.fakes.regime import StubBook
+
+        monkeypatch.setattr("oracle.services.regime_service.build_book",
+                            lambda ctx, history, inputs: StubBook(history, inputs, mood=None))
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")

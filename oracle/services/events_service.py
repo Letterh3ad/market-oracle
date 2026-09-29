@@ -114,6 +114,15 @@ async def earnings_study(ctx: AppContext, symbol: str, refresh: bool = True) -> 
                          tuple(_summary(events, i) for i in range(len(HORIZONS))), note)
 
 
+def stored_releases(ctx: AppContext, symbol: str) -> tuple[edgar.Release, ...]:
+    """The listing's earnings releases as last fetched, never fetching: none stored, none."""
+    profile = UniverseRepo(ctx.conn).profile(symbol)
+    if profile is None:
+        return ()
+    stored = json.loads(MetaRepo(ctx.conn).get(_KEY + profile.primary_symbol.upper()) or "null")
+    return tuple(edgar.Release(date.fromisoformat(d), before) for d, before in stored["releases"]) if stored else ()
+
+
 async def _refresh(ctx: AppContext, meta: MetaRepo, ticker: str, stored: dict | None) -> tuple[dict | None, str | None]:
     """Fresh dates, or the stored ones and why not. A failure is not retried within RETRY_AFTER."""
     try:

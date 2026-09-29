@@ -55,7 +55,8 @@ async def test_it_never_places_or_fills_orders(ctx, discovering, researching, mo
     def forbidden(*_, **__):
         raise AssertionError("the midday pass ran a tick-only step")
 
-    for name in ("update_watched", "update_fx", "fill_pending", "analyse_watched", "strategy_step", "ai_step"):
+    for name in ("update_watched", "update_fx", "fill_pending", "analyse_watched", "strategy_step", "ai_step",
+                 "regime_step"):
         monkeypatch.setattr(tick_service, name, forbidden)
     run = await run_midday(ctx)
     assert run.outcome == "ok" and researching.done

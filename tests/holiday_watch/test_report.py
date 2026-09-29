@@ -80,7 +80,24 @@ def test_the_report_shows_each_size_band_account_and_whatever_lines_it_returns(t
 def test_the_report_survives_the_app_being_down(tmp_path):
     w = watch(tmp_path, http=FakeHttp({}))
     text = build_report(w)
-    assert "App: DOWN" in text and "No replay study" in text
+    assert "App: DOWN" in text and "No replay study" in text and "No ledgers" in text
+
+
+def test_the_report_lists_every_paper_account_and_the_regime_mood(tmp_path):
+    w = seeded(tmp_path)
+    account = {"equity": 1_000_000.0, "return": 0.0, "max_fall": 0.0, "positions": [], "pending": []}
+    w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": [
+        {**account, "name": "strategy"}, {**account, "name": "regime", "equity": 1_012_000.0, "return": 0.012,
+                                          "max_fall": -0.004, "positions": [{"symbol": "KO"}]}]}
+    w.http.routes[f"{APP}/api/ledgers/regime"] = {"day": "2026-09-25", "note": None,
+                                                  "state": {"mood": "calm_up", "flags": ["clustered"]}}
+    text = build_report(w)
+    paper = text[text.index("## Paper accounts"):text.index("## Replay study")]
+    assert "- strategy: equity 1,000,000 GBP, +0.00% since start" in paper
+    assert "- regime: equity 1,012,000 GBP, +1.20% since start, largest fall -0.40%, 1 positions, 0 waiting" in paper
+    assert "Regime mood on 2026-09-25: calm_up (clustered)" in paper
+    w.http.routes[f"{APP}/api/ledgers/regime"] = {"day": None, "note": "the regime account is off", "state": None}
+    assert "Regime: the regime account is off" in build_report(w)
 
 
 def test_write_report_puts_claudes_summary_on_top(tmp_path):

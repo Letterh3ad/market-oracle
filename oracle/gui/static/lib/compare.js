@@ -9,6 +9,7 @@ const LINES = {
   strategy: { label: "Strategy", colour: "--accent" },
   ai: { label: "AI", colour: "--warn" },
   manual: { label: "Manual", colour: "--text" },
+  regime: { label: "Regime", colour: "--regime" },
   buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
 };
 const BENCH_COLOURS = ["--bench1", "--bench2"];

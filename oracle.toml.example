@@ -87,6 +87,12 @@ max_verdict_age_days = 7   # an older verdict is never traded, and is researched
 move_threshold = 0.05      # research again after the price moved this share since the report
 research_budget_min = 120   # minutes a tick may spend starting research; the rest waits (1 to 480)
 
+# The regime account: trades a blend of well-studied methods (trend, momentum, mean reversion,
+# low volatility, value and quality, post-earnings drift, buy-and-hold, the research verdict)
+# weighted by the market's mood, under the strategy's rules. Rules only, no model.
+[regime_account]
+enabled = true             # false: the regime account decides nothing each tick
+
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big
 # risers and fallers, unusual volume, results surprises) in the countries you watch. The

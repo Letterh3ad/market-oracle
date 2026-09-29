@@ -170,6 +170,14 @@ class AiAccountConfig:
     """How long a tick may spend starting research runs; the rest waits for the next tick."""
 
 
+@dataclass(frozen=True)
+class RegimeAccountConfig:
+    """The paper account that trades the regime blend (rules only). On by default: it needs no
+    model, so its record starts the day it ships."""
+
+    enabled: bool = True
+
+
 VERDICT_AGE_RANGE = (1, 90)
 RESEARCH_BUDGET_RANGE = (1, 480)
 
@@ -392,6 +400,7 @@ class Config:
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
     automation: AutomationConfig = field(default_factory=AutomationConfig)
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
+    regime_account: RegimeAccountConfig = field(default_factory=RegimeAccountConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -613,6 +622,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "ai_account":
             values[name] = _ai_account(value)
             continue
+        if name == "regime_account":
+            values[name] = _regime_account(value)
+            continue
         if name == "discovery":
             values[name] = _discovery(value)
             continue
@@ -751,6 +763,16 @@ def check_ai_account(raw: Mapping[str, object]) -> AiAccountConfig:
         if not ok:
             raise ConfigError(f"ai_account.{key} must be {wanted}, got {getattr(ai, key)!r}")
     return replace(ai, move_threshold=float(ai.move_threshold))
+
+
+def _regime_account(raw: object) -> RegimeAccountConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("regime_account must be a [regime_account] table")
+    _reject_unknown(raw, RegimeAccountConfig, "[regime_account]")
+    enabled = raw.get("enabled", RegimeAccountConfig.enabled)
+    if not isinstance(enabled, bool):
+        raise ConfigError(f"regime_account.enabled must be true or false, got {enabled!r}")
+    return RegimeAccountConfig(enabled=enabled)
 
 
 def _discovery(raw: object) -> DiscoveryConfig:

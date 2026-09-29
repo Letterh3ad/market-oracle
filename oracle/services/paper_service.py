@@ -30,16 +30,20 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "NEVER_BUY", "UNVALIDATED", "AccountScore", "AccountView", "Action",
-    "Comparison", "FillOutcome", "Line",
-    "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_score", "account_view", "ai_step", "comparison",
-    "decision_log", "equity_history", "fill_pending", "pending_orders", "place_buy", "place_sell", "sells",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "UNVALIDATED", "AccountScore",
+    "AccountView", "Action", "Comparison", "FillOutcome", "Line",
+    "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
+    "comparison", "decision_log", "equity_history", "fill_pending", "fresh_verdicts", "pending_orders", "place_buy",
+    "place_sell", "sells",
     "strategy_rules", "strategy_step", "traded_by",
 ]
 
-ACCOUNTS = ("strategy", "ai", "manual")
-TRADERS = ("strategy", "ai")
+REGIME = "regime"
+ACCOUNTS = ("strategy", "ai", "manual", REGIME)
+TRADERS = ("strategy", "ai", REGIME)
 """The accounts that trade by themselves."""
+DISCOVERY_TRADERS = ("ai", REGIME)
+"""The accounts that trade discovered listings while `[discovery] ai_trades` is on."""
 GONE = "no longer in the universe"
 AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
           "or set [ai_account] enabled = true in oracle.toml")
@@ -203,20 +207,23 @@ def ai_step(ctx: AppContext) -> list[Decision] | None:
 
 def traded_by(ctx: AppContext, account: str) -> list[str]:
     """The listings a trading account decides over. The strategy account keeps to the
-    user's own picks, so its record stays a fair test of the rules on them; the AI account
-    adds discovered ones while `[discovery] ai_trades` is on. Whatever the account holds
-    stays in, off every list or not, so a position is never stranded: the rules only ever
-    buy what is not held, so a held listing can be sold but never added to."""
+    user's own picks, so its record stays a fair test of the rules on them; the AI and regime
+    accounts add discovered ones while `[discovery] ai_trades` is on, so the two compare on one
+    set. Whatever the account holds stays in, off every list or not, so a position is never
+    stranded: the rules only ever buy what is not held, so a held listing can be sold but never
+    added to."""
     listed = own_picks(ctx)
-    if account == "ai" and ctx.config.discovery.ai_trades:
+    if account in DISCOVERY_TRADERS and ctx.config.discovery.ai_trades:
         listed += discovered_only(ctx)
     return sorted(set(listed) | set(PaperRepo(ctx.conn).held_symbols(account)))
 
 
 def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
-          reports: dict[str, int]) -> list[Decision]:
+          reports: dict[str, int], explanations: dict[str, dict] | None = None) -> list[Decision]:
     """Decide over `found` with the strategy's rules, queue the orders on `account` and log
-    every decision; `reports` maps a listing to the research run behind its decision."""
+    every decision; `reports` maps a listing to the research run behind its decision, and
+    `explanations` to what its lean was made of."""
+    explanations = explanations or {}
     view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
     barred = _never_bought(ctx, [s for s in found if s not in holdings])
@@ -239,7 +246,7 @@ def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[
             order = place_sell(ctx, d.symbol, None, account, source=account)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
-                                reports.get(d.symbol), d.needs_research)])
+                                reports.get(d.symbol), d.needs_research, explanations.get(d.symbol))])
     return decisions
 
 
@@ -313,6 +320,11 @@ def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lea
     return found, skips, runs
 
 
+def fresh_verdicts(ctx: AppContext, symbols: list[str]) -> dict[str, Lean]:
+    """The verdicts the AI account would trade today, by the same freshness rule."""
+    return _usable_verdicts(ctx, symbols)[0]
+
+
 def decision_log(ctx: AppContext, account: str, limit: int = 50) -> list[LoggedDecision]:
     """An account's recent decisions, newest first."""
     return DecisionRepo(ctx.conn).recent(account, limit)
@@ -360,6 +372,7 @@ CAPTIONS = {
     "strategy": "Strategy: trades the leans under the fixed rules.",
     "ai": "AI: trades the research verdicts under the same rules.",
     "manual": "Manual: your own buys and sells.",
+    REGIME: "Regime: trades a blend of known methods weighted by the market's mood, under the same rules.",
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
 BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
@@ -439,13 +452,22 @@ def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date 
 
 
 def _record_equity(ctx: AppContext) -> None:
-    """The AI account only while it is on, so the comparison starts the day it was first turned on."""
+    """The AI and regime accounts only while on, so each record starts the day it was first turned on."""
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
-        if account == "ai" and not ctx.config.ai_account.enabled:
+        if not account_on(ctx, account):
             continue
         view = account_view(ctx, account)
         EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
+
+
+def account_on(ctx: AppContext, account: str) -> bool:
+    """Whether the account acts: the AI and regime accounts have Settings switches."""
+    if account == "ai":
+        return ctx.config.ai_account.enabled
+    if account == REGIME:
+        return ctx.config.regime_account.enabled
+    return True
 
 
 def pending_orders(ctx: AppContext) -> list[Order]:

@@ -12,6 +12,7 @@ from oracle.services.activity_service import JobRunner
 from oracle.services.app_service import AppControl
 from oracle.services.context import AppContext
 from oracle.services.net_service import source_statuses
+from oracle.services.paper_service import TRADERS, account_on
 from oracle.services.prices_service import price_sources
 from oracle.services.schedule_service import Scheduler, schedule_status
 from oracle.services.status_service import status
@@ -45,6 +46,8 @@ async def get_status(ctx: AppContext = Depends(get_ctx), control: AppControl = D
             "next": None if universe.loaded else "press Refresh universe on the Universe tab",
         },
         "automation": {"enabled": ctx.config.automation.enabled},
+        # The accounts that trade by themselves, and whether each acts at its tick step.
+        "traders": [{"name": name, "on": account_on(ctx, name)} for name in TRADERS],
         "tick": shapes.tick(last_tick(ctx)),
         "midday": shapes.tick(last_midday(ctx)),
         "fill": shapes.tick(last_fill(ctx)),
