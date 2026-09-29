@@ -6,13 +6,13 @@ it reads only bars on or before the day it is asked about."""
 from __future__ import annotations
 
 import math
-from collections import Counter
+from collections import Counter, deque
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from oracle.analysts.indicators import closes
-from oracle.analysts.price_factors import Ranked, ranked_at
+from oracle.analysts.price_factors import MAX_GAP, Ranked, ranked_at
 from oracle.analysts.signals import NEUTRAL_BAND
 from oracle.broker.backtest import LeanSource
 from oracle.broker.baseline import _label
@@ -20,14 +20,18 @@ from oracle.broker.momentum import rank_day
 from oracle.broker.rules import BUY_LABELS, Lean
 from oracle.market.bars import Bar
 
-from . import methods
+from . import methods, playbook
 from .methods import FACTOR_MAX_AGE, HOLD_SCORE, Listing
-from .mood import Composite, Mood, step_returns
+from .mood import Composite, step_returns
+from .playbook import HORIZON, RECORD, Day
 from .settings import METHODS, RegimeInputs, RegimeSettings
 
 SOURCE = "regime"
 PRICE_METHODS = frozenset({"trend", "momentum", "reversion", "low_vol"})
 """A listing needs one of these to lean: buy-and-hold's constant alone is no evidence."""
+NO_WEIGHT = "every method's weight is 0 after its warnings, record and tilt"
+SCORED_DAYS = 32
+"""Recent days whose every listing's scores are kept for the leans that read them."""
 
 
 @dataclass(frozen=True)
@@ -38,7 +42,7 @@ class RegimeState:
     flags: frozenset[str]
     """clustered, rebound, choppy."""
     readings: Mapping[str, float]
-    """trend_gap, vol_pct, ret_12m, ret_1m, corr_pct (when a correlation sample was found)."""
+    """trend_gap, vol_pct, ret_12m, ret_1m; corr_pct and move_pct when their samples were found."""
     base_weights: Mapping[str, float]
     """The mood's preset, renormalised."""
     weights: Mapping[str, float]
@@ -51,6 +55,8 @@ class RegimeState:
     """method -> its own record's multiplier (1.0 without one)."""
     tilt: Mapping[str, float]
     """method -> the AI's multiplier, capped; empty for the rules-only line."""
+    note: str | None = None
+    """Why nothing leans on the day, when every final weight is 0."""
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,12 @@ class RegimeBook:
         self._ranks: dict[date, dict[str, Ranked]] = {}
         self._states: list[RegimeState | None] = []
         self._smoothed: dict[str, float] | None = None
+        self._scored: dict[int, dict[str, dict[str, float]]] = {}
+        self._picks: dict[int, dict[str, tuple[str, ...]]] = {}
+        self._records: dict[str, deque[tuple[int, float]]] = {m: deque() for m in METHODS}
+        """method -> (pick day, forward excess) for its completed windows, the last RECORD days' only."""
+        first = next((j for j, m in enumerate(self._composite.moods) if m is not None), None)
+        self._first_pick = None if first is None else first - HORIZON - RECORD + 1
 
     def state(self, day: date) -> RegimeState | None:
         j = self._composite.index(day)
@@ -92,10 +104,11 @@ class RegimeBook:
 
     def scores(self, symbol: str, day: date) -> dict[str, float]:
         """Each method's score for the listing on its last bar on or before `day`; empty
-        without a price method's."""
+        without a price method's, or when that bar is over MAX_GAP old (suspended, delisted
+        or no longer fetched)."""
         x = self._listings.get(symbol)
         i = x.at(day) if x else None
-        if i is None:
+        if i is None or day - x.dates[i] > MAX_GAP:
             return {}
         ranked = self._ranked(rank_day(x.dates[i])).get(symbol)
         verdict_age = timedelta(days=self._inputs.verdict_max_age)
@@ -109,14 +122,19 @@ class RegimeBook:
         return out if out.keys() & PRICE_METHODS else {}
 
     def explain(self, symbol: str, day: date) -> Explained | None:
+        """None when the listing's last bar on or before `day` is over MAX_GAP old."""
         x = self._listings.get(symbol)
         i = x.at(day) if x else None
-        if i is None:
+        if i is None or day - x.dates[i] > MAX_GAP:
             return None
         as_of = x.dates[i]
         state = self.state(as_of)
-        scores = self.scores(symbol, as_of)
-        if state is None or not scores:
+        if state is None:
+            return None
+        j = self._composite.index(as_of)
+        cached = self._scored.get(j) if self._composite.dates[j] == as_of else None
+        scores = cached.get(symbol, {}) if cached is not None else self.scores(symbol, as_of)
+        if not scores:
             return None
         used = {m: state.weights[m] for m in scores if state.weights[m] > 0}
         total = sum(used.values())
@@ -154,48 +172,65 @@ class RegimeBook:
         return round(0.5 + 0.5 * abs(score), 6)
 
     def _next(self, j: int) -> RegimeState | None:
+        picks = self._record(j)
         mood = self._composite.moods[j]
         if mood is None:
             self._smoothed = None
             return None
-        base = _normalised(self._settings.weights[mood.mood])
-        warnings, good = self._playbook(mood)
-        health = self._health(j)
         s = self._settings
+        base = _normalised(s.weights[mood.mood])
+        warnings, good = playbook.firing(Day(mood, picks, self._inputs.sectors))
+        health = {m: playbook.health([e for _, e in self._records[m]]) for m in METHODS}
         raw = {m: base[m] * _playbook_factor(len(warnings.get(m, ())), len(good.get(m, ())), s) * health[m]
                for m in METHODS}
-        state = RegimeState(self._composite.dates[j], mood.mood, mood.flags, mood.readings, base,
-                            self._smooth(raw, base), warnings, good, health, {})
+        state = self._weighed(RegimeState(self._composite.dates[j], mood.mood, mood.flags, mood.readings, base,
+                                          {}, warnings, good, health, {}), raw)
         if self._tilt is not None:
             tilt = {m: min(1 + s.tilt_cap, max(1 - s.tilt_cap, float(v)))
                     for m, v in self._tilt(state).items() if m in METHODS}
-            state = replace(state, weights=self._smooth({m: raw[m] * tilt.get(m, 1.0) for m in METHODS}, base),
-                            tilt=tilt)
-        self._smoothed = dict(state.weights)
+            state = self._weighed(replace(state, tilt=tilt), {m: raw[m] * tilt.get(m, 1.0) for m in METHODS})
+        if state.note is None:
+            self._smoothed = dict(state.weights)
         return state
 
-    def _smooth(self, raw: Mapping[str, float], base: Mapping[str, float]) -> dict[str, float]:
-        today = _normalised(raw) if sum(raw.values()) > 0 else dict(base)
-        if self._smoothed is None:
-            return today
-        a = 2 / (self._settings.span + 1)
-        return {m: a * today[m] + (1 - a) * self._smoothed[m] for m in METHODS}
+    def _weighed(self, state: RegimeState, raw: Mapping[str, float]) -> RegimeState:
+        """Renormalised and smoothed. With every raw weight 0 nothing leans that day and the
+        smoothing carries on from the day before, rather than quietly falling back to the preset."""
+        if sum(raw.values()) <= 0:
+            return replace(state, weights=dict.fromkeys(METHODS, 0.0), note=NO_WEIGHT)
+        today = _normalised(raw)
+        if self._smoothed is not None:
+            a = 2 / (self._settings.span + 1)
+            today = {m: a * today[m] + (1 - a) * self._smoothed[m] for m in METHODS}
+        return replace(state, weights=today, note=None)
 
-    def _playbook(self, mood: Mood) -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
-        """Firing warnings and good signs per method; none until ticket 02 writes the playbook."""
-        return {}, {}
+    def _record(self, j: int) -> dict[str, tuple[str, ...]]:
+        """Day j's top-fifth picks per method; and each method's record gains the window that
+        closes on day j, the one its picks from HORIZON days before have now run."""
+        if self._first_pick is None or j < self._first_pick:
+            return {}
+        k = j - HORIZON
+        for m, symbols in self._picks.pop(k, {}).items():
+            self._records[m].append((k, self._composite.excess(symbols, k, HORIZON)))
+        for record in self._records.values():
+            while record and record[0][0] <= k - RECORD:
+                record.popleft()
+        day = self._composite.dates[j]
+        scored = {sym: found for sym in self._listings if (found := self.scores(sym, day))}
+        self._scored[j] = scored
+        self._scored.pop(j - SCORED_DAYS, None)
+        picks = {m: p for m in METHODS if (p := playbook.top_fifth({s: v[m] for s, v in scored.items() if m in v}))}
+        self._picks[j] = picks
+        return picks
 
-    def _health(self, j: int) -> dict[str, float]:
-        """Each method's record multiplier; neutral until ticket 02 keeps the shadow records."""
-        return dict.fromkeys(METHODS, 1.0)
 
-
-def regime_book(history: Mapping[str, Sequence], *, inputs: RegimeInputs | None = None,
-                settings: RegimeSettings | None = None, tilt: Tilt | None = None,
-                source: str = SOURCE) -> RegimeBook:
+def regime_book(history: Mapping[str, Sequence], *, settings: RegimeSettings, inputs: RegimeInputs | None = None,
+                tilt: Tilt | None = None, source: str = SOURCE) -> RegimeBook:
     """`history` is every listing's bars oldest first, plain or priced (a `bar` and its
-    `rate`, as the replay takes them): priced ones put the composite in the base currency. `tilt` is the AI's daily multipliers (regime-ai); None for rules only."""
-    return RegimeBook(history, inputs or RegimeInputs(), settings or RegimeSettings(), tilt, source)
+    `rate`, as the replay takes them): priced ones put the composite in the base currency.
+    `settings` come from `settings_from`, so the buy threshold is the account's. `tilt` is the
+    AI's daily multipliers (regime-ai); None for rules only."""
+    return RegimeBook(history, inputs or RegimeInputs(), settings, tilt, source)
 
 
 def sector_cap(leans: Mapping[str, Lean], held: Collection[str], sectors: Mapping[str, str],

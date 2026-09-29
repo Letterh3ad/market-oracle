@@ -82,6 +82,10 @@ def test_the_days_reading_is_saved_for_the_card(ctx, monkeypatch):
     s = card.state
     assert (s["mood"], s["flags"], s["warnings"], s["day"]) == ("calm_up", [], {"momentum": ["rebound"]}, "2026-09-21")
     assert s["unscored"] == ["ai_verdict", "earnings_drift", "low_vol", "quality_value"], "weighted, no listing's part"
+    assert [(x["name"], x["warning"], x["source"]) for x in s["signs"]["momentum"]] == [
+        ("rebound", True, "Daniel-Moskowitz 2016")] and s["signs"]["momentum"][0]["reason"]
+    assert [(x["name"], x["warning"]) for x in s["signs"]["trend"]] == [("big_year", False)]
+    assert s["note"] is None
     assert set(s) >= {"readings", "base_weights", "weights", "good", "health", "tilt"}
     json.dumps(s)
     assert card.decisions == (), "a hold lean on a listing not held changes nothing, so nothing is logged"
@@ -96,6 +100,16 @@ def test_with_no_mood_every_listing_leans_nothing_and_the_card_says_why(ctx, mon
     assert [(d.symbol, d.action, d.reason) for d in run.decisions] == [("AAPL", "skip", NO_MOOD)]
     assert account_view(ctx, "regime").pending == ()
     assert regime_card(ctx).note == NO_MOOD and regime_card(ctx).state["mood"] is None
+
+
+def test_a_day_with_no_weight_left_shows_the_books_note_on_the_card(ctx, monkeypatch):
+    from oracle.broker.regime import NO_WEIGHT
+
+    use_stub(monkeypatch, note=NO_WEIGHT)
+    watch(ctx, "AAPL")
+    after_close(ctx)
+    card = regime_card(ctx)
+    assert card.note == NO_WEIGHT and card.state["note"] == NO_WEIGHT
 
 
 def test_a_listing_with_no_score_is_skipped_saying_why(ctx, monkeypatch):

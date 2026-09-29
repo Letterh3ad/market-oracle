@@ -12,7 +12,7 @@ from datetime import date, timedelta
 
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
-    LABEL_SCORES, Explained, RegimeBook, RegimeInputs, RegimeState, regime_book, settings_from,
+    LABEL_SCORES, SIGNS, Explained, RegimeBook, RegimeInputs, RegimeState, regime_book, settings_from,
 )
 from oracle.broker.rules import Decision, Lean
 from oracle.services.context import AppContext
@@ -93,9 +93,26 @@ def regime_step(ctx: AppContext) -> RegimeRun | None:
     skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
     decisions = step_account(ctx, REGIME, found, skips, {}, why, book.cap)
     if day is not None:
-        reading = {**_plain(state), "unscored": _unscored(state, why)} if state else {"mood": None, "note": NO_MOOD}
+        reading = ({**_plain(state), "unscored": _unscored(state, why), "signs": _signs(state)} if state
+                   else {"mood": None, "note": NO_MOOD})
         RegimeStateRepo(ctx.conn).save(REGIME, day, reading, to_utc_iso(ctx.clock.utcnow()))
     return RegimeRun(day, state.mood if state else None, tuple(sorted(state.flags)) if state else (), decisions)
+
+
+SIGN_INFO = {(s.method, s.name): s for s in SIGNS}
+
+
+def _signs(state: RegimeState) -> dict[str, list[dict]]:
+    """Each firing warning and good sign per method, with its reason and source, for the card."""
+    out: dict[str, list[dict]] = {}
+    for found, warning in ((state.warnings, True), (state.good, False)):
+        for method, names in found.items():
+            for name in names:
+                sign = SIGN_INFO.get((method, name))
+                out.setdefault(method, []).append({"name": name, "warning": warning,
+                                                   "reason": sign.reason if sign else "",
+                                                   "source": sign.source if sign else ""})
+    return out
 
 
 def _unscored(state: RegimeState, why: Mapping[str, dict]) -> list[str]:

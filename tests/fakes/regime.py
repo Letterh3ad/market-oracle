@@ -22,6 +22,7 @@ class State:
     good: dict = field(default_factory=dict)
     health: dict = field(default_factory=lambda: dict.fromkeys(METHODS, 1.0))
     tilt: dict = field(default_factory=dict)
+    note: str | None = None
 
 
 class StubBook:
@@ -30,14 +31,18 @@ class StubBook:
     inputs it was built from, each `explain` asked and each cap's holdings."""
 
     def __init__(self, history, inputs, mood: str | None = "calm_up", leans: dict | None = None,
-                 flags: frozenset[str] = frozenset(), capped: frozenset[str] = frozenset()) -> None:
+                 flags: frozenset[str] = frozenset(), capped: frozenset[str] = frozenset(),
+                 note: str | None = None) -> None:
         self.history, self.inputs, self.mood, self.leans, self.flags = history, inputs, mood, leans or {}, flags
-        self.capped = capped
+        self.capped, self.note = capped, note
         self.asked: list[tuple[str, date]] = []
         self.held: list[set[str]] = []
 
     def state(self, day: date) -> State | None:
-        return State(day, self.mood, self.flags, warnings={"momentum": ("rebound",)}) if self.mood else None
+        if not self.mood:
+            return None
+        return State(day, self.mood, self.flags, warnings={"momentum": ("rebound",)}, good={"trend": ("big_year",)},
+                     note=self.note)
 
     def explain(self, symbol: str, day: date) -> Explained | None:
         self.asked.append((symbol, day))

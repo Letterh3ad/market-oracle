@@ -9,12 +9,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from oracle.analysts.breaks import is_price, steady
-from oracle.analysts.indicators import closes, rsi
+from oracle.analysts.breaks import first_break
+from oracle.analysts.indicators import closes, rolling_mean, rsi
 from oracle.analysts.price_factors import Ranked
 from oracle.market.bars import Bar
 
-from .mood import rolling_mean
 from .settings import DatedScores
 
 AVERAGE = 200
@@ -63,8 +62,8 @@ def listing(symbol: str, bars: Sequence[Bar]) -> Listing:
     slope = [None if i < SLOPE_DAYS or a is None or average[i - SLOPE_DAYS] is None else a - average[i - SLOPE_DAYS]
              for i, a in enumerate(average)]
     clean, last = [], 0
-    for i, c in enumerate(cs):
-        if not is_price(c) or (i and not (is_price(cs[i - 1]) and steady((cs[i - 1], c)))):
+    for i in range(len(cs)):
+        if first_break(cs[max(0, i - 1):i + 1]) is not None:
             last = i
         clean.append(last)
     return Listing(symbol, [b.date for b in bars], cs, average, slope, rsi(cs, 2), clean, [])
@@ -125,7 +124,7 @@ def low_vol(ranked: Ranked | None) -> float | None:
 
 def dated(scores: DatedScores, day: date, max_age: timedelta) -> float | None:
     """The newest score known on or before `day`, if no older than `max_age`."""
-    k = bisect_right([d for d, _ in scores], day) - 1
+    k = bisect_right(scores, day, key=lambda x: x[0]) - 1
     if k < 0 or day - scores[k][0] > max_age:
         return None
     return _clip(scores[k][1])

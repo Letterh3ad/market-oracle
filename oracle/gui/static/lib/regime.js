@@ -66,8 +66,17 @@ function reading(card) {
     el("p", { class: "dim small" }, Object.entries(s.readings ?? {})
       .map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "number" ? v.toFixed(3) : v}`).join(", ")),
     weights(s),
+    signs(s.signs ?? {}),
     unscored(s.unscored ?? []),
   ];
+}
+
+// Each firing warning and good sign with why it matters and where it comes from.
+function signs(byMethod) {
+  const rows = Object.entries(byMethod).flatMap(([m, list]) => list.map((x) => el("li", { class: "small" },
+    el("span", { class: x.warning ? "down" : "up" }, `${name(m)} ${x.warning ? "warning" : "good sign"}: ${x.name}. `),
+    x.reason, x.source ? el("span", { class: "dim" }, ` (${x.source})`) : null)));
+  return rows.length ? el("ul", null, ...rows) : null;
 }
 
 // Weighted methods no listing had a score from on the last step: their weight went to the others.

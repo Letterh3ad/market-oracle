@@ -38,6 +38,7 @@ async def test_a_regime_step_trades_and_the_card_shows_the_mood_weights_and_cont
     s = card["state"]
     assert (s["mood"], s["flags"], s["warnings"]) == ("calm_up", ["clustered"], {"momentum": ["rebound"]})
     assert set(s["base_weights"]) == set(s["weights"]) and s["health"]["momentum"] == 1.0
+    assert s["note"] is None and s["signs"]["momentum"][0]["source"] == "Daniel-Moskowitz 2016"
     [logged] = card["decisions"]
     assert (logged["account"], logged["symbol"], logged["action"]) == ("regime", "AAPL", "buy")
     assert list(logged["explanation"]["parts"]) == ["momentum", "trend", "hold"]
