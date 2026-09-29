@@ -93,6 +93,48 @@ research_budget_min = 120   # minutes a tick may spend starting research; the re
 [regime_account]
 enabled = true             # false: the regime account decides nothing each tick
 
+# Regime lines: a blend of known trading methods weighted by the market's mood. Weights
+# are the literature's priors per mood (<mood>_<method>, each mood renormalised, 0 to 1).
+[regime]
+calm_up_trend = 0.15   # weight of trend (close vs 200-day average) in a calm rising market
+calm_up_momentum = 0.25   # weight of 12-1 momentum in a calm rising market
+calm_up_reversion = 0.05   # weight of RSI-2 mean reversion in a calm rising market
+calm_up_low_vol = 0.05   # weight of low volatility in a calm rising market
+calm_up_quality_value = 0.10   # weight of value and quality factors in a calm rising market
+calm_up_earnings_drift = 0.10   # weight of post-earnings drift in a calm rising market
+calm_up_hold = 0.15   # weight of buy-and-hold's constant lean in a calm rising market
+calm_up_ai_verdict = 0.15   # weight of the research verdict in a calm rising market
+volatile_up_trend = 0.10   # weight of trend (close vs 200-day average) in a volatile rising market
+volatile_up_momentum = 0.10   # weight of 12-1 momentum in a volatile rising market
+volatile_up_reversion = 0.15   # weight of RSI-2 mean reversion in a volatile rising market
+volatile_up_low_vol = 0.20   # weight of low volatility in a volatile rising market
+volatile_up_quality_value = 0.10   # weight of value and quality factors in a volatile rising market
+volatile_up_earnings_drift = 0.10   # weight of post-earnings drift in a volatile rising market
+volatile_up_hold = 0.10   # weight of buy-and-hold's constant lean in a volatile rising market
+volatile_up_ai_verdict = 0.15   # weight of the research verdict in a volatile rising market
+calm_down_trend = 0.25   # weight of trend (close vs 200-day average) in a calm falling market
+calm_down_momentum = 0.10   # weight of 12-1 momentum in a calm falling market
+calm_down_reversion = 0.10   # weight of RSI-2 mean reversion in a calm falling market
+calm_down_low_vol = 0.20   # weight of low volatility in a calm falling market
+calm_down_quality_value = 0.15   # weight of value and quality factors in a calm falling market
+calm_down_earnings_drift = 0.05   # weight of post-earnings drift in a calm falling market
+calm_down_hold = 0.00   # weight of buy-and-hold's constant lean in a calm falling market
+calm_down_ai_verdict = 0.15   # weight of the research verdict in a calm falling market
+volatile_down_trend = 0.20   # weight of trend (close vs 200-day average) in a volatile falling market
+volatile_down_momentum = 0.00   # weight of 12-1 momentum in a volatile falling market
+volatile_down_reversion = 0.15   # weight of RSI-2 mean reversion in a volatile falling market
+volatile_down_low_vol = 0.25   # weight of low volatility in a volatile falling market
+volatile_down_quality_value = 0.15   # weight of value and quality factors in a volatile falling market
+volatile_down_earnings_drift = 0.05   # weight of post-earnings drift in a volatile falling market
+volatile_down_hold = 0.05   # weight of buy-and-hold's constant lean in a volatile falling market
+volatile_down_ai_verdict = 0.15   # weight of the research verdict in a volatile falling market
+smoothing_span = 5     # trading days the final weights are smoothed over (1 to 60)
+sector_share = 0.3     # at most this share of max_positions (rounded up) held or bought per sector
+warning_factor = 0.5   # each firing playbook warning multiplies its method's weight by this
+good_factor = 1.25     # each firing playbook good sign multiplies its method's weight by this (1 to 5)
+playbook_cap = 1.5     # the playbook's combined multiplier is clipped to 0 up to this (1 to 5)
+tilt_cap = 0.5         # the AI tilt keeps each weight's multiplier within 1 minus to 1 plus this
+
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big
 # risers and fallers, unusual volume, results surprises) in the countries you watch. The

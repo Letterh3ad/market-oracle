@@ -183,6 +183,60 @@ RESEARCH_BUDGET_RANGE = (1, 480)
 
 
 @dataclass(frozen=True)
+class RegimeConfig:
+    """The regime lines' preset weights per mood (priors from the literature) and knobs; see
+    `broker.regime`. Weight keys are `<mood>_<method>`, each mood renormalised."""
+
+    calm_up_trend: float = 0.15
+    calm_up_momentum: float = 0.25
+    calm_up_reversion: float = 0.05
+    calm_up_low_vol: float = 0.05
+    calm_up_quality_value: float = 0.10
+    calm_up_earnings_drift: float = 0.10
+    calm_up_hold: float = 0.15
+    calm_up_ai_verdict: float = 0.15
+    volatile_up_trend: float = 0.10
+    volatile_up_momentum: float = 0.10
+    volatile_up_reversion: float = 0.15
+    volatile_up_low_vol: float = 0.20
+    volatile_up_quality_value: float = 0.10
+    volatile_up_earnings_drift: float = 0.10
+    volatile_up_hold: float = 0.10
+    volatile_up_ai_verdict: float = 0.15
+    calm_down_trend: float = 0.25
+    calm_down_momentum: float = 0.10
+    calm_down_reversion: float = 0.10
+    calm_down_low_vol: float = 0.20
+    calm_down_quality_value: float = 0.15
+    calm_down_earnings_drift: float = 0.05
+    calm_down_hold: float = 0.00
+    calm_down_ai_verdict: float = 0.15
+    volatile_down_trend: float = 0.20
+    volatile_down_momentum: float = 0.00
+    volatile_down_reversion: float = 0.15
+    volatile_down_low_vol: float = 0.25
+    volatile_down_quality_value: float = 0.15
+    volatile_down_earnings_drift: float = 0.05
+    volatile_down_hold: float = 0.05
+    volatile_down_ai_verdict: float = 0.15
+    smoothing_span: int = 5
+    """Trading days the final weights are smoothed over."""
+    sector_share: float = 0.3
+    """At most ceil(this x max_positions) holdings plus buys per sector."""
+    warning_factor: float = 0.5
+    """Each firing playbook warning multiplies its method's weight by this."""
+    good_factor: float = 1.25
+    playbook_cap: float = 1.5
+    """The playbook's combined multiplier is clipped to [0, this]."""
+    tilt_cap: float = 0.5
+    """The AI tilt multiplies a weight within [1 - this, 1 + this]."""
+
+
+REGIME_MOODS = ("calm_up", "volatile_up", "calm_down", "volatile_down")
+SPAN_RANGE = (1, 60)
+
+
+@dataclass(frozen=True)
 class DiscoveryConfig:
     """Finding companies beyond the watchlists and adding them to the `discovered` list."""
 
@@ -401,6 +455,7 @@ class Config:
     automation: AutomationConfig = field(default_factory=AutomationConfig)
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
     regime_account: RegimeAccountConfig = field(default_factory=RegimeAccountConfig)
+    regime: RegimeConfig = field(default_factory=RegimeConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -625,6 +680,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "regime_account":
             values[name] = _regime_account(value)
             continue
+        if name == "regime":
+            values[name] = _regime(value)
+            continue
         if name == "discovery":
             values[name] = _discovery(value)
             continue
@@ -773,6 +831,32 @@ def _regime_account(raw: object) -> RegimeAccountConfig:
     if not isinstance(enabled, bool):
         raise ConfigError(f"regime_account.enabled must be true or false, got {enabled!r}")
     return RegimeAccountConfig(enabled=enabled)
+
+
+def _regime(raw: object) -> RegimeConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("regime must be a [regime] table")
+    _reject_unknown(raw, RegimeConfig, "[regime]")
+    for key, value in raw.items():
+        number = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if key == "smoothing_span":
+            low, high = SPAN_RANGE
+            ok, wanted = isinstance(value, int) and not isinstance(value, bool) and low <= value <= high, f"{low} to {high}"
+        elif key == "sector_share":
+            ok, wanted = number and 0 < value <= 1, "above 0, at most 1"
+        elif key in ("good_factor", "playbook_cap"):
+            ok, wanted = number and 1 <= value <= 5, "1 to 5"
+        elif key == "tilt_cap":
+            ok, wanted = number and 0 <= value < 1, "at least 0 and below 1"
+        else:
+            ok, wanted = number and 0 <= value <= 1, "0 to 1"
+        if not ok:
+            raise ConfigError(f"regime.{key} must be {wanted}, got {value!r}")
+    config = RegimeConfig(**{k: v if k == "smoothing_span" else float(v) for k, v in raw.items()})
+    for mood in REGIME_MOODS:
+        if not any(getattr(config, f.name) for f in fields(RegimeConfig) if f.name.startswith(mood + "_")):
+            raise ConfigError(f"regime: every {mood}_ weight is 0; give at least one method a weight")
+    return config
 
 
 def _discovery(raw: object) -> DiscoveryConfig:

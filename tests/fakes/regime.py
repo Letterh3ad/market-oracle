@@ -1,14 +1,13 @@
-"""A stand-in regime book with the shared contract's shape (state, lean_source, explain), so the
-live account's plumbing is tested without the real blend."""
+"""A stand-in regime book with the real one's shape (state, explain, cap), so the live account's
+plumbing is tested with leans chosen by the test."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
 
+from oracle.broker.regime import METHODS, Explained
 from oracle.broker.rules import Lean
-
-METHODS = ("trend", "momentum", "reversion", "low_vol", "quality_value", "earnings_drift", "hold", "ai_verdict")
 
 
 @dataclass(frozen=True)
@@ -25,34 +24,32 @@ class State:
     tilt: dict = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class Explained:
-    lean: Lean
-    parts: dict
-
-
 class StubBook:
     """`leans` maps a listing to (label, probability, parts); a listing left out has no score.
-    `mood` None reads no mood. Records the history and inputs it was built from."""
+    `mood` None reads no mood. `capped` listings lean hold after the cap. Records the history and
+    inputs it was built from, each `explain` asked and each cap's holdings."""
 
     def __init__(self, history, inputs, mood: str | None = "calm_up", leans: dict | None = None,
-                 flags: frozenset[str] = frozenset()) -> None:
+                 flags: frozenset[str] = frozenset(), capped: frozenset[str] = frozenset()) -> None:
         self.history, self.inputs, self.mood, self.leans, self.flags = history, inputs, mood, leans or {}, flags
+        self.capped = capped
         self.asked: list[tuple[str, date]] = []
+        self.held: list[set[str]] = []
 
     def state(self, day: date) -> State | None:
         return State(day, self.mood, self.flags, warnings={"momentum": ("rebound",)}) if self.mood else None
 
-    def lean_source(self):
-        def lean(symbol, bars):
-            self.asked.append((symbol, bars[-1].date))
-            found = self.leans.get(symbol)
-            return Lean(symbol, bars[-1].date, found[0], found[1], "regime") if found else None
-        return lean
-
     def explain(self, symbol: str, day: date) -> Explained | None:
+        self.asked.append((symbol, day))
         found = self.leans.get(symbol)
-        return Explained(Lean(symbol, day, found[0], found[1], "regime"), found[2]) if found else None
+        if not found:
+            return None
+        return Explained(Lean(symbol, day, found[0], found[1], "regime"), found[2], sum(found[2].values()), {},
+                         self.state(day))
+
+    def cap(self, leans, held):
+        self.held.append(set(held))
+        return {s: Lean(s, x.as_of, "hold", 0.5, x.source) if s in self.capped else x for s, x in leans.items()}
 
 
 def use_stub(monkeypatch, **kwargs) -> list[StubBook]:

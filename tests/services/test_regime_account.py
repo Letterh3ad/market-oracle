@@ -12,7 +12,10 @@ from oracle.market.bars import Bar
 from oracle.services.paper_service import (
     ACCOUNTS, NEVER_BUY, TRADERS, account_view, comparison, decision_log, equity_history, fill_pending, traded_by,
 )
-from oracle.services.regime_service import DISCOVERED_OFF, NO_MOOD, REGIME_OFF, regime_card, regime_step
+from oracle.services.prices_service import ConvertedBar
+from oracle.services.regime_service import (
+    DISCOVERED_OFF, NO_MOOD, NO_SCORE, REGIME_OFF, complete_sessions, regime_card, regime_step,
+)
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
@@ -90,12 +93,14 @@ def test_a_listing_with_no_score_is_skipped_saying_why(ctx, monkeypatch):
     use_stub(monkeypatch, leans={})
     watch(ctx, "AAPL")
     [d] = regime_step(ctx).decisions
-    assert (d.action, d.reason) == ("skip", "no regime score: too little history for any method")
+    assert (d.action, d.reason) == ("skip", NO_SCORE)
 
 
 def test_a_stale_listing_is_not_leaned_on(ctx, monkeypatch):
     built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
-    BarRepo(ctx.conn).upsert([Bar("MSFT", date(2026, 10, 12), 1, 1, 1, 1, 1, 1, "GBP", "t")], "x")
+    # Three other listings trade on: the market's day moves on while AAPL's prices stop.
+    for s in ("MSFT", "KO", "IBM"):
+        BarRepo(ctx.conn).upsert([Bar(s, date(2026, 10, 12), 1, 1, 1, 1, 1, 1, "GBP", "t")], "x")
     ctx.clock.advance(21 * 86400)
     watch(ctx, "AAPL")
     [d] = regime_step(ctx).decisions
@@ -153,9 +158,9 @@ def test_the_book_gets_sectors_earnings_factor_scores_and_only_fresh_verdicts(ct
     SignalRepo(ctx.conn).save([AnalystSignal("value", "AAPL", date(2026, 9, 18), 0.4, 1.0, "v", ())], "x")
     regime_step(ctx)
     inputs = built[0].inputs
-    assert {s: (v.label, v.probability) for s, v in inputs.verdicts.items()} == {"AAPL": ("buy", 0.8)}
-    assert inputs.earnings == {"AAPL": (date(2026, 7, 30),)}
-    assert inputs.factors["AAPL"] == {"value": ((date(2026, 9, 18), 0.4),), "quality": ()}
+    assert inputs.verdicts == {"AAPL": ((date(2026, 9, 21), 0.5),)} and inputs.verdict_max_age == 7
+    assert inputs.earnings == {"AAPL": ((date(2026, 7, 30), False),)}
+    assert inputs.factors == {"AAPL": ((date(2026, 9, 18), 0.4),)}
     assert set(inputs.sectors) <= {"AAPL", "VOD.L"}
 
 
@@ -180,3 +185,63 @@ async def test_its_buy_fills_at_the_next_open_like_the_other_accounts(ctx, yahoo
     [done] = fill_pending(ctx)
     assert (done.order.account, done.status) == ("regime", "filled")
     assert [p.symbol for p in account_view(ctx, "regime").positions] == ["AAPL"]
+
+
+def test_the_sector_cap_counts_holdings_and_pending_buys_and_a_capped_lean_is_not_bought(ctx, monkeypatch):
+    built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("buy", 0.9, PARTS)},
+                     capped=frozenset({"VOD.L"}))
+    for s in ("AAPL", "VOD.L"):
+        seed(ctx, s, "hold")
+        watch(ctx, s)
+    decisions = {d.symbol: d.action for d in regime_step(ctx).decisions}
+    assert decisions == {"AAPL": "buy"} and built[0].held == [set()]
+    regime_step(ctx)
+    assert built[1].held == [{"AAPL"}], "the pending buy counts against its sector"
+
+
+def priced(symbol, day, n=1):
+    return ConvertedBar(Bar(symbol, day, 1, 1, 1, 1, 1, 1, "GBP", "t"), 1.0, 1.0)
+
+
+def test_a_trailing_day_only_some_exchanges_have_closed_is_left_out():
+    d1, d2, d3 = date(2026, 9, 24), date(2026, 9, 25), date(2026, 9, 28)
+    history = {f"S{k}": [priced(f"S{k}", d1), priced(f"S{k}", d2)] + ([priced(f"S{k}", d3)] if k < 4 else [])
+               for k in range(10)}
+    kept, day = complete_sessions(history)
+    assert day == d2 and all(rows[-1].bar.date == d2 for rows in kept.values())
+    history["S9"].append(priced("S9", d3))
+    history.update({f"T{k}": [priced(f"T{k}", d3)] for k in range(8)})
+    assert complete_sessions(history)[1] == d3, "most of the market has the day: it is complete"
+    assert complete_sessions({}) == ({}, None)
+
+
+def test_the_real_regime_book_reads_a_mood_and_explains_each_lean(ctx, monkeypatch):
+    from oracle.services import regime_service
+    from tests.analysts.bars import weekdays
+
+    books, real = [], regime_service.build_book
+    monkeypatch.setattr(regime_service, "build_book", lambda *a: books.append(real(*a)) or books[-1])
+    from tests.broker.regime_market import market
+
+    n = 700
+    days = [d for d in weekdays(n + 400, date(2023, 1, 2)) if d <= date(2026, 9, 21)][-n:]
+    names = {"L000": "AAPL", "L001": "VOD.L"}
+    repo = BarRepo(ctx.conn)
+    for s, bars in market(12, n, seed=5).items():
+        symbol = names.get(s, s)
+        repo.upsert([replace(b, symbol=symbol, date=d, currency="GBP") for b, d in zip(bars, days)], "x")
+    for s in ("AAPL", "VOD.L"):
+        seed(ctx, s, "hold")
+        watch(ctx, s)
+    run = regime_step(ctx)
+    assert run.day == date(2026, 9, 21) and run.mood in ("calm_up", "volatile_up", "calm_down", "volatile_down")
+    assert all(d.reason not in (NO_MOOD, NO_SCORE) for d in run.decisions)
+    for s in ("AAPL", "VOD.L"):
+        x = books[0].explain(s, run.day)
+        assert x.state.mood == run.mood and sum(x.parts.values()) == pytest.approx(x.score)
+    for d in decision_log(ctx, "regime"):
+        assert d.explanation["mood"] == run.mood
+        assert sum(d.explanation["parts"].values()) == pytest.approx(d.explanation["score"])
+    card = regime_card(ctx)
+    assert card.note is None and card.state["mood"] == run.mood
+    assert sum(card.state["weights"].values()) == pytest.approx(1.0) and len(card.state["base_weights"]) == 8

@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 
-from oracle.broker.backtest import LOOKBACK
 from oracle.broker.orders import Action
+from oracle.broker.regime import (
+    LABEL_SCORES, Explained, RegimeBook, RegimeInputs, RegimeState, regime_book, settings_from,
+)
 from oracle.broker.rules import Decision, Lean
 from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
@@ -24,39 +26,32 @@ from oracle.store.regime import RegimeStateRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["BookInputs", "REGIME", "REGIME_OFF", "RegimeCard", "RegimeRun", "build_book", "regime_card",
-           "regime_step"]
+__all__ = ["REGIME", "REGIME_OFF", "RegimeCard", "RegimeRun", "build_book", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
               "([regime_account] enabled)")
 DISCOVERED_OFF = ("discovered, and the regime account does not trade discovered companies: turn it on in "
                   "Settings ([discovery] ai_trades)")
 NO_MOOD = "no market mood yet: under a year of stored market history, so the regime line leans nothing"
+NO_SCORE = "no regime score: too little history for any price method"
 HISTORY_DAYS = 1100
 """Calendar days of bars each step reads: the mood's 200-day average and its trailing year of
 volatility and correlation percentiles, the 12-month return and the health record all fit,
 with room; older bars change nothing and only cost time."""
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
+COMPLETE_SHARE = 0.8
+"""A trailing stored day with bars for fewer listings than this share of the recent busiest day
+is a session still open somewhere (another exchange has not closed): the step reads up to the
+day before it."""
+RECENT_DAYS = 10
 FACTOR_ANALYSTS = ("value", "quality")
-
-
-@dataclass(frozen=True)
-class BookInputs:
-    """What the store gives the book beside prices, each keyed by listing."""
-    sectors: Mapping[str, str]
-    earnings: Mapping[str, tuple[date, ...]]
-    """US earnings release days as last fetched (SEC 8-K item 2.02)."""
-    factors: Mapping[str, Mapping[str, tuple[tuple[date, float], ...]]]
-    """Analyst ("value", "quality") -> its stored scores, each dated by its last data point."""
-    verdicts: Mapping[str, Lean]
-    """The newest fresh research verdicts, by the AI account's freshness rule."""
 
 
 @dataclass(frozen=True)
 class RegimeRun:
     day: date | None
-    """The market day read: the last stored bar on or before today."""
+    """The market day read: the last complete stored session on or before today."""
     mood: str | None
     flags: tuple[str, ...]
     decisions: list[Decision]
@@ -74,37 +69,52 @@ class RegimeCard:
     decisions: tuple[LoggedDecision, ...]
 
 
-def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: BookInputs):
-    """The regime book over `history`, with the `[regime]` settings."""
-    from oracle.broker import regime  # ticket 01's pure module; a top-level import once it lands
-
-    return regime.regime_book(history, inputs=inputs, settings=ctx.config.regime)
+def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs) -> RegimeBook:
+    """The regime book over `history`, with the `[regime]` settings and the strategy's limits."""
+    settings = settings_from(asdict(ctx.config.regime), max_positions=ctx.config.strategy.max_positions,
+                             min_probability=ctx.config.strategy.min_probability)
+    return regime_book(history, inputs=inputs, settings=settings)
 
 
 def regime_step(ctx: AppContext) -> RegimeRun | None:
     """The regime book's leans traded under the strategy's rules on the regime account; None,
-    deciding nothing, while it is off. Reads only bars on or before today."""
+    deciding nothing, while it is off. Reads only complete sessions on or before today."""
     if not ctx.config.regime_account.enabled:
         return None
     today = ctx.clock.utcnow().date()
     traded = traded_by(ctx, REGIME)
-    history = {s: rows for s, rows in histories_in_base(ctx, today - timedelta(days=HISTORY_DAYS), today).items()
-               if rows}
-    day = max((rows[-1].bar.date for rows in history.values()), default=None)
+    history, day = complete_sessions(histories_in_base(ctx, today - timedelta(days=HISTORY_DAYS), today))
     book = build_book(ctx, history, _inputs(ctx, traded))
     state = book.state(day) if day else None
     found, skips, why = _leans(ctx, book, state, day, traded, history)
     skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
-    decisions = _step(ctx, REGIME, found, skips, {}, why)
+    decisions = _step(ctx, REGIME, found, skips, {}, why, book.cap)
     if day is not None:
         RegimeStateRepo(ctx.conn).save(REGIME, day, _plain(state) if state else {"mood": None, "note": NO_MOOD},
                                        to_utc_iso(ctx.clock.utcnow()))
     return RegimeRun(day, state.mood if state else None, tuple(sorted(state.flags)) if state else (), decisions)
 
 
-def _leans(ctx: AppContext, book, state, day: date | None, traded: list[str],
+def complete_sessions(history: Mapping[str, list[ConvertedBar]]) -> tuple[dict[str, list[ConvertedBar]], date | None]:
+    """`history` without its trailing partial days, and the last complete day (None without bars)."""
+    counts: dict[date, int] = {}
+    for rows in history.values():
+        for c in rows:
+            counts[c.bar.date] = counts.get(c.bar.date, 0) + 1
+    days = sorted(counts)
+    busiest = max((counts[d] for d in days[-RECENT_DAYS:]), default=0)
+    while days and counts[days[-1]] < COMPLETE_SHARE * busiest:
+        days.pop()
+    if not days:
+        return {}, None
+    last = days[-1]
+    kept = {s: [c for c in rows if c.bar.date <= last] for s, rows in history.items()}
+    return {s: rows for s, rows in kept.items() if rows}, last
+
+
+def _leans(ctx: AppContext, book: RegimeBook, state: RegimeState | None, day: date | None, traded: list[str],
            history: Mapping[str, list[ConvertedBar]]) -> tuple[dict[str, Lean], list[Decision], dict[str, dict]]:
-    universe, lean_of = UniverseRepo(ctx.conn), book.lean_source()
+    universe = UniverseRepo(ctx.conn)
     found, skips, why = {}, [], {}
     for symbol in traded:
         rows = history.get(symbol)
@@ -116,30 +126,41 @@ def _leans(ctx: AppContext, book, state, day: date | None, traded: list[str],
             skips.append(Decision(symbol, Action.SKIP, None, NO_MOOD))
         elif (last := rows[-1].bar.date) < day - timedelta(days=STALE_DAYS):
             skips.append(Decision(symbol, Action.SKIP, None, f"no price since {last.isoformat()}: update its prices"))
-        elif (lean := lean_of(symbol, [c.bar for c in rows[-LOOKBACK:]])) is None:
-            skips.append(Decision(symbol, Action.SKIP, None, "no regime score: too little history for any method"))
+        elif (explained := book.explain(symbol, day)) is None:
+            skips.append(Decision(symbol, Action.SKIP, None, NO_SCORE))
         else:
-            found[symbol] = lean
-            explained = book.explain(symbol, last)
-            if explained is not None:
-                why[symbol] = _explanation(state, explained.lean, explained.parts)
+            found[symbol] = explained.lean
+            why[symbol] = _explanation(explained)
     return found, skips, why
 
 
-def _explanation(state, lean: Lean, parts: Mapping[str, float]) -> dict:
+def _explanation(x: Explained) -> dict:
     """The mood and every method's weighted part of the score, largest first."""
-    ranked = sorted(parts.items(), key=lambda kv: (-abs(kv[1]), kv[0]))
-    return {"mood": state.mood, "flags": sorted(state.flags), "label": lean.label, "probability": lean.probability,
-            "score": sum(parts.values()), "parts": dict(ranked)}
+    ranked = sorted(x.parts.items(), key=lambda kv: (-abs(kv[1]), kv[0]))
+    return {"mood": x.state.mood, "flags": sorted(x.state.flags), "label": x.lean.label,
+            "probability": x.lean.probability, "score": x.score, "parts": dict(ranked)}
 
 
-def _inputs(ctx: AppContext, traded: list[str]) -> BookInputs:
+def _inputs(ctx: AppContext, traded: list[str]) -> RegimeInputs:
     universe, signals = UniverseRepo(ctx.conn), SignalRepo(ctx.conn)
     sectors = {s: p.sector for s in traded if (p := universe.profile(s)) and p.sector}
-    earnings = {s: tuple(r.day for r in found) for s in traded if (found := stored_releases(ctx, s))}
-    factors = {s: {a: tuple((x.as_of, x.score) for x in signals.history(s, a)) for a in FACTOR_ANALYSTS}
-               for s in traded}
-    return BookInputs(sectors, earnings, factors, fresh_verdicts(ctx, traded))
+    earnings = {s: tuple((r.day, r.before_open) for r in found) for s in traded if (found := stored_releases(ctx, s))}
+    factors = {s: dated for s in traded
+               if (dated := _combined({a: [(x.as_of, x.score) for x in signals.history(s, a)] for a in FACTOR_ANALYSTS}))}
+    verdicts = {s: ((v.as_of, LABEL_SCORES[v.label]),) for s, v in fresh_verdicts(ctx, traded).items()}
+    return RegimeInputs(sectors, earnings, factors, verdicts, ctx.config.ai_account.max_verdict_age_days)
+
+
+def _combined(series: Mapping[str, list[tuple[date, float]]]) -> tuple[tuple[date, float], ...]:
+    """On each day any analyst scored, the mean of each one's newest score known by then."""
+    latest: dict[str, float] = {}
+    out = []
+    for day, name, score in sorted((d, a, v) for a, rows in series.items() for d, v in rows):
+        latest[name] = score
+        if out and out[-1][0] == day:
+            out.pop()
+        out.append((day, sum(latest.values()) / len(latest)))
+    return tuple(out)
 
 
 def _plain(value):

@@ -4,6 +4,7 @@ pessimistic costs."""
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -219,18 +220,22 @@ def traded_by(ctx: AppContext, account: str) -> list[str]:
 
 
 def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
-          reports: dict[str, int], explanations: dict[str, dict] | None = None) -> list[Decision]:
+          reports: dict[str, int], explanations: dict[str, dict] | None = None,
+          cap: Callable[[dict[str, Lean], set[str]], dict[str, Lean]] | None = None) -> list[Decision]:
     """Decide over `found` with the strategy's rules, queue the orders on `account` and log
     every decision; `reports` maps a listing to the research run behind its decision, and
-    `explanations` to what its lean was made of."""
+    `explanations` to what its lean was made of. `cap` limits the leans given every holding
+    and pending buy (the regime book's sector cap)."""
     explanations = explanations or {}
     view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
     barred = _never_bought(ctx, [s for s in found if s not in holdings])
     found = {s: lean for s, lean in found.items() if s not in barred}
     unusable = unusable + [Decision(s, Action.SKIP, None, NEVER_BUY) for s in barred]
-    sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     orders = PaperRepo(ctx.conn).pending(account)
+    if cap is not None:
+        found = cap(found, set(holdings) | {o.symbol for o in orders if o.side == Side.BUY})
+    sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, strategy_rules(ctx),
                      {o.symbol for o in orders}, _share_costs(ctx, [s for s in sizes if s not in holdings]))
