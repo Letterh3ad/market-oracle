@@ -2690,3 +2690,18 @@ the watch for days).
 **Context:** With each health described in words and allowed as a reason, the smoke call's 4B model wrote "momentum's picks have lagged badly (health 0.50), so we raise its weight" and gave x1.5: it followed the licence to move but not its direction, cancelling the rules' own health penalty.
 **Decision:** `grounded` keeps each move only on a side of 1 its method's evidence supports: a firing warning or a measured health below 1 allows a cut, a firing good sign or a measured health above 1 a raise, evidence both ways allows either, a neutral record neither. A move on the wrong side is set to 1 and the stored reason says "kept at x1, a move against its evidence: ...", beside the existing "no sign or record" reset.
 **Alternatives:** More prompt wording (the model had the words and still inverted them); a bigger model by default (local models first, and the guard holds at any size).
+
+## 2026-09-29 - The regime-ai prompt carries no date, live and replayed
+**Context:** Ticket 06: the user wants evidence for regime-ai tonight by replaying it over history, and a dated prompt lets the model recall what came next.
+**Decision:** `tilt_messages` drops the "Day:" line; live and replay share the one builder, so both see only mood, flags, readings, signs and health. The backtest caption says date-blind is not hindsight-free (a model trained on those years may still recognise a market from its readings).
+**Alternatives:** A replay-only prompt without the date (live and replay would measure different prompts); shifting or masking readings (changes what the rules also read).
+
+## 2026-09-29 - The backtest's regime_ai line replays the tilt in memory, only when asked
+**Context:** A model call per replayed day is hours on a local model; the plain backtest must stay fast and only read.
+**Decision:** `ReplayTilt` asks the model for every decided day from the first backtest day (earlier warm-up days, and the last day, which decides nothing, get no tilt), through the live validation, evidence and direction guards; answers are kept for the run by exact prompt text (temperature 0), a failure is no tilt that day, and three days in a row with no answer at all stop the asking. Nothing is stored. `run_backtest(regime_ai=True)`, `oracle backtest --regime-ai` and a Backtest page tick box add the `regime_ai` line; its note counts calls, cache hits, failures, kept moves per method and direction, and guard resets. The job shows the replay's day as its progress, and a Cancel (or server stop) sets a flag the tilt checks through a new `on_cancel` job hook, since the replay never yields to its loop; the rest then replays on the rules weights in seconds.
+**Alternatives:** Storing replayed tilts beside the live ones (a backtest only reads, and mixing them would feed replayed answers into the live account's book); a cache keyed by day (costs the same calls, guards nothing); a regime-ai line in the replay study (it reruns with the study, hours each time: a follow-up).
+
+## 2026-09-29 - The stored tilt reason stays within MAX_REASON with its guard notes
+**Context:** Gate 05 N1: the model's reason was cut to 300 characters, then the "kept at x1" notes were appended, up to about 480.
+**Decision:** The model's words are cut to leave room for the notes, which are kept whole.
+**Alternatives:** Cutting the whole string (would cut the notes, the part that explains the guards).

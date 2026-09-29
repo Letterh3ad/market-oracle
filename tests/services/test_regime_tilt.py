@@ -3,6 +3,7 @@ stored answer (or failure) per day that a restart and every later book reuse."""
 
 import json
 import logging
+import re
 from datetime import date, datetime, timezone
 
 import httpx
@@ -14,7 +15,8 @@ from oracle.research.llm import ModelError
 from oracle.services.context import open_context
 from oracle.services import regime_tilt
 from oracle.services.regime_tilt import (
-    RETRY_AFTER_S, SYSTEM, TILTED, BadTilt, DailyTilt, MAX_REASON, grounded, tilt_messages, tilt_schema, validated,
+    GIVE_UP_AFTER, RETRY_AFTER_S, SYSTEM, TILTED, BadTilt, DailyTilt, MAX_REASON, ReplayTilt, grounded,
+    tilt_messages, tilt_schema, validated,
 )
 from oracle.store.regime import TiltRepo
 from tests.fakes.clock import FakeClock
@@ -48,7 +50,7 @@ def test_the_prompt_gives_the_mood_readings_and_each_methods_preset_rules_weight
     [system, user] = tilt_messages(state(), 0.5)
     assert system == {"role": "system", "content": SYSTEM.format(low=0.5, high=1.5)}
     text = user["content"]
-    assert "2026-09-28" in text and "volatile_down" in text and "rebound" in text
+    assert "volatile_down" in text and "rebound" in text
     assert "trend_gap -0.041" in text and "vol_pct 0.910" in text
     line = next(x for x in text.splitlines() if x.startswith("- momentum"))
     assert "preset 0.125" in line and "rules weight 0.050" in line and "health 0.50" in line
@@ -267,3 +269,97 @@ def test_two_calls_with_no_answer_store_a_failure_that_says_it_was_retried(ctx, 
 def test_a_bad_answer_is_never_asked_again(ctx, tilt_waits, model):
     tilt = DailyTilt(ctx, "regime-ai", DAY, 0.5, model)
     assert tilt(state()) == {} and len(model.asked) == 1 and tilt_waits == []
+
+
+def test_the_prompt_carries_no_date_so_a_replayed_day_cannot_be_recalled():
+    [system, user] = tilt_messages(state(), 0.5)
+    text = system["content"] + user["content"]
+    assert "2026" not in text and "Day" not in user["content"]
+    assert re.search(r"\d{4}-\d{2}-\d{2}", text) is None
+    assert tilt_messages(state(day=BEFORE), 0.5) == [system, user], "the day changes nothing the model reads"
+
+
+def test_the_stored_reason_stays_within_its_limit_with_the_guard_notes(ctx):
+    raised = {m: 1.5 for m in TILTED}
+    tilt = DailyTilt(ctx, "regime-ai", DAY, 0.5, TiltModel({**raised, "reason": "word " * 200}))
+    tilt(state())
+    reason = tilt.today.reason
+    assert len(reason) <= MAX_REASON and "no sign or record behind a move" in reason
+    assert reason.endswith("a move against its evidence: momentum)"), "the notes are kept whole"
+
+
+def replay(model, start=BEFORE, end=DAY, **kw):
+    return ReplayTilt(model, 0.5, start, end, **kw)
+
+
+def test_a_replay_asks_the_model_for_every_day_in_its_window_and_none_outside():
+    model = TiltModel(ANSWER)
+    tilt = replay(model)
+    assert tilt(state(day=date(2026, 9, 24))) == {} and tilt(state(day=date(2026, 9, 29))) == {}
+    assert model.asked == []
+    shaped = {**dict.fromkeys(TILTED, 1.0), "momentum": 0.6, "low_vol": 1.3}
+    assert tilt(state(day=BEFORE)) == shaped
+    assert tilt(state(day=DAY, readings={"trend_gap": 0.2})) == shaped
+    assert len(model.asked) == 2 and (tilt.stats.days, tilt.stats.calls) == (2, 2)
+    assert model.asked[0][1] == tilt_schema()
+
+
+def test_identical_states_are_answered_from_the_runs_cache_by_prompt_text():
+    model = TiltModel(ANSWER)
+    tilt = replay(model)
+    assert tilt(state(day=BEFORE)) == tilt(state(day=DAY)) and len(model.asked) == 1
+    assert (tilt.stats.calls, tilt.stats.cached) == (1, 1)
+
+
+def test_a_cached_answer_is_still_guarded_by_each_days_own_evidence():
+    model = TiltModel({"low_vol": 0.7, "reason": "Cut low volatility."})
+    tilt = replay(model)
+    lagging = state(day=BEFORE, health={**state().health, "low_vol": 0.996})
+    leading = state(day=DAY, health={**state().health, "low_vol": 1.004})
+    assert tilt(lagging) == {"low_vol": 0.7}
+    assert tilt(leading) == {"low_vol": 1.0}, "both read 'health 1.00', but this one leads: a cut is against it"
+    assert (tilt.stats.calls, tilt.stats.cached) == (1, 1) and tilt.stats.against == {"low_vol": 1}
+
+
+def test_a_replay_counts_kept_moves_and_the_guard_resets():
+    model = TiltModel({"momentum": 1.5, "low_vol": 1.3, "trend": 1.2, "hold": 1.0, "reason": "Up."})
+    tilt = replay(model)
+    assert tilt(state()) == {"momentum": 1.0, "low_vol": 1.3, "trend": 1.0, "hold": 1.0}
+    s = tilt.stats
+    assert (s.moved, s.reset) == (1, 1)
+    assert s.up == {"low_vol": 1} and s.down == {} and s.bare == {"trend": 1} and s.against == {"momentum": 1}
+    said = s.summary()
+    assert "1 day replayed" in said and "raised: low_vol 1" in said and "no sign or record: trend 1" in said
+    assert "against its evidence: momentum 1" in said
+
+
+@pytest.mark.parametrize("model", [TiltModel("{broken"), TiltModel(error=RuntimeError("boom"))])
+def test_a_replay_failure_is_no_tilt_that_day_and_counted(model):
+    tilt = replay(model)
+    assert tilt(state()) == {} and tilt.stats.failed == 1 and tilt.stats.moved == 0
+    assert "Failures:" in tilt.stats.summary()
+
+
+def test_a_replay_stops_asking_after_days_in_a_row_without_an_answer(tilt_waits):
+    model = TiltModel(error=transport("down"))
+    tilt = replay(model, start=date(2026, 9, 1))
+    for d in range(1, 6):
+        assert tilt(state(day=date(2026, 9, d), readings={"trend_gap": d / 100})) == {}
+    assert len(model.asked) == 2 * GIVE_UP_AFTER and tilt.stats.failed == GIVE_UP_AFTER
+    assert tilt.stats.skipped == 5 - GIVE_UP_AFTER and "down" in tilt.stats.gave_up
+    assert "Stopped asking" in tilt.stats.summary()
+
+
+def test_a_stopped_replay_asks_nothing_more_and_says_where_it_is():
+    model, stopped, said = TiltModel(ANSWER), [], []
+    tilt = replay(model, stop=lambda: bool(stopped), on_progress=said.append)
+    tilt(state(day=BEFORE))
+    stopped.append(True)
+    assert tilt(state(day=DAY, readings={"trend_gap": 0.3})) == {}
+    assert len(model.asked) == 1 and tilt.stats.skipped == 1
+    assert said[-1] == "Regime AI tilt at 2026-09-28 (2026-09-25 to 2026-09-28): 1 model call, 0 from cache, 0 failed"
+
+
+def test_a_replay_stores_nothing(ctx):
+    replay(TiltModel(ANSWER))(state())
+    assert TiltRepo(ctx.conn).all("regime-ai") == {}

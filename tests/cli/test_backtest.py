@@ -4,6 +4,7 @@ from oracle.cli.main import main
 from oracle.config import Config
 from oracle.services.context import open_context
 from tests.fakes.clock import FakeClock
+from tests.fakes.tilt_model import TiltModel
 from tests.services.test_backtest import BARS, END, NOW, START, seed
 
 
@@ -21,6 +22,23 @@ def test_backtest_prints_every_line_the_notes_and_the_trades(tmp_path, capsys):
     assert "strategy" in out and "buy_and_hold" in out and "momentum" in out
     assert "\nregime " in out and "Regime: trend, 12-1 momentum" in out and "no AI verdicts" in out
     assert " buy  UP " in out
+
+
+def test_regime_ai_is_replayed_only_when_asked_and_says_where_it_is(tmp_path, capsys, monkeypatch):
+    model = TiltModel({"trend": 1.0, "reason": "kept"})
+    monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda c: (model, "fake (fake tilt-1)"))
+    with open_context(Config(db_path=tmp_path / "o.db", base_currency="USD"), None, FakeClock(NOW)) as c:
+        seed(c, {"UP": BARS})
+    cfg = tmp_path / "oracle.toml"
+    cfg.write_text('db_path = "o.db"\nbase_currency = "USD"\n', encoding="utf-8")
+    days = ["--list", "tech", "--from", START.isoformat(), "--to", END.isoformat()]
+    assert main(["--config", str(cfg), "backtest", *days]) == 0
+    assert "regime_ai" not in capsys.readouterr().out and model.asked == []
+    assert main(["--config", str(cfg), "backtest", *days, "--regime-ai"]) == 0
+    out, err = capsys.readouterr()
+    assert "\nregime_ai " in out and "Regime AI: the regime line with the live regime-ai tilt" in out
+    assert "days replayed with the model's tilt" in out and model.asked
+    assert err.startswith("Regime AI tilt at "), "the first day's progress is said at once"
 
 
 def test_a_bad_day_is_refused_before_anything_runs(tmp_path, capsys):

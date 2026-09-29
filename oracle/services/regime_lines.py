@@ -9,7 +9,7 @@ from collections.abc import Collection, Mapping
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 
-from oracle.broker.regime import DatedScores, RegimeBook, RegimeInputs, regime_book, settings_from
+from oracle.broker.regime import DatedScores, RegimeBook, RegimeInputs, Tilt, regime_book, settings_from
 from oracle.broker.rules import Rules
 from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
@@ -70,16 +70,16 @@ def regime_inputs(ctx: AppContext, symbols: Collection[str], end: date,
 
 
 def regime_line(ctx: AppContext, start: date, end: date, rules: Rules, traded: Collection[str],
-                verdicts: Mapping[str, DatedScores] | None = None) -> RegimeLine:
+                verdicts: Mapping[str, DatedScores] | None = None, tilt: Tilt | None = None) -> RegimeLine:
     """The replayed book over `market_history` from HISTORY_DAYS before `start` to `end` (never
     after). `verdicts` feeds the `ai_verdict` method (the replay study's, dated at their as-of
-    day); None in a plain backtest."""
+    day); None in a plain backtest. `tilt` makes it the regime-ai book (a replayed model tilt)."""
     market = market_history(ctx, start - timedelta(days=HISTORY_DAYS), end, traded)
     inputs = regime_inputs(ctx, market, end, verdicts)
     settings = settings_from(asdict(ctx.config.regime), max_positions=rules.max_positions,
                              min_probability=rules.min_probability)
     first = min((rows[0].bar.date for rows in market.values() if rows), default=start)
-    return RegimeLine(regime_book(market, inputs=inputs, settings=settings),
+    return RegimeLine(regime_book(market, inputs=inputs, settings=settings, tilt=tilt),
                       _caption(len(market), inputs, verdicts is not None and bool(verdicts), end,
                                start < first + RANK_WAIT))
 

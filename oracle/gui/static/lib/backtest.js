@@ -22,7 +22,7 @@ function shiftYears(day, years) {
 const DEFAULT_YEARS = 5;
 
 // Runs kept before the momentum or regime line have fewer lines, so each is found by name.
-const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime"];
+const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_ai"];
 
 function runLabel(r) {
   const figures = RUN_LINES.map((name) => r.lines.find((l) => l.name === name)).filter((l) => l)
@@ -55,6 +55,7 @@ function backtestSection() {
     "aria-label": "Slippage in basis points" });
   const commission = el("input", { type: "number", min: "0", step: "any", value: "0", style: "width: 80px",
     "aria-label": "Commission per trade" });
+  const withAi = el("input", { type: "checkbox", "aria-label": "With the regime AI line" });
   const currency = el("span");
   const span = el("div", { class: "dim small" });
   const kept = el("div", { class: "row" });
@@ -67,9 +68,10 @@ function backtestSection() {
     }
     const q = new URLSearchParams({ watchlist: list.value, start: from.value, end: to.value,
       slippage_bps: slippage.value || "0", commission: commission.value || "0" });
+    if (withAi.checked) q.set("regime_ai", "true");
     say("", false);
     try {
-      const summary = await runJob(`/api/jobs/backtest?${q}`, (job) => { onState(job); running(); });
+      const summary = await runJob(`/api/jobs/backtest?${q}`, (job) => { onState(job); running(job); });
       say("", false);
       await loadRuns(summary.id);
     } catch (err) {
@@ -77,9 +79,13 @@ function backtestSection() {
     }
   });
 
-  function running() {
-    say(el("span", null, "A backtest is running: a long list over several years takes up to a minute. "
-      + "Follow or cancel it in the ", el("a", { href: "#activity" }, "Activity tab"), "."), false);
+  function running(job) {
+    const ai = job?.label?.endsWith("with regime AI");
+    say(el("span", null, ai
+      ? `A backtest with the regime AI line is running: it asks the model for every day, hours on a local model. ${
+        job.progress ? `${job.progress}. ` : ""}Follow or cancel it in the `
+      : "A backtest is running: a long list over several years takes up to a minute. Follow or cancel it in the ",
+    el("a", { href: "#activity" }, "Activity tab"), "."), false);
   }
 
   async function loadSpan(reset) {
@@ -171,9 +177,9 @@ function backtestSection() {
     }
     const job = body.jobs.find((j) => j.kind === "backtest" && ACTIVE.includes(j.state));
     if (!job) return;
-    running();
+    running(job);
     try {
-      const summary = await followJob(job);
+      const summary = await followJob(job, running);
       say("", false);
       await loadRuns(summary.id);
     } catch (err) {
@@ -204,6 +210,9 @@ function backtestSection() {
     el("div", { class: "row" }, "List ", list, " from ", from, " to ", to),
     el("div", { class: "row" }, tip("Slippage", "slippage"), slippage, " basis points, ",
       tip("commission", "commission"), commission, " ", currency, " per trade ", run),
+    el("div", { class: "row small" }, el("label", null, withAi, " Add the regime AI line: the regime line with the "
+      + "live model tilt, asked for every day with no date in the prompt. One model call per day: hours on a local "
+      + "model, so only when ticked.")),
     note, span, kept, result);
   return { node, start };
 }

@@ -140,6 +140,28 @@ def test_run_queues_the_job_with_the_form_and_shows_its_result():
     assert "The main list, 2025-03-03 to 2026-09-22" in text
 
 
+def test_the_regime_ai_line_is_asked_for_only_when_ticked_and_its_progress_shows():
+    shown = run("""
+        ANSWERS["POST /api/jobs/backtest"] = { id: 1, kind: "backtest", state: "running",
+          label: "Backtest main, 2025-03-03 to 2026-09-22, with regime AI",
+          progress: "Regime AI tilt at 2025-06-02 (2025-03-03 to 2026-09-22): 60 model calls, 0 from cache, 0 failed" };
+        ANSWERS["GET /api/activity/1"] = { id: 1, kind: "backtest", state: "done", result: RUN };
+        section.start(); await settle();
+        labelled(node, "Backtest from").value = "2025-03-03";
+        labelled(node, "With the regime AI line").checked = true;
+        asked.length = 0;
+        button(node, "Run backtest").fire("click"); await settle();
+        const during = node.textContent;
+        await settle(1600);
+        console.log(JSON.stringify([asked, during]));
+    """)
+    asked, during = shown
+    assert asked[0] == ("POST /api/jobs/backtest?watchlist=main&start=2025-03-03&end=2026-09-22"
+                        "&slippage_bps=10&commission=0&regime_ai=true")
+    assert "asks the model for every day" in during and "Regime AI tilt at 2025-06-02" in during
+    assert "Add the regime AI line" in during
+
+
 def test_a_refusal_shows_under_the_form():
     text = run("""
         ANSWERS["POST /api/jobs/backtest"] = { status: 400, error: "prices for the main list are stored from X" };

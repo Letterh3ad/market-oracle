@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -72,6 +73,9 @@ class Job:
     link: str | None = None
     """Where its result shows in the GUI."""
     progress_fn: Callable[[], str | None] | None = field(default=None, repr=False)
+    on_cancel: Callable[[], None] | None = field(default=None, repr=False)
+    """Told the moment a running job is cancelled: work that never yields to its loop (a long
+    replay on a worker thread) can only stop early by checking a flag this sets."""
     automatic: bool = False
     """Started by itself (a scheduled tick), not by a button: the automation switch can stop it."""
     submitted_at: datetime | None = None
@@ -113,7 +117,8 @@ class JobRunner:
 
     def submit(self, kind: str, label: str, work: Work, *, subject: str | None = None,
                link: str | None = None, progress: Callable[[], str | None] | None = None,
-               automatic: bool = False, profile: str | None = None) -> Job:
+               automatic: bool = False, profile: str | None = None,
+               on_cancel: Callable[[], None] | None = None) -> Job:
         """Queue `work`; a job of the same kind, subject and picked `profile` still waiting or
         running is returned instead of a second one."""
         if subject is not None:
@@ -123,7 +128,7 @@ class JobRunner:
         now = self._ctx.clock.utcnow()
         job_id = self._history.add(kind, label, subject, link, "queued", now, os.getpid(), profile)
         job = Job(job_id, kind, label, work, subject=subject, link=link, progress_fn=progress, automatic=automatic,
-                  submitted_at=now, profile=profile)
+                  submitted_at=now, profile=profile, on_cancel=on_cancel)
         self._queues.setdefault(kind, deque()).append(job)
         worker = self._workers.get(kind)
         if worker is None or worker.done():
@@ -172,6 +177,7 @@ class JobRunner:
             self._queues[job.kind].remove(job)
             self._finish(job, "cancelled", "cancelled before it started")
         elif job.state == "running" and job.task is not None:
+            _told(job)
             job.task.cancel()
         else:
             raise InvalidQuery(f"{job.label} is already {job.state}")
@@ -193,6 +199,8 @@ class JobRunner:
         for queue in self._queues.values():
             while queue:
                 self._finish(queue.popleft(), "cancelled", NOT_RUN)
+        for job in self._running.values():
+            _told(job)
         workers = list(self._workers.values())
         for worker in workers:
             worker.cancel()
@@ -236,6 +244,11 @@ class JobRunner:
         self._history.update(job.id, state, error, job.started_at, job.finished_at)
         self._finished.append(job)
         job.finished.set()
+
+
+def _told(job: Job) -> None:
+    if job.on_cancel is not None:
+        job.on_cancel()
 
 
 def _from_row(r: JobRow) -> Job:
@@ -474,22 +487,36 @@ BACKTEST_SEP = "|"
 """Between the parts of a backtest job's subject, which a retry rebuilds the request from."""
 
 
+REGIME_AI_PART = "regime_ai"
+"""The last part of a backtest subject that asked for the regime_ai line; a plain subject ends
+in a number, so the two never join or mix up on retry."""
+
+
 def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: date, end: date,
-                    slippage_bps: float = 10.0, commission: float = 0.0) -> Job:
+                    slippage_bps: float = 10.0, commission: float = 0.0, regime_ai: bool = False) -> Job:
     """Replay the strategy's rules over a list's stored prices and keep the result; bad days
-    or costs are refused now. The same request pressed twice joins the first."""
+    or costs are refused now. The same request pressed twice joins the first. `regime_ai` adds
+    the replayed model tilt line, a model call per day (hours on a local model): the job says
+    how far it is, and a Cancel stops the asking at once (the rest replays in seconds)."""
     name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+    stage: list[str] = []
+    stopped = threading.Event()
 
     async def work(c: AppContext):
-        b = run_backtest(c, name, start, end, slippage_bps, commission)
+        b = run_backtest(c, name, start, end, slippage_bps, commission, regime_ai=regime_ai,
+                         progress=stage.append if regime_ai else None, stop=stopped.is_set)
         # The replay never yields, so a Cancel pressed during it lands here, before the result is kept.
         await asyncio.sleep(0)
         return keep_backtest(c, b)
 
-    subject = BACKTEST_SEP.join([name, start.isoformat(), end.isoformat(), repr(float(slippage_bps)),
-                                 repr(float(commission))])
-    return runner.submit("backtest", f"Backtest {name}, {start.isoformat()} to {end.isoformat()}", work,
-                         subject=subject, link="#ledgers")
+    parts = [name, start.isoformat(), end.isoformat(), repr(float(slippage_bps)), repr(float(commission))]
+    label = f"Backtest {name}, {start.isoformat()} to {end.isoformat()}"
+    if regime_ai:
+        parts.append(REGIME_AI_PART)
+        label += ", with regime AI"
+    return runner.submit("backtest", label, work, subject=BACKTEST_SEP.join(parts), link="#ledgers",
+                         progress=(lambda: stage[-1] if stage else None) if regime_ai else None,
+                         on_cancel=stopped.set)
 
 
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
@@ -593,10 +620,14 @@ def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
-    # From the right: the other four parts never hold the separator, a list name might.
-    name, start, end, slippage, commission = (job.subject or "").rsplit(BACKTEST_SEP, 4)
+    # From the right: the other parts never hold the separator, a list name might.
+    subject = job.subject or ""
+    ai = subject.endswith(BACKTEST_SEP + REGIME_AI_PART)
+    if ai:
+        subject = subject[:-len(BACKTEST_SEP + REGIME_AI_PART)]
+    name, start, end, slippage, commission = subject.rsplit(BACKTEST_SEP, 4)
     return submit_backtest(ctx, runner, name, date.fromisoformat(start), date.fromisoformat(end), float(slippage),
-                           float(commission))
+                           float(commission), ai)
 
 
 def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:

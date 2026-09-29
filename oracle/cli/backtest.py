@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import textwrap
+import time
 
 from oracle.cli.common import iso_day, print_lines
 from oracle.services.backtest_service import run_backtest
@@ -24,11 +26,15 @@ def register(parser: argparse.ArgumentParser) -> None:
                         help="how much worse than the open each fill is, in basis points (default 10)")
     parser.add_argument("--commission", type=float, default=0.0,
                         help="a flat fee per trade in the base currency (default 0)")
+    parser.add_argument("--regime-ai", action="store_true",
+                        help="also replay the regime-ai line: the model's daily tilt asked for every day (no date in "
+                             "the prompt, same guards), one model call per day, so hours on a local model")
     parser.set_defaults(handler=run)
 
 
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
-    r = run_backtest(ctx, args.list, args.start, args.end, args.slippage_bps, args.commission)
+    r = run_backtest(ctx, args.list, args.start, args.end, args.slippage_bps, args.commission,
+                     regime_ai=args.regime_ai, progress=_every(PROGRESS_S) if args.regime_ai else None)
     base = ctx.config.base_currency
     n = len(r.listings)
     print(f"Backtest of the {r.watchlist} list ({n} listing{'' if n == 1 else 's'}), "
@@ -47,3 +53,17 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
         print(f"{t.day.isoformat()}  {t.side:<5}{t.symbol:<12}{t.shares:>7} at {t.price:,.2f} {t.currency}"
               f"  {t.cash:>+12,.2f} {base}  ({t.reason})")
     return 0
+
+
+PROGRESS_S = 30.0
+"""How often a regime-ai replay says where it is: often enough to see it move, not a line a day."""
+
+
+def _every(seconds: float):
+    last = [-seconds]
+
+    def say(text: str) -> None:
+        if time.monotonic() - last[0] >= seconds:
+            last[0] = time.monotonic()
+            print(text, file=sys.stderr, flush=True)
+    return say

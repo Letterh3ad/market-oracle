@@ -19,7 +19,9 @@ from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.listings import Listing
 from tests.broker.test_backtest import rising
+from oracle.services.regime_tilt import TILTED
 from tests.fakes.clock import FakeClock
+from tests.fakes.tilt_model import TiltModel
 
 NOW = datetime(2026, 9, 24, 20, 0, tzinfo=timezone.utc)
 
@@ -248,3 +250,90 @@ def test_the_regime_line_reads_value_and_quality_only_from_the_day_recorded(make
     caption = run_backtest(ctx, "tech", START, END).lines[3].caption
     assert f"stored signals of 1 listing, each only from the day it was recorded (the first on {computed})" in caption
     assert "no value or quality" in run_backtest(ctx, "tech", START, BARS[349].date).lines[3].caption
+
+
+def ai_ctx(make_ctx, monkeypatch, model):
+    ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
+    market(ctx, rising(400, "MKT", daily=0.002))
+    monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda c: (model, "fake (fake tilt-1)"))
+    return ctx
+
+
+KEPT = {"trend": 1.0, "reason": "kept"}
+
+
+def test_the_plain_backtest_never_asks_the_model(make_ctx, monkeypatch):
+    model = TiltModel(KEPT)
+    r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END)
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime"] and model.asked == []
+
+
+def test_the_regime_ai_line_asks_the_model_for_every_replayed_day_beside_regime(make_ctx, monkeypatch):
+    model = TiltModel(KEPT)
+    ctx = ai_ctx(make_ctx, monkeypatch, model)
+    said = []
+    r = run_backtest(ctx, "tech", START, END, commission=2.0, regime_ai=True, progress=said.append)
+    plain = run_backtest(ctx, "tech", START, END, commission=2.0)
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_ai"]
+    ai = r.lines[4]
+    assert ai.label == "Regime AI" and "fake (fake tilt-1)" in ai.caption and "date left out" in ai.caption
+    assert r.lines[:4] == plain.lines, "the other lines are the plain backtest's"
+    assert (ai.points, ai.trades) == (r.lines[3].points, r.lines[3].trades), "every tilt x1: it trades like regime"
+    decided = [b.date for b in BARS if START <= b.date < END]
+    note = next(n for n in r.notes if n.startswith("Regime AI:"))
+    assert f"{len(decided)} days replayed" in note, "the last day decides nothing, so it is not asked"
+    calls = len(model.asked)
+    assert f"{calls} model call" in note and f"{len(decided) - calls} answered from the run's cache" in note
+    assert said[-1].startswith(f"Regime AI tilt at {decided[-1].isoformat()}")
+    assert all(str(y) not in m["content"] for y in (START.year, END.year) for m in model.asked[0][0]), "date-blind"
+
+
+def test_a_regime_ai_tilt_against_its_evidence_is_reset_and_counted(make_ctx, monkeypatch):
+    model = TiltModel({**dict.fromkeys(TILTED, 1.5), "reason": "raise everything"})
+    r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END, regime_ai=True)
+    note = next(n for n in r.notes if n.startswith("Regime AI:"))
+    assert "with a move reset to x1 (no sign or record: " in note and model.asked
+
+
+async def test_a_regime_ai_backtest_job_shows_its_progress_keeps_its_line_and_retries_as_asked(make_ctx, monkeypatch):
+    ctx = ai_ctx(make_ctx, monkeypatch, TiltModel(KEPT))
+    r = JobRunner(ctx)
+    plain = submit_backtest(ctx, r, "tech", START, END)
+    job = submit_backtest(ctx, r, "tech", START, END, regime_ai=True)
+    assert job is not plain and job.label.endswith(", with regime AI") and job.subject.endswith("|regime_ai")
+    assert submit_backtest(ctx, r, "tech", START, END, regime_ai=True) is job
+    await r.wait(job.id)
+    assert job.state == "done", job.error
+    assert [x.name for x in job.result.backtest.lines][-1] == "regime_ai"
+    assert [x.name for x in plain.result.backtest.lines][-1] == "regime"
+    assert job.progress_fn().startswith("Regime AI tilt at ") and plain.progress_fn is None
+    dropped = submit_backtest(ctx, r, "tech", START, END, 2.5, 0.75, regime_ai=True)
+    r.cancel(dropped.id)
+    again = retry(ctx, r, dropped.id)
+    await r.wait(again.id)
+    assert again.subject == dropped.subject and again.result.backtest.lines[-1].name == "regime_ai"
+    assert (again.result.backtest.slippage_bps, again.result.backtest.commission) == (2.5, 0.75)
+    await r.stop()
+
+
+async def test_a_cancelled_regime_ai_job_stops_asking_the_model(make_ctx, monkeypatch):
+    holder = {}
+
+    class Cancelling(TiltModel):
+        async def reply(self, messages, schema):
+            holder["job"].on_cancel()
+            return await super().reply(messages, schema)
+
+    model = Cancelling(KEPT)
+    ctx = ai_ctx(make_ctx, monkeypatch, model)
+    r = JobRunner(ctx)
+    holder["job"] = job = submit_backtest(ctx, r, "tech", START, END, regime_ai=True)
+    await r.wait(job.id)
+    assert len(model.asked) == 1, "the flag a Cancel sets ends the asking"
+    await r.stop()
+
+
+def test_a_stopped_regime_ai_replay_asks_no_more_and_still_finishes(make_ctx, monkeypatch):
+    model = TiltModel(KEPT)
+    r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END, regime_ai=True, stop=lambda: True)
+    assert model.asked == [] and r.lines[4].points and "0 model calls" in " ".join(r.notes)

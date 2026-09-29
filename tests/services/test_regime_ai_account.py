@@ -59,7 +59,7 @@ def test_the_step_day_is_tilted_once_and_decisions_are_its_own(ctx, monkeypatch)
     run = step(ctx, model)
     assert (run.account, run.day, run.lag) == ("regime-ai", DAY, None)
     [(messages, schema)] = model.asked
-    assert "2026-09-21" in messages[1]["content"] and set(schema["required"]) == {*METHODS, "reason"} - {"ai_verdict"}
+    assert "2026-09-21" not in messages[1]["content"] and set(schema["required"]) == {*METHODS, "reason"} - {"ai_verdict"}
     assert run.tilt.tilt == {"momentum": 0.6, "trend": 1.4} and run.tilt.reason == "Momentum warned on a rebound."
     assert built[0].state(DAY).tilt == run.tilt.tilt
     [order] = account_view(ctx, "regime-ai").pending

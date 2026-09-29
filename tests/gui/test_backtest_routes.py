@@ -15,6 +15,13 @@ async def watched(ctx, priced):
     return priced
 
 
+async def test_the_regime_ai_line_runs_only_when_asked(watched):
+    job = await run_job(watched, "/api/jobs/backtest", watchlist="main", start=START, end=END, regime_ai="true")
+    assert job["state"] == "done", job
+    assert job["label"].endswith(", with regime AI")
+    assert [line["name"] for line in job["result"]["lines"]][-1] == "regime_ai"
+
+
 async def test_the_span_names_the_days_a_backtest_can_cover(watched):
     body = (await watched.get("/api/backtests/span", params={"watchlist": "MAIN"})).json()
     assert body == {"watchlist": "main", "first": DAYS[0].isoformat(), "last": DAYS[-1].isoformat(),
