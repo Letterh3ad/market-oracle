@@ -11,6 +11,8 @@ const LINES = {
   manual: { label: "Manual", colour: "--text" },
   regime: { label: "Regime", colour: "--regime" },
   "regime-ai": { label: "Regime-AI", colour: "--regime-ai" },
+  "regime-v2": { label: "Regime-v2", colour: "--regime-v2" },
+  regime_v2: { label: "Regime-v2", colour: "--regime-v2" },
   buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
 };
 const BENCH_COLOURS = ["--bench1", "--bench2"];

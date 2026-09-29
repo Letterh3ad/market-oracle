@@ -58,3 +58,26 @@ def test_the_regime_ai_account_is_on_by_default_on_the_research_model(tmp_path):
 def test_bad_regime_ai_account_values_are_refused(tmp_path, line, message):
     with pytest.raises(ConfigError, match=message):
         load(tmp_path, f"[regime_ai_account]\n{line}\n")
+
+
+def test_regime_v2_is_on_by_default_with_the_rotation_set_a_priori(tmp_path):
+    assert Config().regime_v2_account.enabled is True
+    assert asdict(Config().regime_v2) == {"rotation_min_hold_days": 20, "rotation_margin": 0.25, "rotation_max": 2}
+    config = load(tmp_path, "[regime_v2_account]\nenabled = false\n[regime_v2]\nrotation_margin = 1\n")
+    assert config.regime_v2_account.enabled is False
+    assert config.regime_v2.rotation_margin == 1.0 and isinstance(config.regime_v2.rotation_margin, float)
+
+
+@pytest.mark.parametrize(("table", "line", "message"), [
+    ("regime_v2_account", "enabled = 1", "regime_v2_account.enabled must be true or false"),
+    ("regime_v2_account", "astrology = 1", "unknown key"),
+    ("regime_v2", "rotation_min_hold_days = 0", "regime_v2.rotation_min_hold_days must be a whole number"),
+    ("regime_v2", "rotation_min_hold_days = 2.5", "regime_v2.rotation_min_hold_days must be a whole number"),
+    ("regime_v2", "rotation_margin = 0", "regime_v2.rotation_margin must be above 0"),
+    ("regime_v2", "rotation_margin = true", "regime_v2.rotation_margin must be above 0"),
+    ("regime_v2", "rotation_max = 11", "regime_v2.rotation_max must be a whole number"),
+    ("regime_v2", "astrology = 1", "unknown key"),
+])
+def test_bad_regime_v2_values_are_refused(tmp_path, table, line, message):
+    with pytest.raises(ConfigError, match=message):
+        load(tmp_path, f"[{table}]\n{line}\n")

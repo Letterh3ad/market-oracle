@@ -4,7 +4,7 @@ weights (priors from the literature, overridable in `[regime]`) and the non-pric
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 METHODS = ("trend", "momentum", "reversion", "low_vol", "quality_value", "earnings_drift", "hold", "ai_verdict")
@@ -29,6 +29,20 @@ DatedScores = Sequence[tuple[date, float]]
 
 
 @dataclass(frozen=True)
+class Rotation:
+    """regime-v2's way out of a stale holding: without it the book sells only on a sell lean or
+    the stop, so it kept whatever looked steady early on (gate 03 round 1). Fixed a priori, never
+    fitted to a backtest."""
+
+    min_hold: int = 20
+    """Trading days (the listing's own bars) a holding is kept before it can be rotated out."""
+    margin: float = 0.25
+    """How far under its candidate's blended score a holding must be."""
+    most: int = 2
+    """Rotations a step, so one noisy day never turns the book over."""
+
+
+@dataclass(frozen=True)
 class RegimeSettings:
     weights: Mapping[str, Mapping[str, float]] = field(default_factory=lambda: PRESETS)
     """mood -> method -> preset weight; each mood's row is renormalised."""
@@ -45,6 +59,12 @@ class RegimeSettings:
     playbook_cap: float = 1.5
     tilt_cap: float = 0.5
     """The AI tilt multiplies each method's weight within [1 - cap, 1 + cap]."""
+    spread_unscored: bool = False
+    """regime-v2: a method with no score for a listing hands its weight to the price methods
+    present, in proportion to theirs, rather than to every present method, where the constant
+    hold score took a quarter to a third of the blend."""
+    rotation: Rotation | None = None
+    """regime-v2's rotation; None (v1) sells only on a sell lean or the stop."""
 
 
 @dataclass(frozen=True)
@@ -74,3 +94,16 @@ def settings_from(values: Mapping[str, object], *, max_positions: int, min_proba
         good_factor=float(values.get("good_factor", default.good_factor)),
         playbook_cap=float(values.get("playbook_cap", default.playbook_cap)),
         tilt_cap=float(values.get("tilt_cap", default.tilt_cap)))
+
+
+def v2_settings(settings: RegimeSettings, values: Mapping[str, object] | None = None) -> RegimeSettings:
+    """The regime-v2 book's settings: the v1 book's with both changes, the rotation from the flat
+    `[regime_v2]` config when given."""
+    return replace(settings, spread_unscored=True, rotation=rotation_from(values or {}))
+
+
+def rotation_from(values: Mapping[str, object]) -> Rotation:
+    default = Rotation()
+    return Rotation(int(values.get("rotation_min_hold_days", default.min_hold)),
+                    float(values.get("rotation_margin", default.margin)),
+                    int(values.get("rotation_max", default.most)))

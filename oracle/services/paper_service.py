@@ -4,10 +4,10 @@ pessimistic costs."""
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
+from oracle.broker.backtest import LeanCap
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
 from oracle.broker.fills import Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
@@ -31,20 +31,22 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "LINE_NAMES",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
-    "comparison", "decision_log", "discovered_off", "equity_history", "fill_pending",
+    "comparison", "decision_log", "discovered_off", "equity_history", "fill_pending", "held_since",
     "pending_orders", "place_buy", "place_sell", "sells", "step_account", "verdict_history",
     "strategy_rules", "strategy_step", "traded_by",
 ]
 
 REGIME = "regime"
 REGIME_AI = "regime-ai"
-REGIME_LINES = (REGIME, REGIME_AI)
-"""The accounts that trade the regime blend: rules only, and with the daily model tilt."""
-LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI"}
+REGIME_V2 = "regime-v2"
+REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2)
+"""The accounts that trade the regime blend: rules only, with the daily model tilt, and v2 (no
+hold padding, rotation)."""
+LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2"}
 """Each regime line's name on buttons, jobs and printed steps."""
 ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
 TRADERS = ("strategy", "ai", *REGIME_LINES)
@@ -234,11 +236,12 @@ def traded_by(ctx: AppContext, account: str) -> list[str]:
 
 def step_account(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
           reports: dict[str, int], explanations: dict[str, dict] | None = None,
-          cap: Callable[[dict[str, Lean], set[str]], dict[str, Lean]] | None = None) -> list[Decision]:
+          cap: LeanCap | None = None) -> list[Decision]:
     """Decide over `found` with the strategy's rules, queue the orders on `account` and log
     every decision; `reports` maps a listing to the research run behind its decision, and
-    `explanations` to what its lean was made of. `cap` limits the leans given every holding
-    and pending buy (the regime book's sector cap)."""
+    `explanations` to what its lean was made of. `cap` limits the leans given every holding,
+    with the day its position was first filled, and every pending buy (the regime book's sector
+    cap and regime-v2's rotation), as the replay gives them."""
     explanations = explanations or {}
     view = account_view(ctx, account)
     holdings = {p.symbol: p for p in view.positions}
@@ -247,7 +250,9 @@ def step_account(ctx: AppContext, account: str, found: dict[str, Lean], unusable
     unusable = unusable + [Decision(s, Action.SKIP, None, NEVER_BUY) for s in barred]
     orders = PaperRepo(ctx.conn).pending(account)
     if cap is not None:
-        found = cap(found, set(holdings) | {o.symbol for o in orders if o.side == Side.BUY})
+        since = held_since(PaperRepo(ctx.conn), account)
+        found = cap(found, {**{o.symbol: None for o in orders if o.side == Side.BUY},
+                            **{s: since.get(s) for s in holdings}})
     sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
     committed = sum(o.cash for o in orders if o.side == Side.BUY)
     decided = decide(found, holdings, view.cash - committed, view.equity, sizes, strategy_rules(ctx),
@@ -408,6 +413,8 @@ CAPTIONS = {
     "manual": "Manual: your own buys and sells.",
     REGIME: "Regime: trades a blend of known methods weighted by the market's mood, under the same rules.",
     REGIME_AI: "Regime-AI: the same blend with its weights tilted once a day by a local model, under the same rules.",
+    REGIME_V2: ("Regime-v2: the same blend with no hold padding and a rotation out of long-held, clearly weaker "
+                "holdings, under the same rules."),
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
 BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
@@ -504,6 +511,8 @@ def account_on(ctx: AppContext, account: str) -> bool:
         return ctx.config.regime_account.enabled
     if account == REGIME_AI:
         return ctx.config.regime_ai_account.enabled
+    if account == REGIME_V2:
+        return ctx.config.regime_v2_account.enabled
     return True
 
 
@@ -611,6 +620,20 @@ def _replay(repo: PaperRepo, account: str) -> tuple[dict[str, list], float]:
     """({symbol: [shares, cost]}, realised) from the account's fills, at average cost."""
     held, done = _replay_sells(repo, account)
     return held, sum(s.realised for s in done)
+
+
+def held_since(repo: PaperRepo, account: str) -> dict[str, date]:
+    """Each held listing's first fill since it was last flat."""
+    shares: dict[str, int] = {}
+    out: dict[str, date] = {}
+    for f in repo.fills(account):
+        before = shares.get(f.symbol, 0)
+        shares[f.symbol] = before + (f.shares if f.side == Side.BUY else -f.shares)
+        if before <= 0 < shares[f.symbol]:
+            out[f.symbol] = f.date
+        elif shares[f.symbol] <= 0:
+            out.pop(f.symbol, None)
+    return out
 
 
 def _replay_sells(repo: PaperRepo, account: str) -> tuple[dict[str, list], list[Sell]]:

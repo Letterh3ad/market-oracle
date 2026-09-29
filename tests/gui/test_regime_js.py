@@ -125,6 +125,31 @@ def test_the_regime_ai_switch_and_model_pick_save_to_its_own_route():
     assert puts == ["PUT /api/ledgers/regime-ai", "PUT /api/ledgers/regime-ai"] and repainted == 2
 
 
+V2_CARD = {**CARD, "account": "regime-v2", "rotation": {"min_hold": 20, "margin": 0.25, "most": 2},
+           "decisions": [{"day": "2026-09-28", "symbol": "NTT", "action": "sell", "cash": None,
+                          "reason": "rotation: held 31 trading days at score +0.02, 0.25 or more under NVDA at "
+                                    "+0.41; sold to make room for NVDA", "explanation": None}]}
+
+
+def test_the_regime_v2_card_names_its_rotation_rule_and_each_rotation_sale_says_for_whom():
+    text = run("console.log(JSON.stringify(node.textContent));", V2_CARD)
+    for piece in ("Regime-v2 reading", "Rotation: a holding kept 20 trading days or more", "0.25 or more under",
+                  "at most 2 a step", "hands its weight to the price methods", "sold to make room for NVDA",
+                  "their weight went to the price methods", "Regime-v2 decisions",
+                  "On: each tick's regime-v2 step trades the blend"):
+        assert piece in text, piece
+    assert "Rotation:" not in run("console.log(JSON.stringify(node.textContent));")
+
+
+def test_the_regime_v2_switch_saves_to_its_own_route():
+    shown = run("""
+        const box = labelled(node, "Regime-v2 account on");
+        box.checked = false; box.fire("change"); await settle();
+        console.log(JSON.stringify([asked, repainted]));
+    """, V2_CARD)
+    assert shown == [["PUT /api/ledgers/regime-v2"], 1]
+
+
 def test_the_ledgers_tab_module_loads():
     script = f"""
         {PRELUDE}

@@ -24,6 +24,8 @@ class Lean:
     probability: float
     source: str
     """Who made it: `baseline` until AI leans exist."""
+    note: str = ""
+    """Why a sell lean sells, when the label alone would mislead (a rotation, not a bad outlook)."""
 
 
 @dataclass(frozen=True)
@@ -80,7 +82,7 @@ def decide(leans: Mapping[str, Lean], holdings: Mapping[str, Position], cash: fl
             out.append(Decision(symbol, Action.SELL, None, f"stop: {1 - h.value / h.cost:.1%} below cost, "
                                                       f"past the {rules.stop_loss:.0%} limit"))
         elif lean is not None and lean.label in SELL_LABELS:
-            out.append(Decision(symbol, Action.SELL, None, f"{lean.source} lean is {lean.label}"))
+            out.append(Decision(symbol, Action.SELL, None, lean.note or f"{lean.source} lean is {lean.label}"))
     positions = len(holdings.keys() | pending)
     spendable = cash - rules.cash_floor * equity
     wanted = [x for x in leans.values() if x.label in BUY_LABELS and x.symbol not in holdings

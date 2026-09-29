@@ -59,7 +59,7 @@ def test_a_trending_list_is_bought_and_set_against_buy_and_hold(make_ctx):
     ctx = make_ctx({"UP": BARS})
     r = run_backtest(ctx, "TECH", START, END)
     assert r.watchlist == "tech" and r.listings == ("UP",)
-    strategy, held, momentum, _ = r.lines
+    strategy, held, momentum, *_ = r.lines
     assert (strategy.name, held.name, momentum.name) == ("strategy", "buy_and_hold", "momentum")
     assert strategy.trades == len(r.trades) >= 1 and r.trades[0].symbol == "UP"
     assert strategy.points[0] == (START, 0.0) and held.points[0] == (START, 0.0)
@@ -219,7 +219,7 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     market(ctx, rising(400, "MKT", daily=0.002))
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime"]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2"]
     regime = r.lines[3]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
@@ -227,6 +227,19 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     assert "no AI verdicts" in regime.caption and "no value or quality" in regime.caption
     assert "no earnings drift" in regime.caption
     assert "every line likely looks better" in " ".join(r.notes) and "The strategy line leaves out" in " ".join(r.notes)
+
+
+def test_the_regime_v2_line_trades_its_own_book_and_says_what_it_changes(make_ctx):
+    ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
+    market(ctx, rising(400, "MKT", daily=0.002))
+    r = run_backtest(ctx, "tech", START, END, commission=2.0)
+    v1, v2 = r.lines[3], r.lines[4]
+    assert (v2.name, v2.label) == ("regime_v2", "Regime-v2") and v2.points[0] == (START, 0.0)
+    assert v2.caption.startswith("Regime-v2: the regime book with two changes.")
+    assert "20 trading days or more" in v2.caption and "0.25 or more under the best buy not held" in v2.caption
+    assert v2.caption.endswith(v1.caption.removeprefix("Regime: "))
+    [note] = [n for n in r.notes if n.startswith("Regime-v2 rotated")]
+    assert f"in {v2.trades} trades against the regime line's {v1.trades}" in note
 
 
 def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):

@@ -119,6 +119,20 @@ def test_the_report_gives_the_regime_ai_tilt_or_why_there_was_none_and_any_lag(t
     assert "Regime-AI: the regime-ai account is off" in build_report(w)
 
 
+def test_the_report_gives_regime_v2s_mood_and_its_last_steps_rotations(tmp_path):
+    w = seeded(tmp_path)
+    w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
+    w.http.routes[f"{APP}/api/ledgers/regime-v2"] = {
+        "day": "2026-09-25", "note": None, "state": {"mood": "calm_up", "flags": []}, "lag": "behind",
+        "decisions": [], "rotated_last_step": 2}
+    text = build_report(w)
+    assert "Regime-v2 mood on 2026-09-25: calm_up" in text
+    assert "Regime-v2 rotated 2 holdings out on its last step (2026-09-25)" in text
+    assert "Regime-v2 WARNING: behind" in text
+    w.http.routes[f"{APP}/api/ledgers/regime-v2"] = {"day": None, "note": "the regime-v2 account is off", "state": None}
+    assert "Regime-v2: the regime-v2 account is off" in build_report(w)
+
+
 def test_write_report_puts_claudes_summary_on_top(tmp_path):
     system = FakeSystem(result=Ran(0, "All running. Nothing to act on."))
     w = seeded(tmp_path, system=system)

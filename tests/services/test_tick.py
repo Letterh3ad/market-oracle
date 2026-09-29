@@ -50,7 +50,7 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "discover", "research", "step", "ai_step"]
+        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "discover", "research", "step", "ai_step"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
@@ -110,7 +110,8 @@ async def test_a_failing_regime_step_leaves_every_other_stage_running(ctx, monke
     monkeypatch.setattr("oracle.services.tick_service.regime_step", boom)
     run = await run_tick(ctx)
     states = _states(run)
-    assert states.pop("regime_step") == states.pop("regime_ai_step") == "failed" and set(states.values()) == {"ok"}
+    assert states.pop("regime_step") == states.pop("regime_ai_step") == states.pop("regime_v2_step") == "failed"
+    assert set(states.values()) == {"ok"}
     assert [s.name for s in run.stages] == list(STAGES)
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"], "the strategy step still ran"
 

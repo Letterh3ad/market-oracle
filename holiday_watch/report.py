@@ -40,7 +40,8 @@ def build_report(w: Watch) -> str:
     out += ["", "## Paper accounts", ""]
     ledgers = _get(w, "/api/ledgers") if status else None
     out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None,
-                  _get(w, "/api/ledgers/regime-ai") if ledgers else None)
+                  _get(w, "/api/ledgers/regime-ai") if ledgers else None,
+                  _get(w, "/api/ledgers/regime-v2") if ledgers else None)
     out += ["", "## Replay study", ""]
     study = (_get(w, "/api/replay") or {}).get("study") if status else None
     if not study:
@@ -59,9 +60,10 @@ def build_report(w: Watch) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = None) -> list[str]:
+def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = None,
+           regime_v2: dict | None = None) -> list[str]:
     """Every paper account the app lists, then the regime lines' last mood reading, the regime-ai
-    tilt and any lag warning."""
+    tilt, regime-v2's rotations and any lag warning."""
     if not ledgers:
         return ["No ledgers (or the app is down)."]
     base = ledgers.get("base_currency")
@@ -69,17 +71,35 @@ def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = N
            f"largest fall {_pct(a.get('max_fall'))}, {len(a.get('positions') or [])} positions, "
            f"{len(a.get('pending') or [])} waiting" for a in ledgers.get("accounts", [])]
     if regime:
-        state = regime.get("state") or {}
-        if state.get("mood"):
-            flags = ", ".join(state.get("flags") or [])
-            out.append(f"Regime mood on {regime.get('day')}: {state['mood']}" + (f" ({flags})" if flags else ""))
-        if regime.get("note"):
-            out.append(f"Regime: {regime['note']}")
-        if regime.get("lag"):
-            out.append(f"Regime WARNING: {regime['lag']}")
+        out += _mood("Regime", regime)
     if regime_ai:
         out += _tilt(regime_ai)
+    if regime_v2:
+        out += _mood("Regime-v2", regime_v2) + _rotations(regime_v2)
     return out
+
+
+def _mood(name: str, card: dict) -> list[str]:
+    out = []
+    state = card.get("state") or {}
+    if state.get("mood"):
+        flags = ", ".join(state.get("flags") or [])
+        out.append(f"{name} mood on {card.get('day')}: {state['mood']}" + (f" ({flags})" if flags else ""))
+    if card.get("note"):
+        out.append(f"{name}: {card['note']}")
+    if card.get("lag"):
+        out.append(f"{name} WARNING: {card['lag']}")
+    return out
+
+
+def _rotations(card: dict) -> list[str]:
+    """How many holdings regime-v2's last step sold to make room for a stronger buy: the server's
+    own count, not `decisions`, which a busy step's window can push rotation sales out of."""
+    day = card.get("day")
+    if not day:
+        return []
+    n = card.get("rotated_last_step") or 0
+    return [f"Regime-v2 rotated {n} holding{'' if n == 1 else 's'} out on its last step ({day})"]
 
 
 def _tilt(card: dict) -> list[str]:

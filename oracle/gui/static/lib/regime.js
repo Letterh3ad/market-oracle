@@ -1,7 +1,8 @@
 // A regime line's card on the Ledgers tab: its switch, the last step's mood reading, each
 // method's preset and final weight with its warnings, good signs and health, and the recent
 // decisions with what each lean was made of. The regime-ai line's card adds the day's model
-// tilt beside the rules weights, its reason or why there was none, and the model it runs on.
+// tilt beside the rules weights, its reason or why there was none, and the model it runs on; the
+// regime-v2 line's says how it rotates out of stale holdings.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, showError, clearError, companyLink } from "./dom.js";
@@ -25,6 +26,10 @@ const LINES = {
   "regime-ai": { name: "Regime-AI", path: "/api/ledgers/regime-ai", step: "Regime-AI step",
     about: "Then, once a day, a model multiplies each weight within the tilt cap, saying why; "
       + "if it fails the rules weights are traded. Compare its record with the Regime line's to see what the model adds." },
+  "regime-v2": { name: "Regime-v2", path: "/api/ledgers/regime-v2", step: "Regime-v2 step",
+    about: "Rules only, with two changes: a method without a score for a listing hands its weight to the price "
+      + "methods (trend, momentum, reversion, low volatility), not to the steady buy-and-hold score, and it rotates "
+      + "out of long-held, clearly weaker holdings. Compare its record with the Regime line's to see what they add." },
 };
 
 const share = (v) => (v == null ? "" : `${Math.round(v * 100)}%`);
@@ -122,7 +127,7 @@ function reading(card) {
     tiltNote(card.tilt),
     weights(s, tilt),
     signs(s.signs ?? {}),
-    unscored(s.unscored ?? []),
+    unscored(s.unscored ?? [], card.account === "regime-v2"),
   ];
 }
 
@@ -134,14 +139,15 @@ function signs(byMethod) {
   return rows.length ? el("ul", null, ...rows) : null;
 }
 
-// Weighted methods no listing had a score from on the last step: their weight went to the others.
-function unscored(methods) {
+// Weighted methods no listing had a score from on the last step: their weight went to the others
+// (on regime-v2 to the price methods only).
+function unscored(methods, v2) {
   if (!methods.length) return null;
   const why = methods.includes("earnings_drift")
     ? " Earnings drift needs stored earnings dates, which are fetched only when a company's After earnings study is opened."
     : "";
   return el("p", { class: "small warn-text" },
-    `No listing had a score from ${methods.map(name).join(", ")} on this step: their weight went to the other methods.${why}`);
+    `No listing had a score from ${methods.map(name).join(", ")} on this step: their weight went to the ${v2 ? "price" : "other"} methods.${why}`);
 }
 
 function decisions(card, base) {
@@ -153,6 +159,15 @@ function decisions(card, base) {
     `The ${lineOf(card).name.toLowerCase()} account has not decided anything yet: press ${lineOf(card).step}.`);
 }
 
+// regime-v2's rotation rule as configured; each rotation sale's Why names the buy it made room for.
+function rotation(r) {
+  if (!r) return null;
+  return el("p", { class: "small" }, el("strong", null, "Rotation: "),
+    `a holding kept ${r.min_hold} trading days or more whose blended score is ${r.margin.toFixed(2)} or more under `
+    + `the best buy not held (after the sector cap) is sold to make room for it, weakest first, at most ${r.most} `
+    + "a step. The freed slot is bought by the usual rules once the sale's cash is back.");
+}
+
 // `done` repaints the tab after the switch or the model changes.
 function regimeCard(card, base, done) {
   const line = lineOf(card);
@@ -162,6 +177,7 @@ function regimeCard(card, base, done) {
     el("p", { class: "dim small" }, "The account blends well-studied methods, weighting each by the market's "
       + "mood, its known warning and good signs, and its own recent record (health), then trades the blend under the "
       + `strategy's rules. ${line.about}`),
+    rotation(card.rotation),
     card.note ? el("p", { class: "small warn-text" }, card.note) : null,
     card.lag ? el("p", { class: "small warn-text" }, `Warning: ${card.lag}.`) : null,
     ...reading(card),

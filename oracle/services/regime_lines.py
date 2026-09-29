@@ -9,7 +9,8 @@ from collections.abc import Collection, Mapping
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 
-from oracle.broker.regime import DatedScores, RegimeBook, RegimeInputs, regime_book, settings_from
+from oracle.broker.regime import (DatedScores, RegimeBook, RegimeInputs, Rotation, regime_book, settings_from,
+                                  v2_settings)
 from oracle.broker.rules import Rules
 from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
@@ -18,7 +19,8 @@ from oracle.services.prices_service import ConvertedBar, histories_in_base
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["HISTORY_DAYS", "RegimeLine", "combined", "market_history", "regime_inputs", "regime_line"]
+__all__ = ["HISTORY_DAYS", "LINE_LABELS", "REGIME_LINE", "REGIME_V2_LINE", "RegimeLine", "combined", "market_history",
+           "regime_inputs", "regime_line", "regime_lines", "v2_caption"]
 
 HISTORY_DAYS = 1100
 """Calendar days of market bars read before the first day decided: the mood's 200-day average
@@ -26,6 +28,11 @@ and trailing year of percentiles, the 12-month return and the health record all 
 older bars change nothing and only cost time."""
 FACTOR_ANALYSTS = ("value", "quality")
 MARKET_TYPE = "equity"
+REGIME_LINE, REGIME_V2_LINE = "regime", "regime_v2"
+LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2"}
+"""The replayed regime lines' names in a backtest or replay study, and their labels."""
+REGIME_V2_SOURCE = "regime-v2"
+"""The v2 book's leans say it made them, so a rotation or buy reason names its line."""
 RANK_WAIT = timedelta(days=400)
 """About a year of bars and the next month-end: before it the 12-1 momentum rank does not exist."""
 
@@ -74,14 +81,32 @@ def regime_line(ctx: AppContext, start: date, end: date, rules: Rules, traded: C
     """The replayed book over `market_history` from HISTORY_DAYS before `start` to `end` (never
     after). `verdicts` feeds the `ai_verdict` method (the replay study's, dated at their as-of
     day); None in a plain backtest."""
+    return regime_lines(ctx, start, end, rules, traded, verdicts)[REGIME_LINE]
+
+
+def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: Collection[str],
+                 verdicts: Mapping[str, DatedScores] | None = None) -> dict[str, RegimeLine]:
+    """Every replayed regime line by name (`LINE_LABELS`), each its own book over one read of the
+    market and inputs, as `regime_line` builds them."""
     market = market_history(ctx, start - timedelta(days=HISTORY_DAYS), end, traded)
     inputs = regime_inputs(ctx, market, end, verdicts)
     settings = settings_from(asdict(ctx.config.regime), max_positions=rules.max_positions,
                              min_probability=rules.min_probability)
+    v2 = v2_settings(settings, asdict(ctx.config.regime_v2))
     first = min((rows[0].bar.date for rows in market.values() if rows), default=start)
-    return RegimeLine(regime_book(market, inputs=inputs, settings=settings),
-                      _caption(len(market), inputs, verdicts is not None and bool(verdicts), end,
-                               start < first + RANK_WAIT))
+    caption = _caption(len(market), inputs, verdicts is not None and bool(verdicts), end, start < first + RANK_WAIT)
+    return {REGIME_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=settings), caption),
+            REGIME_V2_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=v2, source=REGIME_V2_SOURCE),
+                                       v2_caption(v2.rotation) + caption.removeprefix("Regime: "))}
+
+
+def v2_caption(rotation: Rotation) -> str:
+    """What regime-v2 changes, ahead of the regime line's own caption."""
+    return (f"Regime-v2: the regime book with two changes. A method without a score hands its weight to the price "
+            f"methods present, not to the steady hold score. A holding kept {rotation.min_hold} trading days or more "
+            f"whose blended score is {rotation.margin:.2f} or more under the best buy not held (after the sector cap) "
+            f"is sold to make room for it, weakest first, at most {rotation.most} a day. Otherwise as the regime "
+            "line: ")
 
 
 def combined(series: Mapping[str, list[tuple[date, float]]]) -> tuple[tuple[date, float], ...]:

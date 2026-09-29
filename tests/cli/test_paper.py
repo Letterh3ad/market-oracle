@@ -158,3 +158,15 @@ def test_the_regime_ai_step_prints_its_tilt_and_reason_and_off_says_so(run, monk
                           encoding="utf-8")
     _, out, _ = run("paper", "step", "--account", "regime-ai")
     assert out.startswith("the regime-ai account is off")
+
+
+def test_the_regime_v2_step_prints_its_mood_and_off_says_so(run, monkeypatch):
+    from tests.fakes.regime import use_stub
+
+    built = use_stub(monkeypatch, leans={"VOD.L": ("hold", 0.5, {"trend": 0.1})})
+    code, out, _ = run("paper", "step", "--account", "regime-v2")
+    assert code == 0 and out.startswith("Regime-v2: mood calm_up on 2026-09-17") and built[0].account == "regime-v2"
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[regime_v2_account]\nenabled = false\n",
+                          encoding="utf-8")
+    _, out, _ = run("paper", "step", "--account", "regime-v2")
+    assert out.startswith("the regime-v2 account is off")

@@ -5,7 +5,7 @@ verdicts, or a baseline account's."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
@@ -29,8 +29,10 @@ history would make a long replay grow with the square of its length."""
 LeanSource = Callable[[str, Sequence[Bar]], Lean | None]
 """A listing's lean after the close of the last of its bars given (up to LOOKBACK of them)."""
 
-LeanCap = Callable[[Mapping[str, Lean], Collection[str]], Mapping[str, Lean]]
-"""The day's leans adjusted for what is held or being bought (the regime line's sector cap)."""
+LeanCap = Callable[[Mapping[str, Lean], Mapping[str, date | None]], Mapping[str, Lean]]
+"""The day's leans adjusted for what is held or being bought (the regime lines' sector cap and
+regime-v2's rotation): each holding with the day its position was first filled, each pending buy
+with None."""
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,7 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
     base_seen = dict.fromkeys(history, 0)
     last_value: dict[str, float] = {}
     held: dict[str, list] = {}
+    since: dict[str, date] = {}
     cash = capital
     pending: list[_Order] = []
     leans: dict[str, tuple[date, Lean | None, float | None]] = {}
@@ -125,8 +128,10 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
             shares, cost = held.get(trade.symbol, [0, 0.0])
             if trade.side == Side.BUY:
                 held[trade.symbol] = [shares + trade.shares, cost - trade.cash]
+                since.setdefault(trade.symbol, trade.day)
             else:
                 held.pop(trade.symbol)
+                since.pop(trade.symbol)
             trades.append(trade)
         pending = waiting
         for s, p in today.items():
@@ -153,7 +158,8 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
         sizes = {s: size for s, (_, _, size) in leans.items() if size is not None}
         committed = sum(o.decision.cash for o in pending if o.decision.action == Action.BUY)
         if cap is not None:
-            found = dict(cap(found, held.keys() | {o.decision.symbol for o in pending if o.decision.action == Action.BUY}))
+            buying = {o.decision.symbol: None for o in pending if o.decision.action == Action.BUY}
+            found = dict(cap(found, {**buying, **{s: since[s] for s in held}}))
         for d in decide(found, positions, cash - committed, total, sizes, rules, {o.decision.symbol for o in pending}):
             if d.action != Action.SKIP:
                 pending.append(_Order(day, d))
