@@ -3,10 +3,12 @@ from datetime import date
 
 from oracle.analysts.signals import AnalystSignal
 from oracle.services.paper_service import strategy_rules
-from oracle.services.regime_lines import combined, regime_line
+from oracle.services.regime_lines import combined, market_history, regime_line
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.signals import SignalRepo
+from oracle.store.universe import UniverseRepo
+from oracle.universe.listings import Listing
 from tests.broker.test_backtest import rising
 from tests.services.test_backtest import make_ctx  # noqa: F401 (fixture)
 
@@ -29,19 +31,37 @@ def test_value_and_quality_combine_as_the_mean_of_each_ones_newest_score():
     assert combined({"value": [], "quality": []}) == ()
 
 
-def test_the_market_is_every_stored_listing_up_to_the_last_day_only(make_ctx):
+def listed(ctx, symbol, name, kind="Equity"):
+    UniverseRepo(ctx.conn).add(Listing(symbol, name, kind, "United States", "NMS", currency="USD",
+                                       company_key=symbol.lower(), is_primary=True))
+    BarRepo(ctx.conn).upsert(rising(420, symbol), "2026-09-24T00:00:00Z")
+
+
+def test_the_market_is_every_stored_company_up_to_the_last_day_without_tesla_or_funds(make_ctx):
     ctx = make_ctx({"UP": BARS})
-    BarRepo(ctx.conn).upsert(rising(420, "OTHER"), "2026-09-24T00:00:00Z")
-    got = BarRepo(ctx.conn).between_all(START, END)
-    assert set(got) == {"UP", "OTHER"} and all(b[0].date == START and b[-1].date == END for b in got.values())
-    line = regime_line(ctx, START, END, strategy_rules(ctx))
-    assert "(2 listings)" in line.caption
+    listed(ctx, "OTHER", "Other Inc")
+    listed(ctx, "TSLA", "Tesla, Inc.")
+    listed(ctx, "VUSA.L", "Vanguard S&P 500 UCITS ETF", "ETF")
+    BarRepo(ctx.conn).upsert(rising(420, "UNLISTED"), "2026-09-24T00:00:00Z")
+    got = market_history(ctx, START, END, ["UP"])
+    assert set(got) == {"UP", "OTHER"} and all(r[0].bar.date == START and r[-1].bar.date == END for r in got.values())
+    assert set(market_history(ctx, START, END, ["UP", "VUSA.L", "TSLA"])) == {"UP", "OTHER", "VUSA.L"}
+    line = regime_line(ctx, START, END, strategy_rules(ctx), ["UP"])
+    assert "(2 listings: companies only, Tesla and funds left out)" in line.caption
+    assert "today's stored listings back in time" in line.caption
 
 
 def test_earnings_days_come_from_stored_releases_up_to_the_last_day(make_ctx):
     ctx = make_ctx({"UP": BARS})
     releases = [[BARS[320].date.isoformat(), True], [BARS[-1].date.isoformat(), None]]
     MetaRepo(ctx.conn).set("earnings_dates:UP", json.dumps({"releases": releases, "fetched_at": "2026-09-24T00:00:00Z"}))
-    line = regime_line(ctx, START, BARS[330].date, strategy_rules(ctx))
+    line = regime_line(ctx, START, BARS[330].date, strategy_rules(ctx), ["UP"])
     assert "earnings drift from the stored SEC release days of 1 listing (none fetched)" in line.caption
-    assert "no earnings drift" in regime_line(ctx, START, BARS[310].date, strategy_rules(ctx)).caption
+    assert "no earnings drift" in regime_line(ctx, START, BARS[310].date, strategy_rules(ctx), ["UP"]).caption
+
+
+def test_a_start_within_a_year_of_the_first_prices_says_the_momentum_rank_is_missing(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    early = regime_line(ctx, BARS[260].date, END, strategy_rules(ctx), ["UP"]).caption
+    assert "before any 12-1 momentum rank exists" in early
+    assert "momentum rank exists" not in regime_line(ctx, START, END, strategy_rules(ctx), ["UP"]).caption

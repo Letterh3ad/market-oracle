@@ -223,9 +223,10 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     regime = r.lines[3]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
-    assert "whole stored market (3 listings)" in regime.caption
+    assert "stored market (3 listings: companies only, Tesla and funds left out)" in regime.caption
     assert "no AI verdicts" in regime.caption and "no value or quality" in regime.caption
     assert "no earnings drift" in regime.caption
+    assert "every line likely looks better" in " ".join(r.notes) and "The strategy line leaves out" in " ".join(r.notes)
 
 
 def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):

@@ -112,7 +112,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
     m = run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top))
     momentum = traded("momentum", momentum_caption(rules), m, "Momentum")
-    blend = regime_line(ctx, start, end, rules)
+    blend = regime_line(ctx, start, end, rules, history)
     g = run(blend.book.lean_source(), blend.book.cap)
     regime = traded("regime", blend.caption, g, "Regime")
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
@@ -184,19 +184,21 @@ def _kept(run_id: int, value: str) -> KeptBacktest:
 def _notes(ctx: AppContext, name: str, start: date, end: date, slippage_bps: float, commission: float,
            threshold: float, history: dict[str, list[ConvertedBar]]) -> list[str]:
     base, cap = ctx.config.base_currency, ceiling(1)
-    fundamentals = (f"Value, quality and growth are left out: only today's fundamentals are stored, so using them on "
-                    f"past days would leak the future. Each lean is the technicals baseline alone, so its probability "
-                    f"is at most {cap:.1%}.")
+    fundamentals = (f"The strategy line leaves out value, quality and growth: only today's fundamentals are stored, "
+                    f"so using them on past days would leak the future. Each of its leans is the technicals baseline "
+                    f"alone, so its probability is at most {cap:.1%}. The regime line reads stored value and quality "
+                    f"signals only from the day each was recorded (its caption says which it had).")
     if threshold > cap:
         fundamentals += f" That is under the {threshold:.0%} threshold, so the strategy cannot buy anything."
     notes = [
         f"The {name} list is today's: companies that were delisted, taken over or went bust before today are "
-        "missing from it, so both lines likely look better than investing back then would have (survivorship bias).",
+        "missing from it, so every line likely looks better than investing back then would have (survivorship "
+        "bias). It reaches the regime line's mood too, which reads today's stored listings back in time.",
         fundamentals,
         f"Each day's decisions see only prices up to that day's close. Orders fill at the next trading day's open, "
         f"{slippage_bps:g} basis points worse, at that day's exchange rate, plus {commission:,.2f} {base} "
         "commission per trade. No FX spread, stamp duty or exchange fees.",
-        "Only the fixed rules are replayed; AI verdicts are never backtested.",
+        "Only fixed rules are replayed; AI verdicts are never backtested.",
         "Momentum trades under the strategy's rules and costs. Its ranks read stored closes, which a split between "
         "price updates can leave on two bases: a listing with a move outside 0.5x to 2x in the year before a month's "
         "end is not ranked that month (a full price refetch fixes it).",

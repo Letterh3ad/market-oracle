@@ -315,7 +315,8 @@ def _regime(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> Reg
     cells = _usable(ctx, study, cells)
     if not cells:
         return None
-    return regime_line(ctx, min(c.as_of for c in cells), ctx.clock.utcnow().date(), strategy_rules(ctx),
+    traded = [p["symbol"] for p in json.loads(study.listings)]
+    return regime_line(ctx, min(c.as_of for c in cells), ctx.clock.utcnow().date(), strategy_rules(ctx), traded,
                        regime_verdicts(_calls(cells)))
 
 

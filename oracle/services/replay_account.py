@@ -101,7 +101,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
                     sum(t.costs for t in r.trades), label)
 
     ai = run(_verdicts(calls, max_age))
-    regime = regime or regime_line(ctx, start, end, rules, regime_verdicts(calls))
+    regime = regime or regime_line(ctx, start, end, rules, rows, regime_verdicts(calls))
     held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
     lines = (
