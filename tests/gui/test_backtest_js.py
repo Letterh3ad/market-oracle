@@ -229,7 +229,8 @@ def test_a_walk_forward_run_shows_each_segment_the_wins_and_the_fitted_weights()
     assert "Walk-forward: 2 segments of 6 months, each a fresh start" in text
     assert "2025-03-03 to 2025-09-02" in text and "2025-09-03 to 2026-03-02" in text
     assert "+12.00%" in text and "+2.00% over" in text and "2 of 2" in text and "1 of 2" in text
-    assert "Sharpe" in text and "1.25" in text and "Return / max fall" in text
+    assert "Sharpe" in text and "1.25" in text and "Compounded / worst segment fall" in text
+    assert "re-buys equal amounts at each segment's start" in text and "not the whole run's buy and hold" in text
     assert "Regime-wf weights fitted at each segment's start" in text
     assert "calm_up" in text and "0.35" in text
 

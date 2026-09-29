@@ -293,6 +293,8 @@ def test_the_walk_forward_judges_every_line_per_six_month_segment_and_fits_regim
     wf_line = r.lines[-1]
     assert wf_line.label == "Regime-wf" and "refitted" in wf_line.caption
     assert any("fresh start" in n for n in r.notes)
+    assert any("re-buys equal amounts at each segment's start" in n and "not the whole run's buy and hold" in n
+               for n in r.notes)
 
 
 def test_each_segment_is_a_fresh_start_as_its_own_backtest_would_be(make_ctx):

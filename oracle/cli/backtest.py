@@ -65,11 +65,13 @@ def print_walk_forward(wf: WalkForward) -> None:
         print(head)
         for line in wf.lines:
             print(f"{line.name:<14}{_figures(line.segments[k])}")
+    overall_head = (f"{'line':<14}{'return':>9}{'worst segment fall':>20}{'over b&h':>10}{'Sharpe':>8}"
+                    f"{'cmp / worst fall':>17}")
     print("Over all segments (returns compounded, Sharpe of every segment's days, the worst segment's fall)")
-    print(f"{head}{'beat buy and hold':>19}")
+    print(f"{overall_head}{'beat buy and hold':>19}")
     for line in wf.lines:
         beat = "" if line.beat is None else f"{line.beat} of {len(wf.segments)}"
-        print(f"{line.name:<14}{_figures(line.overall)}{beat:>19}")
+        print(f"{line.name:<14}{_overall_figures(line.overall)}{beat:>19}")
     print()
     print("Regime-wf weights fitted at each segment's start (mood: method weights)")
     for day, presets in wf.fits:
@@ -83,3 +85,10 @@ def _figures(f: Figures) -> str:
     sharpe = "" if f.sharpe is None else f"{f.sharpe:.2f}"
     per_fall = "" if f.per_fall is None else f"{f.per_fall:.2f}"
     return f"{f.ret:>+9.2%}{f.max_fall:>14.1%}{over:>10}{sharpe:>8}{per_fall:>10}"
+
+
+def _overall_figures(f: Figures) -> str:
+    over = "" if f.excess is None else f"{f.excess:+.2%}"
+    sharpe = "" if f.sharpe is None else f"{f.sharpe:.2f}"
+    per_fall = "" if f.per_fall is None else f"{f.per_fall:.2f}"
+    return f"{f.ret:>+9.2%}{f.max_fall:>20.1%}{over:>10}{sharpe:>8}{per_fall:>17}"

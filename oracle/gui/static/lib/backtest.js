@@ -55,7 +55,7 @@ function walkForward(r) {
   const perSegment = table([["Line"], ...wf.segments.map(([a, b]) => [`${a} to ${b}`, null, 1])],
     wf.lines.map((l) => el("tr", null, el("td", null, name(l)), ...l.segments.map(cell))), "No segments.");
   const overall = table([["Line"], ["Beat buy and hold", null, 1], ["Compounded", null, 1], ["Over buy and hold", null, 1],
-    ["Worst fall", null, 1], ["Sharpe", null, 1], ["Return / max fall", null, 1]],
+    ["Worst segment fall", null, 1], ["Sharpe", null, 1], ["Compounded / worst segment fall", null, 1]],
   wf.lines.map((l) => el("tr", null, el("td", null, name(l)),
     el("td", { class: "num" }, l.beat == null ? "" : `${l.beat} of ${n}`),
     el("td", { class: `num ${tone(l.overall.ret)}` }, pct(l.overall.ret)),
@@ -73,7 +73,9 @@ function walkForward(r) {
     el("h3", null, `Walk-forward: ${n} segment${n === 1 ? "" : "s"} of ${wf.months} months, each a fresh start`),
     el("p", { class: "dim small" }, "Every line starts again with the same cash and nothing held at each segment's "
       + "start, so a good early stretch never carries a later one. Under each return, how far it was over buy and "
-      + "hold's in the same days."),
+      + "hold's in the same days. Buy and hold here re-buys equal amounts at each segment's start, so its "
+      + "compounded figure is not the whole run's buy and hold; each traded line starts every segment in cash and "
+      + "holds its cash floor too."),
     perSegment,
     el("h3", null, "Over all segments"),
     el("p", { class: "dim small" }, "Segment returns compounded; Sharpe from every segment's daily equity at a zero "

@@ -181,7 +181,10 @@ def _walk_note(spans: list[tuple[date, date]], end: date, capital: float, base: 
             "its own and a good early stretch never carries a later one; buy and hold starts afresh too. Sharpe is "
             "from daily equity with a zero rate, annualised over 252 days; return over max fall divides a return by "
             "its largest fall. Regime-wf refits its mood weights at each segment's first market day from pick "
-            "windows closed before it, so its first fits read less than two years when less is stored." + left)
+            "windows closed before it, so its first fits read less than two years when less is stored. Buy and "
+            "hold here re-buys equal amounts at each segment's start, so its compounded figure is not the "
+            "whole run's buy and hold; each traded line starts every segment in cash and holds its cash "
+            "floor too." + left)
 
 
 def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:

@@ -47,3 +47,6 @@ def test_walk_forward_prints_each_lines_segments_the_wins_and_regime_wf_fits(tmp
     assert WF_START.isoformat() in table and "beat buy and hold" in table and "Sharpe" in table
     assert "regime_wf" in table and "all segments" in table
     assert "Regime-wf weights fitted" in out and "calm_up" in out
+    flat = " ".join(out.split())
+    assert "re-buys equal amounts at each segment's start" in flat and "not the whole run's buy and hold" in flat
+    assert "worst segment fall" in flat and "cmp / worst fall" in flat
