@@ -11,6 +11,8 @@ from datetime import date, timedelta
 
 from oracle.broker.regime import (DatedScores, RegimeBook, RegimeInputs, Rotation, regime_book, settings_from,
                                   v2_settings)
+from oracle.broker.regime.fit import MIN_WINDOWS, TRAILING
+from oracle.broker.regime.playbook import HORIZON
 from oracle.broker.rules import Rules
 from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
@@ -19,8 +21,8 @@ from oracle.services.prices_service import ConvertedBar, histories_in_base
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["HISTORY_DAYS", "LINE_LABELS", "REGIME_LINE", "REGIME_V2_LINE", "RegimeLine", "combined", "market_history",
-           "regime_inputs", "regime_line", "regime_lines", "v2_caption"]
+__all__ = ["HISTORY_DAYS", "LINE_LABELS", "REGIME_LINE", "REGIME_V2_LINE", "REGIME_WF_LINE", "WF_CAPTION", "RegimeLine",
+           "combined", "market_history", "regime_inputs", "regime_line", "regime_lines", "v2_caption"]
 
 HISTORY_DAYS = 1100
 """Calendar days of market bars read before the first day decided: the mood's 200-day average
@@ -28,11 +30,11 @@ and trailing year of percentiles, the 12-month return and the health record all 
 older bars change nothing and only cost time."""
 FACTOR_ANALYSTS = ("value", "quality")
 MARKET_TYPE = "equity"
-REGIME_LINE, REGIME_V2_LINE = "regime", "regime_v2"
-LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2"}
+REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE = "regime", "regime_v2", "regime_wf"
+LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2", REGIME_WF_LINE: "Regime-wf"}
 """The replayed regime lines' names in a backtest or replay study, and their labels."""
-REGIME_V2_SOURCE = "regime-v2"
-"""The v2 book's leans say it made them, so a rotation or buy reason names its line."""
+REGIME_V2_SOURCE, REGIME_WF_SOURCE = "regime-v2", "regime-wf"
+"""The v2 and wf books' leans say which made them, so a rotation or buy reason names its line."""
 RANK_WAIT = timedelta(days=400)
 """About a year of bars and the next month-end: before it the 12-1 momentum rank does not exist."""
 
@@ -85,9 +87,11 @@ def regime_line(ctx: AppContext, start: date, end: date, rules: Rules, traded: C
 
 
 def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: Collection[str],
-                 verdicts: Mapping[str, DatedScores] | None = None) -> dict[str, RegimeLine]:
+                 verdicts: Mapping[str, DatedScores] | None = None,
+                 refits: Collection[date] = ()) -> dict[str, RegimeLine]:
     """Every replayed regime line by name (`LINE_LABELS`), each its own book over one read of the
-    market and inputs, as `regime_line` builds them."""
+    market and inputs, as `regime_line` builds them. With `refits` (a walk-forward's segment
+    starts), also regime_wf: the regime book with its presets refitted at each."""
     market = market_history(ctx, start - timedelta(days=HISTORY_DAYS), end, traded)
     inputs = regime_inputs(ctx, market, end, verdicts)
     settings = settings_from(asdict(ctx.config.regime), max_positions=rules.max_positions,
@@ -95,9 +99,22 @@ def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: 
     v2 = v2_settings(settings, asdict(ctx.config.regime_v2))
     first = min((rows[0].bar.date for rows in market.values() if rows), default=start)
     caption = _caption(len(market), inputs, verdicts is not None and bool(verdicts), end, start < first + RANK_WAIT)
-    return {REGIME_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=settings), caption),
-            REGIME_V2_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=v2, source=REGIME_V2_SOURCE),
-                                       v2_caption(v2.rotation) + caption.removeprefix("Regime: "))}
+    lines = {REGIME_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=settings), caption),
+             REGIME_V2_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=v2, source=REGIME_V2_SOURCE),
+                                        v2_caption(v2.rotation) + caption.removeprefix("Regime: "))}
+    if refits:
+        lines[REGIME_WF_LINE] = RegimeLine(
+            regime_book(market, inputs=inputs, settings=settings, source=REGIME_WF_SOURCE, refits=refits),
+            WF_CAPTION + caption.removeprefix("Regime: "))
+    return lines
+
+
+WF_CAPTION = ("Regime-wf: the regime book with its mood weights refitted at the start of each walk-forward "
+              f"segment and then held: in each mood, the methods with {MIN_WINDOWS} or more completed {HORIZON}-day "
+              f"pick windows in the {TRAILING.days} days before share their preset weight by how far their top fifth "
+              "ran ahead of the market (none for one behind it), half and half with the preset; a mood not seen "
+              "keeps its preset. Only windows closed before the segment starts are read. Otherwise as the regime "
+              "line: ")
 
 
 def v2_caption(rotation: Rotation) -> str:
