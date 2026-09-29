@@ -61,7 +61,7 @@ def test_a_trending_list_is_bought_and_set_against_buy_and_hold(make_ctx):
     ctx = make_ctx({"UP": BARS})
     r = run_backtest(ctx, "TECH", START, END)
     assert r.watchlist == "tech" and r.listings == ("UP",)
-    strategy, held, momentum, _ = r.lines
+    strategy, held, momentum, *_ = r.lines
     assert (strategy.name, held.name, momentum.name) == ("strategy", "buy_and_hold", "momentum")
     assert strategy.trades == len(r.trades) >= 1 and r.trades[0].symbol == "UP"
     assert strategy.points[0] == (START, 0.0) and held.points[0] == (START, 0.0)
@@ -221,7 +221,7 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     market(ctx, rising(400, "MKT", daily=0.002))
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime"]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2"]
     regime = r.lines[3]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
@@ -229,6 +229,19 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     assert "no AI verdicts" in regime.caption and "no value or quality" in regime.caption
     assert "no earnings drift" in regime.caption
     assert "every line likely looks better" in " ".join(r.notes) and "The strategy line leaves out" in " ".join(r.notes)
+
+
+def test_the_regime_v2_line_trades_its_own_book_and_says_what_it_changes(make_ctx):
+    ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
+    market(ctx, rising(400, "MKT", daily=0.002))
+    r = run_backtest(ctx, "tech", START, END, commission=2.0)
+    v1, v2 = r.lines[3], r.lines[4]
+    assert (v2.name, v2.label) == ("regime_v2", "Regime-v2") and v2.points[0] == (START, 0.0)
+    assert v2.caption.startswith("Regime-v2: the regime book with two changes.")
+    assert "20 trading days or more" in v2.caption and "0.25 or more under the best buy not held" in v2.caption
+    assert v2.caption.endswith(v1.caption.removeprefix("Regime: "))
+    [note] = [n for n in r.notes if n.startswith("Regime-v2 rotated")]
+    assert f"in {v2.trades} trades against the regime line's {v1.trades}" in note
 
 
 def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):
@@ -265,7 +278,8 @@ KEPT = {"trend": 1.0, "reason": "kept"}
 def test_the_plain_backtest_never_asks_the_model(make_ctx, monkeypatch):
     model = TiltModel(KEPT)
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime"] and model.asked == []
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2"]
+    assert model.asked == []
 
 
 def test_the_regime_ai_line_asks_the_model_for_every_replayed_day_beside_regime(make_ctx, monkeypatch):
@@ -274,10 +288,10 @@ def test_the_regime_ai_line_asks_the_model_for_every_replayed_day_beside_regime(
     said = []
     r = run_backtest(ctx, "tech", START, END, commission=2.0, regime_ai=True, progress=said.append)
     plain = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_ai"]
-    ai = r.lines[4]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_ai"]
+    ai = r.lines[5]
     assert ai.label == "Regime AI" and "fake (fake tilt-1)" in ai.caption and "date left out" in ai.caption
-    assert r.lines[:4] == plain.lines, "the other lines are the plain backtest's"
+    assert r.lines[:5] == plain.lines, "the other lines are the plain backtest's"
     assert (ai.points, ai.trades) == (r.lines[3].points, r.lines[3].trades), "every tilt x1: it trades like regime"
     decided = [b.date for b in BARS if START <= b.date < END]
     note = next(n for n in r.notes if n.startswith("Regime AI:"))
@@ -305,7 +319,7 @@ async def test_a_regime_ai_backtest_job_shows_its_progress_keeps_its_line_and_re
     await r.wait(job.id)
     assert job.state == "done", job.error
     assert [x.name for x in job.result.backtest.lines][-1] == "regime_ai"
-    assert [x.name for x in plain.result.backtest.lines][-1] == "regime"
+    assert [x.name for x in plain.result.backtest.lines][-1] == "regime_v2"
     assert job.progress_fn().startswith("Regime AI tilt at ") and plain.progress_fn is None
     dropped = submit_backtest(ctx, r, "tech", START, END, 2.5, 0.75, regime_ai=True)
     r.cancel(dropped.id)
@@ -336,4 +350,4 @@ async def test_a_cancelled_regime_ai_job_stops_asking_the_model(make_ctx, monkey
 def test_a_stopped_regime_ai_replay_asks_no_more_and_still_finishes(make_ctx, monkeypatch):
     model = TiltModel(KEPT)
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END, regime_ai=True, stop=lambda: True)
-    assert model.asked == [] and r.lines[4].points and "0 model calls" in " ".join(r.notes)
+    assert model.asked == [] and r.lines[5].points and "0 model calls" in " ".join(r.notes)

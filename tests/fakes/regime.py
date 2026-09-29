@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 
-from oracle.broker.regime import METHODS, Explained
+from oracle.broker.regime import METHODS, ROTATION, Explained
 from oracle.broker.rules import Lean
 
 
@@ -28,18 +28,21 @@ class State:
 
 class StubBook:
     """`leans` maps a listing to (label, probability, parts); a listing left out has no score.
-    `mood` None reads no mood. `capped` listings lean hold after the cap. Records the history and
+    `mood` None reads no mood. `capped` listings lean hold after the cap, `rotated` ones sell with a
+    rotation note (regime-v2). Records the history and
     inputs it was built from, each `explain` asked and each cap's holdings. A `tilt` is asked once
     per day read, like the real book's, and lands in the state."""
 
     def __init__(self, history, inputs, mood: str | None = "calm_up", leans: dict | None = None,
                  flags: frozenset[str] = frozenset(), capped: frozenset[str] = frozenset(),
-                 note: str | None = None, tilt=None) -> None:
+                 note: str | None = None, tilt=None, rotated: frozenset[str] = frozenset()) -> None:
         self.history, self.inputs, self.mood, self.leans, self.flags = history, inputs, mood, leans or {}, flags
-        self.capped, self.note, self.tilt = capped, note, tilt
+        self.capped, self.note, self.tilt, self.rotated = capped, note, tilt, rotated
         self._states: dict[date, State] = {}
         self.asked: list[tuple[str, date]] = []
         self.held: list[set[str]] = []
+        self.since: list[dict] = []
+        """Each cap's holdings with the day each was first filled (a pending buy None)."""
 
     def state(self, day: date) -> State | None:
         if not self.mood:
@@ -60,15 +63,19 @@ class StubBook:
 
     def cap(self, leans, held):
         self.held.append(set(held))
-        return {s: Lean(s, x.as_of, "hold", 0.5, x.source) if s in self.capped else x for s, x in leans.items()}
+        self.since.append(dict(held))
+        out = {s: Lean(s, x.as_of, "hold", 0.5, x.source) if s in self.capped else x for s, x in leans.items()}
+        return {s: replace(x, label="sell", note=f"{ROTATION}: sold to make room for X") if s in self.rotated else x
+                for s, x in out.items()}
 
 
 def use_stub(monkeypatch, **kwargs) -> list[StubBook]:
     """Every step builds a StubBook with `kwargs`; returns the books built, newest last."""
     built: list[StubBook] = []
 
-    def build(ctx, history, inputs, tilt=None):
+    def build(ctx, history, inputs, tilt=None, account="regime"):
         built.append(StubBook(history, inputs, tilt=tilt, **kwargs))
+        built[-1].account = account
         return built[-1]
 
     monkeypatch.setattr("oracle.services.regime_service.build_book", build)

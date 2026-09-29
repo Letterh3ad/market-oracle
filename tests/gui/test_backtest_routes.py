@@ -41,7 +41,8 @@ async def test_a_backtest_runs_as_a_job_and_is_kept_for_later(watched):
     summary = job["result"]
     assert (summary["watchlist"], summary["start"], summary["end"]) == ("main", START, END)
     assert (summary["slippage_bps"], summary["commission"], summary["base_currency"]) == (5, 1, "GBP")
-    assert [line["name"] for line in summary["lines"]] == ["strategy", "buy_and_hold", "momentum", "regime"]
+    assert [line["name"] for line in summary["lines"]] == ["strategy", "buy_and_hold", "momentum", "regime",
+                                                            "regime_v2"]
     assert "points" not in summary["lines"][0]
 
     kept = (await watched.get("/api/backtests")).json()
@@ -49,7 +50,8 @@ async def test_a_backtest_runs_as_a_job_and_is_kept_for_later(watched):
 
     full = (await watched.get(f"/api/backtests/{summary['id']}")).json()
     assert full["listings"] == ["AAPL"]
-    strategy, held, momentum, regime = full["lines"]
+    strategy, held, momentum, regime, v2 = full["lines"]
+    assert v2["label"] == "Regime-v2" and v2["points"][0] == [START, 0.0]
     assert held["points"][0] == [START, 0.0] and held["return"] == held["points"][-1][1] > 0
     assert strategy["caption"].startswith("Strategy") and momentum["label"] == "Momentum"
     assert regime["label"] == "Regime" and "no AI verdicts" in regime["caption"] and regime["points"][0] == [START, 0.0]

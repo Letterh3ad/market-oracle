@@ -11,13 +11,13 @@ from oracle.services.activity_service import JobRunner, queue_stale_research, st
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, REGIME, REGIME_AI, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
 from oracle.services.settings_service import (
-    set_ai_account, set_ai_research, set_regime_account, set_regime_ai_account,
+    set_ai_account, set_ai_research, set_regime_account, set_regime_ai_account, set_regime_v2_account,
 )
 from oracle.services.tick_service import discovery_line
 
@@ -94,6 +94,24 @@ async def step_regime(ctx: AppContext = Depends(get_ctx), runner: JobRunner = De
 async def step_regime_ai(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """Queue the regime-ai account's step (asking the model for the day's tilt once) on the tick queue."""
     return shapes.job(submit_line_step(ctx, runner, REGIME_AI))
+
+
+@router.post("/regime-v2/step", status_code=202)
+async def step_regime_v2(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue the regime-v2 account's step on the tick queue."""
+    return shapes.job(submit_line_step(ctx, runner, REGIME_V2))
+
+
+@router.put("/regime-v2")
+async def put_regime_v2(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_regime_v2_account(ctx, body.enabled)
+    return {"enabled": ctx.config.regime_v2_account.enabled}
+
+
+@router.get("/regime-v2")
+async def get_regime_v2(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The regime card with regime-v2's rotation settings; rotation sales say whom they made room for."""
+    return _card(ctx, limit, REGIME_V2)
 
 
 @router.put("/regime")
@@ -183,6 +201,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
         "ai_account": asdict(ctx.config.ai_account),
         "regime_account": asdict(ctx.config.regime_account),
         "regime_ai_account": asdict(ctx.config.regime_ai_account),
+        "regime_v2_account": asdict(ctx.config.regime_v2_account),
         "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }

@@ -69,6 +69,14 @@ function regimeAiRules() {
     "Regime-AI reading card below.";
 }
 
+function regimeV2Rules() {
+  return "The Regime blend on the same listings, under the same rules, with two changes: a method without a score " +
+    "for a listing hands its weight to the price methods, not to the steady buy-and-hold score, and a holding kept " +
+    "long enough that is clearly weaker than the best buy not held is sold to make room for it. Its record against " +
+    "the Regime line's shows what the two changes add. Its reading, switch and rotation rule are in the Regime-v2 " +
+    "reading card below.";
+}
+
 // How ticks keep the research fresh: saved to oracle.toml, used from the next tick.
 function aiResearch(ai) {
   const note = el("div", { class: "form-note" });
@@ -175,7 +183,8 @@ function column(a, base, rules, ai, stale, discovery) {
   const title = manual ? tip("Manual", "manual_account")
     : a.name === "ai" ? tipText("AI", aiRules(rules, ai))
       : a.name === "regime" ? tipText("Regime", regimeRules(rules))
-        : a.name === "regime-ai" ? tipText("Regime-AI", regimeAiRules()) : tipText("Strategy", strategyRules(rules));
+        : a.name === "regime-ai" ? tipText("Regime-AI", regimeAiRules())
+          : a.name === "regime-v2" ? tipText("Regime-v2", regimeV2Rules()) : tipText("Strategy", strategyRules(rules));
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
@@ -270,10 +279,12 @@ function jobs(base) {
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
       runLine("Regime step", "/api/ledgers/regime/step"), runLine("Regime-AI step", "/api/ledgers/regime-ai/step"),
+      runLine("Regime-v2 step", "/api/ledgers/regime-v2/step"),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
         + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts; "
         + "Regime step lets the regime account act on the regime blend, and Regime-AI step the regime-ai account on "
-        + "the blend with the day's model tilt (asked once a day).")),
+        + "the blend with the day's model tilt (asked once a day), and Regime-v2 step the regime-v2 account on the "
+        + "blend without hold padding and with its rotation.")),
     out);
 }
 
@@ -284,11 +295,11 @@ function refresh() {
 
 async function load(mine) {
   const asked = ++loads;
-  let body, log, aiLog, stale, regime, regimeAi;
+  let body, log, aiLog, stale, regime, regimeAi, regimeV2;
   try {
-    [body, log, aiLog, stale, regime, regimeAi] = await Promise.all([api("/api/ledgers"), api("/api/ledgers/decisions"),
-      api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale"), api("/api/ledgers/regime"),
-      api("/api/ledgers/regime-ai")]);
+    [body, log, aiLog, stale, regime, regimeAi, regimeV2] = await Promise.all([api("/api/ledgers"),
+      api("/api/ledgers/decisions"), api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale"),
+      api("/api/ledgers/regime"), api("/api/ledgers/regime-ai"), api("/api/ledgers/regime-v2")]);
   } catch (err) {
     if (asked !== loads || !pane.contains(mine)) return;
     if (mine.dataset.painted) showError(`Could not reload the ledgers: ${err.message}`);
@@ -306,6 +317,7 @@ async function load(mine) {
     ...body.credits.map((c) => el("p", { class: "dim small" }, c)),
     regimeCard(regime, base, refresh),
     regimeCard(regimeAi, base, refresh),
+    regimeCard(regimeV2, base, refresh),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",

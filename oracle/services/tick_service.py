@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 
+from oracle.broker.regime import ROTATION
 from oracle.broker.rules import Decision
 from oracle.services.analysis_service import analyse_watched
 from oracle.services.context import AppContext
@@ -20,7 +21,7 @@ from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, Di
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import REGIME, REGIME_AI, ai_step, fill_pending, strategy_step, traded_by
+from oracle.services.paper_service import REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
 from oracle.services.regime_service import LineStep, RegimeRun, regime_step
 from oracle.services.replay_score import update_study_prices
@@ -229,6 +230,8 @@ def line_summary(ctx: AppContext, run: RegimeRun) -> str:
     parts = [f"{mood} on {run.day.isoformat()}: {_decided(ctx, run.account, run.decisions)}"]
     if run.tilt and not run.tilt.error:
         parts.append(tilt_line(run.tilt))
+    if rotated := sum(1 for d in run.decisions if d.reason.startswith(ROTATION)):
+        parts.append(f"{rotated} rotated out for a stronger buy")
     if run.lag:
         parts.append(f"WARNING: {run.lag}")
     return "; ".join(parts)
@@ -257,6 +260,7 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
 # research stage, so a tick stopped part way through research has still stepped them.
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
                                "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
+                               "regime_v2_step": _line_step(REGIME_V2),
                                "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
 OFF = "AI account off"
 

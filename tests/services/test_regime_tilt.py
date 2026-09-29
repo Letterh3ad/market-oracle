@@ -350,6 +350,16 @@ def test_a_replay_stops_asking_after_days_in_a_row_without_an_answer(tilt_waits)
     assert "Stopped asking" in tilt.stats.summary()
 
 
+def test_a_bad_answer_breaks_a_run_of_days_without_an_answer(tilt_waits):
+    down = [transport("down"), transport("down")]
+    model = TiltModel("{broken", errors=down * (GIVE_UP_AFTER - 1) + [ModelError("no usable answer")] + down * 2)
+    tilt = replay(model, start=date(2026, 9, 1))
+    for d in range(1, GIVE_UP_AFTER + 3):
+        tilt(state(day=date(2026, 9, d), readings={"trend_gap": d / 100}))
+    assert tilt.stats.gave_up is None and tilt.stats.skipped == 0, "the model answered in between: not silent"
+    assert tilt.stats.failed == GIVE_UP_AFTER + 2
+
+
 def test_a_stopped_replay_asks_nothing_more_and_says_where_it_is():
     model, stopped, said = TiltModel(ANSWER), [], []
     tilt = replay(model, stop=lambda: bool(stopped), on_progress=said.append)

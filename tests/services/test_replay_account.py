@@ -163,7 +163,8 @@ def test_the_status_score_carries_no_account_and_the_json_report_carries_returns
     make_study(ctx, all_buy())
     assert score_study(ctx, ReplayRepo(ctx.conn).current()).account is None
     out = replay_report(ctx).to_json()["account"]
-    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime"]
+    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
+                                                       "regime_v2"]
     assert out["lines"][0]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
     assert out["lines"][0]["points"][0] == ["2026-06-01", 0.0]
 
@@ -367,7 +368,8 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     assert s.account.listings == SYMBOLS
     large, small = s.by_size
     assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
-    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime"]
+    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
+                                                           "regime_v2"]
     # BBB only rose, AAA fell after July: the smaller half did better.
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
     shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
@@ -381,15 +383,15 @@ def test_the_slippage_note_lists_bands_biggest_first_by_rate():
                                                 "band; 0.25% for Mid Cap; 0.50% for Small Cap)")
 
 
-def test_the_regime_line_is_drawn_in_every_size_band_from_one_book(ctx, monkeypatch):
+def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, monkeypatch):
     built = []
-    real = replay_account.regime_line
+    real = replay_account.regime_lines
 
     def counted(*args, **kwargs):
         built.append(args)
         return real(*args, **kwargs)
 
-    monkeypatch.setattr(replay_score, "regime_line", counted)
+    monkeypatch.setattr(replay_score, "regime_lines", counted)
     make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
     s = replay_report(ctx)
     assert len(built) == 1
@@ -397,6 +399,9 @@ def test_the_regime_line_is_drawn_in_every_size_band_from_one_book(ctx, monkeypa
         regime = lines(account)["regime"]
         assert regime.label == "Regime" and regime.points[0] == (JUN, 0.0)
         assert "the replay verdicts as its AI input, each from its as-of day for up to 7 days" in regime.caption
+        v2 = lines(account)["regime_v2"]
+        assert v2.label == "Regime-v2" and v2.points[0] == (JUN, 0.0) and v2.caption.startswith("Regime-v2:")
+        assert list(lines(account))[-2:] == ["regime", "regime_v2"]
 
 
 def regime_of(tmp_path, name, calls):

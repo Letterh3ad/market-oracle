@@ -2,7 +2,7 @@ from datetime import date
 
 from oracle.analysts.signals import AnalystSignal
 from oracle.services import regime_tilt
-from oracle.services.regime_service import NO_MOOD, REGIME_AI_OFF, REGIME_OFF
+from oracle.services.regime_service import NO_MOOD, REGIME_AI_OFF, REGIME_OFF, REGIME_V2_OFF
 from oracle.store.signals import SignalRepo
 from tests.fakes.regime import use_stub
 from tests.fakes.tilt_model import TiltModel
@@ -90,7 +90,7 @@ async def test_the_regime_routes_refuse_what_they_do_not_know(loaded):
 async def test_the_regime_ai_account_is_on_by_default_and_listed_with_its_model(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["regime_ai_account"] == {"enabled": True, "model": ""}
-    assert [a["name"] for a in body["accounts"]][-2:] == ["regime", "regime-ai"]
+    assert [a["name"] for a in body["accounts"]][-3:] == ["regime", "regime-ai", "regime-v2"]
     card = (await loaded.get("/api/ledgers/regime-ai")).json()
     assert (card["account"], card["enabled"], card["tilt"], card["model"], card["research_profile"]) == (
         "regime-ai", True, None, "", "default")
@@ -154,3 +154,33 @@ async def test_the_regime_ai_routes_refuse_what_they_do_not_know(loaded):
     assert (await loaded.put("/api/ledgers/regime-ai", json={"enabled": "yes"})).status_code in (400, 422)
     assert (await loaded.put("/api/ledgers/regime-ai", json={"model": 3})).status_code in (400, 422)
     assert (await loaded.put("/api/ledgers/regime-ai", json={"tilt": 1})).status_code in (400, 422)
+
+
+async def test_the_regime_v2_account_is_listed_steps_as_a_job_and_its_card_names_the_rotation(ctx, priced, monkeypatch):
+    built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)})
+    body = (await priced.get("/api/ledgers")).json()
+    assert body["regime_v2_account"] == {"enabled": True}
+    assert "regime-v2" in [a["name"] for a in body["accounts"]]
+    await watched(ctx, priced)
+    job = await run_job(priced, "/api/ledgers/regime-v2/step")
+    assert (job["label"], job["subject"], job["state"]) == ("Regime-v2 step", "regime-v2", "done")
+    assert job["result"]["account"] == "regime-v2" and built[0].account == "regime-v2"
+    card = (await priced.get("/api/ledgers/regime-v2")).json()
+    assert (card["account"], card["rotation"]) == ("regime-v2", {"min_hold": 20, "margin": 0.25, "most": 2})
+    assert [d["account"] for d in card["decisions"]] == ["regime-v2"]
+
+
+async def test_the_regime_v2_switch_and_settings_rows(ctx, loaded, monkeypatch):
+    built = use_stub(monkeypatch)
+    assert (await loaded.put("/api/ledgers/regime-v2", json={"enabled": False})).json() == {"enabled": False}
+    step = (await run_job(loaded, "/api/ledgers/regime-v2/step"))["result"]
+    assert step["off"] == REGIME_V2_OFF and built == []
+    assert (await loaded.get("/api/ledgers/regime-v2")).json()["note"] == REGIME_V2_OFF
+    rows = {(r["section"], r["key"]): r for r in (await loaded.get("/api/settings")).json()["settings"]}
+    assert rows["regime_v2_account", "enabled"]["live"] is True and rows["regime_v2_account", "enabled"]["meaning"]
+    for key, default in (("rotation_min_hold_days", 20), ("rotation_margin", 0.25), ("rotation_max", 2)):
+        row = rows["regime_v2", key]
+        assert row["default"] == default and row["meaning"] and row["live"] is False
+    await loaded.put("/api/settings", json={"section": "regime_v2_account", "key": "enabled", "value": True})
+    assert ctx.config.regime_v2_account.enabled is True
+    assert (await loaded.put("/api/ledgers/regime-v2", json={"enabled": "yes"})).status_code in (400, 422)
