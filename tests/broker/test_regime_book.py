@@ -115,6 +115,31 @@ def test_the_tilt_is_capped_and_unknown_methods_are_ignored(history):
     assert book_of(history).state(days_of(history)[-1]).weights["trend"] < state.weights["trend"]
 
 
+def test_a_failing_tilt_is_no_tilt_and_never_crashes_the_book_or_its_lean_source(history, caplog):
+    def boom(state):
+        raise RuntimeError("model fell over")
+
+    plain, tilted = book_of(history), book_of(history, tilt=boom)
+    day = days_of(history)[-1]
+    assert tilted.state(day).tilt == {} and tilted.state(day).weights == pytest.approx(plain.state(day).weights)
+    bars = [b for b in history["L000"] if b.date <= day]
+    assert tilted.lean_source()("L000", bars) == plain.lean_source()("L000", bars)
+    assert "model fell over" in caplog.text
+
+
+def test_a_state_names_the_methods_whose_health_is_measured(history):
+    book = book_of(history)
+    last = book.state(days_of(history)[-1])
+    assert last.recorded and "hold" not in last.recorded, "a constant never picks, so it never has a record"
+    assert all(last.health[m] == 1.0 for m in METHODS if m not in last.recorded)
+
+
+def test_a_tilt_value_that_is_no_finite_number_is_dropped(history):
+    odd = {"trend": "lots", "hold": float("nan"), "momentum": True, "low_vol": float("inf"), "reversion": 1.2}
+    book = book_of(history, tilt=lambda s: odd)
+    assert book.state(days_of(history)[-1]).tilt == {"reversion": 1.2}
+
+
 def test_explain_blends_the_present_methods_renormalised(history):
     book = book_of(history, inputs=inputs(history))
     day = days_of(history)[-1]

@@ -31,6 +31,23 @@ def _no_real_holiday_seams(monkeypatch):
     monkeypatch.setattr("oracle.services.holiday_service.RealHolidaySystem.__init__", refuse)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_tilt_model(monkeypatch):
+    """A regime-ai step builds its tilt model from the settings, and a local Ollama may be
+    running: every test gets a stand-in that keeps every weight instead, unless it passes a fake."""
+    from tests.fakes.tilt_model import STAND_IN, TiltModel
+
+    monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda ctx: (TiltModel(STAND_IN), "stand-in"))
+
+
+@pytest.fixture(autouse=True)
+def tilt_waits(monkeypatch):
+    """The tilt's retry waits: recorded, never slept."""
+    waited: list[float] = []
+    monkeypatch.setattr("oracle.services.regime_tilt.wait", waited.append)
+    return waited
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")

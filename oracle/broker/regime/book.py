@@ -5,6 +5,7 @@ it reads only bars on or before the day it is asked about."""
 
 from __future__ import annotations
 
+import logging
 import math
 from collections import Counter, deque
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -25,6 +26,8 @@ from .methods import FACTOR_MAX_AGE, HOLD_SCORE, Listing
 from .mood import Composite, step_returns
 from .playbook import HORIZON, RECORD, Day
 from .settings import METHODS, RegimeInputs, RegimeSettings
+
+log = logging.getLogger(__name__)
 
 SOURCE = "regime"
 PRICE_METHODS = frozenset({"trend", "momentum", "reversion", "low_vol"})
@@ -57,6 +60,8 @@ class RegimeState:
     """method -> the AI's multiplier, capped; empty for the rules-only line."""
     note: str | None = None
     """Why nothing leans on the day, when every final weight is 0."""
+    recorded: frozenset[str] = frozenset()
+    """Methods whose health is measured; the others' 1.0 means no record yet, not a sound one."""
 
 
 @dataclass(frozen=True)
@@ -181,17 +186,29 @@ class RegimeBook:
         base = _normalised(s.weights[mood.mood])
         warnings, good = playbook.firing(Day(mood, picks, self._inputs.sectors))
         health = {m: playbook.health([e for _, e in self._records[m]]) for m in METHODS}
+        recorded = frozenset(m for m in METHODS if len(self._records[m]) >= playbook.MIN_RECORD)
         raw = {m: base[m] * _playbook_factor(len(warnings.get(m, ())), len(good.get(m, ())), s) * health[m]
                for m in METHODS}
         state = self._weighed(RegimeState(self._composite.dates[j], mood.mood, mood.flags, mood.readings, base,
-                                          {}, warnings, good, health, {}), raw)
+                                          {}, warnings, good, health, {}, recorded=recorded), raw)
         if self._tilt is not None:
-            tilt = {m: min(1 + s.tilt_cap, max(1 - s.tilt_cap, float(v)))
-                    for m, v in self._tilt(state).items() if m in METHODS}
+            tilt = self._tilted(state)
             state = self._weighed(replace(state, tilt=tilt), {m: raw[m] * tilt.get(m, 1.0) for m in METHODS})
         if state.note is None:
             self._smoothed = dict(state.weights)
         return state
+
+    def _tilted(self, state: RegimeState) -> dict[str, float]:
+        """The tilt capped, keeping only known methods' finite numbers. A tilt that raises is no
+        tilt: the AI layer failing must never stop the rules from leaning (gate 01 #5)."""
+        cap = self._settings.tilt_cap
+        try:
+            asked = dict(self._tilt(state))
+        except Exception:
+            log.exception("regime tilt for %s failed: no tilt that day", state.day)
+            return {}
+        return {m: min(1 + cap, max(1 - cap, float(v))) for m, v in asked.items()
+                if m in METHODS and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
 
     def _weighed(self, state: RegimeState, raw: Mapping[str, float]) -> RegimeState:
         """Renormalised and smoothed. With every raw weight 0 nothing leans that day and the

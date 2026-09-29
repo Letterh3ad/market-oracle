@@ -105,8 +105,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "paper show": "GET /api/ledgers",
     "paper show --account": OUTPUT_ONLY,
     "paper step": "POST /api/ledgers/step",
-    # --account regime is the Ledgers tab's "Regime step" (POST /api/ledgers/regime/step); its log and
-    # on/off switch are the Regime reading card (GET and PUT /api/ledgers/regime), the switch also in Settings.
+    # --account regime is the Ledgers tab's "Regime step" (POST /api/ledgers/regime/step, a job on the tick
+    # queue); its log and on/off switch are the Regime reading card (GET and PUT /api/ledgers/regime), the
+    # switch also in Settings. --account regime-ai is "Regime-AI step" (POST /api/ledgers/regime-ai/step, a
+    # job too); its log, tilt, switch and tilt model are the Regime-AI reading card (GET and PUT
+    # /api/ledgers/regime-ai), switch and model also in Settings ([regime_ai_account]).
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",

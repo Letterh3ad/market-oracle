@@ -24,11 +24,11 @@ from oracle.services.errors import ConfigInUse, InvalidQuery
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account",
+    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account",
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
@@ -84,6 +84,15 @@ def set_regime_account(ctx: AppContext, enabled: bool) -> Path:
     """Turn the regime paper account on or off; off, its step decides nothing."""
     path = _save(ctx, "regime_account", {"enabled": enabled})
     ctx.config = replace(ctx.config, regime_account=replace(ctx.config.regime_account, enabled=enabled))
+    return path
+
+
+def set_regime_ai_account(ctx: AppContext, enabled: bool | None = None, model: str | None = None) -> Path:
+    """The regime-ai account's switch and the model profile that tilts it ("" the research
+    slot's); None leaves a value as it is."""
+    values = {k: v for k, v in {"enabled": enabled, "model": model}.items() if v is not None}
+    path = _save(ctx, "regime_ai_account", values)
+    ctx.config = replace(ctx.config, regime_ai_account=replace(ctx.config.regime_ai_account, **values))
     return path
 
 

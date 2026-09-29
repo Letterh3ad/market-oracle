@@ -3,19 +3,22 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt, StrictStr
 
 from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
-from oracle.services.activity_service import JobRunner, queue_stale_research, stale_research_jobs
+from oracle.services.activity_service import JobRunner, queue_stale_research, stale_research_jobs, submit_line_step
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, REGIME, REGIME_AI, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
-from oracle.services.regime_service import REGIME_OFF, regime_card, regime_step
-from oracle.services.settings_service import set_ai_account, set_ai_research, set_regime_account
+from oracle.services.models_service import check_model_profile
+from oracle.services.regime_service import regime_card
+from oracle.services.settings_service import (
+    set_ai_account, set_ai_research, set_regime_account, set_regime_ai_account,
+)
 from oracle.services.tick_service import discovery_line
 
 router = APIRouter(prefix="/api/ledgers")
@@ -81,14 +84,16 @@ async def put_ai(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
     return {"enabled": ctx.config.ai_account.enabled}
 
 
-@router.post("/regime/step")
-async def step_regime(ctx: AppContext = Depends(get_ctx)) -> dict:
-    """Run the regime book's leans under the strategy's rules on the regime account, unless it is off."""
-    run = regime_step(ctx)
-    if run is None:
-        return {"off": REGIME_OFF, "day": None, "mood": None, "flags": [], "decisions": []}
-    return {"off": None, "day": run.day, "mood": run.mood, "flags": list(run.flags),
-            "decisions": [asdict(d) for d in run.decisions]}
+@router.post("/regime/step", status_code=202)
+async def step_regime(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue the regime account's step on the tick queue; the finished job carries its decisions."""
+    return shapes.job(submit_line_step(ctx, runner, REGIME))
+
+
+@router.post("/regime-ai/step", status_code=202)
+async def step_regime_ai(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue the regime-ai account's step (asking the model for the day's tilt once) on the tick queue."""
+    return shapes.job(submit_line_step(ctx, runner, REGIME_AI))
 
 
 @router.put("/regime")
@@ -101,7 +106,32 @@ async def put_regime(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict
 async def get_regime(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
     """The regime card: the last step's mood, flags, preset and final weights, warnings, good signs
     and health, and the account's recent decisions with what each lean was made of."""
-    card = regime_card(ctx, limit)
+    return _card(ctx, limit, REGIME)
+
+
+class RegimeAiSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool | None = None
+    model: StrictStr | None = None
+    """A model profile's name; "" the research slot's."""
+
+
+@router.put("/regime-ai")
+async def put_regime_ai(body: RegimeAiSettings, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The regime-ai account's switch and the model that tilts it; a field left out stays as it is."""
+    check_model_profile(ctx, body.model or None)
+    set_regime_ai_account(ctx, body.enabled, body.model)
+    return asdict(ctx.config.regime_ai_account)
+
+
+@router.get("/regime-ai")
+async def get_regime_ai(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The regime card with the day's tilt beside the rules weights, its reason or failure, and the model."""
+    return _card(ctx, limit, REGIME_AI)
+
+
+def _card(ctx: AppContext, limit: int, account: str) -> dict:
+    card = regime_card(ctx, limit, account)
     return {**asdict(card), "decisions": [asdict(d) for d in card.decisions]}
 
 
@@ -152,6 +182,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
         },
         "ai_account": asdict(ctx.config.ai_account),
         "regime_account": asdict(ctx.config.regime_account),
+        "regime_ai_account": asdict(ctx.config.regime_ai_account),
         "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }

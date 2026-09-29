@@ -1,7 +1,8 @@
-"""The live regime account: each step builds one regime book from stored bars (the traded
+"""The live regime line accounts: each step builds one regime book from stored bars (the traded
 listings and the whole stored market, for the mood) and trades its leans under the strategy's
 rules, logging each decision with what its lean was made of and saving the day's reading for
-the Ledgers card."""
+the Ledgers card. `regime` trades the rules weights; `regime-ai` the same book with the daily
+model tilt (`regime_tilt`), so the two records measure what the model adds."""
 
 from __future__ import annotations
 
@@ -12,34 +13,48 @@ from datetime import date, timedelta
 
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
-    LABEL_SCORES, SIGNS, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, regime_book, settings_from,
+    LABEL_SCORES, SIGN_INFO, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
+    settings_from,
 )
 from oracle.broker.rules import Decision, Lean
+from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
-from oracle.services.paper_service import GONE, REGIME, discovered_off, step_account, traded_by, verdict_history
+from oracle.services.models_service import slot_profile
+from oracle.services.paper_service import (
+    GONE, LINE_NAMES, REGIME, REGIME_AI, account_on, discovered_off, step_account, traded_by, verdict_history,
+)
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
+from oracle.services.regime_tilt import DailyTilt
 from oracle.services.watch_service import discovered_only
 from oracle.store.db import to_utc_iso
 from oracle.store.paper import DecisionRepo, LoggedDecision
-from oracle.store.regime import RegimeStateRepo
+from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["REGIME", "REGIME_OFF", "RegimeCard", "RegimeRun", "build_book", "regime_card", "regime_step"]
+__all__ = ["OFF", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "LineStep", "RegimeCard", "RegimeRun",
+           "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
               "([regime_account] enabled)")
+REGIME_AI_OFF = ("the regime-ai account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
+                 "([regime_ai_account] enabled)")
+OFF = {REGIME: REGIME_OFF, REGIME_AI: REGIME_AI_OFF}
 DISCOVERED_OFF = discovered_off("the regime account")
+DISCOVERED = {REGIME: DISCOVERED_OFF, REGIME_AI: discovered_off("the regime-ai account")}
+LAG_WEEKDAYS = 2
+"""A step day more weekdays than this behind yesterday means a source has stopped: the step keeps
+trading an old day's leans (gate 04 #3), so the card and the tick say so."""
 NO_MOOD = "no market mood yet: under a year of stored market history, so the regime line leans nothing"
 NO_SCORE = "no regime score: too little history for any price method"
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
 COMPLETE_SHARE = 0.8
 """A trailing stored day on which fewer of the traded listings have a bar than this share of the
-recent busiest day is a session still open somewhere (another exchange has not closed): the step
-reads up to the day before it. Only the traded listings count: the rest of the stored market
-(a replay study's, ones no longer watched) stops getting bars and would make every day look
-partial."""
+recent busiest day is an exchange holiday or a failed fetch (today is never read, so no session in
+it is still open): the step reads up to the day before it. Only the traded listings count: the
+rest of the stored market (a replay study's, ones no longer watched) stops getting bars and would
+make every day look partial."""
 RECENT_DAYS = 10
 
 
@@ -50,10 +65,23 @@ class RegimeRun:
     mood: str | None
     flags: tuple[str, ...]
     decisions: list[Decision]
+    account: str = REGIME
+    tilt: StoredTilt | None = None
+    """regime-ai: the step day's tilt, or why there was none."""
+    lag: str | None = None
+    """Set when the step day is well behind yesterday."""
+
+
+@dataclass(frozen=True)
+class LineStep:
+    """A regime line's step run as a job: None while the account is off."""
+    account: str
+    run: RegimeRun | None
 
 
 @dataclass(frozen=True)
 class RegimeCard:
+    account: str
     enabled: bool
     note: str | None
     """Why the card has less to show: off, never stepped, or no mood on the last step."""
@@ -62,38 +90,59 @@ class RegimeCard:
     """When the step that read `state` ran."""
     state: dict | None
     decisions: tuple[LoggedDecision, ...]
+    lag: str | None = None
+    tilt: dict | None = None
+    """regime-ai: the card day's stored tilt (multipliers, the rules weights it was given,
+    reason or error, model)."""
+    model: str | None = None
+    """regime-ai: `[regime_ai_account] model` as set ("" the research slot's)."""
+    research_profile: str | None = None
+    """regime-ai: the research slot's profile, which "" means."""
 
 
-def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs) -> RegimeBook:
+def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs,
+               tilt: Tilt | None = None) -> RegimeBook:
     """The regime book over `history`, with the `[regime]` settings and the strategy's limits."""
     settings = settings_from(asdict(ctx.config.regime), max_positions=ctx.config.strategy.max_positions,
                              min_probability=ctx.config.strategy.min_probability)
-    return regime_book(history, inputs=inputs, settings=settings)
+    return regime_book(history, inputs=inputs, settings=settings, tilt=tilt)
 
 
-def regime_step(ctx: AppContext) -> RegimeRun | None:
-    """The regime book's leans traded under the strategy's rules on the regime account; None,
-    deciding nothing, while it is off. Reads only sessions before today (UTC): a bar is not
+def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None = None) -> RegimeRun | None:
+    """The regime book's leans traded under the strategy's rules on `account` (a regime line);
+    None, deciding nothing, while it is off. Reads only sessions before today (UTC): a bar is not
     known to be final until its exchange has closed, and bars carry no closing time, so today's
-    are never read, whatever time the tick runs."""
-    if not ctx.config.regime_account.enabled:
+    are never read, whatever time the tick runs. On regime-ai the book is tilted by the day's
+    model answer (`model` stands in for the configured one)."""
+    if not account_on(ctx, account):
         return None
-    last = ctx.clock.utcnow().date() - timedelta(days=1)
-    traded = traded_by(ctx, REGIME)
+    today = ctx.clock.utcnow().date()
+    last = today - timedelta(days=1)
+    traded = traded_by(ctx, account)
     history, day = complete_sessions(market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, traded), traded)
-    book = build_book(ctx, history, regime_inputs(ctx, history, ctx.clock.utcnow().date(), _verdicts(ctx, traded)))
+    tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
+    book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt)
     state = book.state(day) if day else None
     found, skips, why = _leans(ctx, book, state, day, traded, history)
-    skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
-    decisions = step_account(ctx, REGIME, found, skips, {}, why, book.cap)
+    skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
+    decisions = step_account(ctx, account, found, skips, {}, why, book.cap)
     if day is not None:
         reading = ({**_plain(state), "unscored": _unscored(state, why), "signs": _signs(state)} if state
                    else {"mood": None, "note": NO_MOOD})
-        RegimeStateRepo(ctx.conn).save(REGIME, day, reading, to_utc_iso(ctx.clock.utcnow()))
-    return RegimeRun(day, state.mood if state else None, tuple(sorted(state.flags)) if state else (), decisions)
+        RegimeStateRepo(ctx.conn).save(account, day, reading, to_utc_iso(ctx.clock.utcnow()))
+    return RegimeRun(day, state.mood if state else None, tuple(sorted(state.flags)) if state else (), decisions,
+                     account, tilt.today if tilt else None, lag_warning(day, today) if day else None)
 
 
-SIGN_INFO = {(s.method, s.name): s for s in SIGNS}
+def lag_warning(day: date, today: date) -> str | None:
+    """Why a step day far behind yesterday is a problem, when it is."""
+    yesterday = today - timedelta(days=1)
+    behind = sum(1 for k in range(1, (yesterday - day).days + 1) if (day + timedelta(days=k)).weekday() < 5)
+    if behind <= LAG_WEEKDAYS:
+        return None
+    return (f"the step read {day.isoformat()}, {behind} weekdays behind yesterday: under "
+            f"{COMPLETE_SHARE:.0%} of the traded listings have a bar on any later day, so it trades old leans. "
+            "Update prices and check the price sources")
 
 
 def _signs(state: RegimeState) -> dict[str, list[dict]]:
@@ -186,16 +235,23 @@ def _plain(value):
     return value
 
 
-def regime_card(ctx: AppContext, limit: int = 20) -> RegimeCard:
-    """The last step's regime reading and the account's recent decisions with their explanations."""
-    enabled = ctx.config.regime_account.enabled
-    stored = RegimeStateRepo(ctx.conn).latest(REGIME)
-    decisions = tuple(DecisionRepo(ctx.conn).recent(REGIME, limit))
+def regime_card(ctx: AppContext, limit: int = 20, account: str = REGIME) -> RegimeCard:
+    """The last step's regime reading and the account's recent decisions with their explanations;
+    on regime-ai also that day's tilt and the model that gives it."""
+    enabled = account_on(ctx, account)
+    stored = RegimeStateRepo(ctx.conn).latest(account)
+    decisions = tuple(DecisionRepo(ctx.conn).recent(account, limit))
     if not enabled:
-        note = REGIME_OFF
+        note = OFF[account]
     elif stored is None:
-        note = "no regime reading yet: it is read at each tick's regime step, or press Regime step"
+        note = f"no reading yet: it is read at each tick's {account} step, or press {LINE_NAMES[account]} step"
     else:
         note = stored.state.get("note")
-    return RegimeCard(enabled, note, stored.day if stored else None, stored.at if stored else None,
-                      stored.state if stored else None, decisions)
+    card = RegimeCard(account, enabled, note, stored.day if stored else None, stored.at if stored else None,
+                      stored.state if stored else None, decisions,
+                      lag_warning(stored.day, date.fromisoformat(stored.at[:10])) if stored else None)
+    if account != REGIME_AI:
+        return card
+    tilt = TiltRepo(ctx.conn).get(account, stored.day) if stored else None
+    return dataclasses.replace(card, tilt=_plain(tilt) if tilt else None, model=ctx.config.regime_ai_account.model,
+                               research_profile=slot_profile(ctx.config, "research"))

@@ -15,7 +15,7 @@ from oracle.services.activity_service import JobRunner, submit_tick
 from oracle.services.errors import InvalidQuery
 from oracle.services.settings_service import reload_live_settings
 from oracle.services.tick_service import (
-    FILL, KIND_LABELS, MIDDAY, TICK, TickRun, last_tick, record_skipped, ticked_since,
+    FILL, KIND_LABELS, MIDDAY, RUNS, TICK, TickRun, last_tick, record_skipped, ticked_since,
 )
 from oracle.store.watchlists import WatchlistRepo
 
@@ -163,7 +163,7 @@ class Scheduler:
             return None  # never ticked, so nothing was missed
         # Only the same kind: a tick due while a midday pass is queued waits behind it. A fill
         # pass never queues behind anything, so it never delays what comes after.
-        busy = [j for j in self._runner.active("tick") if kind == FILL or j.subject == kind]
+        busy = [j for j in self._runner.active("tick") if (kind == FILL and j.subject in RUNS) or j.subject == kind]
         if busy:
             what = KIND_LABELS.get(busy[0].subject, KIND_LABELS[TICK]).lower()
             return record_skipped(ctx, trigger, f"skipped: a {what} is already queued or running here",

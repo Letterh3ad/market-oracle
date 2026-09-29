@@ -1,6 +1,8 @@
-// The regime account's card on the Ledgers tab: its switch, the last step's mood reading, each
+// A regime line's card on the Ledgers tab: its switch, the last step's mood reading, each
 // method's preset and final weight with its warnings, good signs and health, and the recent
-// decisions with what each lean was made of.
+// decisions with what each lean was made of. The regime-ai line's card adds the day's model
+// tilt beside the rules weights, its reason or why there was none, and the model it runs on.
+import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, showError, clearError, companyLink } from "./dom.js";
 import { money } from "./fmt.js";
@@ -17,9 +19,17 @@ const METHODS = {
   trend: "Trend", momentum: "Momentum", reversion: "Mean reversion", low_vol: "Low volatility",
   quality_value: "Value and quality", earnings_drift: "Earnings drift", hold: "Buy and hold", ai_verdict: "AI verdict",
 };
+const LINES = {
+  regime: { name: "Regime", path: "/api/ledgers/regime", step: "Regime step",
+    about: "Rules only: no model." },
+  "regime-ai": { name: "Regime-AI", path: "/api/ledgers/regime-ai", step: "Regime-AI step",
+    about: "Then, once a day, a model multiplies each weight within the tilt cap, saying why; "
+      + "if it fails the rules weights are traded. Compare its record with the Regime line's to see what the model adds." },
+};
 
 const share = (v) => (v == null ? "" : `${Math.round(v * 100)}%`);
 const name = (m) => METHODS[m] ?? m;
+const lineOf = (card) => LINES[card.account] ?? LINES.regime;
 
 // The largest parts of a lean's score, strongest first: "Momentum +0.25, Trend +0.10".
 function contributions(why, top = 3) {
@@ -28,44 +38,89 @@ function contributions(why, top = 3) {
     .map(([m, v]) => `${name(m)} ${v >= 0 ? "+" : ""}${v.toFixed(2)}`).join(", ");
 }
 
-function regimeSwitch(enabled, done) {
-  const box = el("input", { type: "checkbox", "aria-label": "Regime account on" });
-  box.checked = enabled;
+function lineSwitch(card, done) {
+  const line = lineOf(card);
+  const box = el("input", { type: "checkbox", "aria-label": `${line.name} account on` });
+  box.checked = card.enabled;
   box.addEventListener("change", async () => {
     box.disabled = true;
     try {
-      await sendJson("/api/ledgers/regime", { enabled: box.checked }, "PUT");
+      await sendJson(line.path, { enabled: box.checked }, "PUT");
       clearError();
     } catch (err) {
-      showError(`Regime account switch: ${err.message}`);
+      showError(`${line.name} account switch: ${err.message}`);
     }
     done();
   });
-  return el("label", { class: enabled ? "small" : "small warn-text" }, box,
-    enabled ? " On: each tick's regime step trades the blend" : " Off: the regime step decides nothing");
+  const step = line.step.replace(" step", "").toLowerCase();
+  return el("label", { class: card.enabled ? "small" : "small warn-text" }, box,
+    card.enabled ? ` On: each tick's ${step} step trades the blend` : ` Off: the ${step} step decides nothing`);
 }
 
-function weights(s) {
+// Which model tilts the regime-ai line: "" is the research slot's, saved to oracle.toml at once.
+function modelChoice(card, done) {
+  const pick = el("select", { "aria-label": "Regime-AI tilt model" },
+    el("option", { value: "" }, `research slot's (${card.research_profile})`));
+  pick.value = card.model ?? "";
+  api("/api/models").then(({ profiles }) => {
+    pick.append(...profiles.map((p) => el("option", { value: p.name }, p.name)));
+    pick.value = card.model ?? "";
+  }).catch(() => {});
+  pick.addEventListener("change", async () => {
+    pick.disabled = true;
+    try {
+      await sendJson("/api/ledgers/regime-ai", { model: pick.value }, "PUT");
+      clearError();
+    } catch (err) {
+      showError(`Regime-AI tilt model: ${err.message}`);
+    }
+    done();
+  });
+  return el("label", { class: "small" }, "Tilt model: ", pick);
+}
+
+function weights(s, tilt) {
   const methods = Object.keys(s.weights ?? {});
   const list = (m, key) => (s[key]?.[m] ?? []).join(", ");
-  return table([["Method"], ["Preset", null, 1], ["Final", null, 1], ["Health", null, 1], ["Warnings"], ["Good signs"]],
+  const tilted = tilt != null;
+  const heads = [["Method"], ["Preset", null, 1], ...(tilted ? [["Rules", null, 1], ["Tilt", null, 1]] : []),
+    ["Final", null, 1], ["Health", null, 1], ["Warnings"], ["Good signs"]];
+  const x = (v) => (v == null ? "" : `x${v.toFixed(2)}`);
+  return table(heads,
     methods.map((m) => el("tr", null, el("td", null, name(m)),
-      el("td", { class: "num" }, share(s.base_weights?.[m])), el("td", { class: "num" }, share(s.weights[m])),
-      el("td", { class: "num" }, s.health?.[m] == null ? "" : `x${s.health[m].toFixed(2)}`),
+      el("td", { class: "num" }, share(s.base_weights?.[m])),
+      tilted ? el("td", { class: "num" }, share(tilt.rules?.[m])) : null,
+      tilted ? el("td", { class: "num" }, x(tilt.tilt?.[m])) : null,
+      el("td", { class: "num" }, share(s.weights[m])),
+      el("td", { class: s.recorded && !s.recorded.includes(m) ? "dim small" : "num" },
+        s.recorded && !s.recorded.includes(m) ? "no record yet" : x(s.health?.[m])),
       el("td", { class: "small down" }, list(m, "warnings")), el("td", { class: "small up" }, list(m, "good")))),
     "No weights read yet.");
+}
+
+// The day's tilt reason, or why there was none, with the model that gave it.
+function tiltNote(tilt) {
+  if (!tilt) return null;
+  const by = tilt.model ? ` (${tilt.model})` : "";
+  if (tilt.error) {
+    return el("p", { class: "small warn-text" },
+      `No model tilt on ${tilt.day}: ${tilt.error}. The rules weights were traded${by ? `; model${by}` : ""}.`);
+  }
+  return el("p", { class: "small" }, el("strong", null, `Model tilt on ${tilt.day}${by}: `), tilt.reason ?? "");
 }
 
 function reading(card) {
   const s = card.state;
   if (!s?.mood) return [];
   const flags = (s.flags ?? []).map((f) => FLAGS[f] ?? f);
+  const tilt = card.account === "regime-ai" ? card.tilt ?? { tilt: {}, rules: {} } : null;
   return [
     el("p", null, el("strong", null, `Mood on ${card.day}: ${MOODS[s.mood] ?? s.mood}`),
       el("span", { class: "dim" }, ` (${s.mood})`), flags.length ? `; ${flags.join(", ")}` : "; no warning flags"),
     el("p", { class: "dim small" }, Object.entries(s.readings ?? {})
       .map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "number" ? v.toFixed(3) : v}`).join(", ")),
-    weights(s),
+    tiltNote(card.tilt),
+    weights(s, tilt),
     signs(s.signs ?? {}),
     unscored(s.unscored ?? []),
   ];
@@ -89,25 +144,28 @@ function unscored(methods) {
     `No listing had a score from ${methods.map(name).join(", ")} on this step: their weight went to the other methods.${why}`);
 }
 
-function decisions(rows, base) {
+function decisions(card, base) {
   return table([["Day"], ["Symbol"], ["Did"], ["Why"], ["Largest parts of its score"]],
-    rows.map((d) => el("tr", null, el("td", null, d.day), el("td", null, companyLink(d.symbol)),
+    card.decisions.map((d) => el("tr", null, el("td", null, d.day), el("td", null, companyLink(d.symbol)),
       el("td", { class: d.action === "buy" ? "up" : d.action === "sell" ? "down" : "dim" },
         d.action + (d.cash != null ? ` ${money(d.cash)} ${base}` : "")),
       el("td", { class: "small" }, d.reason), el("td", { class: "small" }, contributions(d.explanation)))),
-    "The regime account has not decided anything yet: press Regime step.");
+    `The ${lineOf(card).name.toLowerCase()} account has not decided anything yet: press ${lineOf(card).step}.`);
 }
 
-// `done` repaints the tab after the switch changes.
+// `done` repaints the tab after the switch or the model changes.
 function regimeCard(card, base, done) {
+  const line = lineOf(card);
+  const ai = card.account === "regime-ai";
   return el("div", { class: "card" },
-    el("h2", null, "Regime reading"), regimeSwitch(card.enabled, done),
-    el("p", { class: "dim small" }, "The regime account blends well-studied methods, weighting each by the market's "
+    el("h2", null, `${line.name} reading`), lineSwitch(card, done), ai ? " " : null, ai ? modelChoice(card, done) : null,
+    el("p", { class: "dim small" }, "The account blends well-studied methods, weighting each by the market's "
       + "mood, its known warning and good signs, and its own recent record (health), then trades the blend under the "
-      + "strategy's rules. Rules only: no model."),
+      + `strategy's rules. ${line.about}`),
     card.note ? el("p", { class: "small warn-text" }, card.note) : null,
+    card.lag ? el("p", { class: "small warn-text" }, `Warning: ${card.lag}.`) : null,
     ...reading(card),
-    el("h3", null, "Regime decisions"), decisions(card.decisions, base));
+    el("h3", null, `${line.name} decisions`), decisions(card, base));
 }
 
 export { contributions, regimeCard };

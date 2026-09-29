@@ -178,6 +178,16 @@ class RegimeAccountConfig:
     enabled: bool = True
 
 
+@dataclass(frozen=True)
+class RegimeAiAccountConfig:
+    """The paper account that trades the regime blend with a daily local-model tilt. On by
+    default, like the rules-only line, so the two records start together."""
+
+    enabled: bool = True
+    model: str = ""
+    """The model profile that tilts the weights; "" is the research slot's."""
+
+
 VERDICT_AGE_RANGE = (1, 90)
 RESEARCH_BUDGET_RANGE = (1, 480)
 
@@ -455,6 +465,7 @@ class Config:
     automation: AutomationConfig = field(default_factory=AutomationConfig)
     ai_account: AiAccountConfig = field(default_factory=AiAccountConfig)
     regime_account: RegimeAccountConfig = field(default_factory=RegimeAccountConfig)
+    regime_ai_account: RegimeAiAccountConfig = field(default_factory=RegimeAiAccountConfig)
     regime: RegimeConfig = field(default_factory=RegimeConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
@@ -680,6 +691,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "regime_account":
             values[name] = _regime_account(value)
             continue
+        if name == "regime_ai_account":
+            values[name] = _regime_ai_account(value)
+            continue
         if name == "regime":
             values[name] = _regime(value)
             continue
@@ -831,6 +845,19 @@ def _regime_account(raw: object) -> RegimeAccountConfig:
     if not isinstance(enabled, bool):
         raise ConfigError(f"regime_account.enabled must be true or false, got {enabled!r}")
     return RegimeAccountConfig(enabled=enabled)
+
+
+def _regime_ai_account(raw: object) -> RegimeAiAccountConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("regime_ai_account must be a [regime_ai_account] table")
+    _reject_unknown(raw, RegimeAiAccountConfig, "[regime_ai_account]")
+    config = replace(RegimeAiAccountConfig(), **raw)
+    if not isinstance(config.enabled, bool):
+        raise ConfigError(f"regime_ai_account.enabled must be true or false, got {config.enabled!r}")
+    if not isinstance(config.model, str):
+        raise ConfigError("regime_ai_account.model must be a model profile's name, or \"\" for the research "
+                          f"slot's, got {config.model!r}")
+    return config
 
 
 def _regime(raw: object) -> RegimeConfig:

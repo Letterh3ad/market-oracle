@@ -100,6 +100,25 @@ def test_the_report_lists_every_paper_account_and_the_regime_mood(tmp_path):
     assert "Regime: the regime account is off" in build_report(w)
 
 
+def test_the_report_gives_the_regime_ai_tilt_or_why_there_was_none_and_any_lag(tmp_path):
+    w = seeded(tmp_path)
+    w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
+    w.http.routes[f"{APP}/api/ledgers/regime"] = {"day": "2026-09-25", "note": None, "state": {"mood": "calm_up"},
+                                                  "lag": "the step read 2026-09-18, 5 weekdays behind yesterday"}
+    w.http.routes[f"{APP}/api/ledgers/regime-ai"] = {
+        "day": "2026-09-25", "note": None, "state": {"mood": "calm_up"}, "lag": None,
+        "tilt": {"day": "2026-09-25", "tilt": {"momentum": 0.6, "hold": 1.0}, "reason": "Rebound risk.", "error": None}}
+    text = build_report(w)
+    assert "Regime-AI tilt on 2026-09-25: momentum x0.60 (Rebound risk.)" in text
+    assert "Regime WARNING: the step read 2026-09-18, 5 weekdays behind yesterday" in text
+    w.http.routes[f"{APP}/api/ledgers/regime-ai"] = {
+        "day": "2026-09-25", "note": None, "state": {}, "lag": None,
+        "tilt": {"day": "2026-09-25", "tilt": {}, "reason": None, "error": "Ollama is not reachable"}}
+    assert "Regime-AI: no tilt on 2026-09-25, rules weights traded (Ollama is not reachable)" in build_report(w)
+    w.http.routes[f"{APP}/api/ledgers/regime-ai"] = {"day": None, "note": "the regime-ai account is off", "tilt": None}
+    assert "Regime-AI: the regime-ai account is off" in build_report(w)
+
+
 def test_write_report_puts_claudes_summary_on_top(tmp_path):
     system = FakeSystem(result=Ran(0, "All running. Nothing to act on."))
     w = seeded(tmp_path, system=system)

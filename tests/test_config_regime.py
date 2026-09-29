@@ -42,3 +42,19 @@ def test_a_mood_with_every_weight_zero_is_refused(tmp_path):
     zeros = "\n".join(f"calm_down_{m} = 0" for m in PRESETS["calm_down"])
     with pytest.raises(ConfigError, match="every calm_down_ weight is 0"):
         load(tmp_path, f"[regime]\n{zeros}\n")
+
+
+def test_the_regime_ai_account_is_on_by_default_on_the_research_model(tmp_path):
+    assert (Config().regime_ai_account.enabled, Config().regime_ai_account.model) == (True, "")
+    config = load(tmp_path, '[regime_ai_account]\nenabled = false\nmodel = "small"\n')
+    assert (config.regime_ai_account.enabled, config.regime_ai_account.model) == (False, "small")
+
+
+@pytest.mark.parametrize(("line", "message"), [
+    ("enabled = 1", "regime_ai_account.enabled must be true or false"),
+    ("model = 3", "regime_ai_account.model must be a model profile's name"),
+    ("astrology = 1", "unknown key"),
+])
+def test_bad_regime_ai_account_values_are_refused(tmp_path, line, message):
+    with pytest.raises(ConfigError, match=message):
+        load(tmp_path, f"[regime_ai_account]\n{line}\n")

@@ -138,3 +138,23 @@ def test_the_regime_step_prints_its_mood_the_log_its_largest_parts_and_off_says_
                           encoding="utf-8")
     _, out, _ = run("paper", "step", "--account", "regime")
     assert out.startswith("the regime account is off")
+
+
+def test_the_regime_ai_step_prints_its_tilt_and_reason_and_off_says_so(run, monkeypatch):
+    from oracle.services import regime_tilt
+    from tests.fakes.regime import use_stub
+    from tests.fakes.tilt_model import TiltModel
+
+    use_stub(monkeypatch, leans={"VOD.L": ("hold", 0.5, {"trend": 0.1})})
+    model = TiltModel({"momentum": 0.7, "reason": "Rebound risk."})
+    monkeypatch.setattr(regime_tilt, "tilt_model", lambda ctx: (model, "fake"))
+    from oracle.cli import paper
+    locked, real = [], paper.run_line_step
+    monkeypatch.setattr(paper, "run_line_step", lambda ctx, account: locked.append(account) or real(ctx, account))
+    code, out, _ = run("paper", "step", "--account", "regime-ai")
+    assert locked == ["regime-ai"], "under the tick's lock, like the button"
+    assert code == 0 and out.startswith("Regime-AI: mood calm_up on 2026-09-17\ntilt momentum x0.70 (Rebound risk.)")
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[regime_ai_account]\nenabled = false\n",
+                          encoding="utf-8")
+    _, out, _ = run("paper", "step", "--account", "regime-ai")
+    assert out.startswith("the regime-ai account is off")

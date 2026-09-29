@@ -1,5 +1,5 @@
-"""The daily routine as one run: prices, FX, fills, analysis, regime step, discovery, AI
-research, strategy step, AI step. Each stage runs even when an earlier one failed, since each works from
+"""The daily routine as one run: prices, FX, fills, analysis, the regime lines' steps, discovery,
+AI research, strategy step, AI step. Each stage runs even when an earlier one failed, since each works from
 whatever is stored. The midday pass reuses the discovery and research stages, with the auto
 questions answered again between them."""
 
@@ -20,11 +20,12 @@ from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, Di
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import REGIME, ai_step, fill_pending, strategy_step, traded_by
+from oracle.services.paper_service import REGIME, REGIME_AI, ai_step, fill_pending, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
-from oracle.services.regime_service import regime_step
+from oracle.services.regime_service import LineStep, RegimeRun, regime_step
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import UNVALIDATED_TAG, pc_in_use, refresh_research
+from oracle.store.regime import StoredTilt
 from oracle.store.replay import ReplayRepo
 from oracle.store.ticks import FILL, INTERRUPTED, MIDDAY, TICK, Stage, TickRepo, TickRun
 from oracle.store.watchlists import WatchlistRepo
@@ -208,14 +209,41 @@ async def _ai_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     return f"{_decided(ctx, 'ai', decisions)} {UNVALIDATED_TAG}", None
 
 
-async def _regime_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
-    run = regime_step(ctx)
-    if run is None:
-        return "regime account off: nothing decided", None
-    if run.day is None:
-        return "no prices stored: nothing decided", None
+def _line_step(account: str) -> StageRun:
+    """A regime line's stage. A failed tilt is the stage's error: the line still traded, on the rules weights."""
+    async def stage(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+        run = regime_step(ctx, account)
+        if run is None:
+            return f"{account} account off: nothing decided", None
+        if run.day is None:
+            return "no prices stored: nothing decided", None
+        return line_summary(ctx, run), (f"no tilt, rules weights traded: {run.tilt.error}"
+                                        if run.tilt and run.tilt.error else None)
+
+    return stage
+
+
+def line_summary(ctx: AppContext, run: RegimeRun) -> str:
+    """The mood read, what was decided, the day's tilt and any lag warning."""
     mood = f"mood {run.mood}" + (f" ({', '.join(run.flags)})" if run.flags else "") if run.mood else "no mood yet"
-    return f"{mood} on {run.day.isoformat()}: {_decided(ctx, REGIME, run.decisions)}", None
+    parts = [f"{mood} on {run.day.isoformat()}: {_decided(ctx, run.account, run.decisions)}"]
+    if run.tilt and not run.tilt.error:
+        parts.append(tilt_line(run.tilt))
+    if run.lag:
+        parts.append(f"WARNING: {run.lag}")
+    return "; ".join(parts)
+
+
+def run_line_step(ctx: AppContext, account: str) -> LineStep:
+    """A regime line's step outside a tick (its button), under the tick's lock, so it never runs
+    beside a tick's own step in another process and places the same orders twice."""
+    with single_flight(ctx, JOB, LEASE_S):
+        return LineStep(account, regime_step(ctx, account))
+
+
+def tilt_line(tilt: StoredTilt) -> str:
+    moved = [f"{m} x{v:.2f}" for m, v in tilt.tilt.items() if v != 1.0]
+    return f"tilt {', '.join(moved)}" if moved else "tilt: every weight kept"
 
 
 def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
@@ -225,11 +253,11 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
     return ", ".join(f"{counts[a]} {a}" for a in ("buy", "sell", "skip")) + f", {unchanged} no change"
 
 
-# The regime step runs straight after analysis (its risk sizes), before discovery and the long
-# research stage, so a tick stopped part way through research has still stepped it.
+# The regime steps run straight after analysis (its risk sizes), before discovery and the long
+# research stage, so a tick stopped part way through research has still stepped them.
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
-                               "regime_step": _regime_step, "discover": _discover, "research": _research,
-                               "step": _step, "ai_step": _ai_step}
+                               "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
+                               "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
 OFF = "AI account off"
 
 
