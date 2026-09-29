@@ -5,7 +5,7 @@ verdicts, or a baseline account's."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
@@ -28,6 +28,9 @@ history would make a long replay grow with the square of its length."""
 
 LeanSource = Callable[[str, Sequence[Bar]], Lean | None]
 """A listing's lean after the close of the last of its bars given (up to LOOKBACK of them)."""
+
+LeanCap = Callable[[Mapping[str, Lean], Collection[str]], Mapping[str, Lean]]
+"""The day's leans adjusted for what is held or being bought (the regime line's sector cap)."""
 
 
 @dataclass(frozen=True)
@@ -77,13 +80,15 @@ class _Order:
 
 def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, rules: Rules,
            risk: Mapping[str, float], slippage: float, commission: float, lean: LeanSource | None = None,
-           fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None) -> Replay:
+           fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None,
+           cap: LeanCap | None = None) -> Replay:
     """`history` is each listing's bars, oldest first, with that day's rate. `risk` holds
     the risk analyst's settings; its `account` is the starting cash. `commission` is a flat
     fee per trade in the base currency. `lean` defaults to the technicals baseline. With
     `venues`, every fill pays the paper accounts' costs instead (`fills.costs_for` the
     listing's size band and the fee table for its venue, dearest without one), and
-    `slippage` and `commission` are not used."""
+    `slippage` and `commission` are not used. `cap` sees each day's leans with the holdings
+    and pending buys before the rules do."""
     lean = lean or technicals_lean
     capital = risk["account"]
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
@@ -147,6 +152,8 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
         found = {s: x for s, (_, x, _) in leans.items() if x is not None}
         sizes = {s: size for s, (_, _, size) in leans.items() if size is not None}
         committed = sum(o.decision.cash for o in pending if o.decision.action == Action.BUY)
+        if cap is not None:
+            found = dict(cap(found, held.keys() | {o.decision.symbol for o in pending if o.decision.action == Action.BUY}))
         for d in decide(found, positions, cash - committed, total, sizes, rules, {o.decision.symbol for o in pending}):
             if d.action != Action.SKIP:
                 pending.append(_Order(day, d))
