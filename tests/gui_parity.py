@@ -109,7 +109,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # queue); its log and on/off switch are the Regime reading card (GET and PUT /api/ledgers/regime), the
     # switch also in Settings. --account regime-ai is "Regime-AI step" (POST /api/ledgers/regime-ai/step, a
     # job too); its log, tilt, switch and tilt model are the Regime-AI reading card (GET and PUT
-    # /api/ledgers/regime-ai), switch and model also in Settings ([regime_ai_account]).
+    # /api/ledgers/regime-ai), switch and model also in Settings ([regime_ai_account]). --account regime-v2 is
+    # "Regime-v2 step" (POST /api/ledgers/regime-v2/step, a job); its log, rotation rule and switch are the
+    # Regime-v2 reading card (GET and PUT /api/ledgers/regime-v2), switch and rotation also in Settings.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",

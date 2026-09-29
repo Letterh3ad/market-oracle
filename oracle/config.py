@@ -188,6 +188,29 @@ class RegimeAiAccountConfig:
     """The model profile that tilts the weights; "" is the research slot's."""
 
 
+@dataclass(frozen=True)
+class RegimeV2AccountConfig:
+    """The paper account that trades the regime-v2 book. On by default, like the other regime
+    lines, so its record starts the day it ships."""
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class RegimeV2Config:
+    """regime-v2's rotation (see `broker.regime.Rotation`); its weights are `[regime]`'s. Set a
+    priori, not fitted to a backtest."""
+
+    rotation_min_hold_days: int = 20
+    """Trading days a holding is kept before it can be rotated out."""
+    rotation_margin: float = 0.25
+    """How far under the best buy not held a holding's blended score must be to be sold for it."""
+    rotation_max: int = 2
+    """Rotations a step."""
+
+
+MIN_HOLD_RANGE = (1, 250)
+ROTATIONS_RANGE = (1, 10)
 VERDICT_AGE_RANGE = (1, 90)
 RESEARCH_BUDGET_RANGE = (1, 480)
 
@@ -467,6 +490,8 @@ class Config:
     regime_account: RegimeAccountConfig = field(default_factory=RegimeAccountConfig)
     regime_ai_account: RegimeAiAccountConfig = field(default_factory=RegimeAiAccountConfig)
     regime: RegimeConfig = field(default_factory=RegimeConfig)
+    regime_v2_account: RegimeV2AccountConfig = field(default_factory=RegimeV2AccountConfig)
+    regime_v2: RegimeV2Config = field(default_factory=RegimeV2Config)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -697,6 +722,12 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "regime":
             values[name] = _regime(value)
             continue
+        if name == "regime_v2_account":
+            values[name] = _regime_v2_account(value)
+            continue
+        if name == "regime_v2":
+            values[name] = _regime_v2(value)
+            continue
         if name == "discovery":
             values[name] = _discovery(value)
             continue
@@ -884,6 +915,36 @@ def _regime(raw: object) -> RegimeConfig:
         if not any(getattr(config, f.name) for f in fields(RegimeConfig) if f.name.startswith(mood + "_")):
             raise ConfigError(f"regime: every {mood}_ weight is 0; give at least one method a weight")
     return config
+
+
+def _regime_v2_account(raw: object) -> RegimeV2AccountConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("regime_v2_account must be a [regime_v2_account] table")
+    _reject_unknown(raw, RegimeV2AccountConfig, "[regime_v2_account]")
+    config = replace(RegimeV2AccountConfig(), **raw)
+    if not isinstance(config.enabled, bool):
+        raise ConfigError(f"regime_v2_account.enabled must be true or false, got {config.enabled!r}")
+    return config
+
+
+def _regime_v2(raw: object) -> RegimeV2Config:
+    if not isinstance(raw, dict):
+        raise ConfigError("regime_v2 must be a [regime_v2] table")
+    _reject_unknown(raw, RegimeV2Config, "[regime_v2]")
+    config = replace(RegimeV2Config(), **raw)
+    margin = config.rotation_margin
+    checks = {
+        "rotation_min_hold_days": (_whole(config.rotation_min_hold_days, *MIN_HOLD_RANGE),
+                                   "a whole number from {} to {}".format(*MIN_HOLD_RANGE)),
+        "rotation_margin": (isinstance(margin, (int, float)) and not isinstance(margin, bool) and 0 < margin <= 2,
+                            "above 0, at most 2"),
+        "rotation_max": (_whole(config.rotation_max, *ROTATIONS_RANGE),
+                         "a whole number from {} to {}".format(*ROTATIONS_RANGE)),
+    }
+    for key, (ok, wanted) in checks.items():
+        if not ok:
+            raise ConfigError(f"regime_v2.{key} must be {wanted}, got {getattr(config, key)!r}")
+    return replace(config, rotation_margin=float(margin))
 
 
 def _discovery(raw: object) -> DiscoveryConfig:

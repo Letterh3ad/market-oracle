@@ -18,14 +18,14 @@ from oracle.analysts.signals import NEUTRAL_BAND
 from oracle.broker.backtest import LeanSource
 from oracle.broker.baseline import _label
 from oracle.broker.momentum import rank_day
-from oracle.broker.rules import BUY_LABELS, Lean
+from oracle.broker.rules import BUY_LABELS, SELL_LABELS, Lean
 from oracle.market.bars import Bar
 
 from . import methods, playbook
 from .methods import FACTOR_MAX_AGE, HOLD_SCORE, Listing
 from .mood import Composite, step_returns
 from .playbook import HORIZON, RECORD, Day
-from .settings import METHODS, RegimeInputs, RegimeSettings
+from .settings import METHODS, RegimeInputs, RegimeSettings, Rotation
 
 log = logging.getLogger(__name__)
 
@@ -33,6 +33,10 @@ SOURCE = "regime"
 PRICE_METHODS = frozenset({"trend", "momentum", "reversion", "low_vol"})
 """A listing needs one of these to lean: buy-and-hold's constant alone is no evidence."""
 NO_WEIGHT = "every method's weight is 0 after its warnings, record and tilt"
+ROTATION = "rotation"
+"""How a rotation sale's reason starts, so a record can count them."""
+EPSILON = 1e-9
+"""Scores a margin apart in decimal can land a hair under it in floating point."""
 SCORED_DAYS = 32
 """Recent days whose every listing's scores are kept for the leans that read them."""
 
@@ -142,6 +146,8 @@ class RegimeBook:
         if not scores:
             return None
         used = {m: state.weights[m] for m in scores if state.weights[m] > 0}
+        if self._settings.spread_unscored:
+            used = _spread(used, state.weights)
         total = sum(used.values())
         if total <= 0:
             return None
@@ -159,9 +165,23 @@ class RegimeBook:
         return lean
 
     def cap(self, leans: Mapping[str, Lean], held: Collection[str]) -> dict[str, Lean]:
-        """`held` is every holding and pending buy: they count against their sector's cap."""
+        """`held` is every holding and pending buy: they count against their sector's cap. On
+        regime-v2 it maps each holding to the day it was bought (a pending buy to None), and the
+        capped leans then rotate out of stale holdings (`rotate`)."""
         limit = math.ceil(self._settings.sector_share * self._settings.max_positions)
-        return sector_cap(leans, held, self._inputs.sectors, limit)
+        capped = sector_cap(leans, held, self._inputs.sectors, limit)
+        rotation = self._settings.rotation
+        if rotation is None or not isinstance(held, Mapping):
+            return capped
+        scores = {s: e.score for s, x in capped.items() if (e := self.explain(s, x.as_of))}
+        days = {s: self._held_days(s, since, capped[s].as_of) for s, since in held.items()
+                if since is not None and s in capped}
+        return rotate(capped, held, scores, days, rotation)
+
+    def _held_days(self, symbol: str, since: date, day: date) -> int:
+        x = self._listings.get(symbol)
+        i, k = (x.at(day), x.at(since)) if x else (None, None)
+        return 0 if i is None else i - (-1 if k is None else k)
 
     def _ranked(self, day: date) -> dict[str, Ranked]:
         if day not in self._ranks:
@@ -266,6 +286,36 @@ def sector_cap(leans: Mapping[str, Lean], held: Collection[str], sectors: Mappin
         else:
             used[sector] += 1
     return out
+
+
+def rotate(leans: Mapping[str, Lean], held: Collection[str], scores: Mapping[str, float],
+           days: Mapping[str, int], rotation: Rotation) -> dict[str, Lean]:
+    """Leans with the weakest stale holdings turned to sells, each for its own candidate: the
+    k-th weakest holding against the k-th best buy not held, while it trails by the margin. A
+    pending buy is never a candidate, nor rotated. `days` is each holding's trading days held;
+    the leans are already capped, so a candidate the sector cap turned to hold is none."""
+    candidates = sorted((s for s, x in leans.items() if x.label in BUY_LABELS and s not in held and s in scores),
+                        key=lambda s: (-scores[s], s))
+    stale = sorted((s for s, n in days.items() if n >= rotation.min_hold and s in scores
+                    and leans[s].label not in SELL_LABELS), key=lambda s: (scores[s], s))
+    out = dict(leans)
+    for symbol, candidate in list(zip(stale, candidates))[:rotation.most]:
+        if scores[candidate] - scores[symbol] < rotation.margin - EPSILON:
+            break
+        out[symbol] = replace(leans[symbol], label="sell", note=(
+            f"{ROTATION}: held {days[symbol]} trading days at score {scores[symbol]:+.2f}, {rotation.margin:.2f} or "
+            f"more under {candidate} at {scores[candidate]:+.2f}; sold to make room for {candidate}"))
+    return out
+
+
+def _spread(used: Mapping[str, float], weights: Mapping[str, float]) -> dict[str, float]:
+    """The weight of the methods without a score shared among the price methods present, by
+    their weights; none of them weighted means no price evidence, so nothing to lean on."""
+    price = sum(w for m, w in used.items() if m in PRICE_METHODS)
+    if price <= 0:
+        return {}
+    missing = sum(weights.values()) - sum(used.values())
+    return {m: w + (missing * w / price if m in PRICE_METHODS else 0.0) for m, w in used.items()}
 
 
 def _playbook_factor(warnings: int, good: int, s: RegimeSettings) -> float:

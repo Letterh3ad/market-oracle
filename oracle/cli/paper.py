@@ -33,7 +33,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     step = sub.add_parser("step", help="run an account's rules and queue its orders")
     step.add_argument("--account", choices=TRADERS, default="strategy",
                       help="strategy trades the leans, ai the research verdicts, regime the regime blend, "
-                           "regime-ai the blend with the day's model tilt")
+                           "regime-ai the blend with the day's model tilt, regime-v2 the blend without hold "
+                           "padding and with its rotation")
     step.set_defaults(handler=step_cmd)
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")

@@ -12,8 +12,9 @@ from oracle.services.watch_service import DEFAULT_LIST
 def register(parser: argparse.ArgumentParser) -> None:
     parser.description = ("Replay the strategy's fixed rules over a watchlist's stored prices, against buying and "
                           "holding the same listings, against the momentum baseline (the top listings by "
-                          "12-1 momentum, re-picked monthly) and against the regime line (a blend of known methods "
-                          "weighted by the market's mood; its caption names the inputs it had). Nothing in the paper "
+                          "12-1 momentum, re-picked monthly) and against the regime lines (a blend of known methods "
+                          "weighted by the market's mood, and regime-v2: the same without hold padding and with a "
+                          "rotation out of stale holdings; each caption names the inputs it had). Nothing in the paper "
                           "accounts changes.")
     parser.add_argument("--list", default=DEFAULT_LIST, help=f"watchlist name (default {DEFAULT_LIST})")
     parser.add_argument("--from", dest="start", type=iso_day, required=True, metavar="YYYY-MM-DD",

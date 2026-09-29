@@ -1,7 +1,7 @@
 """What the replay study's verdicts would have earned as an account: the backtest engine, in
 memory, trading each study date's verdicts under the AI account's rules, risk sizes and costs,
 drawn against the same verdicts all taken as buys (what the rules alone make of the listings),
-the same listings bought in equal amounts and held, the momentum baseline and the regime line.
+the same listings bought in equal amounts and held, the momentum baseline and the regime lines.
 Nothing is written to the ledgers."""
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar
-from oracle.services.regime_lines import RegimeLine, regime_line
+from oracle.services.regime_lines import LINE_LABELS, RegimeLine, regime_lines
 from oracle.store.fx import FxRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
@@ -66,7 +66,7 @@ class Account:
     """The study's listings the stored bars can price."""
     lines: tuple[Line, ...]
     """The verdicts' account (`ai`), every verdict a buy (`all_buy`), buy and hold, any BASELINES, then
-    the regime line (`regime`)."""
+    the regime lines (`regime`, `regime_v2`)."""
     trades: tuple[Trade, ...]
     """The verdicts' account's."""
     left_out: tuple[str, ...]
@@ -77,13 +77,13 @@ class Account:
 def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mapping[str, date],
              calls: Mapping[str, Sequence[Call]], start: date, end: date, left_out: Sequence[str],
              lagging: Mapping[str, date], failing: Set[str], bands: Mapping[str, str | None],
-             regime: RegimeLine | None = None) -> Account:
+             regime: Mapping[str, RegimeLine] | None = None) -> Account:
     """`history` is each priced listing's bars, from a year before `start` for the risk sizes;
     `first` its first as-of day; `calls` its verdicts, oldest first; `lagging` the last close
     of each listing whose bars stop well before `end` (held flat after it); `failing` the
     listings the last price check could not fetch; `bands` the size band each was picked in,
-    which sets its slippage. `regime` is the regime line's book, shared by a report's accounts
-    (it reads only each day's bars and verdicts); without one it is built from `calls`."""
+    which sets its slippage. `regime` is the regime lines' books by name, shared by a report's
+    accounts (each reads only each day's bars and verdicts); without them they are built from `calls`."""
     base = ctx.config.base_currency
     rates, unrated = _rates(ctx, history, start)
     rows = {s: _priced(bars, rates[s]) for s, bars in history.items()}
@@ -101,7 +101,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
                     sum(t.costs for t in r.trades), label)
 
     ai = run(_verdicts(calls, max_age))
-    regime = regime or regime_line(ctx, start, end, rules, rows, regime_verdicts(calls))
+    regime = regime or regime_lines(ctx, start, end, rules, rows, regime_verdicts(calls))
     held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
     lines = (
@@ -115,7 +115,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
              _returns(held, capital), max_fall(held), entered, held_costs),
         *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
           for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]),
-        line("regime", regime.caption, run(regime.book.lean_source(), regime.book.cap), "Regime"))
+        *(line(name, x.caption, run(x.book.lean_source(), x.book.cap), LINE_LABELS[name]) for name, x in regime.items()))
     notes = [
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "

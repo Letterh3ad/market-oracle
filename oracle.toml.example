@@ -141,6 +141,19 @@ good_factor = 1.25     # each firing playbook good sign multiplies its method's 
 playbook_cap = 1.5     # the playbook's combined multiplier is clipped to 0 up to this (1 to 5)
 tilt_cap = 0.5         # the AI tilt keeps each weight's multiplier within 1 minus to 1 plus this
 
+# The regime-v2 paper account: the regime blend with two changes. A method without a score
+# hands its weight to the price methods (trend, momentum, reversion, low volatility), not to
+# the steady hold score; and a long-held holding clearly weaker than the best buy not held is
+# sold to make room for it. Same listings and rules as the regime account.
+[regime_v2_account]
+enabled = true             # false: the regime-v2 account decides nothing each tick
+
+# regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
+[regime_v2]
+rotation_min_hold_days = 20   # trading days a holding is kept before it can be rotated out (1 to 250)
+rotation_margin = 0.25        # sold when its blended score is this far under the best buy not held
+rotation_max = 2              # holdings rotated out a step at most (1 to 10)
+
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big
 # risers and fallers, unusual volume, results surprises) in the countries you watch. The

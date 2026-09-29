@@ -23,7 +23,7 @@ from oracle.services.cutoff_service import pinned_cutoff
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
 from oracle.services.paper_service import strategy_rules
-from oracle.services.regime_lines import RegimeLine, regime_line
+from oracle.services.regime_lines import RegimeLine, regime_lines
 from oracle.services.replay_account import Account, regime_verdicts, simulate
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -309,15 +309,15 @@ def replay_report(ctx: AppContext) -> Score | None:
                                  for z in score.by_size))
 
 
-def _regime(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> RegimeLine | None:
-    """One regime book for the whole account and every size band's: it reads only each day's
-    bars and verdicts, so building it once per report saves the bands rebuilding the mood."""
+def _regime(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> dict[str, RegimeLine] | None:
+    """One book per regime line for the whole account and every size band's: each reads only each
+    day's bars and verdicts, so building them once per report saves the bands rebuilding the mood."""
     cells = _usable(ctx, study, cells)
     if not cells:
         return None
     traded = [p["symbol"] for p in json.loads(study.listings)]
-    return regime_line(ctx, min(c.as_of for c in cells), ctx.clock.utcnow().date(), strategy_rules(ctx), traded,
-                       regime_verdicts(_calls(cells)))
+    return regime_lines(ctx, min(c.as_of for c in cells), ctx.clock.utcnow().date(), strategy_rules(ctx), traded,
+                        regime_verdicts(_calls(cells)))
 
 
 def _usable(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
@@ -336,7 +336,7 @@ def _calls(cells: Sequence[CellScore]) -> dict[str, list[tuple[date, str, float]
 
 
 def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
-             only: set[str] | None = None, blend: RegimeLine | None = None) -> Account | None:
+             only: set[str] | None = None, blend: dict[str, RegimeLine] | None = None) -> Account | None:
     """The study's account, or over `only` those listings."""
     cells = _usable(ctx, study, cells, only)
     first: dict[str, date] = {}

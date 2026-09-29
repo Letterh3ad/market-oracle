@@ -2,7 +2,8 @@
 listings and the whole stored market, for the mood) and trades its leans under the strategy's
 rules, logging each decision with what its lean was made of and saving the day's reading for
 the Ledgers card. `regime` trades the rules weights; `regime-ai` the same book with the daily
-model tilt (`regime_tilt`), so the two records measure what the model adds."""
+model tilt (`regime_tilt`), so the two records measure what the model adds; `regime-v2` the book
+with no hold padding and a rotation out of stale holdings (`broker.regime.v2_settings`)."""
 
 from __future__ import annotations
 
@@ -14,14 +15,14 @@ from datetime import date, timedelta
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
     LABEL_SCORES, SIGN_INFO, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
-    settings_from,
+    rotation_from, settings_from, v2_settings,
 )
 from oracle.broker.rules import Decision, Lean
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
-    GONE, LINE_NAMES, REGIME, REGIME_AI, account_on, discovered_off, step_account, traded_by, verdict_history,
+    GONE, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, step_account, traded_by, verdict_history,
 )
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
@@ -32,16 +33,19 @@ from oracle.store.paper import DecisionRepo, LoggedDecision
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["OFF", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "LineStep", "RegimeCard", "RegimeRun",
+__all__ = ["OFF", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
            "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
               "([regime_account] enabled)")
 REGIME_AI_OFF = ("the regime-ai account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
                  "([regime_ai_account] enabled)")
-OFF = {REGIME: REGIME_OFF, REGIME_AI: REGIME_AI_OFF}
+REGIME_V2_OFF = ("the regime-v2 account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
+                 "([regime_v2_account] enabled)")
+OFF = {REGIME: REGIME_OFF, REGIME_AI: REGIME_AI_OFF, REGIME_V2: REGIME_V2_OFF}
 DISCOVERED_OFF = discovered_off("the regime account")
-DISCOVERED = {REGIME: DISCOVERED_OFF, REGIME_AI: discovered_off("the regime-ai account")}
+DISCOVERED = {REGIME: DISCOVERED_OFF, REGIME_AI: discovered_off("the regime-ai account"),
+              REGIME_V2: discovered_off("the regime-v2 account")}
 LAG_WEEKDAYS = 2
 """A step day more weekdays than this behind yesterday means a source has stopped: the step keeps
 trading an old day's leans (gate 04 #3), so the card and the tick say so."""
@@ -98,13 +102,19 @@ class RegimeCard:
     """regime-ai: `[regime_ai_account] model` as set ("" the research slot's)."""
     research_profile: str | None = None
     """regime-ai: the research slot's profile, which "" means."""
+    rotation: dict | None = None
+    """regime-v2: its rotation settings (min_hold, margin, most)."""
 
 
 def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs,
-               tilt: Tilt | None = None) -> RegimeBook:
-    """The regime book over `history`, with the `[regime]` settings and the strategy's limits."""
+               tilt: Tilt | None = None, account: str = REGIME) -> RegimeBook:
+    """The regime book over `history`, with the `[regime]` settings and the strategy's limits;
+    on regime-v2 also `[regime_v2]`'s, its leans made in its own name."""
     settings = settings_from(asdict(ctx.config.regime), max_positions=ctx.config.strategy.max_positions,
                              min_probability=ctx.config.strategy.min_probability)
+    if account == REGIME_V2:
+        return regime_book(history, inputs=inputs, settings=v2_settings(settings, asdict(ctx.config.regime_v2)),
+                           tilt=tilt, source=REGIME_V2)
     return regime_book(history, inputs=inputs, settings=settings, tilt=tilt)
 
 
@@ -121,7 +131,7 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     traded = traded_by(ctx, account)
     history, day = complete_sessions(market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, traded), traded)
     tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
-    book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt)
+    book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account)
     state = book.state(day) if day else None
     found, skips, why = _leans(ctx, book, state, day, traded, history)
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
@@ -250,6 +260,8 @@ def regime_card(ctx: AppContext, limit: int = 20, account: str = REGIME) -> Regi
     card = RegimeCard(account, enabled, note, stored.day if stored else None, stored.at if stored else None,
                       stored.state if stored else None, decisions,
                       lag_warning(stored.day, date.fromisoformat(stored.at[:10])) if stored else None)
+    if account == REGIME_V2:
+        return dataclasses.replace(card, rotation=asdict(rotation_from(asdict(ctx.config.regime_v2))))
     if account != REGIME_AI:
         return card
     tilt = TiltRepo(ctx.conn).get(account, stored.day) if stored else None

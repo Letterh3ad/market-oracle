@@ -1,5 +1,5 @@
 """A backtest: the strategy's fixed rules replayed over a watchlist's stored history, in
-memory, against an equal-weight buy-and-hold, the momentum baseline and the regime line. It only reads: the paper
+memory, against an equal-weight buy-and-hold, the momentum baseline and the regime lines. It only reads: the paper
 accounts, leans, signals and decision log never change. AI verdicts are never backtested."""
 
 from __future__ import annotations
@@ -20,7 +20,8 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
-from oracle.services.regime_lines import regime_line
+from oracle.broker.regime import ROTATION
+from oracle.services.regime_lines import LINE_LABELS, REGIME_LINE, REGIME_V2_LINE, regime_lines
 from oracle.services.watch_service import watchlist_symbols
 from oracle.store.backtests import BacktestRepo
 from oracle.store.bars import BarRepo
@@ -44,8 +45,8 @@ class Backtest:
     listings: tuple[str, ...]
     """The list's listings with prices in the range; the rest are named in the notes."""
     lines: tuple[Line, ...]
-    """The strategy, buy and hold, the momentum baseline, then the regime line (runs kept before
-    either have fewer), each as its return since the first day."""
+    """The strategy, buy and hold, the momentum baseline, then the regime lines (runs kept before
+    any of them have fewer), each as its return since the first day."""
     equity: tuple[tuple[date, float], ...]
     """The strategy's cash plus positions at each day's close, base currency."""
     trades: tuple[Trade, ...]
@@ -112,9 +113,9 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
     m = run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top))
     momentum = traded("momentum", momentum_caption(rules), m, "Momentum")
-    blend = regime_line(ctx, start, end, rules, history)
-    g = run(blend.book.lean_source(), blend.book.cap)
-    regime = traded("regime", blend.caption, g, "Regime")
+    blends = regime_lines(ctx, start, end, rules, history)
+    runs = {name: run(x.book.lean_source(), x.book.cap) for name, x in blends.items()}
+    regimes = tuple(traded(name, blends[name].caption, x, LINE_LABELS[name]) for name, x in runs.items())
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
@@ -128,12 +129,19 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     notes += [f"Left out of buy and hold, no {base} exchange rate from {start.isoformat()} on: {', '.join(no_rate)}."
               ] if no_rate else []
     for x, could, still in ((r, "Could", "Still"), (m, "Momentum could", "Momentum still"),
-                            (g, "Regime could", "Regime still")):
+                            *((runs[n], f"{LINE_LABELS[n]} could", f"{LINE_LABELS[n]} still") for n in runs)):
         notes += [f"{could} not fill: {note}." for note in x.rejected]
         notes += [f"{still} waiting to fill on the last day: {', '.join(x.unfilled)}."] if x.unfilled else []
-    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum, regime),
-                    r.equity,
-                    r.trades, tuple(notes))
+    notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
+    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum, *regimes),
+                    r.equity, r.trades, tuple(notes))
+
+
+def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:
+    """How much of regime-v2's turnover its rotation made, beside the regime line's."""
+    rotated = sum(1 for t in v2 if t.reason.startswith(ROTATION))
+    return (f"Regime-v2 rotated {rotated} holding{'' if rotated == 1 else 's'} out for a stronger buy, in "
+            f"{len(v2)} trades against the regime line's {len(v1)}.")
 
 
 @dataclass(frozen=True)
