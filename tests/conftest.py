@@ -40,6 +40,14 @@ def _no_real_tilt_model(monkeypatch):
     monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda ctx: (TiltModel(STAND_IN), "stand-in"))
 
 
+@pytest.fixture(autouse=True)
+def tilt_waits(monkeypatch):
+    """The tilt's retry waits: recorded, never slept."""
+    waited: list[float] = []
+    monkeypatch.setattr("oracle.services.regime_tilt.wait", waited.append)
+    return waited
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")

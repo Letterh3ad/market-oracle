@@ -23,6 +23,7 @@ class State:
     health: dict = field(default_factory=lambda: dict.fromkeys(METHODS, 1.0))
     tilt: dict = field(default_factory=dict)
     note: str | None = None
+    recorded: frozenset[str] = frozenset()
 
 
 class StubBook:

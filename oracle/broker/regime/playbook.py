@@ -127,3 +127,7 @@ def health(record: Sequence[float]) -> float:
         return 1.0
     low, high = HEALTH_RANGE
     return min(high, max(low, 1 + sum(record) / len(record) / HEALTH_SCALE))
+
+
+SIGN_INFO: Mapping[tuple[str, str], Sign] = {(s.method, s.name): s for s in SIGNS}
+"""(method, sign name) -> the sign, for the reason and source a stored name stands for."""

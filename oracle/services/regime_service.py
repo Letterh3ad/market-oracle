@@ -13,7 +13,7 @@ from datetime import date, timedelta
 
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
-    LABEL_SCORES, SIGNS, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
+    LABEL_SCORES, SIGN_INFO, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
     settings_from,
 )
 from oracle.broker.rules import Decision, Lean
@@ -21,7 +21,7 @@ from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
-    GONE, REGIME, REGIME_AI, account_on, discovered_off, step_account, traded_by, verdict_history,
+    GONE, LINE_NAMES, REGIME, REGIME_AI, account_on, discovered_off, step_account, traded_by, verdict_history,
 )
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
@@ -145,9 +145,6 @@ def lag_warning(day: date, today: date) -> str | None:
             "Update prices and check the price sources")
 
 
-SIGN_INFO = {(s.method, s.name): s for s in SIGNS}
-
-
 def _signs(state: RegimeState) -> dict[str, list[dict]]:
     """Each firing warning and good sign per method, with its reason and source, for the card."""
     out: dict[str, list[dict]] = {}
@@ -247,8 +244,7 @@ def regime_card(ctx: AppContext, limit: int = 20, account: str = REGIME) -> Regi
     if not enabled:
         note = OFF[account]
     elif stored is None:
-        step = "Regime-AI step" if account == REGIME_AI else "Regime step"
-        note = f"no reading yet: it is read at each tick's {account} step, or press {step}"
+        note = f"no reading yet: it is read at each tick's {account} step, or press {LINE_NAMES[account]} step"
     else:
         note = stored.state.get("note")
     card = RegimeCard(account, enabled, note, stored.day if stored else None, stored.at if stored else None,

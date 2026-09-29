@@ -1,5 +1,6 @@
-"""A scripted model for the regime-ai tilt: answers with a fixed reply (or raises), recording
-every prompt, so no test ever reaches a real model."""
+"""A scripted model for the regime-ai tilt: raises each of `errors` in turn, then answers with a
+fixed reply (or raises `error` every time), recording every prompt, so no test ever reaches a
+real model."""
 
 from __future__ import annotations
 
@@ -9,13 +10,16 @@ class TiltModel:
     model = "tilt-1"
     reply_tokens = 512
 
-    def __init__(self, reply: object = None, error: Exception | None = None) -> None:
-        self.answer, self.error = reply, error
+    def __init__(self, reply: object = None, error: Exception | None = None,
+                 errors: list[Exception] | None = None) -> None:
+        self.answer, self.error, self.errors = reply, error, list(errors or [])
         self.asked: list[tuple[list[dict], dict]] = []
         self.fell_back_to: set[str] = set()
 
     async def reply(self, messages: list[dict], schema: dict) -> object:
         self.asked.append((messages, schema))
+        if self.errors:
+            raise self.errors.pop(0)
         if self.error is not None:
             raise self.error
         return self.answer

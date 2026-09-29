@@ -92,7 +92,8 @@ function weights(s, tilt) {
       tilted ? el("td", { class: "num" }, share(tilt.rules?.[m])) : null,
       tilted ? el("td", { class: "num" }, x(tilt.tilt?.[m])) : null,
       el("td", { class: "num" }, share(s.weights[m])),
-      el("td", { class: "num" }, x(s.health?.[m])),
+      el("td", { class: s.recorded && !s.recorded.includes(m) ? "dim small" : "num" },
+        s.recorded && !s.recorded.includes(m) ? "no record yet" : x(s.health?.[m])),
       el("td", { class: "small down" }, list(m, "warnings")), el("td", { class: "small up" }, list(m, "good")))),
     "No weights read yet.");
 }

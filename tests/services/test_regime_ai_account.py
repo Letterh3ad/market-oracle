@@ -7,6 +7,7 @@ from datetime import date
 import pytest
 
 from oracle.broker.regime import METHODS
+from oracle.services.regime_tilt import TILTED
 from oracle.research.llm import ModelError
 from oracle.services.paper_service import ACCOUNTS, TRADERS, account_view, decision_log, traded_by
 from oracle.services.regime_service import REGIME_AI_OFF, lag_warning, regime_card, regime_step
@@ -58,7 +59,7 @@ def test_the_step_day_is_tilted_once_and_decisions_are_its_own(ctx, monkeypatch)
     run = step(ctx, model)
     assert (run.account, run.day, run.lag) == ("regime-ai", DAY, None)
     [(messages, schema)] = model.asked
-    assert "2026-09-21" in messages[1]["content"] and set(schema["required"]) == {*METHODS, "reason"}
+    assert "2026-09-21" in messages[1]["content"] and set(schema["required"]) == {*METHODS, "reason"} - {"ai_verdict"}
     assert run.tilt.tilt == {"momentum": 0.6, "trend": 1.4} and run.tilt.reason == "Momentum warned on a rebound."
     assert built[0].state(DAY).tilt == run.tilt.tilt
     [order] = account_view(ctx, "regime-ai").pending
@@ -148,11 +149,14 @@ def test_the_real_book_tilted_moves_the_weights_the_rules_line_keeps(ctx, monkey
                      for b, d in zip(bars, days)], "x")
     seed(ctx, "AAPL", "hold")
     watch(ctx, "AAPL")
-    model = TiltModel({**dict.fromkeys(METHODS, 1.0), "low_vol": 1.5, "trend": 0.5, "reason": "Calm market."})
+    model = TiltModel({**dict.fromkeys(TILTED, 0.5), "ai_verdict": 1.5, "reason": "Cut everything."})
     tilted = step(ctx, model)
     rules = regime_step(ctx)
     assert len(model.asked) == 1 and tilted.mood == rules.mood
     a, r = regime_card(ctx, account="regime-ai").state, regime_card(ctx).state
-    assert a["tilt"]["low_vol"] == 1.5 and r["tilt"] == {}
-    assert a["weights"]["low_vol"] > r["weights"]["low_vol"] and a["weights"]["trend"] < r["weights"]["trend"]
+    evident = set(a["recorded"]) | set(a["warnings"]) | set(a["good"])
+    moved = {m for m, v in a["tilt"].items() if v == 0.5}
+    assert moved == evident & set(TILTED) and moved, "only methods with a sign or a record move"
+    assert "ai_verdict" not in a["tilt"] and r["tilt"] == {}
+    assert a["weights"]["ai_verdict"] > r["weights"]["ai_verdict"], "the untilted verdicts gain from the cuts"
     assert a["readings"] == r["readings"] and a["base_weights"] == r["base_weights"]

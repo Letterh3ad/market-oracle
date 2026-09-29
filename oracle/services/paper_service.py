@@ -31,7 +31,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
@@ -44,6 +44,8 @@ REGIME = "regime"
 REGIME_AI = "regime-ai"
 REGIME_LINES = (REGIME, REGIME_AI)
 """The accounts that trade the regime blend: rules only, and with the daily model tilt."""
+LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI"}
+"""Each regime line's name on buttons, jobs and printed steps."""
 ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
 TRADERS = ("strategy", "ai", *REGIME_LINES)
 """The accounts that trade by themselves."""

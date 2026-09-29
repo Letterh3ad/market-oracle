@@ -5,11 +5,11 @@ import argparse
 from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
+    ACCOUNTS, AI_OFF, LINE_NAMES, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
     decision_log, equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
-from oracle.services.regime_service import OFF, regime_step
-from oracle.services.tick_service import tilt_line
+from oracle.services.regime_service import OFF
+from oracle.services.tick_service import run_line_step, tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
@@ -128,14 +128,13 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 
 
 def _regime_step(ctx: AppContext, account: str) -> int:
-    run = regime_step(ctx, account)
+    run = run_line_step(ctx, account).run
     if run is None:
         print(OFF[account])
         return 0
-    name = "Regime-AI" if account != REGIME_LINES[0] else "Regime"
     if run.mood:
         flags = f" ({', '.join(run.flags)})" if run.flags else ""
-        print(f"{name}: mood {run.mood}{flags} on {run.day.isoformat()}")
+        print(f"{LINE_NAMES[account]}: mood {run.mood}{flags} on {run.day.isoformat()}")
     if run.tilt:
         print(f"no tilt, rules weights traded: {run.tilt.error}" if run.tilt.error
               else f"{tilt_line(run.tilt)} ({run.tilt.reason})")

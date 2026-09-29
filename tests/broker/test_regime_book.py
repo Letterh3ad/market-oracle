@@ -127,6 +127,13 @@ def test_a_failing_tilt_is_no_tilt_and_never_crashes_the_book_or_its_lean_source
     assert "model fell over" in caplog.text
 
 
+def test_a_state_names_the_methods_whose_health_is_measured(history):
+    book = book_of(history)
+    last = book.state(days_of(history)[-1])
+    assert last.recorded and "hold" not in last.recorded, "a constant never picks, so it never has a record"
+    assert all(last.health[m] == 1.0 for m in METHODS if m not in last.recorded)
+
+
 def test_a_tilt_value_that_is_no_finite_number_is_dropped(history):
     odd = {"trend": "lots", "hold": float("nan"), "momentum": True, "low_vol": float("inf"), "reversion": 1.2}
     book = book_of(history, tilt=lambda s: odd)

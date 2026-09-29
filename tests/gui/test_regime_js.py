@@ -94,6 +94,12 @@ def test_the_regime_ai_card_shows_the_rules_weight_and_tilt_beside_the_final_and
     assert "Rules only: no model" not in text
 
 
+def test_a_method_without_a_health_record_says_so_instead_of_a_neutral_1():
+    card = {**CARD, "state": {**CARD["state"], "recorded": ["trend"]}}
+    text = run("console.log(JSON.stringify(node.textContent));", card)
+    assert "x1.25" in text and "no record yet" in text and "x0.50" not in text and "x1.00" not in text
+
+
 def test_a_failed_tilt_says_the_rules_weights_were_traded_and_a_lag_is_warned():
     card = {**AI_CARD, "lag": "the step read 2026-09-18, 5 weekdays behind yesterday",
             "tilt": {**AI_CARD["tilt"], "tilt": {}, "reason": None, "error": "Ollama is not reachable"}}

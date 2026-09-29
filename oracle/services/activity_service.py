@@ -34,7 +34,7 @@ from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
 from oracle.services.routine_service import update_listing_prices, update_prices
-from oracle.services.paper_service import REGIME, REGIME_AI, REGIME_LINES
+from oracle.services.paper_service import LINE_NAMES, REGIME_LINES
 from oracle.services.tick_service import (
     FILL, KIND_LABELS, MIDDAY, RUNS, TICK, last_tick, record_skipped, run_line_step, ticked_since,
 )
@@ -379,9 +379,6 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
                          progress=lambda: stage[-1] if stage else None, automatic=trigger != "manual")
 
 
-LINE_LABELS = {REGIME: "Regime step", REGIME_AI: "Regime-AI step"}
-
-
 def submit_line_step(ctx: AppContext, runner: JobRunner, account: str) -> Job:
     """A regime line's step as a job on the tick queue: it runs off the pages' event loop (a step
     takes seconds), after any tick queued before it and never beside one (gate 04 #1)."""
@@ -391,7 +388,7 @@ def submit_line_step(ctx: AppContext, runner: JobRunner, account: str) -> Job:
     async def work(c: AppContext):
         return run_line_step(c, account)
 
-    return runner.submit("tick", LINE_LABELS[account], work, subject=account, link="#ledgers")
+    return runner.submit("tick", f"{LINE_NAMES[account]} step", work, subject=account, link="#ledgers")
 
 
 def submit_midday(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:

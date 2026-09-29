@@ -60,6 +60,8 @@ class RegimeState:
     """method -> the AI's multiplier, capped; empty for the rules-only line."""
     note: str | None = None
     """Why nothing leans on the day, when every final weight is 0."""
+    recorded: frozenset[str] = frozenset()
+    """Methods whose health is measured; the others' 1.0 means no record yet, not a sound one."""
 
 
 @dataclass(frozen=True)
@@ -184,10 +186,11 @@ class RegimeBook:
         base = _normalised(s.weights[mood.mood])
         warnings, good = playbook.firing(Day(mood, picks, self._inputs.sectors))
         health = {m: playbook.health([e for _, e in self._records[m]]) for m in METHODS}
+        recorded = frozenset(m for m in METHODS if len(self._records[m]) >= playbook.MIN_RECORD)
         raw = {m: base[m] * _playbook_factor(len(warnings.get(m, ())), len(good.get(m, ())), s) * health[m]
                for m in METHODS}
         state = self._weighed(RegimeState(self._composite.dates[j], mood.mood, mood.flags, mood.readings, base,
-                                          {}, warnings, good, health, {}), raw)
+                                          {}, warnings, good, health, {}, recorded=recorded), raw)
         if self._tilt is not None:
             tilt = self._tilted(state)
             state = self._weighed(replace(state, tilt=tilt), {m: raw[m] * tilt.get(m, 1.0) for m in METHODS})

@@ -8,30 +8,41 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
-from oracle.broker.regime import METHODS, SIGNS, RegimeState
+import httpx
+
+from oracle.broker.regime import METHODS, SIGN_INFO, RegimeState
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
 from oracle.services.models_service import resolve_model, slot_profile
 from oracle.store.db import to_utc_iso
 from oracle.store.regime import StoredTilt, TiltRepo
 
-__all__ = ["MAX_REASON", "SYSTEM", "BadTilt", "DailyTilt", "tilt_messages", "tilt_model", "tilt_schema", "validated"]
+__all__ = ["MAX_REASON", "RETRY_AFTER_S", "SYSTEM", "TILTED", "BadTilt", "DailyTilt", "grounded", "tilt_messages",
+           "tilt_model", "tilt_schema", "validated"]
 
 log = logging.getLogger(__name__)
 
 MAX_REASON = 300
 """Characters of the model's reason kept: the card shows one or two sentences."""
+TILTED = tuple(m for m in METHODS if m != "ai_verdict")
+"""The methods the model may tilt. Not the research verdicts: they come from the research model,
+by default the same one, and a model boosting its own output measures nothing (gate 05 #1)."""
+RETRY_AFTER_S = 45.0
+"""Wait before the one retry of a call that got no answer at all (a timeout or no connection)."""
+wait = time.sleep
+"""How the retry waits; tests replace it, so none of them sleeps."""
 
 # Every word the model reads is here, so the prompt is changed in one place.
 SYSTEM = (
     "You tune a paper-trading blend of stock-picking methods for one day. Each method has a weight from "
     "fixed rules: its preset for the market mood, times its playbook signs and its health. Multiply each "
     "method's weight by a number from {low} to {high}; 1 keeps the rules weight. Move a weight only for a "
-    "reason in the data (a warning, a good sign, health far from 1, the mood and readings); otherwise answer 1. "
+    "firing warning or good sign, or a measured health far from 1; otherwise answer 1. "
     'Reply with JSON: every method key with its multiplier, and "reason": one or two sentences naming the '
     "main changes.")
 MOODS = {"calm_up": "calm and rising market", "volatile_up": "volatile but rising market",
@@ -43,9 +54,9 @@ READINGS = {"trend_gap": "market vs its 200-day average", "vol_pct": "volatility
             "ret_1m": "1-month market return", "move_pct": "size of the year's move against the 3 before"}
 METHOD_NAMES = {"trend": "time-series trend", "momentum": "12-1 momentum", "reversion": "short-term mean reversion",
                 "low_vol": "low volatility", "quality_value": "value and quality", "earnings_drift": "post-earnings drift",
-                "hold": "buy and hold", "ai_verdict": "research verdicts"}
-HEALTH = "Health is a method's own recent picks against the market: 0.5 lagging, 1 neutral, 1.5 leading."
-SIGN_INFO = {(s.method, s.name): s for s in SIGNS}
+                "hold": "buy and hold"}
+HEALTH = ("Health is a method's own recent picks against the market: 0.5 lagging, 1.5 leading. "
+          "A method with no record yet has no health.")
 
 
 class BadTilt(ValueError):
@@ -59,7 +70,7 @@ def tilt_messages(state: RegimeState, cap: float) -> list[dict]:
                          if isinstance(v, (int, float)))
     lines = [f"Day: {state.day.isoformat()}", f"Mood: {state.mood} ({MOODS.get(state.mood, state.mood)})",
              f"Flags: {flags}", f"Readings: {readings}", HEALTH, "Methods:"]
-    lines += [_method(state, m) for m in METHODS]
+    lines += [_method(state, m) for m in TILTED]
     return [{"role": "system", "content": SYSTEM.format(low=_num(1 - cap), high=_num(1 + cap))},
             {"role": "user", "content": "\n".join(lines)}]
 
@@ -67,8 +78,9 @@ def tilt_messages(state: RegimeState, cap: float) -> list[dict]:
 def _method(state: RegimeState, m: str) -> str:
     signs = [(name, True) for name in state.warnings.get(m, ())] + [(name, False) for name in state.good.get(m, ())]
     said = "; ".join(_sign(m, name, warning) for name, warning in signs) or "no signs"
+    health = f"health {state.health.get(m, 1.0):.2f}" if m in state.recorded else "no health record yet"
     return (f"- {m} ({METHOD_NAMES.get(m, m)}): preset {state.base_weights.get(m, 0):.3f}, "
-            f"rules weight {state.weights.get(m, 0):.3f}, health {state.health.get(m, 1.0):.2f}; {said}")
+            f"rules weight {state.weights.get(m, 0):.3f}, {health}; {said}")
 
 
 def _sign(method: str, name: str, warning: bool) -> str:
@@ -82,23 +94,31 @@ def _num(v: float) -> str:
 
 
 def tilt_schema() -> dict:
-    return {"type": "object", "properties": {**{m: {"type": "number"} for m in METHODS}, "reason": {"type": "string"}},
-            "required": [*METHODS, "reason"]}
+    return {"type": "object", "properties": {**{m: {"type": "number"} for m in TILTED}, "reason": {"type": "string"}},
+            "required": [*TILTED, "reason"]}
 
 
 def validated(reply: object, cap: float) -> tuple[dict[str, float], str]:
-    """Known methods' finite numbers clipped to [1 - cap, 1 + cap], and the reason cut short;
-    BadTilt when no known method has a number or there is no reason."""
+    """Tiltable methods' finite numbers clipped to [1 - cap, 1 + cap], and the reason cut short;
+    BadTilt when no tiltable method has a number or there is no reason."""
     if not isinstance(reply, Mapping):
         raise BadTilt(f"the model's answer was not a JSON object: {str(reply)[:80]!r}")
     reason = reply.get("reason")
     if not isinstance(reason, str) or not reason.strip():
         raise BadTilt("the model gave no reason")
     tilt = {m: round(min(1 + cap, max(1 - cap, float(v))), 4) for m, v in reply.items()
-            if m in METHODS and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
+            if m in TILTED and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
     if not tilt:
         raise BadTilt("the model gave no multiplier for any known method")
     return tilt, _short(reason)
+
+
+def grounded(tilt: Mapping[str, float], state: RegimeState) -> tuple[dict[str, float], list[str]]:
+    """The tilt with every move on a method with no firing sign and no measured health reset to 1,
+    and those methods: a move needs evidence, whatever the model's size (gate 05 #1)."""
+    evident = {m for m in TILTED if state.warnings.get(m) or state.good.get(m) or m in state.recorded}
+    reset = sorted(m for m, v in tilt.items() if v != 1.0 and m not in evident)
+    return {m: (v if m in evident else 1.0) for m, v in tilt.items()}, reset
 
 
 def _short(text: str) -> str:
@@ -116,9 +136,9 @@ def tilt_model(ctx: AppContext) -> tuple[ChatModel, str]:
 
 class DailyTilt:
     """The book's tilt on a regime-ai step. A day with a stored tilt answers from it; the step
-    day without one asks the model once and stores the answer, or the failure (no tilt); any
-    other day has no tilt, so a book never asks the model about the past. `today` is the step
-    day's stored tilt once the book has read that day."""
+    day without one asks the model and stores the answer, or the failure (no tilt); any other
+    day has no tilt, so a book never asks the model about the past. `today` is the step day's
+    stored tilt once the book has read that day."""
 
     def __init__(self, ctx: AppContext, account: str, day: date, cap: float, model: ChatModel | None = None) -> None:
         self._ctx, self._account, self._day, self._cap, self._model = ctx, account, day, cap, model
@@ -142,14 +162,37 @@ class DailyTilt:
                 model, label = self._model, f"{self._model.name} {self._model.model}"
             else:
                 model, label = tilt_model(self._ctx)
-            reply = _answer(model, tilt_messages(state, self._cap), tilt_schema())
-            tilt, reason = validated(reply, self._cap)
+            tilt, reason = validated(_asked(model, tilt_messages(state, self._cap), tilt_schema()), self._cap)
+            tilt, reset = grounded(tilt, state)
+            if reset:
+                reason += f" (kept at x1, no sign or record behind a move: {', '.join(reset)})"
             error = None
         except Exception as exc:
             tilt, reason, error = {}, None, str(exc) or type(exc).__name__
             log.warning("regime-ai tilt for %s: no tilt, the rules weights stand: %s", state.day, error)
         return StoredTilt(self._account, state.day, tilt, dict(state.weights), reason, error, label,
                           to_utc_iso(self._ctx.clock.utcnow()))
+
+
+def _asked(model: ChatModel, messages: list[dict], schema: dict) -> object:
+    """The reply, asking once more after RETRY_AFTER_S when the first call got no answer at all.
+    A bad answer is never asked again: that would let the line pick among the model's answers."""
+    try:
+        return _answer(model, messages, schema)
+    except Exception as exc:
+        if not _transient(exc):
+            raise
+        log.warning("regime-ai tilt: %s; asking once more in %.0f s", exc, RETRY_AFTER_S)
+        wait(RETRY_AFTER_S)
+        try:
+            return _answer(model, messages, schema)
+        except Exception as again:
+            raise RuntimeError(f"failed twice, {RETRY_AFTER_S:.0f} s apart: {exc}; then {again}") from again
+
+
+def _transient(exc: BaseException) -> bool:
+    """A timeout or no connection: nothing was answered, so asking again selects nothing."""
+    return isinstance(exc, httpx.TransportError) or isinstance(exc.__cause__, httpx.TransportError)
 
 
 def _answer(model: ChatModel, messages: list[dict], schema: dict) -> object:
