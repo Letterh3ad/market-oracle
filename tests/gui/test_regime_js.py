@@ -17,7 +17,8 @@ CARD = {
               "base_weights": {"trend": 0.2, "momentum": 0.0, "low_vol": 0.25},
               "weights": {"trend": 0.3, "momentum": 0.0, "low_vol": 0.2},
               "warnings": {"momentum": ["rebound", "clustered"]}, "good": {"trend": ["long trend"]},
-              "health": {"trend": 1.25, "momentum": 0.5, "low_vol": 1.0}, "tilt": {}},
+              "health": {"trend": 1.25, "momentum": 0.5, "low_vol": 1.0}, "tilt": {},
+              "unscored": ["earnings_drift"]},
     "decisions": [{"day": "2026-09-28", "symbol": "KO", "action": "buy", "cash": 5000.0, "reason": "buy lean at 71%",
                    "explanation": {"mood": "volatile_down", "parts": {"low_vol": 0.21, "trend": -0.08,
                                                                       "hold": 0.02, "reversion": 0.01}}}],
@@ -43,7 +44,8 @@ def test_the_card_shows_the_mood_flags_weights_warnings_health_and_each_decision
     for piece in ("Mood on 2026-09-28: volatile and falling", "(volatile_down)", "stocks moving together",
                   "sharp rebound after a falling year", "trend gap -0.041", "Low volatility", "25%", "20%",
                   "rebound, clustered", "long trend", "x1.25", "x0.50", "buy lean at 71%",
-                  "Low volatility +0.21, Trend -0.08, Buy and hold +0.02"):
+                  "Low volatility +0.21, Trend -0.08, Buy and hold +0.02",
+                  "No listing had a score from Earnings drift on this step", "fetched only when"):
         assert piece in text, piece
     assert "Mean reversion +0.01" not in text, "only the three largest parts"
 

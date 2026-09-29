@@ -20,11 +20,19 @@ from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.signals import SignalRepo
+from oracle.store.watchlists import WatchlistRepo
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, verdict, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
 
 PARTS = {"trend": 0.1, "momentum": 0.25, "hold": 0.05, "reversion": -0.02}
+
+
+def after_close(ctx):
+    """The step the next day, once the fixture's last session (2026-09-21) is known final."""
+    if ctx.clock.utcnow().date() == date(2026, 9, 21):
+        ctx.clock.advance(86400)
+    return regime_step(ctx)
 
 
 def regime(ctx, on):
@@ -51,7 +59,7 @@ def test_a_buy_lean_is_queued_and_logged_with_its_mood_and_parts(ctx, monkeypatc
     use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)}, flags=frozenset({"choppy"}))
     seed(ctx, "AAPL", "hold")  # a risk size to buy with
     watch(ctx, "AAPL")
-    run = regime_step(ctx)
+    run = after_close(ctx)
     assert (run.day, run.mood, run.flags) == (date(2026, 9, 21), "calm_up", ("choppy",))
     [d] = run.decisions
     assert d.action == "buy"
@@ -68,11 +76,12 @@ def test_a_buy_lean_is_queued_and_logged_with_its_mood_and_parts(ctx, monkeypatc
 def test_the_days_reading_is_saved_for_the_card(ctx, monkeypatch):
     use_stub(monkeypatch, leans={"AAPL": ("hold", 0.5, PARTS)})
     watch(ctx, "AAPL")
-    regime_step(ctx)
+    after_close(ctx)
     card = regime_card(ctx)
     assert (card.enabled, card.note, card.day) == (True, None, date(2026, 9, 21))
     s = card.state
     assert (s["mood"], s["flags"], s["warnings"], s["day"]) == ("calm_up", [], {"momentum": ["rebound"]}, "2026-09-21")
+    assert s["unscored"] == ["ai_verdict", "earnings_drift", "low_vol", "quality_value"], "weighted, no listing's part"
     assert set(s) >= {"readings", "base_weights", "weights", "good", "health", "tilt"}
     json.dumps(s)
     assert card.decisions == (), "a hold lean on a listing not held changes nothing, so nothing is logged"
@@ -98,21 +107,25 @@ def test_a_listing_with_no_score_is_skipped_saying_why(ctx, monkeypatch):
 
 def test_a_stale_listing_is_not_leaned_on(ctx, monkeypatch):
     built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
-    # Three other listings trade on: the market's day moves on while AAPL's prices stop.
-    for s in ("MSFT", "KO", "IBM"):
+    # Four other traded listings trade on: the step's day moves on while AAPL's prices stop.
+    for s in ("MSFT", "KO", "IBM", "PEP"):
         BarRepo(ctx.conn).upsert([Bar(s, date(2026, 10, 12), 1, 1, 1, 1, 1, 1, "GBP", "t")], "x")
-    ctx.clock.advance(21 * 86400)
+        WatchlistRepo(ctx.conn).add("main", s, "2026-09-21T20:00:00Z")
+    ctx.clock.advance(22 * 86400)
     watch(ctx, "AAPL")
-    [d] = regime_step(ctx).decisions
-    assert (d.action, d.reason) == ("skip", "no price since 2026-09-21: update its prices")
+    decisions = {d.symbol: d for d in regime_step(ctx).decisions}
+    assert decisions["AAPL"].reason == "no price since 2026-09-21: update its prices"
     assert built[0].asked == []
 
 
-def test_bars_after_today_are_never_read(ctx, monkeypatch):
+def test_todays_bars_are_never_read_whatever_the_time(ctx, monkeypatch):
+    """A session still open on another exchange (or one not known to be closed) is not final."""
     built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)})
+    ctx.clock.advance(86400 + 3 * 3600)  # 2026-09-22 23:00 UTC: every exchange has closed, still not read
     BarRepo(ctx.conn).upsert([Bar("AAPL", date(2026, 9, 22), 500, 500, 500, 500, 500, 1, "USD", "t")], "x")
+    BarRepo(ctx.conn).upsert([Bar("VOD.L", date(2026, 9, 22), 5, 5, 5, 5, 5, 1, "GBP", "t")], "x")
     watch(ctx, "AAPL")
-    run = regime_step(ctx)
+    run = after_close(ctx)
     assert run.day == date(2026, 9, 21)
     assert max(c.bar.date for rows in built[0].history.values() for c in rows) == date(2026, 9, 21)
     assert built[0].asked == [("AAPL", date(2026, 9, 21))]
@@ -121,7 +134,7 @@ def test_bars_after_today_are_never_read(ctx, monkeypatch):
 def test_the_book_reads_the_whole_stored_market_but_trades_only_its_set(ctx, monkeypatch):
     built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
     watch(ctx, "AAPL")
-    run = regime_step(ctx)
+    run = after_close(ctx)
     assert set(built[0].history) >= {"AAPL", "VOD.L"}
     assert [d.symbol for d in run.decisions] == ["AAPL"]
 
@@ -142,15 +155,26 @@ def test_the_never_list_bars_its_buys_like_the_ai_accounts(ctx, monkeypatch):
     found(ctx, "VOD.L")
     seed(ctx, "VOD.L", "hold")
     ctx.config = replace(ctx.config, discovery=replace(ctx.config.discovery, never=("Vodafone",)))
-    [d] = regime_step(ctx).decisions
+    [d] = after_close(ctx).decisions
     assert (d.symbol, d.action, d.reason) == ("VOD.L", "skip", NEVER_BUY)
     assert account_view(ctx, "regime").pending == ()
+
+
+def test_a_verdict_rejected_since_hides_the_older_ones_as_on_the_ai_account(ctx, monkeypatch):
+    built = use_stub(monkeypatch)
+    watch(ctx, "AAPL")
+    verdict(ctx, "AAPL", "buy", 0.8, day=date(2026, 9, 17))
+    verdict(ctx, "AAPL", "sell", 0.8, day=date(2026, 9, 18), rejected="it cites nothing")
+    verdict(ctx, "AAPL", "hold", 0.8, day=date(2026, 9, 21))
+    regime_step(ctx)
+    assert built[0].inputs.verdicts == {"AAPL": ((date(2026, 9, 21), 0.0),)}
 
 
 def test_the_book_gets_sectors_earnings_factor_scores_and_only_fresh_verdicts(ctx, monkeypatch):
     built = use_stub(monkeypatch)
     watch(ctx, "AAPL")
     watch(ctx, "VOD.L")
+    verdict(ctx, "AAPL", "sell", 0.8, day=date(2026, 9, 18))
     verdict(ctx, "AAPL", "buy", 0.8)
     verdict(ctx, "VOD.L", "sell", 0.8, day=date(2026, 9, 1))  # older than the 7 days
     MetaRepo(ctx.conn).set("earnings_dates:AAPL", json.dumps(
@@ -158,7 +182,8 @@ def test_the_book_gets_sectors_earnings_factor_scores_and_only_fresh_verdicts(ct
     SignalRepo(ctx.conn).save([AnalystSignal("value", "AAPL", date(2026, 9, 18), 0.4, 1.0, "v", ())], "x")
     regime_step(ctx)
     inputs = built[0].inputs
-    assert inputs.verdicts == {"AAPL": ((date(2026, 9, 21), 0.5),)} and inputs.verdict_max_age == 7
+    assert inputs.verdicts == {"AAPL": ((date(2026, 9, 18), -0.5), (date(2026, 9, 21), 0.5))}, "every fresh one"
+    assert inputs.verdict_max_age == 7
     assert inputs.earnings == {"AAPL": ((date(2026, 7, 30), False),)}
     assert inputs.factors == {"AAPL": ((date(2026, 9, 18), 0.4),)}
     assert set(inputs.sectors) <= {"AAPL", "VOD.L"}
@@ -193,9 +218,9 @@ def test_the_sector_cap_counts_holdings_and_pending_buys_and_a_capped_lean_is_no
     for s in ("AAPL", "VOD.L"):
         seed(ctx, s, "hold")
         watch(ctx, s)
-    decisions = {d.symbol: d.action for d in regime_step(ctx).decisions}
+    decisions = {d.symbol: d.action for d in after_close(ctx).decisions}
     assert decisions == {"AAPL": "buy"} and built[0].held == [set()]
-    regime_step(ctx)
+    after_close(ctx)
     assert built[1].held == [{"AAPL"}], "the pending buy counts against its sector"
 
 
@@ -207,12 +232,26 @@ def test_a_trailing_day_only_some_exchanges_have_closed_is_left_out():
     d1, d2, d3 = date(2026, 9, 24), date(2026, 9, 25), date(2026, 9, 28)
     history = {f"S{k}": [priced(f"S{k}", d1), priced(f"S{k}", d2)] + ([priced(f"S{k}", d3)] if k < 4 else [])
                for k in range(10)}
-    kept, day = complete_sessions(history)
+    traded = list(history)
+    kept, day = complete_sessions(history, traded)
     assert day == d2 and all(rows[-1].bar.date == d2 for rows in kept.values())
-    history["S9"].append(priced("S9", d3))
-    history.update({f"T{k}": [priced(f"T{k}", d3)] for k in range(8)})
-    assert complete_sessions(history)[1] == d3, "most of the market has the day: it is complete"
-    assert complete_sessions({}) == ({}, None)
+    for k in range(4, 9):
+        history[f"S{k}"].append(priced(f"S{k}", d3))
+    assert complete_sessions(history, traded)[1] == d3, "most of the traded set has the day: it is complete"
+    assert complete_sessions({}, []) == ({}, None)
+
+
+def test_listings_that_stopped_getting_bars_never_make_a_complete_day_look_partial():
+    days = [date(2026, 9, 16), date(2026, 9, 17), date(2026, 9, 18), date(2026, 9, 25), date(2026, 9, 28)]
+    # 58 traded listings with every day; 66 others (a replay study's, unwatched ones) stopped after 09-18.
+    history = {f"T{k}": [priced(f"T{k}", d) for d in days] for k in range(58)}
+    history |= {f"X{k}": [priced(f"X{k}", d) for d in days[:3]] for k in range(66)}
+    traded = [f"T{k}" for k in range(58)]
+    kept, day = complete_sessions(history, traded)
+    assert day == date(2026, 9, 28), "98 of 124 stored, but all 58 traded listings have it"
+    assert set(kept) == set(history), "the whole market still feeds the mood"
+    history |= {f"T{k}": history[f"T{k}"] + [priced(f"T{k}", date(2026, 9, 29))] for k in range(31)}
+    assert complete_sessions(history, traded)[1] == date(2026, 9, 28), "31 of 58 on today is partial"
 
 
 def test_the_real_regime_book_reads_a_mood_and_explains_each_lean(ctx, monkeypatch):
@@ -233,7 +272,7 @@ def test_the_real_regime_book_reads_a_mood_and_explains_each_lean(ctx, monkeypat
     for s in ("AAPL", "VOD.L"):
         seed(ctx, s, "hold")
         watch(ctx, s)
-    run = regime_step(ctx)
+    run = after_close(ctx)
     assert run.day == date(2026, 9, 21) and run.mood in ("calm_up", "volatile_up", "calm_down", "volatile_down")
     assert all(d.reason not in (NO_MOOD, NO_SCORE) for d in run.decisions)
     for s in ("AAPL", "VOD.L"):

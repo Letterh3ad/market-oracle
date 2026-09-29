@@ -71,6 +71,18 @@ async def test_the_regime_stage_names_the_mood_it_traded_in_and_says_when_it_is_
     assert (stage.state, stage.summary) == ("ok", "regime account off: nothing decided")
 
 
+async def test_a_failing_regime_step_leaves_every_other_stage_running(ctx, monkeypatch):
+    def boom(_):
+        raise RuntimeError("book broke")
+
+    monkeypatch.setattr("oracle.services.tick_service.regime_step", boom)
+    run = await run_tick(ctx)
+    states = _states(run)
+    assert states.pop("regime_step") == "failed" and set(states.values()) == {"ok"}
+    assert [s.name for s in run.stages] == list(STAGES)
+    assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"], "the strategy step still ran"
+
+
 async def test_prices_come_before_the_fill_that_needs_them(ctx, yahoo):
     await run_tick(ctx)
     place_buy(ctx, "AAPL", 1000.0)

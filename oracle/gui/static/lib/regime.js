@@ -66,7 +66,18 @@ function reading(card) {
     el("p", { class: "dim small" }, Object.entries(s.readings ?? {})
       .map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "number" ? v.toFixed(3) : v}`).join(", ")),
     weights(s),
+    unscored(s.unscored ?? []),
   ];
+}
+
+// Weighted methods no listing had a score from on the last step: their weight went to the others.
+function unscored(methods) {
+  if (!methods.length) return null;
+  const why = methods.includes("earnings_drift")
+    ? " Earnings drift needs stored earnings dates, which are fetched only when a company's After earnings study is opened."
+    : "";
+  return el("p", { class: "small warn-text" },
+    `No listing had a score from ${methods.map(name).join(", ")} on this step: their weight went to the other methods.${why}`);
 }
 
 function decisions(rows, base) {

@@ -34,8 +34,8 @@ __all__ = [
     "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
-    "comparison", "decision_log", "equity_history", "fill_pending", "fresh_verdicts", "pending_orders", "place_buy",
-    "place_sell", "sells",
+    "comparison", "decision_log", "discovered_off", "equity_history", "fill_pending",
+    "pending_orders", "place_buy", "place_sell", "sells", "step_account", "verdict_history",
     "strategy_rules", "strategy_step", "traded_by",
 ]
 
@@ -48,8 +48,15 @@ DISCOVERY_TRADERS = ("ai", REGIME)
 GONE = "no longer in the universe"
 AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
           "or set [ai_account] enabled = true in oracle.toml")
-DISCOVERED_OFF = ("discovered, and the AI account does not trade discovered companies: turn it on in Settings "
-                  "([discovery] ai_trades)")
+
+
+def discovered_off(account: str) -> str:
+    """Why `account` ("the AI account") skips a discovered listing while it does not trade them."""
+    return (f"discovered, and {account} does not trade discovered companies: turn it on in Settings "
+            "([discovery] ai_trades)")
+
+
+DISCOVERED_OFF = discovered_off("the AI account")
 NEVER_BUY = "on the never list: never bought"
 
 
@@ -191,7 +198,7 @@ def strategy_step(ctx: AppContext) -> list[Decision]:
     """Run the strategy rules over every watched listing's latest lean and queue the
     resulting orders on the strategy account. Every decision, skips included, is logged."""
     found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), traded_by(ctx, "strategy"))
-    return _step(ctx, "strategy", found, skips, {})
+    return step_account(ctx, "strategy", found, skips, {})
 
 
 def ai_step(ctx: AppContext) -> list[Decision] | None:
@@ -203,7 +210,7 @@ def ai_step(ctx: AppContext) -> list[Decision] | None:
     traded = traded_by(ctx, "ai")
     found, skips, runs = _usable_verdicts(ctx, traded)
     skips += [Decision(s, Action.SKIP, None, DISCOVERED_OFF) for s in discovered_only(ctx) if s not in traded]
-    return _step(ctx, "ai", found, skips, runs)
+    return step_account(ctx, "ai", found, skips, runs)
 
 
 def traded_by(ctx: AppContext, account: str) -> list[str]:
@@ -219,7 +226,7 @@ def traded_by(ctx: AppContext, account: str) -> list[str]:
     return sorted(set(listed) | set(PaperRepo(ctx.conn).held_symbols(account)))
 
 
-def _step(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
+def step_account(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
           reports: dict[str, int], explanations: dict[str, dict] | None = None,
           cap: Callable[[dict[str, Lean], set[str]], dict[str, Lean]] | None = None) -> list[Decision]:
     """Decide over `found` with the strategy's rules, queue the orders on `account` and log
@@ -325,9 +332,25 @@ def _usable_verdicts(ctx: AppContext, watched: list[str]) -> tuple[dict[str, Lea
     return found, skips, runs
 
 
-def fresh_verdicts(ctx: AppContext, symbols: list[str]) -> dict[str, Lean]:
-    """The verdicts the AI account would trade today, by the same freshness rule."""
-    return _usable_verdicts(ctx, symbols)[0]
+def verdict_history(ctx: AppContext, symbols: list[str]) -> dict[str, list[tuple[date, str]]]:
+    """Each listing's live research verdicts no older than the AI account's limit, oldest first,
+    as (report day, label). A report without a verdict hides the older ones, as the AI account
+    never passes a rejected verdict over for an older one."""
+    research, today = ResearchRepo(ctx.conn), ctx.clock.utcnow().date()
+    max_age = ctx.config.ai_account.max_verdict_age_days
+    out = {}
+    for symbol in symbols:
+        found: list[tuple[date, str]] = []
+        for run in reversed(research.with_reports(symbol)):
+            if run.as_of is not None or (today - run.report.day).days > max_age:
+                continue
+            if run.report.verdict is None:
+                found = [(d, label) for d, label in found if d > run.report.day]
+            else:
+                found.append((run.report.day, run.report.verdict.label))
+        if found:
+            out[symbol] = sorted(found)
+    return out
 
 
 def decision_log(ctx: AppContext, account: str, limit: int = 50) -> list[LoggedDecision]:
