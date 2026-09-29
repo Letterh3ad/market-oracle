@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
+from oracle.analysts.signals import AnalystSignal
 from oracle.config import Config, StrategyConfig
 from oracle.services.activity_service import JobRunner, retry, submit_backtest
 from oracle.services.backtest_service import (
@@ -14,6 +15,7 @@ from oracle.services.paper_service import place_buy
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
+from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.listings import Listing
 from tests.broker.test_backtest import rising
@@ -57,7 +59,7 @@ def test_a_trending_list_is_bought_and_set_against_buy_and_hold(make_ctx):
     ctx = make_ctx({"UP": BARS})
     r = run_backtest(ctx, "TECH", START, END)
     assert r.watchlist == "tech" and r.listings == ("UP",)
-    strategy, held, momentum = r.lines
+    strategy, held, momentum, _ = r.lines
     assert (strategy.name, held.name, momentum.name) == ("strategy", "buy_and_hold", "momentum")
     assert strategy.trades == len(r.trades) >= 1 and r.trades[0].symbol == "UP"
     assert strategy.points[0] == (START, 0.0) and held.points[0] == (START, 0.0)
@@ -203,3 +205,45 @@ async def test_a_cancelled_backtest_is_retried_with_the_same_request(runner):
     await r.wait(again.id)
     assert again.subject == job.subject and again.state == "done", again.error
     assert (again.result.backtest.slippage_bps, again.result.backtest.commission) == (2.5, 0.75)
+
+
+def market(ctx, bars):
+    """Stored prices for a listing on no watchlist: only the regime line's mood and ranks read it."""
+    s = bars[0].symbol
+    UniverseRepo(ctx.conn).add(Listing(s, f"{s} Inc", "Equity", "United States", "NMS", currency="USD",
+                                       company_key=s.lower(), is_primary=True))
+    BarRepo(ctx.conn).upsert(bars, "2026-09-24T00:00:00Z")
+
+
+def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_it_had(make_ctx):
+    ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
+    market(ctx, rising(400, "MKT", daily=0.002))
+    r = run_backtest(ctx, "tech", START, END, commission=2.0)
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime"]
+    regime = r.lines[3]
+    assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
+    assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
+    assert "whole stored market (3 listings)" in regime.caption
+    assert "no AI verdicts" in regime.caption and "no value or quality" in regime.caption
+    assert "no earnings drift" in regime.caption
+
+
+def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):
+    later = rising(460, "MKT", daily=0.002)
+    wild = [replace(b, open=b.open / 4, close=b.close / 4, adj_close=b.close / 4) for b in later[400:]]
+    runs = []
+    for name, extra in (("a.db", []), ("b.db", wild)):
+        ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)}, name)
+        market(ctx, later[:400] + extra)
+        runs.append(run_backtest(ctx, "tech", START, END))
+    assert runs[0] == runs[1] and runs[0].lines[3].trades >= 1
+
+
+def test_the_regime_line_reads_value_and_quality_only_from_the_day_recorded(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    as_of, computed = BARS[345].date, BARS[350].date
+    SignalRepo(ctx.conn).save([AnalystSignal(a, "UP", as_of, 0.8, 0.7, "stored", ()) for a in ("value", "quality")],
+                              f"{computed.isoformat()}T21:00:00Z")
+    caption = run_backtest(ctx, "tech", START, END).lines[3].caption
+    assert f"stored signals of 1 listing, each only from the day it was recorded (the first on {computed})" in caption
+    assert "no value or quality" in run_backtest(ctx, "tech", START, BARS[349].date).lines[3].caption

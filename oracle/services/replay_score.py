@@ -22,7 +22,9 @@ from oracle.services.context import AppContext
 from oracle.services.cutoff_service import pinned_cutoff
 from oracle.services.errors import InvalidQuery
 from oracle.services.prices_service import ListingOutcome, update_listings
-from oracle.services.replay_account import Account, simulate
+from oracle.services.paper_service import strategy_rules
+from oracle.services.regime_lines import RegimeLine, regime_line
+from oracle.services.replay_account import Account, regime_verdicts, simulate
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.meta import MetaRepo
@@ -301,17 +303,41 @@ def replay_report(ctx: AppContext) -> Score | None:
     if study is None:
         return None
     score = score_study(ctx, study)
-    return replace(score, account=_account(ctx, study, score.cells),
-                   by_size=tuple(replace(z, account=_account(ctx, study, score.cells, set(z.listings)))
+    blend = _regime(ctx, study, score.cells)
+    return replace(score, account=_account(ctx, study, score.cells, blend=blend),
+                   by_size=tuple(replace(z, account=_account(ctx, study, score.cells, set(z.listings), blend))
                                  for z in score.by_size))
 
 
-def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
-             only: set[str] | None = None) -> Account | None:
-    """The study's account, or over `only` those listings."""
-    # Days the model may know the outcome of are left out whole, so neither line starts there.
+def _regime(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore]) -> RegimeLine | None:
+    """One regime book for the whole account and every size band's: it reads only each day's
+    bars and verdicts, so building it once per report saves the bands rebuilding the mood."""
+    cells = _usable(ctx, study, cells)
+    if not cells:
+        return None
+    return regime_line(ctx, min(c.as_of for c in cells), ctx.clock.utcnow().date(), strategy_rules(ctx),
+                       regime_verdicts(_calls(cells)))
+
+
+def _usable(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
+            only: set[str] | None = None) -> list[CellScore]:
+    # Days the model may know the outcome of are left out whole, so no line starts there.
     cutoff = pinned_cutoff(ctx, study.stages)
-    cells = [c for c in cells if not (cutoff and c.as_of <= cutoff) and (only is None or c.symbol in only)]
+    return [c for c in cells if not (cutoff and c.as_of <= cutoff) and (only is None or c.symbol in only)]
+
+
+def _calls(cells: Sequence[CellScore]) -> dict[str, list[tuple[date, str, float]]]:
+    calls: dict[str, list] = {}
+    for c in sorted(cells, key=lambda c: c.as_of):
+        if c.verdict:
+            calls.setdefault(c.symbol, []).append((c.as_of, c.verdict, c.confidence))
+    return calls
+
+
+def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
+             only: set[str] | None = None, blend: RegimeLine | None = None) -> Account | None:
+    """The study's account, or over `only` those listings."""
+    cells = _usable(ctx, study, cells, only)
     first: dict[str, date] = {}
     for c in cells:
         first[c.symbol] = min(first.get(c.symbol, c.as_of), c.as_of)
@@ -335,13 +361,10 @@ def _account(ctx: AppContext, study: StudyRow, cells: Sequence[CellScore],
     end = max((b[-1].date for b in history.values()), default=None)
     if end is None or end <= start:
         return None
-    calls: dict[str, list] = {}
-    for c in sorted(cells, key=lambda c: c.as_of):
-        if c.verdict and c.symbol in history:
-            calls.setdefault(c.symbol, []).append((c.as_of, c.verdict, c.confidence))
+    calls = {s: rows for s, rows in _calls(cells).items() if s in history}
     lagging = {s: b[-1].date for s, b in history.items() if end - b[-1].date > STALE}
     return simulate(ctx, history, {s: first[s] for s in history}, calls, start, end, left_out, lagging,
-                    set(state.get("failures", ())), bands)
+                    set(state.get("failures", ())), bands, blend)
 
 
 def _unpriced(bars: Sequence[Bar], first: date, fetched: date | None) -> str | None:
