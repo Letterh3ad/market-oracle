@@ -34,8 +34,9 @@ from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
 from oracle.services.routine_service import update_listing_prices, update_prices
+from oracle.services.paper_service import REGIME, REGIME_AI, REGIME_LINES
 from oracle.services.tick_service import (
-    FILL, KIND_LABELS, MIDDAY, RUNS, TICK, last_tick, record_skipped, ticked_since,
+    FILL, KIND_LABELS, MIDDAY, RUNS, TICK, last_tick, record_skipped, run_line_step, ticked_since,
 )
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
@@ -44,7 +45,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
-           "submit_fill", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_fill", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -378,6 +379,21 @@ def submit_tick(ctx: AppContext, runner: JobRunner, trigger: str = "manual", ski
                          progress=lambda: stage[-1] if stage else None, automatic=trigger != "manual")
 
 
+LINE_LABELS = {REGIME: "Regime step", REGIME_AI: "Regime-AI step"}
+
+
+def submit_line_step(ctx: AppContext, runner: JobRunner, account: str) -> Job:
+    """A regime line's step as a job on the tick queue: it runs off the pages' event loop (a step
+    takes seconds), after any tick queued before it and never beside one (gate 04 #1)."""
+    if account not in REGIME_LINES:
+        raise InvalidQuery(f"no regime line {account!r}; the lines are {', '.join(REGIME_LINES)}")
+
+    async def work(c: AppContext):
+        return run_line_step(c, account)
+
+    return runner.submit("tick", LINE_LABELS[account], work, subject=account, link="#ledgers")
+
+
 def submit_midday(ctx: AppContext, runner: JobRunner, trigger: str = "manual", skip_if_busy: bool = False) -> Job:
     return submit_tick(ctx, runner, trigger, skip_if_busy, MIDDAY)
 
@@ -551,7 +567,10 @@ def _retry_analyse(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_tick(ctx: AppContext, runner: JobRunner, job) -> Job:
-    """Whatever started it before (scheduled or manual), a retry is asked for: a manual run of the same kind."""
+    """Whatever started it before (scheduled or manual), a retry is asked for: a manual run of the same
+    kind, or the same regime line's step."""
+    if job.subject in REGIME_LINES:
+        return submit_line_step(ctx, runner, job.subject)
     return submit_tick(ctx, runner, kind=job.subject if job.subject in RUNS else TICK)
 
 

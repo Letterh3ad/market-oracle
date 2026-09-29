@@ -13,9 +13,11 @@ async def test_status_lists_each_trading_account_and_whether_it_acts(ctx, client
 
     body = (await client.get("/api/status")).json()
     assert body["traders"] == [{"name": "strategy", "on": True}, {"name": "ai", "on": False},
-                               {"name": "regime", "on": True}]
+                               {"name": "regime", "on": True}, {"name": "regime-ai", "on": True}]
     ctx.config = replace(ctx.config, regime_account=replace(ctx.config.regime_account, enabled=False))
     assert (await client.get("/api/status")).json()["traders"][2] == {"name": "regime", "on": False}
+    ctx.config = replace(ctx.config, regime_ai_account=replace(ctx.config.regime_ai_account, enabled=False))
+    assert (await client.get("/api/status")).json()["traders"][3] == {"name": "regime-ai", "on": False}
 
 
 async def test_each_source_reports_its_health_and_a_tripped_breaker_says_why(ctx, client):

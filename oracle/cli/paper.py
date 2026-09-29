@@ -5,10 +5,11 @@ import argparse
 from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, REGIME, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
+    ACCOUNTS, AI_OFF, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
     decision_log, equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
-from oracle.services.regime_service import REGIME_OFF, regime_step
+from oracle.services.regime_service import OFF, regime_step
+from oracle.services.tick_service import tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
@@ -31,7 +32,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     show.set_defaults(handler=show_cmd)
     step = sub.add_parser("step", help="run an account's rules and queue its orders")
     step.add_argument("--account", choices=TRADERS, default="strategy",
-                      help="strategy trades the leans, ai the research verdicts, regime the regime blend")
+                      help="strategy trades the leans, ai the research verdicts, regime the regime blend, "
+                           "regime-ai the blend with the day's model tilt")
     step.set_defaults(handler=step_cmd)
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")
@@ -113,8 +115,8 @@ def _compare(ctx: AppContext) -> int:
 
 
 def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
-    if args.account == REGIME:
-        return _regime_step(ctx)
+    if args.account in REGIME_LINES:
+        return _regime_step(ctx, args.account)
     decisions = strategy_step(ctx) if args.account == "strategy" else ai_step(ctx)
     if decisions is None:
         print(AI_OFF)
@@ -125,14 +127,20 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     return 0
 
 
-def _regime_step(ctx: AppContext) -> int:
-    run = regime_step(ctx)
+def _regime_step(ctx: AppContext, account: str) -> int:
+    run = regime_step(ctx, account)
     if run is None:
-        print(REGIME_OFF)
+        print(OFF[account])
         return 0
+    name = "Regime-AI" if account != REGIME_LINES[0] else "Regime"
     if run.mood:
         flags = f" ({', '.join(run.flags)})" if run.flags else ""
-        print(f"Regime: mood {run.mood}{flags} on {run.day.isoformat()}")
+        print(f"{name}: mood {run.mood}{flags} on {run.day.isoformat()}")
+    if run.tilt:
+        print(f"no tilt, rules weights traded: {run.tilt.error}" if run.tilt.error
+              else f"{tilt_line(run.tilt)} ({run.tilt.reason})")
+    if run.lag:
+        print(f"WARNING: {run.lag}")
     _print_decisions(ctx, run.decisions)
     return 0
 

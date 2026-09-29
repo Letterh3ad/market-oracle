@@ -31,7 +31,8 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "UNVALIDATED", "AccountScore",
+    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES",
+    "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
     "comparison", "decision_log", "discovered_off", "equity_history", "fill_pending",
@@ -40,10 +41,13 @@ __all__ = [
 ]
 
 REGIME = "regime"
-ACCOUNTS = ("strategy", "ai", "manual", REGIME)
-TRADERS = ("strategy", "ai", REGIME)
+REGIME_AI = "regime-ai"
+REGIME_LINES = (REGIME, REGIME_AI)
+"""The accounts that trade the regime blend: rules only, and with the daily model tilt."""
+ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
+TRADERS = ("strategy", "ai", *REGIME_LINES)
 """The accounts that trade by themselves."""
-DISCOVERY_TRADERS = ("ai", REGIME)
+DISCOVERY_TRADERS = ("ai", *REGIME_LINES)
 """The accounts that trade discovered listings while `[discovery] ai_trades` is on."""
 GONE = "no longer in the universe"
 AI_OFF = ("the AI account is off: nothing was decided. Turn it on on the Ledgers tab, "
@@ -401,6 +405,7 @@ CAPTIONS = {
     "ai": "AI: trades the research verdicts under the same rules.",
     "manual": "Manual: your own buys and sells.",
     REGIME: "Regime: trades a blend of known methods weighted by the market's mood, under the same rules.",
+    REGIME_AI: "Regime-AI: the same blend with its weights tilted once a day by a local model, under the same rules.",
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
 BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
@@ -480,7 +485,7 @@ def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date 
 
 
 def _record_equity(ctx: AppContext) -> None:
-    """The AI and regime accounts only while on, so each record starts the day it was first turned on."""
+    """The AI and regime line accounts only while on, so each record starts the day it was first turned on."""
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
         if not account_on(ctx, account):
@@ -490,11 +495,13 @@ def _record_equity(ctx: AppContext) -> None:
 
 
 def account_on(ctx: AppContext, account: str) -> bool:
-    """Whether the account acts: the AI and regime accounts have Settings switches."""
+    """Whether the account acts: the AI and regime line accounts have Settings switches."""
     if account == "ai":
         return ctx.config.ai_account.enabled
     if account == REGIME:
         return ctx.config.regime_account.enabled
+    if account == REGIME_AI:
+        return ctx.config.regime_ai_account.enabled
     return True
 
 

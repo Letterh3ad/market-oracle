@@ -33,6 +33,6 @@ def print_tick(t: TickRun) -> None:
     if t.note:
         print(f"  {t.note}")
     for s in t.stages:
-        print(f"  {s.name:<13}{s.state:<9}{s.summary}")
+        print(f"  {s.name:<15}{s.state:<9}{s.summary}")
         if s.error:
             print(f"  {'':<18}{s.error}")

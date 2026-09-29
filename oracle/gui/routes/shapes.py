@@ -13,6 +13,7 @@ from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
+from oracle.services.regime_service import OFF, LineStep
 from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
@@ -133,9 +134,24 @@ def _probes(probes: list[CutoffProbe]) -> dict:
     return {"probes": [cutoff_summary(p) for p in probes]}
 
 
+def line_step(s: LineStep) -> dict:
+    """A regime line's step: what it read and decided, its tilt and any lag warning."""
+    run = s.run
+    if run is None:
+        return {"account": s.account, "off": OFF[s.account], "day": None, "mood": None, "flags": [], "decisions": [],
+                "tilt": None, "lag": None}
+    return {"account": s.account, "off": None, "day": run.day, "mood": run.mood, "flags": list(run.flags),
+            "decisions": [asdict(d) for d in run.decisions], "tilt": run.tilt and asdict(run.tilt), "lag": run.lag}
+
+
+def _tick_queue(result) -> dict | None:
+    """The tick queue runs ticks and the regime lines' steps."""
+    return line_step(result) if isinstance(result, LineStep) else tick(result)
+
+
 # What a finished job's button shows, by kind; research shows its report on the company page.
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
-_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": tick, "universe": asdict, "fx": _fx, "merges": asdict,
+_RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "universe": asdict, "fx": _fx, "merges": asdict,
             "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
             "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes}
 

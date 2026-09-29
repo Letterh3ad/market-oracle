@@ -212,6 +212,20 @@ async def test_a_due_tick_is_skipped_while_one_is_running_here(runner, ctx, gate
     await runner.wait(manual.id)
 
 
+async def test_a_regime_step_on_the_tick_queue_delays_a_due_tick_but_never_skips_it(runner, ctx):
+    scheduler = london_scheduler(ctx, runner)
+    gate = Gate("step", [])
+    step = runner.submit("tick", "Regime step", gate, subject="regime", link="#ledgers")
+    await settle()
+    ctx.clock.advance(31 * 60)
+    poll = asyncio.create_task(scheduler.check())
+    await settle()
+    assert [j.label for j in runner.active("tick")] == ["Regime step", "Tick (scheduled)"]
+    gate.open.set()
+    run = await poll
+    assert run.trigger == "scheduled" and run.outcome != "skipped" and step.state == "done"
+
+
 async def test_stopping_a_scheduled_tick_records_it_interrupted_and_it_is_not_run_again(runner, ctx, gated_stages):
     scheduler = london_scheduler(ctx, runner)
     ctx.clock.advance(31 * 60)

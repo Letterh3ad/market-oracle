@@ -3,7 +3,7 @@ plumbing is tested with leans chosen by the test."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from oracle.broker.regime import METHODS, Explained
@@ -28,21 +28,26 @@ class State:
 class StubBook:
     """`leans` maps a listing to (label, probability, parts); a listing left out has no score.
     `mood` None reads no mood. `capped` listings lean hold after the cap. Records the history and
-    inputs it was built from, each `explain` asked and each cap's holdings."""
+    inputs it was built from, each `explain` asked and each cap's holdings. A `tilt` is asked once
+    per day read, like the real book's, and lands in the state."""
 
     def __init__(self, history, inputs, mood: str | None = "calm_up", leans: dict | None = None,
                  flags: frozenset[str] = frozenset(), capped: frozenset[str] = frozenset(),
-                 note: str | None = None) -> None:
+                 note: str | None = None, tilt=None) -> None:
         self.history, self.inputs, self.mood, self.leans, self.flags = history, inputs, mood, leans or {}, flags
-        self.capped, self.note = capped, note
+        self.capped, self.note, self.tilt = capped, note, tilt
+        self._states: dict[date, State] = {}
         self.asked: list[tuple[str, date]] = []
         self.held: list[set[str]] = []
 
     def state(self, day: date) -> State | None:
         if not self.mood:
             return None
-        return State(day, self.mood, self.flags, warnings={"momentum": ("rebound",)}, good={"trend": ("big_year",)},
-                     note=self.note)
+        if day not in self._states:
+            state = State(day, self.mood, self.flags, warnings={"momentum": ("rebound",)},
+                          good={"trend": ("big_year",)}, note=self.note)
+            self._states[day] = replace(state, tilt=dict(self.tilt(state))) if self.tilt else state
+        return self._states[day]
 
     def explain(self, symbol: str, day: date) -> Explained | None:
         self.asked.append((symbol, day))
@@ -61,8 +66,8 @@ def use_stub(monkeypatch, **kwargs) -> list[StubBook]:
     """Every step builds a StubBook with `kwargs`; returns the books built, newest last."""
     built: list[StubBook] = []
 
-    def build(ctx, history, inputs):
-        built.append(StubBook(history, inputs, **kwargs))
+    def build(ctx, history, inputs, tilt=None):
+        built.append(StubBook(history, inputs, tilt=tilt, **kwargs))
         return built[-1]
 
     monkeypatch.setattr("oracle.services.regime_service.build_book", build)

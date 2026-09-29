@@ -76,6 +76,17 @@ async def test_a_fill_time_finding_a_tick_running_here_is_skipped_not_queued(ctx
     assert await s.check() is None
 
 
+async def test_a_fill_time_finding_a_regime_step_queued_runs_after_it(ctx):
+    from oracle.services.activity_service import submit_line_step
+
+    s = scheduler(ctx)
+    await ticked(ctx, s)
+    at(ctx, TUESDAY_0930)
+    step = submit_line_step(ctx, s._runner, "regime")
+    run = await s.check()
+    assert (run.kind, run.outcome) == ("fill", "ok") and step.state == "done"
+
+
 async def test_a_fill_time_finding_the_lock_held_elsewhere_is_skipped(ctx):
     s = scheduler(ctx)
     await ticked(ctx, s)

@@ -39,7 +39,8 @@ def build_report(w: Watch) -> str:
                    + (f", first error: {tick['first_error']}" if tick.get("first_error") else ""))
     out += ["", "## Paper accounts", ""]
     ledgers = _get(w, "/api/ledgers") if status else None
-    out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None)
+    out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None,
+                  _get(w, "/api/ledgers/regime-ai") if ledgers else None)
     out += ["", "## Replay study", ""]
     study = (_get(w, "/api/replay") or {}).get("study") if status else None
     if not study:
@@ -58,8 +59,9 @@ def build_report(w: Watch) -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
-def _paper(ledgers: dict | None, regime: dict | None) -> list[str]:
-    """Every paper account the app lists, then the regime account's last mood reading."""
+def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = None) -> list[str]:
+    """Every paper account the app lists, then the regime lines' last mood reading, the regime-ai
+    tilt and any lag warning."""
     if not ledgers:
         return ["No ledgers (or the app is down)."]
     base = ledgers.get("base_currency")
@@ -73,6 +75,26 @@ def _paper(ledgers: dict | None, regime: dict | None) -> list[str]:
             out.append(f"Regime mood on {regime.get('day')}: {state['mood']}" + (f" ({flags})" if flags else ""))
         if regime.get("note"):
             out.append(f"Regime: {regime['note']}")
+        if regime.get("lag"):
+            out.append(f"Regime WARNING: {regime['lag']}")
+    if regime_ai:
+        out += _tilt(regime_ai)
+    return out
+
+
+def _tilt(card: dict) -> list[str]:
+    """The regime-ai line's tilt on its last step day, or why it had none."""
+    out = []
+    tilt = card.get("tilt")
+    if tilt and tilt.get("error"):
+        out.append(f"Regime-AI: no tilt on {tilt.get('day')}, rules weights traded ({tilt['error']})")
+    elif tilt:
+        moved = ", ".join(f"{m} x{v:.2f}" for m, v in (tilt.get("tilt") or {}).items() if v != 1.0) or "every weight kept"
+        out.append(f"Regime-AI tilt on {tilt.get('day')}: {moved} ({tilt.get('reason')})")
+    if card.get("note"):
+        out.append(f"Regime-AI: {card['note']}")
+    if card.get("lag"):
+        out.append(f"Regime-AI WARNING: {card['lag']}")
     return out
 
 

@@ -93,6 +93,12 @@ research_budget_min = 120   # minutes a tick may spend starting research; the re
 [regime_account]
 enabled = true             # false: the regime account decides nothing each tick
 
+# The regime-ai paper account: the same blend, with the weights tilted once a day by a local
+# model (within [regime] tilt_cap). No answer, bad JSON or the model down: the rules weights.
+[regime_ai_account]
+enabled = true             # false: the regime-ai account decides nothing each tick
+model = ""                 # model profile that tilts the weights; "" uses the research slot's
+
 # Regime lines: a blend of known trading methods weighted by the market's mood. Weights
 # are the literature's priors per mood (<mood>_<method>, each mood renormalised, 0 to 1).
 [regime]
