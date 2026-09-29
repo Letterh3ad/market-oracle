@@ -30,6 +30,14 @@ class SignalRepo:
         )
         return [_signal(r) for r in rows]
 
+    def recorded(self, symbol: str, analyst: str) -> list[tuple[date, float]]:
+        """(day recorded, score), oldest first. The day is the later of the signal's as-of day and
+        the UTC day it was last computed on, so a past replay never reads a score before it existed."""
+        rows = self._conn.execute(
+            "SELECT MAX(as_of, substr(computed_at, 1, 10)) AS day, score FROM signals WHERE symbol = ? AND analyst = ? "
+            "ORDER BY day, as_of", (symbol, analyst))
+        return [(date.fromisoformat(d), s) for d, s in rows]
+
     def latest(self, symbol: str) -> list[AnalystSignal]:
         """Each analyst's most recent signal for the listing."""
         rows = self._conn.execute(

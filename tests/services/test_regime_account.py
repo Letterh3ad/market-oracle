@@ -20,7 +20,9 @@ from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.signals import SignalRepo
+from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
+from oracle.universe.listings import Listing
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, verdict, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
@@ -193,7 +195,8 @@ def test_the_book_gets_sectors_earnings_factor_scores_and_only_fresh_verdicts(ct
     verdict(ctx, "VOD.L", "sell", 0.8, day=date(2026, 9, 1))  # older than the 7 days
     MetaRepo(ctx.conn).set("earnings_dates:AAPL", json.dumps(
         {"source": "SEC", "fetched_at": "2026-09-20T00:00:00Z", "releases": [["2026-07-30", False]]}))
-    SignalRepo(ctx.conn).save([AnalystSignal("value", "AAPL", date(2026, 9, 18), 0.4, 1.0, "v", ())], "x")
+    SignalRepo(ctx.conn).save([AnalystSignal("value", "AAPL", date(2026, 9, 18), 0.4, 1.0, "v", ())],
+                              "2026-09-18T21:00:00Z")
     regime_step(ctx)
     inputs = built[0].inputs
     assert inputs.verdicts == {"AAPL": ((date(2026, 9, 18), -0.5), (date(2026, 9, 21), 0.5))}, "every fresh one"
@@ -298,3 +301,14 @@ def test_the_real_regime_book_reads_a_mood_and_explains_each_lean(ctx, monkeypat
     card = regime_card(ctx)
     assert card.note is None and card.state["mood"] == run.mood
     assert sum(card.state["weights"].values()) == pytest.approx(1.0) and len(card.state["base_weights"]) == 8
+
+
+def test_the_live_book_never_reads_tesla_or_funds(ctx, monkeypatch):
+    built = use_stub(monkeypatch)
+    for symbol, name, kind in (("TSLA", "Tesla, Inc.", "Equity"), ("VWRL.L", "Vanguard FTSE All-World", "ETF")):
+        UniverseRepo(ctx.conn).add(Listing(symbol, name, kind, "United States", "NMS", currency="USD",
+                                           company_key=symbol.lower(), is_primary=True))
+        BarRepo(ctx.conn).upsert([Bar(symbol, date(2026, 9, 21), 5, 5, 5, 5, 5, 1, "USD", "t")], "x")
+    watch(ctx, "AAPL")
+    after_close(ctx)
+    assert "AAPL" in built[0].history and not {"TSLA", "VWRL.L"} & set(built[0].history)

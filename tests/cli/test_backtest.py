@@ -7,7 +7,7 @@ from tests.fakes.clock import FakeClock
 from tests.services.test_backtest import BARS, END, NOW, START, seed
 
 
-def test_backtest_prints_both_lines_the_notes_and_the_trades(tmp_path, capsys):
+def test_backtest_prints_every_line_the_notes_and_the_trades(tmp_path, capsys):
     with open_context(Config(db_path=tmp_path / "o.db", base_currency="USD"), None, FakeClock(NOW)) as c:
         seed(c, {"UP": BARS})
     cfg = tmp_path / "oracle.toml"
@@ -18,7 +18,8 @@ def test_backtest_prints_both_lines_the_notes_and_the_trades(tmp_path, capsys):
     assert code == 0
     assert f"Backtest of the tech list (1 listing), {START.isoformat()} to {END.isoformat()}" in out
     assert "survivorship bias" in out and "5 basis points" in out and "1.00 USD commission" in out
-    assert "strategy" in out and "buy_and_hold" in out
+    assert "strategy" in out and "buy_and_hold" in out and "momentum" in out
+    assert "\nregime " in out and "Regime: trend, 12-1 momentum" in out and "no AI verdicts" in out
     assert " buy  UP " in out
 
 

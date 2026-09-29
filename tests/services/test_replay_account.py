@@ -12,6 +12,7 @@ from oracle.market.bars import Bar
 from oracle.market.fx import FxRate
 from oracle.services import replay_account
 from oracle.services.context import open_context
+from oracle.services import replay_score
 from oracle.services.replay_score import replay_report, score_study
 from oracle.store.bars import BarRepo
 from oracle.store.fx import FxRepo
@@ -162,7 +163,7 @@ def test_the_status_score_carries_no_account_and_the_json_report_carries_returns
     make_study(ctx, all_buy())
     assert score_study(ctx, ReplayRepo(ctx.conn).current()).account is None
     out = replay_report(ctx).to_json()["account"]
-    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum"]
+    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime"]
     assert out["lines"][0]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
     assert out["lines"][0]["points"][0] == ["2026-06-01", 0.0]
 
@@ -187,7 +188,7 @@ def test_the_momentum_baseline_is_drawn_and_leaves_the_other_lines_unchanged(ctx
     assert momentum.trades == 2 and momentum.points[0] == (JUN, 0.0)
     monkeypatch.setattr(replay_account, "BASELINES", {})
     without = replay_report(ctx).account
-    assert without.lines == account.lines[:3] and (without.trades, without.notes) == (account.trades, account.notes)
+    assert without.lines == tuple(x for x in account.lines if x.name != "momentum") and (without.trades, without.notes) == (account.trades, account.notes)
 
 
 def test_the_control_line_trades_every_verdict_as_a_buy_under_the_default_caps(default_ctx):
@@ -366,7 +367,7 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     assert s.account.listings == SYMBOLS
     large, small = s.by_size
     assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
-    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum"]
+    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime"]
     # BBB only rose, AAA fell after July: the smaller half did better.
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
     shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
@@ -378,3 +379,47 @@ def test_the_slippage_note_lists_bands_biggest_first_by_rate():
               (("A", "Small Cap"), ("B", "Large Cap"), ("C", None), ("D", "Mega Cap"), ("E", "Mid Cap"))}
     assert replay_account._slippage(venues) == ("slippage by size band (0.10% for Mega Cap, Large Cap and no known "
                                                 "band; 0.25% for Mid Cap; 0.50% for Small Cap)")
+
+
+def test_the_regime_line_is_drawn_in_every_size_band_from_one_book(ctx, monkeypatch):
+    built = []
+    real = replay_account.regime_line
+
+    def counted(*args, **kwargs):
+        built.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(replay_score, "regime_line", counted)
+    make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
+    s = replay_report(ctx)
+    assert len(built) == 1
+    for account in (s.account, *(z.account for z in s.by_size)):
+        regime = lines(account)["regime"]
+        assert regime.label == "Regime" and regime.points[0] == (JUN, 0.0)
+        assert "the replay verdicts as its AI input, each from its as-of day for up to 7 days" in regime.caption
+
+
+def regime_of(tmp_path, name, calls):
+    """The regime line of a study over the fixture's listings, in dollars: without a stored
+    rate to the base currency a listing is left out of the market's mood."""
+    with open_context(Config(db_path=tmp_path / f"{name}.db", base_currency="USD", **CONFIG), None,
+                      FakeClock(NOW)) as c:
+        store(c, "AAA", path(fall_after_july))
+        store(c, "BBB", path(rise))
+        make_study(c, calls)
+        return lines(replay_report(c).account)["regime"]
+
+
+def test_the_regime_line_reads_the_replay_verdicts_as_its_ai_input(tmp_path):
+    assert replay_account.regime_verdicts({"AAA": [(JUL, "sell", 0.8), (JUN, "buy", 0.9), (AUG, "odd", 0.5)]}) == {
+        "AAA": ((JUN, 0.5), (JUL, -0.5))}
+    bought = regime_of(tmp_path, "buy", all_buy())
+    sold = regime_of(tmp_path, "sell", {key: ("sell", 0.9) for key in all_buy()})
+    assert bought.trades >= 1 and bought.points != sold.points
+
+
+def test_a_later_verdict_never_changes_the_regime_line_before_its_day(tmp_path):
+    a = regime_of(tmp_path, "a", all_buy())
+    b = regime_of(tmp_path, "b", {**all_buy(), ("AAA", AUG): ("sell", 0.9), ("BBB", AUG): ("sell", 0.9)})
+    assert [p for p in a.points if p[0] <= AUG] == [p for p in b.points if p[0] <= AUG]
+    assert a.points != b.points

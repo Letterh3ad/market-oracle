@@ -13,23 +13,23 @@ from datetime import date, timedelta
 
 from oracle.broker.orders import Action
 from oracle.broker.regime import (
-    LABEL_SCORES, SIGNS, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book, settings_from,
+    LABEL_SCORES, SIGNS, DatedScores, Explained, RegimeBook, RegimeInputs, RegimeState, Tilt, regime_book,
+    settings_from,
 )
 from oracle.broker.rules import Decision, Lean
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
-from oracle.services.events_service import stored_releases
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
     GONE, REGIME, REGIME_AI, account_on, discovered_off, step_account, traded_by, verdict_history,
 )
-from oracle.services.prices_service import ConvertedBar, histories_in_base
+from oracle.services.prices_service import ConvertedBar
+from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
 from oracle.services.regime_tilt import DailyTilt
 from oracle.services.watch_service import discovered_only
 from oracle.store.db import to_utc_iso
 from oracle.store.paper import DecisionRepo, LoggedDecision
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
-from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
 __all__ = ["OFF", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "LineStep", "RegimeCard", "RegimeRun",
@@ -47,10 +47,6 @@ LAG_WEEKDAYS = 2
 trading an old day's leans (gate 04 #3), so the card and the tick say so."""
 NO_MOOD = "no market mood yet: under a year of stored market history, so the regime line leans nothing"
 NO_SCORE = "no regime score: too little history for any price method"
-HISTORY_DAYS = 1100
-"""Calendar days of bars each step reads: the mood's 200-day average and its trailing year of
-volatility and correlation percentiles, the 12-month return and the health record all fit,
-with room; older bars change nothing and only cost time."""
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
 COMPLETE_SHARE = 0.8
@@ -60,7 +56,6 @@ it is still open): the step reads up to the day before it. Only the traded listi
 rest of the stored market (a replay study's, ones no longer watched) stops getting bars and would
 make every day look partial."""
 RECENT_DAYS = 10
-FACTOR_ANALYSTS = ("value", "quality")
 
 
 @dataclass(frozen=True)
@@ -124,9 +119,9 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     today = ctx.clock.utcnow().date()
     last = today - timedelta(days=1)
     traded = traded_by(ctx, account)
-    history, day = complete_sessions(histories_in_base(ctx, last - timedelta(days=HISTORY_DAYS), last), traded)
+    history, day = complete_sessions(market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, traded), traded)
     tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
-    book = build_book(ctx, history, _inputs(ctx, traded), tilt)
+    book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt)
     state = book.state(day) if day else None
     found, skips, why = _leans(ctx, book, state, day, traded, history)
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
@@ -223,27 +218,9 @@ def _explanation(x: Explained) -> dict:
             "probability": x.lean.probability, "score": x.score, "parts": dict(ranked)}
 
 
-def _inputs(ctx: AppContext, traded: list[str]) -> RegimeInputs:
-    universe, signals = UniverseRepo(ctx.conn), SignalRepo(ctx.conn)
-    sectors = {s: p.sector for s in traded if (p := universe.profile(s)) and p.sector}
-    earnings = {s: tuple((r.day, r.before_open) for r in found) for s in traded if (found := stored_releases(ctx, s))}
-    factors = {s: dated for s in traded
-               if (dated := _combined({a: [(x.as_of, x.score) for x in signals.history(s, a)] for a in FACTOR_ANALYSTS}))}
-    verdicts = {s: tuple((d, LABEL_SCORES[label]) for d, label in found)
-                for s, found in verdict_history(ctx, traded).items()}
-    return RegimeInputs(sectors, earnings, factors, verdicts, ctx.config.ai_account.max_verdict_age_days)
-
-
-def _combined(series: Mapping[str, list[tuple[date, float]]]) -> tuple[tuple[date, float], ...]:
-    """On each day any analyst scored, the mean of each one's newest score known by then."""
-    latest: dict[str, float] = {}
-    out = []
-    for day, name, score in sorted((d, a, v) for a, rows in series.items() for d, v in rows):
-        latest[name] = score
-        if out and out[-1][0] == day:
-            out.pop()
-        out.append((day, sum(latest.values()) / len(latest)))
-    return tuple(out)
+def _verdicts(ctx: AppContext, traded: list[str]) -> dict[str, DatedScores]:
+    return {s: tuple((d, LABEL_SCORES[label]) for d, label in found)
+            for s, found in verdict_history(ctx, traded).items()}
 
 
 def _plain(value):

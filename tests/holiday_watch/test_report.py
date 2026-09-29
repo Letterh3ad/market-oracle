@@ -145,3 +145,18 @@ def test_dry_run_prints_the_report_and_writes_nothing(tmp_path):
     assert write_report(w) is None
     assert real.ran == [] and not (w.cfg.reports / "2026-09-26.md").exists()
     assert any("120 of 540 done" in line for line in w.lines)
+
+
+def test_the_regime_line_is_listed_beside_momentum_in_every_account(tmp_path):
+    w = seeded(tmp_path)
+    regime = {"name": "regime", "caption": "Regime: ...", "label": "Regime", "return": -0.012, "max_fall": -0.08,
+              "trades": 31, "costs": 900.0}
+    size = band("Large", 0.05)
+    size["account"]["lines"].append(regime)
+    report = {**REPORT["report"], "by_size": [size]}
+    report["account"] = {**report["account"], "lines": [*report["account"]["lines"], regime]}
+    w.http.routes[f"{APP}/api/replay/report"] = {"report": report}
+    text = build_report(w)
+    said = "- regime (Regime): -1.20%, max fall -8.00%, 31 trades, costs 900"
+    large = text.index("## Account, Large")
+    assert said in text[:large] and said in text[large:]

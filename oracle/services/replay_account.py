@@ -1,7 +1,8 @@
 """What the replay study's verdicts would have earned as an account: the backtest engine, in
 memory, trading each study date's verdicts under the AI account's rules, risk sizes and costs,
-drawn against the same verdicts all taken as buys (what the rules alone make of the listings)
-and the same listings bought in equal amounts and held. Nothing is written to the ledgers."""
+drawn against the same verdicts all taken as buys (what the rules alone make of the listings),
+the same listings bought in equal amounts and held, the momentum baseline and the regime line.
+Nothing is written to the ledgers."""
 
 from __future__ import annotations
 
@@ -16,17 +17,19 @@ from oracle.broker.compare import max_fall
 from oracle.broker.fills import COSTS, costs_for, fee
 from oracle.broker.momentum import caption as momentum_caption
 from oracle.broker.momentum import momentum_lean
+from oracle.broker.regime import LABEL_SCORES, DatedScores
 from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar
+from oracle.services.regime_lines import RegimeLine, regime_line
 from oracle.store.fx import FxRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 from oracle.universe.listings import MARKET_CAP_BANDS
 
-__all__ = ["BASELINES", "NOTIONAL", "Account", "collapsed", "simulate"]
+__all__ = ["BASELINES", "NOTIONAL", "Account", "collapsed", "regime_verdicts", "simulate"]
 
 SOURCE = "ai"
 NOTIONAL = 1_000_000.0
@@ -62,7 +65,8 @@ class Account:
     listings: tuple[str, ...]
     """The study's listings the stored bars can price."""
     lines: tuple[Line, ...]
-    """The verdicts' account (`ai`), every verdict a buy (`all_buy`), buy and hold, then any BASELINES."""
+    """The verdicts' account (`ai`), every verdict a buy (`all_buy`), buy and hold, any BASELINES, then
+    the regime line (`regime`)."""
     trades: tuple[Trade, ...]
     """The verdicts' account's."""
     left_out: tuple[str, ...]
@@ -72,12 +76,14 @@ class Account:
 
 def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mapping[str, date],
              calls: Mapping[str, Sequence[Call]], start: date, end: date, left_out: Sequence[str],
-             lagging: Mapping[str, date], failing: Set[str], bands: Mapping[str, str | None]) -> Account:
+             lagging: Mapping[str, date], failing: Set[str], bands: Mapping[str, str | None],
+             regime: RegimeLine | None = None) -> Account:
     """`history` is each priced listing's bars, from a year before `start` for the risk sizes;
     `first` its first as-of day; `calls` its verdicts, oldest first; `lagging` the last close
     of each listing whose bars stop well before `end` (held flat after it); `failing` the
     listings the last price check could not fetch; `bands` the size band each was picked in,
-    which sets its slippage."""
+    which sets its slippage. `regime` is the regime line's book, shared by a report's accounts
+    (it reads only each day's bars and verdicts); without one it is built from `calls`."""
     base = ctx.config.base_currency
     rates, unrated = _rates(ctx, history, start)
     rows = {s: _priced(bars, rates[s]) for s, bars in history.items()}
@@ -85,16 +91,17 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
     rules, max_age, capital = strategy_rules(ctx), ctx.config.ai_account.max_verdict_age_days, NOTIONAL
     risk = {**asdict(ctx.config.risk), "account": capital}
 
-    def run(lean: LeanSource) -> Replay:
+    def run(lean: LeanSource, cap=None) -> Replay:
         # A verdict reads its day's news to 24:00 UTC, after most closes: it fills at the next close.
         return replay(rows, start, end, rules=rules, risk=risk, slippage=0.0, commission=0.0, lean=lean,
-                      fill_at="close", venues=venues)
+                      fill_at="close", venues=venues, cap=cap)
 
     def line(name: str, caption: str, r: Replay, label: str = "") -> Line:
         return Line(name, caption, _returns(r.equity, capital), max_fall(r.equity), len(r.trades),
                     sum(t.costs for t in r.trades), label)
 
     ai = run(_verdicts(calls, max_age))
+    regime = regime or regime_line(ctx, start, end, rules, rows, regime_verdicts(calls))
     held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
     lines = (
@@ -107,7 +114,8 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
                              "first close after the first as-of day, paying the same costs, and never sold.",
              _returns(held, capital), max_fall(held), entered, held_costs),
         *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
-          for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]))
+          for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]),
+        line("regime", regime.caption, run(regime.book.lean_source(), regime.book.cap), "Regime"))
     notes = [
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "
@@ -144,6 +152,16 @@ def collapsed(rejected: Sequence[str]) -> list[str]:
         seen.setdefault((symbol, reason), []).append(day)
     return [f"Could not fill {symbol} {f'{len(days)} times from {days[0]}' if len(days) > 1 else f'once, on {days[0]}'}"
             f": {reason}." for (symbol, reason), days in seen.items()]
+
+
+def regime_verdicts(calls: Mapping[str, Sequence[Call]]) -> dict[str, DatedScores]:
+    """The verdicts as the regime line's `ai_verdict` scores, each dated at its as-of day."""
+    out: dict[str, list[tuple[date, float]]] = {}
+    for symbol, rows in calls.items():
+        for as_of, label, _ in sorted(rows):
+            if label in LABEL_SCORES:
+                out.setdefault(symbol, []).append((as_of, LABEL_SCORES[label]))
+    return {s: tuple(rows) for s, rows in out.items()}
 
 
 def _returns(series: Sequence[tuple[date, float]], capital: float) -> tuple[tuple[date, float], ...]:
