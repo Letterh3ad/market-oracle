@@ -16,22 +16,34 @@ from oracle.broker.compare import buy_and_hold, max_fall, returns_since
 from oracle.broker.momentum import caption as momentum_caption
 from oracle.broker.momentum import momentum_lean
 from oracle.broker.orders import Side
+from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segments
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
 from oracle.broker.regime import ROTATION
-from oracle.services.regime_lines import LINE_LABELS, REGIME_LINE, REGIME_V2_LINE, regime_lines
+from oracle.services.regime_lines import LINE_LABELS, REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE, regime_lines
 from oracle.services.watch_service import watchlist_symbols
 from oracle.store.backtests import BacktestRepo
 from oracle.store.bars import BarRepo
 
-__all__ = ["KEEP", "Backtest", "KeptBacktest", "Line", "Trade", "check_backtest", "keep_backtest", "kept_backtest",
-           "kept_backtests", "run_backtest", "stored_span"]
+__all__ = ["KEEP", "Backtest", "Figures", "KeptBacktest", "Line", "Trade", "WalkForward", "check_backtest",
+           "keep_backtest", "kept_backtest", "kept_backtests", "run_backtest", "stored_span"]
 
 BPS = 10_000
 KEEP = 10
 """Results kept for comparing runs; older ones are dropped."""
+
+
+@dataclass(frozen=True)
+class WalkForward:
+    months: int
+    segments: tuple[tuple[date, date], ...]
+    """Back to back from the backtest's first day; each line starts afresh in each."""
+    lines: tuple[WalkLine, ...]
+    """In the backtest's line order, each judged against buy and hold."""
+    fits: tuple[tuple[date, dict[str, dict[str, float]]], ...]
+    """regime_wf's presets per segment: (market day they took effect, mood -> method -> weight)."""
 
 
 @dataclass(frozen=True)
@@ -51,6 +63,8 @@ class Backtest:
     """The strategy's cash plus positions at each day's close, base currency."""
     trades: tuple[Trade, ...]
     notes: tuple[str, ...]
+    walk_forward: WalkForward | None = None
+    """Only when asked for; runs kept before it have none."""
 
 
 def stored_span(ctx: AppContext, watchlist: str) -> tuple[str, date | None, date | None]:
@@ -61,7 +75,7 @@ def stored_span(ctx: AppContext, watchlist: str) -> tuple[str, date | None, date
 
 
 def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float,
-                   commission: float) -> str:
+                   commission: float, walk_forward: bool = False) -> str:
     """The list's stored name, or why the request cannot run; cheap, so a job is refused
     before it is queued."""
     if start >= end:
@@ -70,6 +84,8 @@ def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slip
         raise InvalidQuery(f"slippage must be zero or more basis points, not {slippage_bps}")
     if not (math.isfinite(commission) and commission >= 0):
         raise InvalidQuery(f"commission must be zero or more, not {commission}")
+    if walk_forward and not segments(start, end, MONTHS):
+        raise InvalidQuery(f"a walk-forward needs at least {MONTHS // 2} months from the first day to the last")
     name, first, last = stored_span(ctx, watchlist)
     if first is None:
         raise NoPrices(f"no stored prices for the {name} list: update its prices first")
@@ -80,10 +96,12 @@ def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slip
 
 
 def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
-                 commission: float = 0.0) -> Backtest:
+                 commission: float = 0.0, walk_forward: bool = False) -> Backtest:
     """Replay the strategy's rules day by day from `start` to `end` over the list's stored
-    bars, each day seeing only bars up to its own close."""
-    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+    bars, each day seeing only bars up to its own close. With `walk_forward`, also every line
+    over back-to-back segments, each from a fresh start, and the regime_wf line refitted at
+    each segment's start."""
+    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission, walk_forward)
     symbols = watchlist_symbols(ctx, name)[1]
     history, gone, no_prices = {}, [], []
     for symbol in symbols:
@@ -101,19 +119,22 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     rules, capital, base = strategy_rules(ctx), ctx.config.risk.account, ctx.config.base_currency
     top = rules.max_positions
 
-    def run(lean=None, cap=None):
-        return replay(history, start, end, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
+    spans = segments(start, end, MONTHS) if walk_forward else []
+
+    def run(lean=None, cap=None, first=start, last=end):
+        return replay(history, first, last, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
                       commission=commission, lean=lean, cap=cap)
 
     def traded(name: str, caption: str, x, label: str = "") -> Line:
         return Line(name, caption, tuple(returns_since(x.equity, start)), max_fall(x.equity), len(x.trades),
                     sum(t.costs for t in x.trades), label)
 
+    momentum_leans = momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top)
     r = run()
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
-    m = run(momentum_lean({s: [c.bar for c in rows] for s, rows in history.items()}, top))
+    m = run(momentum_leans)
     momentum = traded("momentum", momentum_caption(rules), m, "Momentum")
-    blends = regime_lines(ctx, start, end, rules, history)
+    blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans])
     runs = {name: run(x.book.lean_source(), x.book.cap) for name, x in blends.items()}
     regimes = tuple(traded(name, blends[name].caption, x, LINE_LABELS[name]) for name, x in runs.items())
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
@@ -133,8 +154,34 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
         notes += [f"{could} not fill: {note}." for note in x.rejected]
         notes += [f"{still} waiting to fill on the last day: {', '.join(x.unfilled)}."] if x.unfilled else []
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
+    walked = None
+    if spans:
+        sources = {"strategy": (None, None), "buy_and_hold": None, "momentum": (momentum_leans, None),
+                   **{n: (x.book.lean_source(), x.book.cap) for n, x in blends.items()}}
+        equities = {n: [_held(closes, a, b, capital) if source is None else run(*source, first=a, last=b).equity
+                        for a, b in spans] for n, source in sources.items()}
+        fits = tuple((day, {m: dict(w) for m, w in presets.items()})
+                     for day, presets in blends[REGIME_WF_LINE].book.fits)
+        walked = WalkForward(MONTHS, tuple(spans), judge(equities, "buy_and_hold"), fits)
+        notes.append(_walk_note(spans, end, capital, base))
     return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum, *regimes),
-                    r.equity, r.trades, tuple(notes))
+                    r.equity, r.trades, tuple(notes), walked)
+
+
+def _held(closes: dict[str, list[tuple[date, float | None]]], first: date, last: date,
+          capital: float) -> list[tuple[date, float]]:
+    return buy_and_hold({s: [(d, c) for d, c in rows if d <= last] for s, rows in closes.items()}, first, capital)[0]
+
+
+def _walk_note(spans: list[tuple[date, date]], end: date, capital: float, base: str) -> str:
+    left = (f" The days after {spans[-1][1].isoformat()} to {end.isoformat()} are under half a segment and are left "
+            "out of it." if spans[-1][1] < end else "")
+    return (f"Walk-forward: {len(spans)} back-to-back segments of {MONTHS} months from {spans[0][0].isoformat()}. "
+            f"Each is a fresh start on the same {capital:,.0f} {base}, nothing held, so every segment is judged on "
+            "its own and a good early stretch never carries a later one; buy and hold starts afresh too. Sharpe is "
+            "from daily equity with a zero rate, annualised over 252 days; return over max fall divides a return by "
+            "its largest fall. Regime-wf refits its mood weights at each segment's first market day from pick "
+            "windows closed before it, so its first fits read less than two years when less is stored." + left)
 
 
 def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:
@@ -183,9 +230,15 @@ def _kept(run_id: int, value: str) -> KeptBacktest:
     day = date.fromisoformat
     lines = tuple(Line(**{**line, "points": tuple((day(d), r) for d, r in line["points"])}) for line in b["lines"])
     trades = tuple(Trade(**{**t, "day": day(t["day"]), "side": Side(t["side"])}) for t in b["trades"])
+    wf = b.get("walk_forward")
+    walked = None if wf is None else WalkForward(
+        wf["months"], tuple((day(a), day(z)) for a, z in wf["segments"]),
+        tuple(WalkLine(x["name"], tuple(Figures(**f) for f in x["segments"]), Figures(**x["overall"]), x["beat"])
+              for x in wf["lines"]),
+        tuple((day(d), presets) for d, presets in wf["fits"]))
     backtest = Backtest(
         b["watchlist"], day(b["start"]), day(b["end"]), b["slippage_bps"], b["commission"], tuple(b["listings"]),
-        lines, tuple((day(d), v) for d, v in b["equity"]), trades, tuple(b["notes"]))
+        lines, tuple((day(d), v) for d, v in b["equity"]), trades, tuple(b["notes"]), walked)
     return KeptBacktest(run_id, datetime.fromisoformat(record["ran_at"]), record["base_currency"], backtest)
 
 

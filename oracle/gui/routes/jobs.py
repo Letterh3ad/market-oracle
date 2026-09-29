@@ -109,11 +109,12 @@ async def rerun(question_id: int, model: str | None = None, ctx: AppContext = De
 
 @router.post("/backtest", status_code=202)
 async def backtest(start: date, end: date, watchlist: str = DEFAULT_LIST, slippage_bps: float = 10.0,
-                   commission: float = 0.0, ctx: AppContext = Depends(get_ctx),
+                   commission: float = 0.0, walk_forward: bool = False, ctx: AppContext = Depends(get_ctx),
                    runner: JobRunner = Depends(get_runner)) -> dict:
     """Replay the strategy's rules over the list's stored prices from `start` to `end`, against
-    buying and holding; the result is kept (`/api/backtests`). Bad days are refused now."""
-    return shapes.job(submit_backtest(ctx, runner, watchlist, start, end, slippage_bps, commission))
+    buying and holding; the result is kept (`/api/backtests`). Bad days are refused now. With
+    `walk_forward`, also each line over six-month segments and the regime_wf line."""
+    return shapes.job(submit_backtest(ctx, runner, watchlist, start, end, slippage_bps, commission, walk_forward))
 
 
 @router.post("/cutoff-probe", status_code=202)

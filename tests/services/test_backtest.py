@@ -4,6 +4,8 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from oracle.analysts.signals import AnalystSignal
+from oracle.broker.regime import MOODS
+from oracle.broker.walk_forward import segments
 from oracle.config import Config, StrategyConfig
 from oracle.services.activity_service import JobRunner, retry, submit_backtest
 from oracle.services.backtest_service import (
@@ -261,3 +263,93 @@ def test_the_regime_line_reads_value_and_quality_only_from_the_day_recorded(make
     caption = run_backtest(ctx, "tech", START, END).lines[3].caption
     assert f"stored signals of 1 listing, each only from the day it was recorded (the first on {computed})" in caption
     assert "no value or quality" in run_backtest(ctx, "tech", START, BARS[349].date).lines[3].caption
+
+
+LONG = rising(700)
+WF_START, WF_END = LONG[300].date, LONG[-1].date
+
+
+def long_ctx(make_ctx, name="o.db"):
+    ctx = make_ctx({"UP": LONG, "SLOW": rising(700, "SLOW", daily=0.001)}, name)
+    market(ctx, rising(700, "MKT", daily=0.002))
+    return ctx
+
+
+def test_the_walk_forward_judges_every_line_per_six_month_segment_and_fits_regime_wf_at_each_start(make_ctx):
+    r = run_backtest(long_ctx(make_ctx), "tech", WF_START, WF_END, walk_forward=True)
+    wf = r.walk_forward
+    assert wf.months == 6 and wf.segments == tuple(segments(WF_START, WF_END, 6)) and len(wf.segments) == 3
+    names = [x.name for x in wf.lines]
+    assert names == [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2",
+                                                     "regime_wf"]
+    assert all(len(x.segments) == 3 for x in wf.lines)
+    held = wf.lines[1]
+    assert held.beat is None and all(s.excess == 0.0 for s in held.segments)
+    assert all(x.beat == sum(1 for s in x.segments if s.excess > 0) for x in wf.lines if x.name != "buy_and_hold")
+    assert len(wf.fits) == 3
+    for (day, presets), (a, b) in zip(wf.fits, wf.segments):
+        assert a <= day <= b and set(presets) == set(MOODS)
+        assert all(sum(row.values()) == pytest.approx(1.0) for row in presets.values())
+    wf_line = r.lines[-1]
+    assert wf_line.label == "Regime-wf" and "refitted" in wf_line.caption
+    assert any("fresh start" in n for n in r.notes)
+
+
+def test_each_segment_is_a_fresh_start_as_its_own_backtest_would_be(make_ctx):
+    ctx = long_ctx(make_ctx)
+    wf = run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True).walk_forward
+    a, b = wf.segments[1]
+    alone = {x.name: x for x in run_backtest(ctx, "tech", a, b).lines}
+    for line in wf.lines:
+        if line.name in ("strategy", "buy_and_hold", "momentum"):
+            assert line.segments[1].ret == pytest.approx(alone[line.name].return_)
+            assert line.segments[1].max_fall == pytest.approx(alone[line.name].max_fall)
+
+
+def test_no_segment_reads_bars_after_its_end(make_ctx):
+    runs = []
+    first_end = segments(WF_START, WF_END, 6)[0][1]
+    for name in ("a.db", "b.db"):
+        ctx = long_ctx(make_ctx, name)
+        if name == "b.db":
+            wild = [replace(b, open=b.open * 3, close=b.close * 3, adj_close=b.close * 3) for b in LONG
+                    if b.date > first_end]
+            BarRepo(ctx.conn).upsert(wild, "2026-09-24T00:00:00Z")
+        runs.append(run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True).walk_forward)
+    firsts = [[(x.name, x.segments[0]) for x in wf.lines] for wf in runs]
+    assert firsts[0] == firsts[1] and runs[0].fits[0] == runs[1].fits[0]
+    assert [x.segments[1] for x in runs[0].lines] != [x.segments[1] for x in runs[1].lines]
+
+
+def test_without_the_walk_forward_there_is_no_regime_wf_line(make_ctx):
+    r = run_backtest(long_ctx(make_ctx), "tech", WF_START, WF_END)
+    assert r.walk_forward is None and "regime_wf" not in [x.name for x in r.lines]
+
+
+def test_a_walk_forward_too_short_for_one_segment_is_refused(make_ctx):
+    ctx = long_ctx(make_ctx)
+    with pytest.raises(InvalidQuery, match="walk-forward"):
+        check_backtest(ctx, "tech", WF_START, WF_START + timedelta(days=60), 10.0, 0.0, walk_forward=True)
+
+
+def test_a_kept_walk_forward_reads_back_whole(make_ctx):
+    ctx = long_ctx(make_ctx)
+    kept = keep_backtest(ctx, run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True))
+    assert kept_backtest(ctx, kept.id).backtest == kept.backtest
+
+
+async def test_a_walk_forward_job_is_its_own_request_and_is_retried_as_one(make_ctx):
+    ctx = long_ctx(make_ctx)
+    r = JobRunner(ctx)
+    try:
+        job = submit_backtest(ctx, r, "tech", WF_START, WF_END, 2.5, 0.75, walk_forward=True)
+        plain = submit_backtest(ctx, r, "tech", WF_START, WF_END, 2.5, 0.75)
+        assert job.id != plain.id and "walk-forward" in job.label and "walk-forward" not in plain.label
+        r.cancel(job.id)
+        r.cancel(plain.id)
+        again = retry(ctx, r, job.id)
+        assert (again.subject, again.label) == (job.subject, job.label)
+        r.cancel(again.id)
+        assert retry(ctx, r, plain.id).subject == plain.subject
+    finally:
+        await r.stop()

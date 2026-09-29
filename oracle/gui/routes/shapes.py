@@ -88,7 +88,8 @@ def backtest_summary(k: KeptBacktest) -> dict:
 def backtest(k: KeptBacktest) -> dict:
     b = k.backtest
     return {**backtest_summary(k), "listings": list(b.listings), "lines": [line(l) for l in b.lines],
-            "trades": [asdict(t) for t in b.trades], "notes": list(b.notes)}
+            "trades": [asdict(t) for t in b.trades], "notes": list(b.notes),
+            "walk_forward": None if b.walk_forward is None else asdict(b.walk_forward)}
 
 
 def answer(v: AnswerView) -> dict:

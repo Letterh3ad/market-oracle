@@ -472,24 +472,26 @@ def _submit_answer(ctx: AppContext, runner: JobRunner, q: Question, profile: str
 
 BACKTEST_SEP = "|"
 """Between the parts of a backtest job's subject, which a retry rebuilds the request from."""
+WALK_FORWARD = "walk-forward"
+"""The last part of a walk-forward backtest's subject; a plain one's has no such part."""
 
 
 def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: date, end: date,
-                    slippage_bps: float = 10.0, commission: float = 0.0) -> Job:
+                    slippage_bps: float = 10.0, commission: float = 0.0, walk_forward: bool = False) -> Job:
     """Replay the strategy's rules over a list's stored prices and keep the result; bad days
     or costs are refused now. The same request pressed twice joins the first."""
-    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission, walk_forward)
 
     async def work(c: AppContext):
-        b = run_backtest(c, name, start, end, slippage_bps, commission)
+        b = run_backtest(c, name, start, end, slippage_bps, commission, walk_forward)
         # The replay never yields, so a Cancel pressed during it lands here, before the result is kept.
         await asyncio.sleep(0)
         return keep_backtest(c, b)
 
     subject = BACKTEST_SEP.join([name, start.isoformat(), end.isoformat(), repr(float(slippage_bps)),
-                                 repr(float(commission))])
-    return runner.submit("backtest", f"Backtest {name}, {start.isoformat()} to {end.isoformat()}", work,
-                         subject=subject, link="#ledgers")
+                                 repr(float(commission)), *([WALK_FORWARD] if walk_forward else [])])
+    label = f"Backtest {name}, {start.isoformat()} to {end.isoformat()}{', walk-forward' if walk_forward else ''}"
+    return runner.submit("backtest", label, work, subject=subject, link="#ledgers")
 
 
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
@@ -593,10 +595,12 @@ def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
-    # From the right: the other four parts never hold the separator, a list name might.
-    name, start, end, slippage, commission = (job.subject or "").rsplit(BACKTEST_SEP, 4)
+    # From the right: the other parts never hold the separator, a list name might.
+    subject = job.subject or ""
+    walk = subject.endswith(BACKTEST_SEP + WALK_FORWARD)
+    name, start, end, slippage, commission = subject.removesuffix(BACKTEST_SEP + WALK_FORWARD).rsplit(BACKTEST_SEP, 4)
     return submit_backtest(ctx, runner, name, date.fromisoformat(start), date.fromisoformat(end), float(slippage),
-                           float(commission))
+                           float(commission), walk)
 
 
 def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
