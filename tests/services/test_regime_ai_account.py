@@ -156,7 +156,7 @@ def test_the_real_book_tilted_moves_the_weights_the_rules_line_keeps(ctx, monkey
     a, r = regime_card(ctx, account="regime-ai").state, regime_card(ctx).state
     evident = set(a["recorded"]) | set(a["warnings"]) | set(a["good"])
     moved = {m for m, v in a["tilt"].items() if v == 0.5}
-    assert moved == evident & set(TILTED) and moved, "only methods with a sign or a record move"
+    assert moved and moved <= evident, "only methods with a sign or a record move"
     assert "ai_verdict" not in a["tilt"] and r["tilt"] == {}
     assert a["weights"]["ai_verdict"] > r["weights"]["ai_verdict"], "the untilted verdicts gain from the cuts"
     assert a["readings"] == r["readings"] and a["base_weights"] == r["base_weights"]

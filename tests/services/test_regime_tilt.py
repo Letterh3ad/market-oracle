@@ -34,7 +34,7 @@ def state(day=DAY, **kw):
         "readings": {"trend_gap": -0.041, "vol_pct": 0.91, "ret_12m": -0.12, "ret_1m": 0.09},
         "base_weights": weights, "weights": {**weights, "momentum": 0.05},
         "warnings": {"momentum": ("rebound",)}, "good": {"quality_value": ("rebound",)},
-        "health": {**dict.fromkeys(METHODS, 1.0), "momentum": 0.5}, "tilt": {},
+        "health": {**dict.fromkeys(METHODS, 1.0), "momentum": 0.5, "low_vol": 1.3}, "tilt": {},
         "recorded": frozenset({"momentum", "low_vol"}), **kw})
 
 
@@ -53,7 +53,7 @@ def test_the_prompt_gives_the_mood_readings_and_each_methods_preset_rules_weight
     line = next(x for x in text.splitlines() if x.startswith("- momentum"))
     assert "preset 0.125" in line and "rules weight 0.050" in line and "health 0.50" in line
     assert "no health record yet" in next(x for x in text.splitlines() if x.startswith("- trend"))
-    assert "health 1.00" in next(x for x in text.splitlines() if x.startswith("- low_vol")), "measured, neutral"
+    assert "health 1.30" in next(x for x in text.splitlines() if x.startswith("- low_vol")), "measured"
     assert "ai_verdict" not in text and "research verdicts" not in text, "not the model's to tilt"
     assert "mood and readings" not in system["content"], "the mood is already in the preset"
     assert "warning rebound" in line and "Daniel" in line, "each sign's reason and source"
@@ -88,10 +88,41 @@ def test_the_research_verdicts_are_never_tilted():
 
 
 def test_a_move_with_no_firing_sign_and_no_measured_health_is_kept_at_1():
-    tilt, reset = grounded({"trend": 1.3, "momentum": 0.6, "low_vol": 1.2, "quality_value": 1.4, "hold": 1.0},
-                           state())
+    tilt, bare, against = grounded({"trend": 1.3, "momentum": 0.6, "low_vol": 1.2, "quality_value": 1.4,
+                                    "hold": 1.0}, state())
     assert tilt == {"trend": 1.0, "momentum": 0.6, "low_vol": 1.2, "quality_value": 1.4, "hold": 1.0}
-    assert reset == ["trend"], "momentum warned and measured, low_vol measured, quality_value a good sign"
+    assert (bare, against) == (["trend"], []), "momentum lagging, low_vol leading, quality_value a good sign"
+
+
+def evidence(warnings=(), good=(), health=None):
+    """A state whose `trend` has only this evidence: its signs and, when given, a measured health."""
+    return state(warnings={"trend": warnings} if warnings else {}, good={"trend": good} if good else {},
+                 health={**dict.fromkeys(METHODS, 1.0), **({"trend": health} if health else {})},
+                 recorded=frozenset({"trend"}) if health else frozenset())
+
+
+@pytest.mark.parametrize(("ev", "cut", "up"), [
+    (evidence(health=0.5), 0.6, 1.0),
+    (evidence(warnings=("choppy",)), 0.6, 1.0),
+    (evidence(health=1.4), 1.0, 1.3),
+    (evidence(good=("big_year",)), 1.0, 1.3),
+    (evidence(warnings=("choppy",), health=1.4), 0.6, 1.3),
+    (evidence(good=("big_year",), health=0.5), 0.6, 1.3),
+    (evidence(health=1.0), 1.0, 1.0),
+], ids=["lagging", "warning", "leading", "good sign", "warning and leading", "good sign and lagging",
+        "neutral record"])
+def test_a_move_is_kept_only_on_the_side_its_evidence_supports(ev, cut, up):
+    assert grounded({"trend": 0.6}, ev)[0]["trend"] == cut
+    assert grounded({"trend": 1.3}, ev)[0]["trend"] == up
+    for v, kept in ((0.6, cut), (1.3, up)):
+        if kept == 1.0:
+            assert grounded({"trend": v}, ev)[1:] == ([], ["trend"]), "named as against its evidence"
+
+
+def test_a_raise_of_a_lagging_method_is_kept_at_1_and_the_stored_reason_says_so(ctx):
+    tilt = DailyTilt(ctx, "regime-ai", DAY, 0.5, TiltModel({"momentum": 1.5, "low_vol": 0.7, "reason": "Up."}))
+    assert tilt(state()) == {"momentum": 1.0, "low_vol": 1.0}
+    assert tilt.today.reason == "Up. (kept at x1, a move against its evidence: low_vol, momentum)"
 
 
 def test_an_answer_is_clipped_to_the_cap_and_keeps_only_known_methods_numbers():

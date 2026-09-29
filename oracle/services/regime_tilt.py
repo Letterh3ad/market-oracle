@@ -128,12 +128,23 @@ def validated(reply: object, cap: float) -> tuple[dict[str, float], str]:
     return tilt, _short(reason)
 
 
-def grounded(tilt: Mapping[str, float], state: RegimeState) -> tuple[dict[str, float], list[str]]:
-    """The tilt with every move on a method with no firing sign and no measured health reset to 1,
-    and those methods: a move needs evidence, whatever the model's size (gate 05 #1)."""
-    evident = {m for m in TILTED if state.warnings.get(m) or state.good.get(m) or m in state.recorded}
-    reset = sorted(m for m, v in tilt.items() if v != 1.0 and m not in evident)
-    return {m: (v if m in evident else 1.0) for m, v in tilt.items()}, reset
+def grounded(tilt: Mapping[str, float], state: RegimeState) -> tuple[dict[str, float], list[str], list[str]]:
+    """The tilt with each move kept only on a side of 1 its method's evidence supports; then the
+    methods reset for having no evidence, and those reset for moving against it. A warning or a
+    measured health below 1 allows a cut, a good sign or a measured health above 1 a raise, both
+    either side. The model only chooses how far: a 4B model raised a lagging method (gate 05)."""
+    kept, bare, against = {}, [], []
+    for m, v in tilt.items():
+        health = state.health.get(m, 1.0) if m in state.recorded else None
+        down = bool(state.warnings.get(m)) or (health is not None and health < 1)
+        up = bool(state.good.get(m)) or (health is not None and health > 1)
+        if v == 1.0 or (v < 1 and down) or (v > 1 and up):
+            kept[m] = v
+            continue
+        kept[m] = 1.0
+        evident = bool(state.warnings.get(m) or state.good.get(m)) or health is not None
+        (against if evident else bare).append(m)
+    return kept, sorted(bare), sorted(against)
 
 
 def _short(text: str) -> str:
@@ -178,9 +189,11 @@ class DailyTilt:
             else:
                 model, label = tilt_model(self._ctx)
             tilt, reason = validated(_asked(model, tilt_messages(state, self._cap), tilt_schema()), self._cap)
-            tilt, reset = grounded(tilt, state)
-            if reset:
-                reason += f" (kept at x1, no sign or record behind a move: {', '.join(reset)})"
+            tilt, bare, against = grounded(tilt, state)
+            if bare:
+                reason += f" (kept at x1, no sign or record behind a move: {', '.join(bare)})"
+            if against:
+                reason += f" (kept at x1, a move against its evidence: {', '.join(against)})"
             error = None
         except Exception as exc:
             tilt, reason, error = {}, None, str(exc) or type(exc).__name__
