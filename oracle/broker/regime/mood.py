@@ -31,6 +31,8 @@ MONTH = 21
 REBOUND_MONTH = 0.08
 CHOP_DAYS = 60
 CHOP_CROSSES = 3
+MOVE_DAYS = 3 * YEAR
+"""The trailing span a year's move is ranked in: the extreme years are extreme against these."""
 THIN_SHARE = 0.5
 ACTIVE_DAYS = 20
 
@@ -40,7 +42,8 @@ class Mood:
     mood: str
     flags: frozenset[str]
     readings: Mapping[str, float]
-    """trend_gap, vol_pct, ret_12m, ret_1m, and corr_pct when a sample was found."""
+    """trend_gap, vol_pct, ret_12m, ret_1m; corr_pct when a sample was found, and move_pct
+    (the year's move either way, ranked in the MOVE_DAYS before) with MIN_PAST of them."""
 
 
 def step_returns(series: Sequence[tuple[date, float]]) -> dict[date, float]:
@@ -101,6 +104,7 @@ class Composite:
                for i in range(n)]
         corr = [self._correlation(i) if i >= YEAR - 1 else None for i in range(n)]
         above = [None if a is None else lvl >= a for lvl, a in zip(self.level, average)]
+        move = [None if i < YEAR else abs(self.level[i] / self.level[i - YEAR] - 1) for i in range(n)]
         out: list[Mood | None] = []
         for i in range(n):
             if i < YEAR or vol[i] is None:
@@ -116,6 +120,9 @@ class Composite:
             corr_pct = None if corr[i] is None else _pct(corr[i], corr[i - YEAR:i])
             if corr_pct is not None:
                 readings["corr_pct"] = corr_pct
+            move_pct = _pct(move[i], move[max(0, i - MOVE_DAYS):i])
+            if move_pct is not None:
+                readings["move_pct"] = move_pct
             flags = set()
             if corr_pct is not None and corr_pct >= CLUSTERED:
                 flags.add("clustered")

@@ -42,7 +42,7 @@ class RegimeState:
     flags: frozenset[str]
     """clustered, rebound, choppy."""
     readings: Mapping[str, float]
-    """trend_gap, vol_pct, ret_12m, ret_1m, corr_pct (when a correlation sample was found)."""
+    """trend_gap, vol_pct, ret_12m, ret_1m; corr_pct and move_pct when their samples were found."""
     base_weights: Mapping[str, float]
     """The mood's preset, renormalised."""
     weights: Mapping[str, float]

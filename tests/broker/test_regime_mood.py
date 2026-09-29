@@ -139,3 +139,14 @@ def test_a_thin_last_day_changes_nothing_before_it():
     thin = Composite(partial)
     assert thin.dates == full.dates and thin.moods == full.moods and thin.returns == full.returns
     assert thin.mood(days[-1]) == full.mood(days[-2])
+
+
+def test_move_pct_ranks_the_years_move_either_way_against_the_three_years_before():
+    steady = alternating(3 * YEAR, 0.0004, 0.004)
+    c = one(steady + [0.004] * 60)
+    m = last(c)
+    assert m.readings["move_pct"] == pytest.approx(1.0)
+    assert one(steady + [-0.004] * 60).moods[-1].readings["move_pct"] == pytest.approx(1.0)
+    quiet_after_a_boom = alternating(2 * YEAR, 0.002, 0.004) + alternating(YEAR + 10, 0.0, 0.004)
+    assert last(one(quiet_after_a_boom)).readings["move_pct"] < 0.1
+    assert "move_pct" not in one(alternating(YEAR + 5, 0.001, 0.01)).moods[-1].readings

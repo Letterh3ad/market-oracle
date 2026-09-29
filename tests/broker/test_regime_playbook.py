@@ -12,21 +12,18 @@ def day(mood="calm_up", flags=(), picks=None, sectors=None, **readings):
 
 
 FIVE = ("A", "B", "C", "D", "E")
-QUIET = day("volatile_up", ret_12m=0.05)
-"""A day on which no sign but reversion's volatile_up fires."""
+QUIET = day("volatile_up", move_pct=0.5)
 
 CASES = {
     ("trend", "choppy"): (day(flags={"choppy"}), day()),
     ("trend", "rebound"): (day(flags={"rebound"}), day()),
-    ("trend", "big_year"): (day(ret_12m=-0.2), day(ret_12m=0.19)),
+    ("trend", "big_year"): (day(move_pct=0.8), day(move_pct=0.79)),
     ("momentum", "rebound"): (day(flags={"rebound"}), day()),
-    ("momentum", "volatile_down"): (day("volatile_down"), day("calm_down")),
     ("momentum", "clustered"): (day(flags={"clustered"}), day()),
     ("momentum", "sector_crowded"): (
         day(picks={"momentum": FIVE}, sectors=dict.fromkeys("ABC", "Tech")),
         day(picks={"momentum": FIVE}, sectors={**dict.fromkeys("AB", "Tech"), "C": "Energy"})),
     ("reversion", "volatile_down"): (day("volatile_down"), day("volatile_up")),
-    ("reversion", "volatile_up"): (day("volatile_up"), day("calm_up")),
     ("low_vol", "rebound"): (day(flags={"rebound"}), day(flags={"choppy"})),
     ("quality_value", "rebound"): (day(flags={"rebound"}), day()),
     ("quality_value", "volatile_down"): (day("volatile_down"), day("calm_down")),
@@ -60,18 +57,28 @@ def test_crowding_needs_enough_picks_and_counts_unsectored_ones():
 
 
 def test_firing_groups_the_signs_by_method_and_kind():
-    warnings, good = firing(day("volatile_down", flags={"rebound", "clustered"}, ret_12m=-0.3))
-    assert warnings == {"trend": ("rebound",), "momentum": ("rebound", "volatile_down", "clustered"),
+    warnings, good = firing(day("volatile_down", flags={"rebound", "clustered"}, move_pct=0.9))
+    assert warnings == {"trend": ("rebound",), "momentum": ("rebound", "clustered"),
                         "reversion": ("volatile_down",), "low_vol": ("rebound",)}
     assert good == {"trend": ("big_year",), "quality_value": ("rebound", "volatile_down")}
-    assert firing(QUIET) == ({}, {"reversion": ("volatile_up",)})
+    assert firing(QUIET) == ({}, {})
+    assert firing(day(ret_12m=0.5)) == ({}, {})
 
 
-def test_the_top_fifth_rounds_up_and_breaks_ties_by_symbol():
-    scores = {s: v for s, v in zip("ABCDEFG", (0.1, 0.9, 0.9, -0.2, 0.5, 0.0, 0.3))}
+def test_the_top_fifth_rounds_up_and_keeps_the_tie_group_at_its_cutoff_whole():
+    scores = {s: v for s, v in zip("ABCDEFG", (0.1, 0.9, 0.7, -0.2, 0.5, 0.2, 0.3))}
     assert top_fifth(scores) == ("B", "C")
+    tied = {**dict.fromkeys("ABCDEFGHIJ", 0.2), "K": 1.0, "L": 0.6, "M": 0.6, "N": 0.6, "O": 0.1}
+    assert top_fifth(tied) == ("K", "L", "M", "N")
     assert top_fifth(dict(list(scores.items())[:4])) == ()
     assert top_fifth(dict.fromkeys("ABCDEF", 0.3)) == ()
+
+
+def test_the_top_fifth_picks_only_scores_above_zero():
+    reversion = {**{f"Z{k}": 0.0 for k in range(20)}, "X1": 1.0, "X2": 1.0, "X3": 1.0, "S": -0.5}
+    assert top_fifth(reversion) == ("X1", "X2", "X3")
+    assert top_fifth({**{f"Z{k}": 0.0 for k in range(9)}, "X": 1.0}) == ("X",)
+    assert top_fifth({**{f"Z{k}": 0.0 for k in range(9)}, "S": -0.5}) == ()
 
 
 def test_health_maps_the_record_into_its_range_and_is_neutral_without_one():
