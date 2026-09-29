@@ -61,6 +61,19 @@ def test_the_prompt_gives_the_mood_readings_and_each_methods_preset_rules_weight
     assert tilt_messages(state(), 0.5) == [system, user], "deterministic"
 
 
+@pytest.mark.parametrize(("health", "said"), [
+    (0.5, "health 0.50: its picks have lagged the market badly over the last ~60 days (the floor)"),
+    (0.8, "health 0.80: its picks have lagged the market over"),
+    (1.0, "health 1.00: its picks have about matched the market"),
+    (1.2, "health 1.20: its picks have beaten the market over"),
+    (1.5, "health 1.50: its picks have beaten the market well over the last ~60 days (the ceiling)"),
+])
+def test_a_measured_health_is_said_in_words_and_is_a_reason_to_move(health, said):
+    [system, user] = tilt_messages(state(health={**dict.fromkeys(METHODS, 1.0), "low_vol": health}), 0.5)
+    assert said in next(x for x in user["content"].splitlines() if x.startswith("- low_vol"))
+    assert "A measured health far from 1 is a valid reason on its own" in system["content"]
+
+
 def test_the_schema_asks_for_every_method_but_the_research_verdicts_and_a_reason():
     schema = tilt_schema()
     assert set(schema["required"]) == {*METHODS, "reason"} - {"ai_verdict"} == {*TILTED, "reason"}

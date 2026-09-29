@@ -42,7 +42,8 @@ SYSTEM = (
     "You tune a paper-trading blend of stock-picking methods for one day. Each method has a weight from "
     "fixed rules: its preset for the market mood, times its playbook signs and its health. Multiply each "
     "method's weight by a number from {low} to {high}; 1 keeps the rules weight. Move a weight only for a "
-    "firing warning or good sign, or a measured health far from 1; otherwise answer 1. "
+    "firing warning or good sign, or a measured health far from 1; otherwise answer 1. A measured health far "
+    "from 1 is a valid reason on its own: cut a method whose picks lag the market, raise one whose picks lead. "
     'Reply with JSON: every method key with its multiplier, and "reason": one or two sentences naming the '
     "main changes.")
 MOODS = {"calm_up": "calm and rising market", "volatile_up": "volatile but rising market",
@@ -78,9 +79,23 @@ def tilt_messages(state: RegimeState, cap: float) -> list[dict]:
 def _method(state: RegimeState, m: str) -> str:
     signs = [(name, True) for name in state.warnings.get(m, ())] + [(name, False) for name in state.good.get(m, ())]
     said = "; ".join(_sign(m, name, warning) for name, warning in signs) or "no signs"
-    health = f"health {state.health.get(m, 1.0):.2f}" if m in state.recorded else "no health record yet"
+    health = _health(state.health.get(m, 1.0)) if m in state.recorded else "no health record yet"
     return (f"- {m} ({METHOD_NAMES.get(m, m)}): preset {state.base_weights.get(m, 0):.3f}, "
             f"rules weight {state.weights.get(m, 0):.3f}, {health}; {said}")
+
+
+HEALTH_WORDS = ((0.6, "its picks have lagged the market badly over the last ~60 days"),
+                (0.9, "its picks have lagged the market over the last ~60 days"),
+                (1.1, "its picks have about matched the market over the last ~60 days"),
+                (1.4, "its picks have beaten the market over the last ~60 days"),
+                (math.inf, "its picks have beaten the market well over the last ~60 days"))
+"""Upper bound of each band and what it means, so a small model reads the number as a record."""
+
+
+def _health(value: float) -> str:
+    words = next(said for top, said in HEALTH_WORDS if value <= top)
+    edge = " (the floor)" if value <= 0.5 else " (the ceiling)" if value >= 1.5 else ""
+    return f"health {value:.2f}: {words}{edge}"
 
 
 def _sign(method: str, name: str, warning: bool) -> str:
