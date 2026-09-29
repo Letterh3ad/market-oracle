@@ -37,8 +37,9 @@ class RegimeSettings:
     sector_share: float = 0.3
     """At most ceil(this x max_positions) buys plus holdings per sector."""
     max_positions: int = 10
-    min_probability: float = 0.6
-    """The rules' buy threshold: every buy lean clears it, so the label alone decides a buy."""
+    min_probability: float = field(kw_only=True)
+    """The rules' buy threshold: every buy lean clears it, so the label alone decides a buy.
+    Required, so a book never leans against another threshold than its account's."""
     warning_factor: float = 0.5
     good_factor: float = 1.25
     playbook_cap: float = 1.5
@@ -65,7 +66,7 @@ class RegimeInputs:
 def settings_from(values: Mapping[str, object], *, max_positions: int, min_probability: float) -> RegimeSettings:
     """From the flat `[regime]` config (`<mood>_<method>` weight keys beside the others)."""
     weights = {m: {k: float(values.get(f"{m}_{k}", PRESETS[m][k])) for k in METHODS} for m in MOODS}
-    default = RegimeSettings()
+    default = RegimeSettings(min_probability=min_probability)
     return RegimeSettings(
         weights=weights, span=int(values.get("smoothing_span", default.span)),
         sector_share=float(values.get("sector_share", default.sector_share)), max_positions=max_positions,
