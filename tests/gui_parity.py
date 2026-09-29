@@ -105,6 +105,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "paper show": "GET /api/ledgers",
     "paper show --account": OUTPUT_ONLY,
     "paper step": "POST /api/ledgers/step",
+    # --account regime is the Ledgers tab's "Regime step" (POST /api/ledgers/regime/step); its log and
+    # on/off switch are the Regime reading card (GET and PUT /api/ledgers/regime), the switch also in Settings.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",

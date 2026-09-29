@@ -63,6 +63,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0040_screened_items,
     m0041_replay_pacer_state,
     m0042_universe_backfill,
+    m0043_regime_account,
 )
 
 MIGRATIONS = [
@@ -108,4 +109,5 @@ MIGRATIONS = [
     m0040_screened_items,
     m0041_replay_pacer_state,
     m0042_universe_backfill,
+    m0043_regime_account,
 ]

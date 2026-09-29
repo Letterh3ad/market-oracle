@@ -70,6 +70,16 @@ class BarRepo:
         ).fetchall()
         return [Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}) for r in reversed(rows)]
 
+    def between_all(self, start: date, end: date) -> dict[str, list[Bar]]:
+        """Every listing's bars from `start` to `end`, both included, oldest first, in one read."""
+        rows = self._conn.execute(
+            f"SELECT {', '.join(_COLUMNS)} FROM bars WHERE date >= ? AND date <= ? ORDER BY symbol, date",
+            (start.isoformat(), end.isoformat()),
+        )
+        out: dict[str, list[Bar]] = {}
+        for r in rows:
+            out.setdefault(r[0], []).append(Bar(**{**dict(zip(_COLUMNS, r)), "date": date.fromisoformat(r[1])}))
+        return out
 
     def since(self, symbol: str, start: date, end: date | None = None) -> list[Bar]:
         """Oldest first, from `start` on (to `end`, included, when given)."""

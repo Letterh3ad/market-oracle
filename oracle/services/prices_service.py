@@ -26,7 +26,8 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "benchmark_history_in_base", "day_change", "held_or_watched", "held_unwatched", "listing_health", "price_history",
+    "benchmark_history_in_base", "day_change", "held_or_watched", "held_unwatched", "histories_in_base",
+    "listing_health", "price_history",
     "price_history_in_base", "price_sources", "update_listing", "update_listings", "update_watched",
 ]
 
@@ -183,6 +184,16 @@ def benchmark_history_in_base(ctx: AppContext, symbol: str) -> list[ConvertedBar
     """A benchmark's stored bars converted to the base currency, read by symbol directly: a
     benchmark need not resolve in the universe, only have bars (see `update_watched`)."""
     return _bars_in_base(ctx, BarRepo(ctx.conn).history(symbol))
+
+
+def histories_in_base(ctx: AppContext, start: date, end: date) -> dict[str, list[ConvertedBar]]:
+    """Every stored listing's bars from `start` to `end` in the base currency, read and
+    converted in one pass, for work that reads the whole market at once."""
+    bars = BarRepo(ctx.conn).between_all(start, end)
+    out: dict[str, list[ConvertedBar]] = {}
+    for c in _bars_in_base(ctx, [b for rows in bars.values() for b in rows]):
+        out.setdefault(c.bar.symbol, []).append(c)
+    return out
 
 
 def _bars_in_base(ctx: AppContext, bars: Sequence[Bar]) -> list[ConvertedBar]:

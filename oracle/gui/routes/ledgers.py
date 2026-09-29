@@ -14,7 +14,8 @@ from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
-from oracle.services.settings_service import set_ai_account, set_ai_research
+from oracle.services.regime_service import REGIME_OFF, regime_card, regime_step
+from oracle.services.settings_service import set_ai_account, set_ai_research, set_regime_account
 from oracle.services.tick_service import discovery_line
 
 router = APIRouter(prefix="/api/ledgers")
@@ -80,6 +81,30 @@ async def put_ai(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
     return {"enabled": ctx.config.ai_account.enabled}
 
 
+@router.post("/regime/step")
+async def step_regime(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Run the regime book's leans under the strategy's rules on the regime account, unless it is off."""
+    run = regime_step(ctx)
+    if run is None:
+        return {"off": REGIME_OFF, "day": None, "mood": None, "flags": [], "decisions": []}
+    return {"off": None, "day": run.day, "mood": run.mood, "flags": list(run.flags),
+            "decisions": [asdict(d) for d in run.decisions]}
+
+
+@router.put("/regime")
+async def put_regime(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_regime_account(ctx, body.enabled)
+    return {"enabled": ctx.config.regime_account.enabled}
+
+
+@router.get("/regime")
+async def get_regime(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The regime card: the last step's mood, flags, preset and final weights, warnings, good signs
+    and health, and the account's recent decisions with what each lean was made of."""
+    card = regime_card(ctx, limit)
+    return {**asdict(card), "decisions": [asdict(d) for d in card.decisions]}
+
+
 class AiResearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
     max_verdict_age_days: StrictInt
@@ -126,6 +151,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
             "stop_loss": ctx.config.strategy.stop_loss,
         },
         "ai_account": asdict(ctx.config.ai_account),
+        "regime_account": asdict(ctx.config.regime_account),
         "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }
