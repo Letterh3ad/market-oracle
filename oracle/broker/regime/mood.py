@@ -8,13 +8,13 @@ import hashlib
 import math
 import statistics
 from bisect import bisect_right
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 
 from oracle.analysts.breaks import is_price, steady
 from oracle.analysts.factors import percentile
-from oracle.analysts.indicators import YEAR
+from oracle.analysts.indicators import YEAR, rolling_mean
 
 AVERAGE = 200
 VOL_DAYS = 20
@@ -31,6 +31,8 @@ MONTH = 21
 REBOUND_MONTH = 0.08
 CHOP_DAYS = 60
 CHOP_CROSSES = 3
+THIN_SHARE = 0.5
+ACTIVE_DAYS = 20
 
 
 @dataclass(frozen=True)
@@ -54,21 +56,31 @@ class Composite:
     """`returns` is each listing's step returns (base currency). Built once, read by day."""
 
     def __init__(self, returns: Mapping[str, Mapping[date, float]]) -> None:
-        self.dates = sorted({d for r in returns.values() for d in r})
-        at = {d: i for i, d in enumerate(self.dates)}
-        sums, counts = [0.0] * len(self.dates), [0] * len(self.dates)
-        aligned: dict[str, dict[int, float]] = {}
-        for s, r in returns.items():
-            aligned[s] = {at[d]: v for d, v in r.items()}
-            for i, v in aligned[s].items():
+        every = sorted({d for r in returns.values() for d in r})
+        at = {d: i for i, d in enumerate(every)}
+        indexed = {s: sorted((at[d], v) for d, v in r.items()) for s, r in returns.items()}
+        new = _full_days(indexed.values(), len(every))
+        self.dates = [d for d, k in zip(every, new) if k is not None]
+        n = len(self.dates)
+        aligned = {s: _folded(r, new) for s, r in indexed.items()}
+        sums, counts = [0.0] * n, [0] * n
+        for a in aligned.values():
+            for i, v in a.items():
                 sums[i] += v
                 counts[i] += 1
-        self.returns = [a / n for a, n in zip(sums, counts)]
+        self.returns = [a / c for a, c in zip(sums, counts)]
         self.level = list(_cumulative(self.returns))
+        self.levels = {s: list(_cumulative([a.get(i, 0.0) for i in range(n)])) for s, a in aligned.items()}
+        """symbol -> its own cumulative level on the composite's days, flat where it has no return."""
         self._aligned = aligned
         self._order = sorted(aligned, key=lambda s: hashlib.sha1(s.encode()).hexdigest())
-        self._present = {s: _prefix_counts(a, len(self.dates)) for s, a in aligned.items()}
+        self._present = {s: _prefix_counts(a, n) for s, a in aligned.items()}
         self.moods = self._moods()
+
+    def excess(self, symbols: Sequence[str], k: int, days: int) -> float:
+        """The listings' mean return from the composite's day k to day k + days, over the composite's."""
+        mean = sum(self.levels[s][k + days] / self.levels[s][k] for s in symbols) / len(symbols)
+        return mean - self.level[k + days] / self.level[k]
 
     def index(self, day: date) -> int | None:
         i = bisect_right(self.dates, day) - 1
@@ -153,15 +165,40 @@ def _cumulative(returns: Sequence[float]):
         yield level
 
 
-def rolling_mean(values: Sequence[float], window: int) -> list[float | None]:
-    out: list[float | None] = [None] * len(values)
-    total = 0.0
-    for i, v in enumerate(values):
-        total += v
-        if i >= window:
-            total -= values[i - window]
-        if i >= window - 1:
-            out[i] = total / window
+def _full_days(returns: Iterable[Sequence[tuple[int, float]]], n: int) -> list[int | None]:
+    """Each day's index among the full days, None for a thin one: a day is full when at
+    least THIN_SHARE of the listings with a return in the ACTIVE_DAYS before it have one, so
+    a holiday bar or a partial session never reads as the whole market."""
+    counts, starts = [0] * n, [0] * (n + ACTIVE_DAYS + 2)
+    for r in returns:
+        end = -1
+        for i, _ in r:
+            counts[i] += 1
+            lo, hi = max(i + 1, end + 1), i + ACTIVE_DAYS
+            if lo <= hi:
+                starts[lo] += 1
+                starts[hi + 1] -= 1
+                end = hi
+    out: list[int | None] = []
+    active, k = 0, 0
+    for i in range(n):
+        active += starts[i]
+        if counts[i] and counts[i] >= THIN_SHARE * active:
+            out.append(k)
+            k += 1
+        else:
+            out.append(None)
+    return out
+
+
+def _folded(returns: Sequence[tuple[int, float]], new: Sequence[int | None]) -> dict[int, float]:
+    """A listing's returns on the full days, each carrying its moves from the thin days before it."""
+    out, carried = {}, 1.0
+    for i, v in returns:
+        carried *= 1 + v
+        if new[i] is not None:
+            out[new[i]] = carried - 1
+            carried = 1.0
     return out
 
 

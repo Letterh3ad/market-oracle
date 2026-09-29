@@ -46,6 +46,18 @@ def _rsi(gain: float, loss: float) -> float:
     return 100 - 100 / (1 + gain / loss)
 
 
+def rolling_mean(values: Sequence[float], window: int) -> list[float | None]:
+    out: list[float | None] = [None] * len(values)
+    total = 0.0
+    for i, v in enumerate(values):
+        total += v
+        if i >= window:
+            total -= values[i - window]
+        if i >= window - 1:
+            out[i] = total / window
+    return out
+
+
 def ema(values: Sequence[float | None], period: int) -> list[float | None]:
     """Seeded with the simple average of the first `period` values present. Leading
     Nones (a series not yet defined) are skipped; none may follow the first value."""

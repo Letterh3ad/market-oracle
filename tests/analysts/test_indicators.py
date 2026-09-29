@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from oracle.analysts.indicators import macd, rsi, volatility
+from oracle.analysts.indicators import macd, rolling_mean, rsi, volatility
 
 # StockCharts' worked example of Wilder's RSI (ChartSchool, "Relative Strength Index",
 # the cs-rsi worksheet), closes and published RSI values.
@@ -37,3 +37,7 @@ def test_volatility_of_alternating_one_percent_moves():
     expected = math.log(1.01) * math.sqrt(20 / 19) * math.sqrt(252)
     assert volatility(closes)[-1] == pytest.approx(expected)
     assert volatility(closes)[-2] is None
+
+
+def test_rolling_mean_starts_once_the_window_fills():
+    assert rolling_mean([1.0, 2.0, 3.0, 6.0], 3) == [None, None, pytest.approx(2.0), pytest.approx(11 / 3)]

@@ -14,7 +14,7 @@ def load(tmp_path, text):
 
 def test_the_defaults_are_the_books_presets():
     settings = settings_from(asdict(Config().regime), max_positions=10, min_probability=0.6)
-    assert settings == RegimeSettings(weights={m: dict(r) for m, r in PRESETS.items()})
+    assert settings == RegimeSettings(weights={m: dict(r) for m, r in PRESETS.items()}, min_probability=0.6)
 
 
 def test_a_regime_table_overrides_weights_and_knobs(tmp_path):
