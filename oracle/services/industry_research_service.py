@@ -150,14 +150,20 @@ async def research_industry(ctx: AppContext, symbols: Sequence[str] | None = Non
     laya = ctx.config.laya
     if not laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
-    targets = [primary(ctx, s) for s in symbols] if symbols else daily_targets(ctx)
-    for s in targets:
-        if plain_company(ctx, s, strict=False) is None:
-            raise InvalidQuery(f"{s} is a fund or on your never list: no industry research")
+    budget_s = (laya.industry_minutes if minutes is None else minutes) * 60
+    deadline = ctx.clock.utcnow() + timedelta(seconds=budget_s)
+    asked = [primary(ctx, s) for s in symbols] if symbols else daily_targets(ctx)
+    targets = list(dict.fromkeys(s for s in asked if plain_company(ctx, s, strict=False) is not None))
+    if symbols and not targets:
+        raise InvalidQuery(f"{', '.join(asked)}: a fund or on your never list, so no industry research")
+    say = on_progress or (lambda _: None)
+    # Live work first, before taking the lock: a job waiting here never keeps a tick's stage out.
+    while busy and (other := busy()) and not (stop and stop()) and ctx.clock.utcnow() < deadline:
+        say(f"waiting for {other} to finish")
+        await ctx.clock.sleep(WAIT_STEP_S)
     with single_flight(ctx, JOB, LEASE_S) as held:
-        run = _Run(ctx, held.check, list(dict.fromkeys(targets)), laya.industry_requests if max_requests is None
-                   else max_requests, (laya.industry_minutes if minutes is None else minutes) * 60, fresh_h,
-                   scorer, stop, busy, on_progress or (lambda _: None))
+        run = _Run(ctx, held.check, targets, laya.industry_requests if max_requests is None else max_requests,
+                   deadline, budget_s, fresh_h, scorer, stop, busy, say)
         try:
             await run.all()
         finally:
@@ -170,15 +176,15 @@ class _Stopped(Exception):
 
 
 class _Run:
-    def __init__(self, ctx: AppContext, heartbeat, targets: list[str], max_requests: int, budget_s: float,
-                 fresh_h: float, scorer, stop, busy, say) -> None:
+    def __init__(self, ctx: AppContext, heartbeat, targets: list[str], max_requests: int, deadline: datetime,
+                 budget_s: float, fresh_h: float, scorer, stop, busy, say) -> None:
         self.ctx, self.heartbeat, self.max_requests, self.fresh_h = ctx, heartbeat, max_requests, fresh_h
         self.scorer = scorer if scorer is not None else SharedScorer(lambda: laya_service.load_scorer(ctx))
         self.stop, self.busy, self.say = stop or (lambda: False), busy, say
         self.repo, self.articles = IndustryNewsRepo(ctx.conn), ArticleRepo(ctx.conn)
         self.result = IndustryRun(tuple(targets))
         self.started = time.monotonic()
-        self.deadline = ctx.clock.utcnow() + timedelta(seconds=budget_s)
+        self.deadline = deadline
         self.budget_min = round(budget_s / 60)
         now = ctx.clock.utcnow()
         self.since_day = now.date() - timedelta(days=LOOKBACK_DAYS)
@@ -187,20 +193,28 @@ class _Run:
         self.failed_in_a_row = 0
 
     async def all(self) -> None:
+        """Every search first (minutes at Google News' pace, which also gives a just-used Ollama model
+        time to leave the GPU before Laya picks its device), then every target's own news, then the
+        map's news, so a budget that runs out leaves every target its own features."""
+        plans: list[tuple[str, list[_Subject]]] = []
         try:
             async with open_client(self.ctx) as client:
                 for n, target in enumerate(self.result.targets, 1):
                     self._check()
-                    subjects = self._subjects(target)
-                    for s in subjects:
+                    plans.append((target, self._subjects(target)))
+                    for s in plans[-1][1]:
                         await self._search(client, s, f"{target} ({n}/{len(self.result.targets)})")
-                    self._score(target, subjects)
+            for own in (True, False):
+                for target, subjects in plans:
+                    self._score(target, subjects, own)
                     self.result.feature_rows += store_features(self.ctx, target, self.since_day,
                                                                self.ctx.clock.utcnow().date(),
-                                                               model=self.scorer.tag)
-                    self.result.reached += 1
+                                                               model=self.scorer.tag) if not own else 0
+                    self.result.reached += not own
         except _Stopped:
-            pass
+            # Features of what was scored before the stop.
+            for target, _ in plans[self.result.reached:]:
+                store_features(self.ctx, target, self.since_day, self.ctx.clock.utcnow().date(), model=self.scorer.tag)
         self.result.seconds = round(time.monotonic() - self.started, 1)
 
     def _subjects(self, target: str) -> list[_Subject]:
@@ -256,8 +270,9 @@ class _Run:
         self.result.undated += len(found) - len(dated)
         self.result.outside += len(dated) - len(inside)
 
-    def _score(self, target: str, subjects: list[_Subject]) -> None:
-        """Own news first, so an article about the target and a related company counts as its own."""
+    def _score(self, target: str, subjects: list[_Subject], own: bool) -> None:
+        """The target's own news (`own`) or its map's; an article about the target and a related
+        company counts as its own."""
         since = to_utc_iso(self.since)
         taken: set[int] = set()
         groups: list[tuple[str, list[tuple[int, str]]]] = []
@@ -269,7 +284,7 @@ class _Run:
                     ids += self.repo.known_since(company_articles(self.ctx, target), since)
                 pairs += [(i, s.symbol) for i in dict.fromkeys(ids) if i not in taken]
                 taken.update(i for i, _ in pairs)
-            if pairs:
+            if pairs and (relation == "own") == own:
                 groups.append((relation, pairs))
         for relation, pairs in groups:
             self.repo.set_subjects(target, pairs)

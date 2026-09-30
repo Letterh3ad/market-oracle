@@ -280,3 +280,43 @@ async def test_the_button_is_one_activity_job_that_can_be_retried(env, monkeypat
     again = retry(ctx, runner, cancelled.id)
     assert (again.kind, again.subject) == ("industry", "daily") and again.id != cancelled.id
     await runner.wait(again.id)
+
+
+async def test_live_work_is_waited_out_before_the_lock_so_a_waiting_job_never_keeps_the_tick_out(env):
+    ctx, _ = env
+    from oracle.services.jobs_service import job_statuses
+
+    held_while_waiting = []
+
+    def busy():
+        held_while_waiting.append(any(s.job == "industry_research" for s in job_statuses(ctx)))
+        return "Tick" if len(held_while_waiting) <= 2 else None
+
+    r = await run(ctx, busy=busy)
+    assert r.reached == 1 and held_while_waiting[:2] == [False, False]
+
+
+async def test_a_list_leaves_out_funds_and_never_listed_companies_rather_than_refusing(env):
+    ctx, _ = env
+    r = await run(ctx, symbols=["HMC", "CARZ", "TSLA"])
+    assert r.targets == ("HMC",) and r.reached == 1
+
+
+async def test_a_budget_that_runs_out_while_scoring_maps_leaves_every_target_its_own_features(env):
+    ctx, news = env
+    watch(ctx, "GM")
+    give(ctx, news, "HMC", "Honda Motor Co.", ("Honda profits rise", when(29)))
+    give(ctx, news, "GM", "General Motors", ("GM profits rise", when(29)))
+    give(ctx, news, "BWA", "BorgWarner", ("BorgWarner beats estimates", when(29)))
+
+    class Slow(FakeLaya):
+        def score(self, items):
+            ctx.clock.advance(20)
+            return super().score(items)
+
+    r = await research_industry(ctx, scorer=Slow(), minutes=1)
+    assert r.stopped == "time budget (1 min)" and r.reached < 2
+    for symbol in ("HMC", "GM"):
+        own = [f for f in stored_features(ctx, symbol, date(2026, 9, 27), date(2026, 9, 30), model="fake-laya")
+               if f.relation == "own"]
+        assert own, symbol

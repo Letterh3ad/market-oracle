@@ -168,7 +168,7 @@ enabled = true             # false: nothing is scored with Laya
 device = "auto"            # auto (the GPU when it has room beside Ollama, else the CPU), gpu or cpu
 industry_daily = true      # each tick searches new headlines of held, watched and main-list companies and their industry maps, and scores them per related pair
 industry_requests = 400    # news searches one tick's industry research may make (0 to 5000; 0 scores stored news only)
-industry_minutes = 20      # minutes one tick's industry research may take, searches and scoring together (1 to 240)
+industry_minutes = 30      # minutes one tick's industry research may take, searches and scoring together (1 to 240)
 
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big

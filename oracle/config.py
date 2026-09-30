@@ -216,7 +216,7 @@ class LayaConfig:
     industry maps, scored with Laya per related pair."""
     industry_requests: int = 400
     """News searches one tick's industry research may make."""
-    industry_minutes: int = 20
+    industry_minutes: int = 30
     """Minutes one tick's industry research may take, searches and scoring together."""
 
 
