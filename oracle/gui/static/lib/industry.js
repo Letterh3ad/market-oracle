@@ -70,7 +70,7 @@ function industryPanel(symbol, body, changed) {
 const TIE_TIP = "Read from the company's stored headlines and US 10-Ks. A keyword rule and Laya each say what "
   + "the other company is; a tie is linked only where both agree. On 100 hand-labelled ties Laya alone did worse than "
   + "always saying \"no tie\", and the rule alone was right on half the ties it named; where both agree, on about "
-  + "two in three. The rest wait here for you.";
+  + "two in three. Ties only the rule names wait here for you.";
 const pctOf = (p) => `${Math.round(p * 100)}%`;
 
 function findButtons(symbol, enabled, changed) {

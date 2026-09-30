@@ -2,8 +2,10 @@
 company and another universe company, and a US company's 10-K sentences naming another. Each
 candidate is typed twice, by the keyword rule (`research.edges.rule_type`) and by Laya; measured
 on a hand-labelled sample, Laya alone did worse than always answering "no tie", and the rule
-alone was right on half its ties, so a tie becomes a link only where both agree. Every other tie
-either names is kept unconfirmed, for the user to confirm or delete on the Industry panel.
+alone was right on half its ties, so a tie becomes a link only where both agree. A tie only the
+rule names is kept unconfirmed, for the user to confirm or delete on the Industry panel; one only
+Laya names is kept as none (on the live copy they were three in four of the ties either named,
+at Laya's 35% precision: noise the panel would bury the rest under).
 
 Point in time: a link is first seen on its document's date (an article's published_at, else when
 it was fetched; a filing's filing day, 00:00 UTC), so a test on day d leaves out a link its
@@ -101,14 +103,10 @@ class Edge:
 
 def decide(rule: str, typed: EdgeType) -> tuple[str, str]:
     """The relation kept and its state: linked where the rule and Laya name the same tie; else the
-    rule's tie (the better of the two on the sample), or Laya's, unconfirmed; else none."""
-    if rule != "none" and typed.choice == rule:
-        return rule, LINKED
-    if rule != "none":
-        return rule, UNCONFIRMED
-    if typed.choice != "none":
-        return typed.choice, UNCONFIRMED
-    return "none", NONE
+    rule's tie unconfirmed; else none, whatever Laya says alone."""
+    if rule == "none":
+        return "none", NONE
+    return rule, LINKED if typed.choice == rule else UNCONFIRMED
 
 
 def name_index(ctx: AppContext) -> NameIndex:

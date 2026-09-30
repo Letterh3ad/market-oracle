@@ -7,11 +7,13 @@ from datetime import date, datetime, timezone
 import pytest
 
 from oracle.config import Config, LayaConfig
+from oracle.research.laya import EdgeType
 from oracle.research.news import Article
 from oracle.services.activity_service import JobRunner, retry, submit_edges
 from oracle.services.context import open_context
 from oracle.services.edges_service import (
-    CONFIRMED, DISMISSED, LINKED, SOURCE_FILING, SOURCE_LAYA, UNCONFIRMED, company_edges, confirm_edge, dismiss_edge,
+    CONFIRMED, DISMISSED, LINKED, NONE, SOURCE_FILING, SOURCE_LAYA, UNCONFIRMED, company_edges, confirm_edge, decide,
+    dismiss_edge,
     find_edges, find_list_edges,
 )
 from oracle.services.errors import InvalidQuery, UnknownLink
@@ -114,6 +116,15 @@ async def test_a_link_found_today_is_dated_back_to_an_older_document_showing_it(
     assert links_of(ctx, "7203.T")["6902.T"] == (("supplier",), (SOURCE_LAYA,), ("2026-09-03T09:00:00+00:00",))
     [link] = [x for x in company_links(ctx, "7203.T") if x.symbol == "6902.T"]
     assert link.last_seen.startswith("2026-09-30T12"), "last seen stays the latest"
+
+
+def test_a_tie_only_laya_names_is_no_tie_and_one_only_the_rule_names_waits_for_the_user():
+    def typed(choice):
+        return EdgeType(choice, 0.9, {})
+
+    assert decide("supplier", typed("supplier")) == ("supplier", LINKED)
+    assert decide("supplier", typed("customer")) == ("supplier", UNCONFIRMED)
+    assert decide("none", typed("customer")) == ("none", NONE)
 
 
 async def test_reading_again_types_nothing_twice(ctx):
