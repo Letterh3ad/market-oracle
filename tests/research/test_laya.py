@@ -1,7 +1,7 @@
 import pytest
 
 from oracle.research.laya import (
-    EVENT_TYPES, GPU_FREE_MB, LayaInput, LayaScore, parse, pick_device, questions, smi_free_mb, state,
+    EVENT_TYPES, GPU_FREE_MB, LayaInput, LayaModel, LayaUnavailable, LayaScore, parse, pick_device, questions, smi_free_mb, state,
 )
 
 
@@ -43,3 +43,19 @@ def test_auto_takes_the_gpu_only_with_room_beside_ollama(choice, cuda, free, dev
 
 def test_free_memory_is_the_whole_cards_as_nvidia_smi_reports_it():
     assert smi_free_mb("5920, 8151\n") == 2231
+
+
+@pytest.mark.parametrize("error", [ImportError("No module named 'torch'"), OSError("[WinError 126] c10.dll")])
+def test_a_torch_that_will_not_import_is_a_plain_unavailable(monkeypatch, error):
+    import builtins
+
+    real = builtins.__import__
+
+    def refuse(name, *args, **kwargs):
+        if name in ("laya", "torch"):
+            raise error
+        return real(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", refuse)
+    with pytest.raises(LayaUnavailable, match=r"laya or torch will not load .*pip install -e \.\[laya\]"):
+        LayaModel("cpu")

@@ -55,6 +55,20 @@ def test_a_companys_articles_are_what_its_research_read_and_its_filings_never_ou
     assert mine not in company_articles(ctx, "AAPL")
 
 
+def test_news_research_saw_only_through_a_linked_companys_search_is_not_the_companys_own(ctx):
+    ids = ArticleRepo(ctx.conn).save([news("Toyota recalls trucks"), news("Apple and Toyota talk"),
+                                      news("Apple beats")], "google_news", "2026-09-29T10:00:00Z")
+    repo = ResearchRepo(ctx.conn)
+    for n, own in enumerate([[ids[2]], [ids[1]]]):
+        # A run keeps the first query that showed an article, so the own search is another run's.
+        run = repo.start("AAPL", "ollama", "m", f"2026-09-2{n}T10:00:00Z")
+        repo.set_queries(run, [("Apple news", None), ("toyota motor", "Toyota Motor Corporation (7203.T), a supplier")])
+        if n == 0:
+            repo.add_evidence(run, [ids[0], ids[1]], query="Toyota Motor")
+        repo.add_evidence(run, own, query="Apple news")
+    assert sorted(company_articles(ctx, "AAPL")) == [ids[1], ids[2]], "kept when its own search showed it too"
+
+
 def test_scoring_stores_each_article_for_the_company_under_the_model_tag(ctx):
     shown_to_research(ctx, "AAPL", news("Apple beats estimates", summary="Revenue up"), news("Oil falls"))
     fake = FakeLaya()

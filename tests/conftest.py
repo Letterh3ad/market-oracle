@@ -51,7 +51,8 @@ def tilt_waits(monkeypatch):
 @pytest.fixture(autouse=True)
 def _no_real_laya(monkeypatch):
     """Loading Laya takes a GPU and gigabytes: a test that would load it fails instead, unless it
-    passes a fake. The opt-in live tests (-m laya) undo this."""
+    passes a fake. The opt-in live tests (-m laya) build `LayaModel` directly, so this never
+    stops them."""
     def refuse(ctx):
         raise AssertionError("tests never load the real Laya model: pass a FakeLaya")
 

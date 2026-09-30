@@ -7,14 +7,16 @@ import { busyButton, runJob } from "./ui.js";
 
 const path = (symbol) => `/api/companies/${encodeURIComponent(symbol)}/laya`;
 const pct = (p) => `${Math.round(p * 100)}%`;
+const UNRELIABLE = "How likely the headline is about this company. Not usable yet: on 110 hand-labelled headlines it "
+  + "was right 38% of the time at 50%, where always answering \"about it\" is right 69%, and it ranks them barely "
+  + "better than chance (AUC 0.57). It reads low for most of a company's own news.";
 
 function scoreButton(symbol, enabled, changed) {
   if (!enabled) return el("span", { class: "dim small" }, "Laya is off (Settings, [laya] enabled).");
   return busyButton("Score with Laya", async (onState) => {
     try {
       clearError();
-      const r = await runJob(`/api/jobs/laya?symbol=${encodeURIComponent(symbol)}`, onState);
-      if (r?.stopped) showError(`Laya stopped after ${r.scored} of ${r.articles - r.already}; press again to go on`);
+      await runJob(`/api/jobs/laya?symbol=${encodeURIComponent(symbol)}`, onState);
     } catch (err) {
       showError(err.message);
     }
@@ -30,7 +32,7 @@ function scoreRow(s) {
     el("td", { title: s.dated ? "published" : "no publish date: the day it was fetched, left out of history tests" },
       s.dated ? when : `${when} (fetched)`),
     el("td", null, title, s.outlet ? el("span", { class: "dim" }, ` (${s.outlet})`) : null),
-    el("td", null, pct(s.relevant)),
+    el("td", { class: "dim" }, pct(s.relevant)),
     el("td", null, `${s.direction} ${pct(s.direction_probs[s.direction])}`),
     el("td", null, `${s.event.replace("_", " ")} ${pct(s.event_prob)}`));
 }
@@ -47,7 +49,7 @@ function layaTable(symbol, body, changed) {
       + "of event it is.")];
   }
   return [head, el("table", { class: "results" },
-    el("thead", null, el("tr", null, el("th", null, "Known"), el("th", null, "Headline"), el("th", null, "About it"),
+    el("thead", null, el("tr", null, el("th", null, "Known"), el("th", null, "Headline"), el("th", { title: UNRELIABLE }, "About it (unreliable)"),
       el("th", null, "Direction"), el("th", null, "Event"))),
     el("tbody", null, ...body.scores.map(scoreRow)))];
 }

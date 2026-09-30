@@ -39,12 +39,14 @@ class LayaRepo:
 
     def company_articles(self, symbols: list[str]) -> list[int]:
         """Articles research on any of a company's `symbols` was shown, and its SEC filings; never
-        the stored-data summaries Market Oracle writes itself."""
+        the stored-data summaries Market Oracle writes itself, nor what only a linked company's
+        search showed (that is the linked company's news, scored under another relation)."""
         marks = ",".join("?" * len(symbols))
         rows = self._conn.execute(
             "SELECT e.article_id FROM research_evidence e JOIN research_runs r ON r.id = e.run_id "
             f"JOIN articles a ON a.id = e.article_id WHERE r.symbol COLLATE NOCASE IN ({marks}) "
-            "AND a.source != 'oracle' "
+            "AND a.source != 'oracle' AND NOT EXISTS (SELECT 1 FROM research_queries q WHERE q.run_id = e.run_id "
+            "AND q.query = e.query COLLATE NOCASE AND q.via IS NOT NULL) "
             f"UNION SELECT id FROM articles WHERE source = 'sec_edgar' AND query COLLATE NOCASE IN ({marks})",
             (*symbols, *symbols))
         return [r[0] for r in rows]

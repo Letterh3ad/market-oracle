@@ -36,6 +36,8 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | tomlkit 0.15 | MIT | writes settings into `oracle.toml` keeping comments (`oracle/config.py`); checked 2026-09-23 |
 | laya 0.3.22 (optional, `pip install -e .[laya]`) | Apache-2.0 | scores headlines per company (`oracle/research/laya.py`); checked 2026-09-30 |
 | torch 2.11 (cu128 build from the PyTorch index), transformers, safetensors, huggingface_hub, tokenizers, hf-xet, numpy (via laya) | BSD-3-Clause, Apache-2.0, Apache-2.0, Apache-2.0, Apache-2.0, Apache-2.0, BSD-3-Clause and bundled permissive | laya's own dependencies; checked 2026-09-30 |
+| typing_extensions, packaging, setuptools (via torch) | PSF-2.0, Apache-2.0 OR BSD-2-Clause, MIT | torch's own dependencies; checked 2026-09-30 |
+| NVIDIA CUDA runtime DLLs (inside the cu128 torch wheel) | NVIDIA CUDA EULA; installed locally, not redistributed | GPU scoring; checked 2026-09-30 |
 | regex, PyYAML, tqdm, sympy, mpmath, networkx, Jinja2, MarkupSafe, filelock, fsspec, typer, rich, shellingham, markdown-it-py, mdurl (via torch, transformers, huggingface_hub) | Apache-2.0 AND CNRI-Python, MIT, MPL-2.0 AND MIT, BSD, BSD, BSD-3-Clause, BSD-3-Clause, BSD-3-Clause, MIT, BSD-3-Clause, MIT, MIT, ISC, MIT, MIT | their dependencies; checked 2026-09-30 |
 | TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |
 
@@ -50,7 +52,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 
 | Model | License | Use |
 |---|---|---|
-| [convaiinnovations/laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) at commit e4e9ddf2 (mmBERT-base, 322M), downloaded once into the Hugging Face cache, not redistributed | Apache-2.0 (model card and Hub metadata) | Laya headline scores (`oracle/research/laya.py`); checked 2026-09-30 |
+| [convaiinnovations/laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) at commit e4e9ddf2 (mmBERT-base, 322M), downloaded once into the Hugging Face cache, not redistributed | Apache-2.0 (model card and Hub metadata); its base, jhu-clsp/mmBERT-base, is MIT | Laya headline scores (`oracle/research/laya.py`); checked 2026-09-30 |
 
 ## Services
 

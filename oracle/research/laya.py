@@ -131,16 +131,18 @@ class LayaModel:
 
     def __init__(self, choice: str = "auto", batch_size: int = 16) -> None:
         os.environ.setdefault("USE_TF", "0")
+        # A broken Windows torch raises OSError (a DLL that will not load), not ImportError.
         try:
             import laya
             import torch
-        except ImportError as exc:
-            raise LayaUnavailable(f"laya is not installed ({exc}); pip install -e .[laya]") from exc
+        except Exception as exc:
+            raise LayaUnavailable(f"laya or torch will not load ({type(exc).__name__}: {exc}); "
+                                  "install or repair them: pip install -e .[laya]") from exc
         self._torch = torch
-        cuda = torch.cuda.is_available()
-        free = gpu_free_mb() if cuda else None
-        device, self.why = pick_device(choice, cuda, free)
         try:
+            cuda = torch.cuda.is_available()
+            free = gpu_free_mb() if cuda else None
+            device, self.why = pick_device(choice, cuda, free)
             self._agent = laya.load(CHECKPOINT, device=device, revision=REVISION)
         except Exception as exc:
             raise LayaUnavailable(f"could not load {CHECKPOINT}: {exc}") from exc

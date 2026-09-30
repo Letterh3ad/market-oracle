@@ -40,6 +40,19 @@ def test_each_score_shows_its_day_probabilities_and_the_uncalibrated_badge():
     assert out["links"] == ["https://news.test/1"], "only a web address becomes a link"
 
 
+def test_the_relevance_column_is_marked_unreliable():
+    body = {"model": "x", "enabled": True, "scores": [SCORE]}
+    out = run(f"""
+        const box = wrap(m.layaTable("AAPL", {json.dumps(body)}, () => {{}}));
+        const heads = box.all((n) => n.tag === "th").map((th) => ({{ text: th.textContent, title: th.attrs.title }}));
+        const cells = box.all((n) => n.tag === "td").map((td) => td.className ?? null);
+        console.log(JSON.stringify({{ heads, cells }}));
+    """)
+    about = next(h for h in out["heads"] if h["text"].startswith("About it"))
+    assert about["text"] == "About it (unreliable)" and "always" in about["title"]
+    assert out["cells"][2] == "dim"
+
+
 def test_score_with_laya_runs_the_job_then_reloads():
     ANSWERS = {"/api/jobs/laya": {"id": 5, "state": "done", "result": {"scored": 1, "stopped": False}}}
     out = run(f"""

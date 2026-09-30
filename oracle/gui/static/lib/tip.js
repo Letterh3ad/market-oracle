@@ -102,9 +102,11 @@ const GLOSSARY = {
   laya:
     "Laya, a small local model, reads each stored headline about this company (from its research and SEC " +
     "filings, headline and snippet only) and gives how likely it is about the company, which way it points and " +
-    "what kind of event it is. The percentages are uncalibrated: not yet fitted to how often it is right. On a " +
-    "hand-labelled set of 110 headlines it was right on direction about two times in three and on event type " +
-    "about half the time, and barely told relevant from irrelevant. Scoring waits while research or a tick runs.",
+    "what kind of event it is. The percentages are uncalibrated: not yet fitted to how often it is right. On 110 " +
+    "hand-labelled headlines (the same ones its question wording was chosen on, so these flatter it): direction " +
+    "right 66% where always \"none\" gets 55%; event type 51% where always \"other\" gets 37%; about-it only " +
+    "38% where always \"yes\" gets 69% (rank AUC 0.57, near chance), so that column is not usable yet. Scoring " +
+    "waits while research or a tick runs.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",
