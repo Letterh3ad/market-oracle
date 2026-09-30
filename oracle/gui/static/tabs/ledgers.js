@@ -6,6 +6,7 @@ import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { historySection } from "../lib/history.js";
 import { readerSection } from "../lib/reader.js";
+import { layaTestSection } from "../lib/laya_test.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
 import { regimeCard } from "../lib/regime.js";
@@ -23,6 +24,7 @@ let backtest = null; // this render's Backtest section: one node kept across rep
 let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
 let history = null; // this render's History coverage card, kept the same way
 let reader = null; // this render's Stronger reader card
+let layaTest = null; // this render's Laya predictive test card, kept the same way
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
 let resultBox = null;
@@ -336,6 +338,7 @@ async function load(mine) {
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
       new Set(stale.due)),
     backtest.node,
+    layaTest.node,
     history.node,
     reader.node,
     replay.node,
@@ -344,6 +347,7 @@ async function load(mine) {
     const chart = compared.draw();
     if (chart) charts.push(chart);
     backtest.start();
+    layaTest.start();
     history.start();
     reader.show();
     replay.start();
@@ -360,6 +364,7 @@ function render(target) {
   replay = replaySection();
   history = historySection();
   reader = readerSection();
+  layaTest = layaTestSection();
   clearInterval(timer);
   timer = live.start(root);
   return load(root);

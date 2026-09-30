@@ -10,19 +10,21 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from oracle.research.laya import MODEL_TAG, LayaInput, LayaModel, LayaUnavailable, Scorer
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
+from oracle.services.jobs_service import job_statuses
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
 from oracle.store.laya import LayaRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["BATCH", "MODEL_TAG", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S", "company_articles",
-           "laya_scores", "load_scorer", "named", "primary", "score_articles", "score_company"]
+__all__ = ["BATCH", "MODEL_TAG", "MODEL_WORK", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S",
+           "company_articles", "laya_scores", "live_model_work", "load_scorer", "named", "primary", "score_articles",
+           "score_company"]
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +49,8 @@ class ScoreRun:
     already: int
     seconds: float
     stopped: bool = False
+    model_seconds: float = 0.0
+    """Time spent scoring alone: no waits for live work, no model loads."""
 
 
 @dataclass(frozen=True)
@@ -68,6 +72,16 @@ class ScoredArticle:
     event_prob: float
     model: str
     scored_at: str
+
+
+MODEL_WORK = ("research", "discovery_chat", "discovery")
+"""Job locks of live model work Laya gives way to: research, a question, discovery."""
+
+
+def live_model_work(ctx: AppContext, locks: Sequence[str] = MODEL_WORK) -> str | None:
+    """Live model work a job in any process holds one of `locks` for, by name; stale locks block
+    nothing."""
+    return next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in locks and s.stale_reason is None), None)
 
 
 def load_scorer(ctx: AppContext) -> Scorer:
@@ -93,11 +107,15 @@ class SharedScorer:
     def loaded(self) -> bool:
         return self._model is not None
 
-    def score(self, items: list[LayaInput]) -> list:
+    def warm(self) -> None:
+        """Load the model now, if it is not loaded."""
         if self._model is None:
             self._model = self._load()
             self.loads += 1
             self.device = self._model.device
+
+    def score(self, items: list[LayaInput]) -> list:
+        self.warm()
         return self._model.score(items)
 
     def close(self) -> None:
@@ -162,7 +180,7 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
     tag = MODEL_TAG if owned else scorer.tag
     ids = list(dict.fromkeys(article_ids))
     todo = repo.unscored(listing.symbol, tag, ids)
-    started, scored, stopped, device = time.monotonic(), 0, False, None
+    started, scored, stopped, device, model_s = time.monotonic(), 0, False, None, 0.0
     say = on_progress or (lambda _: None)
     try:
         for i in range(0, len(todo), batch):
@@ -184,9 +202,13 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
                     break
             if scorer is None:
                 scorer = load_scorer(ctx)
+            if isinstance(scorer, SharedScorer):
+                scorer.warm()
             part = todo[i:i + batch]
+            began = time.monotonic()
             scores = scorer.score([LayaInput(listing.label, a.title, (a.snippet or "")[:SNIPPET_CHARS] or None)
                                    for a in part])
+            model_s += time.monotonic() - began
             device = scorer.device
             repo.save(listing.symbol, tag, relation, [(a.id, s) for a, s in zip(part, scores)],
                       to_utc_iso(ctx.clock.utcnow()))
@@ -196,7 +218,7 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
         if owned and scorer is not None:
             scorer.close()
     return ScoreRun(listing.symbol, tag, device, len(ids), scored, len(ids) - len(todo),
-                    round(time.monotonic() - started, 2), stopped)
+                    round(time.monotonic() - started, 2), stopped, round(model_s, 3))
 
 
 def laya_scores(ctx: AppContext, symbol: str, *, model: str = MODEL_TAG, history: bool = False,

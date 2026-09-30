@@ -39,6 +39,9 @@ class DailyFeature:
     """Event type -> articles; types with none are left out."""
     event_scores: dict[str, float] = field(default_factory=dict)
     """Event type -> the sum of direction x its probability over those articles (same keys as `events`)."""
+    relevance: float = field(default=0.0, compare=False)
+    """Sum of the articles' relevance: 06 reports it as a secondary figure (never a filter). Not
+    stored in `laya_daily`."""
 
 
 def signed(s: ScoredArticle) -> float:
@@ -52,14 +55,16 @@ def known_day(known_at: str) -> date:
 
 def daily_features(ctx: AppContext, symbol: str, start: date, end: date, *, model: str = MODEL_TAG,
                    history: bool = False,
-                   relation_for: Callable[[ScoredArticle], str | None] | None = None) -> list[DailyFeature]:
+                   relation_for: Callable[[ScoredArticle], str | None] | None = None,
+                   day_for: Callable[[ScoredArticle], date] | None = None) -> list[DailyFeature]:
     """The company's features for each day from `start` to `end` (inclusive) with any scored
     article, by day then relation; a missing day or relation had none. `relation_for` overrides
     the stored relation of each score (None leaves it out): 06 uses it to count a link only from
-    when it was known, or to leave Laya-typed links to a sensitivity run."""
+    when it was known, or to leave Laya-typed links to a sensitivity run. `day_for` overrides the
+    day an article counts on (06: its first usable decision day for the listing)."""
     groups: dict[tuple[date, str], list[ScoredArticle]] = {}
     for s in laya_scores(ctx, symbol, model=model, history=history):
-        day = known_day(s.known_at)
+        day = day_for(s) if day_for else known_day(s.known_at)
         if not start <= day <= end:
             continue
         relation = relation_for(s) if relation_for else s.relation
@@ -75,7 +80,8 @@ def daily_features(ctx: AppContext, symbol: str, start: date, end: date, *, mode
             sums[s.event] = sums.get(s.event, 0.0) + signed(s)
         order = [e for e in EVENT_TYPES if e in events] + [e for e in events if e not in EVENT_TYPES]
         out.append(DailyFeature(listing, day, relation, len(scores), round(sum(signed(s) for s in scores), 6),
-                                {e: events[e] for e in order}, {e: round(sums[e], 6) for e in order}))
+                                {e: events[e] for e in order}, {e: round(sums[e], 6) for e in order},
+                                round(sum(s.relevant for s in scores), 6)))
     return out
 
 

@@ -62,6 +62,17 @@ class LayaRepo:
                 "AND s.model = ?)", (*part, symbol, model))]
         return sorted(out, key=lambda a: a.id)
 
+    def unscored_count(self, symbol: str, model: str, article_ids: list[int]) -> int:
+        """How many of `article_ids` (distinct, stored) are not yet scored for `symbol` by `model`."""
+        n = 0
+        for i in range(0, len(article_ids), 500):
+            part = article_ids[i:i + 500]
+            n += self._conn.execute(
+                f"SELECT COUNT(*) FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) AND NOT EXISTS "
+                "(SELECT 1 FROM laya_scores s WHERE s.article_id = a.id AND s.symbol = ? AND s.model = ?)",
+                (*part, symbol, model)).fetchone()[0]
+        return n
+
     def save(self, symbol: str, model: str, relation: str, scored: list[tuple[int, LayaScore]], at: str) -> None:
         with transaction(self._conn):
             self._conn.executemany(

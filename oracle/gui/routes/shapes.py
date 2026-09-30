@@ -13,6 +13,7 @@ from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.history_service import NOISY, THIN, Coverage
+from oracle.services.laya_test_service import LayaTest
 from oracle.services.paper_service import Line, Order
 from oracle.services.regime_service import LineStep, off_note
 from oracle.services.replay_service import StudyStatus
@@ -157,7 +158,13 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
             "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
             "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes,
             "history": asdict, "laya": asdict, "edges": asdict, "reader": lambda r: {**asdict(r), "summary": r.summary},
-            "industry": lambda r: {**asdict(r), "summary": r.summary}}
+            "industry": lambda r: {**asdict(r), "summary": r.summary},
+            "laya_history": lambda r: {**asdict(r), "summary": r.summary, "ms_per_pair": r.ms_per_pair},
+            "laya_test": lambda r: laya_test(r)}
+
+
+def laya_test(t: LayaTest) -> dict:
+    return asdict(t)
 
 
 def _result(j: Job) -> dict | None:
