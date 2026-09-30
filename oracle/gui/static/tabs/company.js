@@ -4,7 +4,7 @@ import { chartRangeCaption, chartRangeKey, chartRangeOptions } from "../lib/char
 import { el, showError, clearError, companyLink, safeUrl } from "../lib/dom.js";
 import { factorSentence } from "../lib/factors.js";
 import { big, money, pct, tone } from "../lib/fmt.js";
-import { showLinks } from "../lib/links.js";
+import { showIndustry } from "../lib/industry.js";
 import { repaint } from "../lib/repaint.js";
 import { researchSection } from "../lib/research.js";
 import { deadNote, swapSummary } from "../lib/siblings.js";
@@ -247,13 +247,13 @@ async function load(pane, symbol, refresh = false) {
     el("h3", null, "Analysts"), signals(v),
     el("h3", null, tip("Price factors", "price_factors")), el("div", { id: "c-factors" }),
     el("h3", null, "Fundamentals"), fundamentals(v),
-    el("h3", null, tip("Linked companies", "linked_companies")), el("div", { id: "c-links" }),
+    el("h3", null, tip("Industry", "industry")), el("div", { id: "c-industry" }),
     el("h3", null, "Peers"), el("div", { id: "c-peers" }),
     el("h3", null, "After earnings"), el("div", { id: "c-events" }),
     ...v.credits.map((c) => el("p", { class: "dim small" }, c)),
     v.profile.summary ? el("p", { class: "dim summary" }, v.profile.summary) : "",
   ], () => Promise.all([drawChart(pane, current, v.base_currency), peers(pane, current), events(pane, current),
-    priceFactors(pane.querySelector("#c-factors"), current), showLinks(pane.querySelector("#c-links"), current)]));
+    priceFactors(pane.querySelector("#c-factors"), current), showIndustry(pane.querySelector("#c-industry"), current)]));
 }
 
 function render(pane, arg) {

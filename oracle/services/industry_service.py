@@ -5,8 +5,8 @@ was first known so a test on day d can leave out what came later. Stored data on
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, replace
+from datetime import date, timedelta
 
 from oracle.analysts.breaks import first_break
 from oracle.market.bars import Bar
@@ -21,7 +21,7 @@ from oracle.store.articles import ArticleRepo
 from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.universe import ListingProfile, PeerRow, UniverseRepo
-from oracle.universe.listings import MARKET_CAP_BANDS
+from oracle.universe.listings import MARKET_CAP_BANDS, normalise_name
 
 __all__ = ["CAP", "Activity", "IndustryMap", "Related", "Relation", "company_activity", "industry_map", "relation_of"]
 
@@ -80,6 +80,22 @@ class IndustryMap:
     as_of: date | None
     related: tuple[Related, ...]
     """Linked companies first (most evidence first), then competitors, biggest first."""
+
+    def known_by(self, day: date) -> IndustryMap:
+        """The map as known at the end of `day`, without reading the store again: relations
+        first known later and evidence published later (or undated) are left out. Linked
+        companies keep today's order."""
+        end = (day + timedelta(days=1)).isoformat()
+        related = []
+        for r in self.related:
+            relations = tuple(x for x in r.relations if x.first_known is None or x.first_known < end)
+            if not relations:
+                continue
+            linked = any(x.first_known is not None for x in relations)
+            evidence = tuple(e for e in r.evidence if e.published_at is not None and e.published_at < end)
+            related.append(replace(r, relations=relations, link_id=r.link_id if linked else None,
+                                   evidence=evidence if linked else ()))
+        return replace(self, as_of=day, related=tuple(related))
 
 
 @dataclass(frozen=True)
@@ -187,8 +203,19 @@ def _competitors(ctx: AppContext, profile: ListingProfile) -> tuple[list[tuple[P
         basis = basis or f"peers ({choice.basis})"
     if not found:
         return [], None, f"{profile.symbol} has no industry, industry group or sector in the universe"
-    ranked = sorted(found.values(), key=lambda x: _band(x[0].market_cap))
-    return ranked[:CAP], basis, None
+    bars = BarRepo(ctx.conn)
+    ranked = sorted(found.values(), key=lambda x: (_band(x[0].market_cap), bars.last_date(x[0].symbol) is None))
+    kept: list[tuple[PeerRow, list[Relation]]] = []
+    names = [normalise_name(profile.name)]
+    for row, relations in ranked:
+        name = normalise_name(row.name)
+        # Another line of a company already kept ("Alphabet Inc. Class C", a GDR) that the
+        # universe lists as a company of its own.
+        if any(name == n or name.startswith(n + " ") or n.startswith(name + " ") for n in names):
+            continue
+        names.append(name)
+        kept.append((row, relations))
+    return kept[:CAP], basis, None
 
 
 def _band(market_cap: str | None) -> int:

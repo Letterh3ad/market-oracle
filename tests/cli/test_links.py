@@ -47,3 +47,20 @@ def test_links_show_lists_each_link_with_its_headlines_and_delete_removes_it_for
 def test_deleting_a_link_the_company_does_not_have_fails_plainly(cli):
     code, _, err = cli("links", "delete", "KO", "1")
     assert code != 0 and "no link 1 for KO" in err
+
+
+def test_links_add_keeps_the_users_own_link(cli):
+    code, out, _ = cli("links", "add", "7203.T", "KO", "customer")
+    assert code == 0 and "KO (The Coca-Cola Company) is now a customer of 7203.T" in out
+    assert "KO" in cli("links", "show", "7203.T")[1]
+    code, _, err = cli("links", "add", "7203.T", "KO", "friend")
+    assert code != 0 and "one of supplier, customer, competitor, partner" in err
+
+
+def test_industry_prints_each_related_company_how_since_when_and_now(cli):
+    code, out, _ = cli("industry", "TM")
+    assert code == 0 and out.startswith("Industry map of 7203.T (Toyota Motor Corporation)")
+    row = next(line for line in out.splitlines() if line.startswith("AAPL"))
+    assert "a partner (discovery, first known 20" in row
+    assert "5d n/a  20d n/a  last earnings n/a  next earnings n/a" in out
+    assert "2026-09-22 Wire: Toyota and Apple talk" in out

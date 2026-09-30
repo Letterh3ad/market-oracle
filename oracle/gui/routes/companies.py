@@ -13,7 +13,8 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
-from oracle.services.links_service import CompanyLink, company_links, delete_link
+from oracle.services.industry_service import company_activity, industry_map
+from oracle.services.links_service import USER_RELATIONS, CompanyLink, add_link, company_links, delete_link
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
 from oracle.services.research_service import RunStatus, latest_research, report_history, research_run
@@ -25,6 +26,11 @@ router = APIRouter(prefix="/api/companies")
 
 class NewTag(BaseModel):
     tag: str
+
+
+class NewLink(BaseModel):
+    other: str
+    relation: str
 
 
 @router.get("/{symbol}")
@@ -98,6 +104,30 @@ async def get_links(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
 async def remove_link(symbol: str, link_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
     """Every link between the two companies goes, and none is recorded again."""
     return {"deleted": _link(delete_link(ctx, symbol, link_id))}
+
+
+@router.post("/{symbol}/links")
+async def create_link(symbol: str, body: NewLink, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The user's own link: `other` is `relation` of the company."""
+    return {"added": _link(add_link(ctx, symbol, body.other, body.relation))}
+
+
+@router.get("/{symbol}/industry")
+async def get_industry(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Related companies, how and since when, and what each is doing now; stored data only."""
+    m = industry_map(ctx, symbol)
+    now = company_activity(ctx, [r.symbol for r in m.related])
+    return {
+        "symbol": m.symbol, "name": m.name, "industry": m.industry, "industry_group": m.industry_group,
+        "basis": m.basis, "note": m.note, "relations": list(USER_RELATIONS),
+        "related": [{
+            "symbol": r.symbol, "name": r.name, "market_cap": r.market_cap, "link_id": r.link_id,
+            "first_known": r.first_known, "relations": [asdict(x) for x in r.relations],
+            "evidence": [shapes.headline(e) for e in r.evidence],
+            "now": {**{k: v for k, v in asdict(now[r.symbol]).items() if k not in ("symbol", "headlines")},
+                    "headlines": [shapes.headline(e) for e in now[r.symbol].headlines]},
+        } for r in m.related],
+    }
 
 
 def _link(x: CompanyLink) -> dict:

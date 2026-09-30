@@ -114,6 +114,37 @@ async def test_competitors_are_capped_by_market_cap(tmp_path):
     assert bands == sorted(bands, key=order.index)
 
 
+def test_within_a_band_a_company_with_stored_prices_comes_first(ctx):
+    BarRepo(ctx.conn).upsert(bars("STLA", [10.0] * 3), "x")
+    assert symbols(industry_map(ctx, "7203.T"))[:2] == ["STLA", "F"]
+
+
+async def test_another_line_of_a_company_already_on_the_map_is_left_out(tmp_path):
+    manager, ctx, _ = await open_ctx(tmp_path, BASE + [car("HMC-B", "Honda Motor Co. Class B", "Large Cap"),
+                                                       car("HMCX", "Honda Motors of Ohio", "Mid Cap")])
+    try:
+        m = industry_map(ctx, "7203.T")
+    finally:
+        manager.__exit__(None, None, None)
+    assert "HMC" in symbols(m) and "HMC-B" not in symbols(m) and "HMCX" in symbols(m)
+
+
+def test_known_by_keeps_what_was_known_that_day(ctx):
+    a = article(ctx, "Denso to supply Toyota", datetime(2026, 9, 20, tzinfo=timezone.utc))
+    b = article(ctx, "Denso deal widened", datetime(2026, 10, 2, tzinfo=timezone.utc))
+    record_links(ctx, [LinkFound("7203.T", "6902.T", "supplier", (a, b)), LinkFound("7203.T", "AAPL", "partner")],
+                 "discovery")
+    m = industry_map(ctx, "7203.T")
+    day = ctx.clock.utcnow().date()
+    before = m.known_by(day - timedelta(days=1))
+    assert before.as_of == day - timedelta(days=1) and "AAPL" not in symbols(before)
+    assert next(r for r in before.related if r.symbol == "6902.T").kinds == ("competitor",)
+    on_day = m.known_by(day)
+    denso = next(r for r in on_day.related if r.symbol == "6902.T")
+    assert denso.kinds == ("supplier", "competitor") and [e.title for e in denso.evidence] == ["Denso to supply Toyota"]
+    assert symbols(on_day) == symbols(industry_map(ctx, "7203.T", as_of=day))
+
+
 def test_links_join_the_map_with_their_evidence_and_when_first_known(ctx):
     a = article(ctx, "Denso to supply Toyota")
     record_links(ctx, [LinkFound("7203.T", "6902.T", "supplier", (a,)), LinkFound("7203.T", "AAPL", "partner")],
@@ -221,7 +252,10 @@ async def test_activity_reads_only_stored_data_and_names_what_is_missing(tmp_pat
         run = runs.start("HMC", "ollama", "m", "2026-09-28T00:00:00+00:00")
         old = article(ctx, "Honda old news", datetime(2026, 9, 1, tzinfo=timezone.utc))
         new = article(ctx, "Honda recalls cars", datetime(2026, 9, 27, tzinfo=timezone.utc))
-        runs.add_evidence(run, [old, new])
+        undated = article(ctx, "Honda investor relations", None)
+        [own] = ArticleRepo(ctx.conn).save([Article("oracle://HMC", "HMC stored prices", "stored data",
+                                                    datetime(2026, 9, 28, tzinfo=timezone.utc))], "oracle", "x")
+        runs.add_evidence(run, [old, new, undated, own])
         seen = len(web.requests)
         now = company_activity(ctx, ["HMC", "GM"])
         assert len(web.requests) == seen, "stored data only"
@@ -231,7 +265,8 @@ async def test_activity_reads_only_stored_data_and_names_what_is_missing(tmp_pat
     assert honda.last_close == date(2026, 9, 29)
     assert honda.move_5d == pytest.approx(0.1) and honda.move_20d == pytest.approx(0.21)
     assert (honda.last_earnings, honda.next_earnings) == (date(2026, 8, 5), date(2026, 11, 4))
-    assert [h.title for h in honda.headlines] == ["Honda recalls cars", "Honda old news"]
+    assert [h.title for h in honda.headlines] == ["Honda recalls cars", "Honda old news", "Honda investor relations"], \
+        "dated first; Market Oracle's own stored-data summaries are not news"
     gm = now["GM"]
     assert (gm.last_close, gm.move_5d, gm.move_20d, gm.last_earnings, gm.next_earnings, gm.headlines) == (
         None, None, None, None, None, ())

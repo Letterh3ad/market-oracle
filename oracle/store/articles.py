@@ -49,15 +49,16 @@ class ArticleRepo:
 
     def latest_about(self, symbols: list[str], limit: int) -> list[DiscoveryEvidence]:
         """The newest articles research on any of `symbols` found by its own searches (not a
-        linked company's), and their stored filings; undated ones by when they were fetched."""
+        linked company's), and their stored filings; undated ones (mostly standing pages) last,
+        and never the stored-data summaries Market Oracle writes itself."""
         marks = ",".join("?" * len(symbols))
         rows = self._conn.execute(
-            "SELECT a.id, a.title, a.url, a.outlet, a.published_at FROM articles a WHERE a.id IN ("
-            "SELECT e.article_id FROM research_evidence e JOIN research_runs r ON r.id = e.run_id "
+            "SELECT a.id, a.title, a.url, a.outlet, a.published_at FROM articles a WHERE a.source != 'oracle' AND ("
+            "a.id IN (SELECT e.article_id FROM research_evidence e JOIN research_runs r ON r.id = e.run_id "
             f"WHERE r.symbol COLLATE NOCASE IN ({marks}) AND NOT EXISTS (SELECT 1 FROM research_queries q "
             "WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE AND q.via IS NOT NULL)) "
-            f"OR (a.source = 'sec_edgar' AND a.query COLLATE NOCASE IN ({marks})) "
-            "ORDER BY COALESCE(a.published_at, a.fetched_at) DESC, a.id DESC LIMIT ?", (*symbols, *symbols, limit))
+            f"OR (a.source = 'sec_edgar' AND a.query COLLATE NOCASE IN ({marks}))) "
+            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id DESC LIMIT ?", (*symbols, *symbols, limit))
         return [DiscoveryEvidence(*r) for r in rows]
 
     def reading(self, article_ids: list[int], model: str) -> dict[int, Reading]:
