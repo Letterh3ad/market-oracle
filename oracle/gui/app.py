@@ -15,6 +15,7 @@ from oracle.gui.routes import (
     models, questions, replay, schedule as tick_schedule, settings, status, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
+from oracle.gui.routes import laya as laya_routes
 from oracle.services.activity_service import JobRunner, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
 from oracle.services.context import AppContext
@@ -85,6 +86,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(ledgers.router)
     app.include_router(backtests.router)
     app.include_router(history.router)
+    app.include_router(laya_routes.router)
     app.include_router(replay.router)
     app.include_router(cutoff.router)
     app.include_router(holiday_routes.router)

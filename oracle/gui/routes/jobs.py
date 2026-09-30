@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -147,6 +147,22 @@ async def cutoff_probe(model: str | None = None, ctx: AppContext = Depends(get_c
     """Ask the research slot's model (or `model`) dated questions and keep its measured cutoff
     (`/api/replay/cutoff`); an unknown profile is refused now."""
     return shapes.job(submit_cutoff_probe(ctx, runner, model or None))
+
+
+@router.post("/laya-history", status_code=202)
+async def laya_history(watchlist: str = DEFAULT_LIST, allow_cpu: bool = False, ctx: AppContext = Depends(get_ctx),
+                       runner: JobRunner = Depends(get_runner)) -> dict:
+    """Score the backfilled history of a list and its maps with Laya per (article, target) pair
+    (hours); it waits while live model work runs and for GPU room unless `allow_cpu`, and a retry
+    resumes."""
+    return shapes.job(submit_laya_history(ctx, runner, watchlist, allow_cpu))
+
+
+@router.post("/laya-test", status_code=202)
+async def laya_test(watchlist: str = DEFAULT_LIST, sensitivity: bool = False, ctx: AppContext = Depends(get_ctx),
+                    runner: JobRunner = Depends(get_runner)) -> dict:
+    """The pre-registered Laya predictive test (or its sensitivity run) over the scored history."""
+    return shapes.job(submit_laya_test(ctx, runner, sensitivity, watchlist))
 
 
 @router.post("/history", status_code=202)
