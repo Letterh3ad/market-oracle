@@ -1,0 +1,992 @@
+[
+ {
+  "symbol": "PG",
+  "company": "The Procter & Gamble Company",
+  "headline": "10-K FY2526 10-K",
+  "published_at": "2026-08-04T00:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Here's Why Caterpillar Stock Is Having a Tough Day",
+  "published_at": "2025-04-21T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "RH",
+  "company": "RH",
+  "headline": "RH Appoints New Chief Customer Service, Legal Officers",
+  "published_at": "2026-07-23T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "HSBA.L",
+  "company": "HSBC Holdings Plc",
+  "headline": "HSBC (HSBC) granted employee share options at £12.17 per share; shares closed at £15.146 that day.",
+  "published_at": "2026-09-24T10:55:39+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "RO.SW",
+  "company": "Roche Holding AG",
+  "headline": "Layoff Tracker: Novo workforce down 13,000",
+  "published_at": "2026-09-23T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "8-K",
+  "published_at": "2026-02-05T00:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "CBA.AX",
+  "company": "Commonwealth Bank of Australia",
+  "headline": "Citi Reaffirms Their Sell Rating on Commonwealth Bank of Australia (CBA)",
+  "published_at": "2026-09-17T23:50:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "CNR.TO",
+  "company": "Canadian National Railway Company",
+  "headline": "Preventable accidents happen at rail crossings every year. CN is holding safety events.",
+  "published_at": "2026-09-16T13:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "recall_safety"
+ },
+ {
+  "symbol": "PETR3.SA",
+  "company": "Petroleo Brasileiro S.A. - Petrobras",
+  "headline": "Ações de Petróleo: Empresas de Petróleo na Bolsa",
+  "published_at": "2026-05-12T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "KGX.DE",
+  "company": "KION GROUP AG",
+  "headline": "Rheinmetall-Aktie: Komplett falsch gedacht!",
+  "published_at": "2025-08-23T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "0700.HK",
+  "company": "Tencent Holding Ltd.",
+  "headline": "Tencent Sets November Board Meeting to Approve Q3 Results and Mull Dividend",
+  "published_at": "2026-09-24T10:47:45+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Caterpillar stock gains 0.93 percent as earnings top estimates",
+  "published_at": "2026-09-22T09:42:17+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "earnings"
+ },
+ {
+  "symbol": "CTEC.L",
+  "company": "ConvaTec Group Plc",
+  "headline": "Convatec announces plans to invest more than $1 billion in R&D facilities – Major expansions in the US and UK",
+  "published_at": "2025-10-03T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "What Wall Street Thinks Microsoft Will Be Worth 1 Year From Now. Here's Why It Matters.",
+  "published_at": "2026-02-02T08:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "FBP",
+  "company": "First Bancorp",
+  "headline": "Access Bank launches contactless payment method to rival PoS terminals",
+  "published_at": "2025-03-07T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "PLUG",
+  "company": "Plug Power Inc.",
+  "headline": "Plug Power needs more time to get shareholder approval for stock issue",
+  "published_at": "2026-01-30T08:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "How Low Can Microsoft Stock Go?",
+  "published_at": "2026-02-27T08:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Caterpillar Stock: Buy, Sell, or Hold?",
+  "published_at": "2024-05-05T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "BP.L",
+  "company": "BP p.l.c.",
+  "headline": "How BP’s ‘sharp-elbowed’ chair lost patience with its chief executive",
+  "published_at": "2025-12-18T08:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "SBRY.L",
+  "company": "J Sainsbury plc",
+  "headline": "70% of Argos sales start online, new company spotlight highlights",
+  "published_at": "2024-06-07T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "6861.T",
+  "company": "Keyence Corporation",
+  "headline": "写真 | キーエンス、2027年3月期1Qは営業利益+45%。昨秋から大幅高となった株価と、利益率50%超を生む費用構造はどこから来たのか 原価率17%という土台と、人件費を軸に膨らんだ販管費。利益率50%超の源泉を過去5期の費用構造から探る",
+  "published_at": "2026-09-15T10:40:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "earnings"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "Toyota Backup Camera Recall Affects Nearly 400,000 Trucks, SUVs",
+  "published_at": "2025-10-08T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "recall_safety"
+ },
+ {
+  "symbol": "PETR3.SA",
+  "company": "Petroleo Brasileiro S.A. - Petrobras",
+  "headline": "Preço do petróleo dispara após ataques de EUA e Israel ao Irã",
+  "published_at": "2026-03-02T08:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "UGPA3.SA",
+  "company": "Ultrapar Participacoes S.A. (New)",
+  "headline": "Ultrapar contrata BTG para vender Ipiranga e movimenta ações na B3",
+  "published_at": "2026-02-23T08:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "ASHM.L",
+  "company": "Ashmore Group plc",
+  "headline": "Channel swimmers denied record as oldest to complete crossing",
+  "published_at": "2022-12-13T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "Swiss drugmakers Novartis and Roche ditch some diversity programs on U.S. concerns",
+  "published_at": "2025-03-19T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "FBP",
+  "company": "First Bancorp",
+  "headline": "8-K",
+  "published_at": "2025-04-24T00:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "9434.T",
+  "company": "SoftBank Corp.",
+  "headline": "OpenAI unveils Presence, a new platform that lets enterprises launch and manage realtime voice agents and chatbots",
+  "published_at": "2026-07-22T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "IEL.AX",
+  "company": "IDP Education Limited",
+  "headline": "NABTEB Registrar Lauds Edo’s Investment In Technical Education",
+  "published_at": "2026-06-17T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "HBR.L",
+  "company": "Harbour Energy plc",
+  "headline": "Harbour Energy to deploy FPSO at Mexico's Zama development",
+  "published_at": "2026-01-08T08:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "GOOGL",
+  "company": "Alphabet Inc.",
+  "headline": "Google ordered to overhaul ad tech practices, appoint monitor",
+  "published_at": "2026-09-16T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "GOOGL",
+  "company": "Alphabet Inc.",
+  "headline": "GOOGL Stock Falls Below $350 Despite Google Launching Three New AI Models",
+  "published_at": "2026-07-22T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "launch"
+ },
+ {
+  "symbol": "ASML.AS",
+  "company": "ASML Holding N.V.",
+  "headline": "Waar staat ASML in 2029 als de mix tegenzit?",
+  "published_at": "2026-09-28T04:52:04+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "6758.T",
+  "company": "Sony Group Corporation",
+  "headline": "SONY Q2 2026 Earnings: EPS Surges 28.66% Above Estimates Amid Modest Stock Decline - Earnings Season Outlook",
+  "published_at": "2026-08-13T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "earnings"
+ },
+ {
+  "symbol": "AIXA.DE",
+  "company": "AIXTRON SE",
+  "headline": "Aixtron Aktie: Boom eingepreist, Analysten werden vorsichtiger",
+  "published_at": "2026-05-04T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "Stocks making the biggest moves premarket: JPM, GS, GM, UUUU",
+  "published_at": "2025-10-14T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AIR.PA",
+  "company": "Airbus SE",
+  "headline": "Airbus stock edges lower as China supply shift and Euro STOXX 50 move shape sentiment",
+  "published_at": "2026-09-17T12:00:19+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "EVT.DE",
+  "company": "Evotec SE",
+  "headline": "Halozyme withdraws $2.1 bln buyout offer for German drug developer Evotec",
+  "published_at": "2024-11-22T08:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "mna"
+ },
+ {
+  "symbol": "DGE.L",
+  "company": "Diageo plc",
+  "headline": "Diageo Australia strengthens executive leadership team",
+  "published_at": "2025-04-16T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "MKA.V",
+  "company": "Mkango Resources Ltd.",
+  "headline": "AbraSilver Resource Stock Slips 4.13%: Silver and Gold Exploration Faces Sentiment Pressure and Cautious Outlook",
+  "published_at": "2026-09-16T14:12:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "6758.T",
+  "company": "Sony Group Corporation",
+  "headline": "Sony Group stock holds near JPY 3,700 as valuation risk rises",
+  "published_at": "2026-09-22T10:37:48+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "Amazon Prime is offering a special gas discount this Friday",
+  "published_at": "2025-10-01T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "MC.PA",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne",
+  "headline": "LVMH said to warn of continued luxury weakness amid China woes",
+  "published_at": "2025-05-22T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "guidance"
+ },
+ {
+  "symbol": "BOSS.DE",
+  "company": "Hugo Boss AG",
+  "headline": "Frasers increases Hugo Boss stake",
+  "published_at": "2026-07-30T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "mna"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "AstraZeneca’s Trixeo approved in EU for asthma",
+  "published_at": "2026-09-24T14:48:26+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "IBE.MC",
+  "company": "Iberdrola, S.A.",
+  "headline": "EDP Renovaveis stock gains on upbeat earnings outlook from Jefferies",
+  "published_at": "2026-09-19T10:54:40+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "005930.KS",
+  "company": "Samsung Electronics Co., Ltd.",
+  "headline": "BNK Repeats Chip Warning, Cuts Samsung and SK hynix Profit Forecasts",
+  "published_at": "2026-09-15T20:30:05+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "MC.PA",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne",
+  "headline": "Beyond the runway: LVMH says fashion recovery isn’t just about creative renewal",
+  "published_at": "2025-10-14T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "AVEDA Launches in the U.S. Amazon Premium Beauty Store",
+  "published_at": "2025-05-28T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "Proven Income Generators: Ranking the Most Reliable Dividend Growth Stocks",
+  "published_at": "2025-12-12T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "6758.T",
+  "company": "Sony Group Corporation",
+  "headline": "Sony launches 4K 3-CMOS sensor flagship handheld XDCAM camcorder with enhanced operational efficiency for newsgathering and production",
+  "published_at": "2025-07-21T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "VZ",
+  "company": "Verizon Communications Inc.",
+  "headline": "Envestnet Asset Management Inc. Increases Holdings in Verizon Communications Inc. $VZ",
+  "published_at": "2026-09-24T07:21:56+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "BT-A.L",
+  "company": "BT Group",
+  "headline": "Uncommon launches new brand platform to revitalise BT",
+  "published_at": "2026-05-11T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "GOOGL",
+  "company": "Alphabet Inc.",
+  "headline": "Alphabet and Amazon Are Investing $420 Billion in Artificial Intelligence (AI) Infrastructure: 4 Hardware Stocks Set to Profit",
+  "published_at": "2026-08-22T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AC.TO",
+  "company": "Air Canada",
+  "headline": "Why TSX:AC fell on the S&P/TSX Composite: Air Canada's $800 million buyback closed at the bottom of its range",
+  "published_at": "2026-09-28T14:06:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "RO.SW",
+  "company": "Roche Holding AG",
+  "headline": "Pharmalittle: We're reading about Lilly and Pfizer obesity drug data, Roche and J&J deals, and more",
+  "published_at": "2026-06-08T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "FAMU President Marva Johnson announces changes to Senior Leadership team",
+  "published_at": "2025-08-08T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "ASHM.L",
+  "company": "Ashmore Group plc",
+  "headline": "ii view: Ashmore still a high-yield play on emerging markets",
+  "published_at": "2025-09-05T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "RO.SW",
+  "company": "Roche Holding AG",
+  "headline": "Rückblick: Fünf Gewinneraktien der Woche 40/2025",
+  "published_at": "2025-10-03T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "BP.L",
+  "company": "BP p.l.c.",
+  "headline": "Berenberg Cut BP’s Earnings Forecasts, But Kept Its Buy Call",
+  "published_at": "2026-02-24T08:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "2330.TW",
+  "company": "Taiwan Semiconductor Manufacturing Company Limited",
+  "headline": "美光（Micron）是做什麼的？美光持續加碼對台投資變「台光」？台股「美光概念股」一覽",
+  "published_at": "2026-03-13T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "JPMorgan Chase (JPM) Could Be 3% Below Fair Value Following Chicago Expansion",
+  "published_at": "2026-08-18T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "EVT.DE",
+  "company": "Evotec SE",
+  "headline": "Viking Supply Ships CEO to step down",
+  "published_at": "2026-05-05T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "2330.TW",
+  "company": "Taiwan Semiconductor Manufacturing Company Limited",
+  "headline": "Silicon Statecraft Alignment: Taiwan’s Strategic Bet on US-Led Export Controls",
+  "published_at": "2025-07-01T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "7211.T",
+  "company": "Mitsubishi Motors Corporation",
+  "headline": "Mitsubishi Motors received A- List in CDP's Climate Change category.(Sustainability)-MITSUBISHI MOTORS",
+  "published_at": "2026-01-21T08:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "DGE.L",
+  "company": "Diageo plc",
+  "headline": "Could buying Diageo shares be like Warren Buffett’s 1980s Coca-Cola bet?",
+  "published_at": "2026-07-31T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "SHEL.L",
+  "company": "Shell plc",
+  "headline": "Shell to sell Sprng Energy group to Aditya Birla Renewables Limited",
+  "published_at": "2026-07-13T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "RIO.L",
+  "company": "Rio Tinto plc",
+  "headline": "Rio Tinto waves a $15b carrot in front of investors",
+  "published_at": "2025-12-04T08:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "How GSK & AstraZeneca Drove Change With Veeva Site Connect",
+  "published_at": "2025-07-09T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "AtaiBeckley weighing options for psychedelic drug (ATAI:NASDAQ)",
+  "published_at": "2026-03-07T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "PLUG",
+  "company": "Plug Power Inc.",
+  "headline": "Uzbekistan Backs Giant 2.4GW E-Fuels Scheme with Tax Breaks as $6.08Bn Project Chases Scale",
+  "published_at": "2026-04-13T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "SIE.DE",
+  "company": "Siemens Aktiengesellschaft",
+  "headline": "JPMORGAN stuft SIEMENS AG auf 'Overweight'",
+  "published_at": "2026-09-24T11:40:53+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "Azbil stock holds steady as investors watch recent earnings and guidance",
+  "published_at": "2026-09-05T15:16:11+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "Best cloud storage of 2026: tested, reviewed and rated by experts",
+  "published_at": "2026-08-13T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "CSL.AX",
+  "company": "CSL Limited",
+  "headline": "CSL Limited Issues 1.9 Million Unquoted Rights Under Long Term Incentive Plan",
+  "published_at": "2026-09-08T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "HSBA.L",
+  "company": "HSBC Holdings Plc",
+  "headline": "Major bank launches new free cash deal – how you can get £220 in time for the summer holidays",
+  "published_at": "2026-06-15T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "RH",
+  "company": "RH",
+  "headline": "Asante drug diversion case plaintiff wants different judge than one who was hospital's lawyer",
+  "published_at": "2025-01-04T02:42:54+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "RIO.L",
+  "company": "Rio Tinto plc",
+  "headline": "Rio Tinto reaches $138.75 million settlement over Mongolian mine",
+  "published_at": "2025-06-18T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "HBR.L",
+  "company": "Harbour Energy plc",
+  "headline": "Middle East tensions drive market volatility",
+  "published_at": "2026-03-05T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "BOSS.DE",
+  "company": "Hugo Boss AG",
+  "headline": "Frasers Group CEO joins Hugo Boss board",
+  "published_at": "2025-05-15T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "S68.SI",
+  "company": "Singapore Exchange Limited",
+  "headline": "Can STI continue its defiant climb in second half of 2025?",
+  "published_at": "2025-07-26T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "D05.SI",
+  "company": "DBS Group Holdings Ltd",
+  "headline": "Modi hails US-India 'mega-partnership' in Trump meeting",
+  "published_at": "2025-02-14T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "XRAY",
+  "company": "DENTSPLY SIRONA Inc.",
+  "headline": "Why Analysts See the Story Changing for DENTSPLY SIRONA Amid Lowered Targets and New Risks",
+  "published_at": "2025-11-22T08:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "CNR.TO",
+  "company": "Canadian National Railway Company",
+  "headline": "CN Files Description of Anticipated Requested Conditions to",
+  "published_at": "2026-09-10T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "2330.TW",
+  "company": "Taiwan Semiconductor Manufacturing Company Limited",
+  "headline": "MU vs. LRCX: Which Semiconductor Stock Is the Better Bet Now?",
+  "published_at": "2026-03-20T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "WMT",
+  "company": "Walmart Inc.",
+  "headline": "Walmart Opens New Neighborhood Market in Mesquite, Texas; Jacquataye Anderson Shares",
+  "published_at": "2026-09-25T21:45:46+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "FBP",
+  "company": "First Bancorp",
+  "headline": "Investing in IDFC First Bank (NSE:IDFCFIRSTB) five years ago would have delivered you a 142% gain",
+  "published_at": "2025-11-11T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "PETR3.SA",
+  "company": "Petroleo Brasileiro S.A. - Petrobras",
+  "headline": "First oil flows from Petrobras’ new FPSO at one of world’s largest deepwater fields",
+  "published_at": "2026-01-05T08:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "Toyota Motor stock steadies as automation and demand plans shape outlook",
+  "published_at": "2026-09-21T11:48:04+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "CNR.TO",
+  "company": "Canadian National Railway Company",
+  "headline": "Core Natural Resources’s (NYSE:CNR) Q2 CY2026 Sales Beat Estimates",
+  "published_at": "2026-08-06T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "ULVR.L",
+  "company": "Unilever PLC",
+  "headline": "TRESemmé’s transformation: introducing the brand’s new science-led, salon-quality haircare",
+  "published_at": "2026-07-09T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "KT",
+  "company": "KT Corporation",
+  "headline": "Dubai: Medical claim denied? Here's what you can do to dispute refusal by insurer",
+  "published_at": "2025-09-28T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NOVO-B.CO",
+  "company": "Novo Nordisk A/S",
+  "headline": "Novo Nordisk launches cheaper Ozempic copy in South Africa",
+  "published_at": "2026-07-20T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "RY.TO",
+  "company": "Royal Bank of Canada",
+  "headline": "As paint brand Kelly-Moore ends operations, competitors try to swoop in",
+  "published_at": "2024-01-23T08:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "MKA.V",
+  "company": "Mkango Resources Ltd.",
+  "headline": "Deep Sea Minerals Corp (CN:SEAS) Gains Momentum as Critical Mineral Strategy Draws Investor Attention",
+  "published_at": "2026-09-11T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "SHEL.L",
+  "company": "Shell plc",
+  "headline": "Parminder Kohli Chosen to Drive Britain’s Investment Future",
+  "published_at": "2026-06-22T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "6861.T",
+  "company": "Keyence Corporation",
+  "headline": "Keyence’s AI Strategy: Analysis of Dominance in Fabless Manufacturing AI",
+  "published_at": "2025-07-27T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "PLUG",
+  "company": "Plug Power Inc.",
+  "headline": "Why Is Plug Power Stock Soaring Tuesday?",
+  "published_at": "2026-05-12T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "RH",
+  "company": "RH",
+  "headline": "RH Announces the Promotion of Sandy Pilon to Chief Customer Experience & Values Officer",
+  "published_at": "2026-07-23T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "EVT.DE",
+  "company": "Evotec SE",
+  "headline": "Evotec Aktie: Deutsche Bank und Berenberg senken auf 3,50–3,60 Euro",
+  "published_at": "2026-08-02T07:00:00+00:00",
+  "relevant": true,
+  "direction": "down",
+  "event": "analyst_rating"
+ },
+ {
+  "symbol": "9434.T",
+  "company": "SoftBank Corp.",
+  "headline": "SoftBank launches $11 billion bonds to fund OpenAI investment",
+  "published_at": "2026-09-21T13:17:51+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "ASML.AS",
+  "company": "ASML Holding N.V.",
+  "headline": "ASML Holding NV Stock (ASML) Moved Up by 3.26% on Sep 8: Drivers Behind the Movement",
+  "published_at": "2026-09-08T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "4902.T",
+  "company": "Konica Minolta, Inc.",
+  "headline": "執行役向け株式報酬制度におけるTSR導入に関するお知らせ | コニカミノルタ",
+  "published_at": "2025-05-08T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "BP.L",
+  "company": "BP p.l.c.",
+  "headline": "2 bp convenience executives exit amid company reorganization",
+  "published_at": "2026-06-11T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "RELIANCE.NS",
+  "company": "Reliance Industries Limited",
+  "headline": "CPS Energy approves power plan leaning on natural gas amid public concerns",
+  "published_at": "2026-06-23T07:00:00+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "9432.T",
+  "company": "NTT, Inc.",
+  "headline": "Bombay High Court Adjudicates Writ Petition Against IGST Demand of Rs.1524 Crores on Arbitration Award Damages. Issue Pertains to Whether Damages Paid Under Deemed Decree Constitute Consideration for Taxable Service Under IGST Act, 2017.",
+  "published_at": "2026-09-20T09:21:30+00:00",
+  "relevant": false,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "PETR4.SA",
+  "company": "Petroleo Brasileiro S.A. - Petrobras",
+  "headline": "Ibovespa segue queda de Wall Street e ignora avanço de Petrobras (PETR4); dólar sobe a R$ 5,16",
+  "published_at": "2026-09-23T20:47:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "SBRY.L",
+  "company": "J Sainsbury plc",
+  "headline": "Sainsbury’s shares: here’s the latest dividend and share price forecast!",
+  "published_at": "2025-07-02T07:00:00+00:00",
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "Here’s Why Johnson & Johnson (JNJ) Surged in Q3",
+  "published_at": "2025-12-24T08:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "RIO.L",
+  "company": "Rio Tinto plc",
+  "headline": "Geopolitics Reshape Mining Investment Preferences, with Rio Tinto and Zijin Mining Tied at the Top of Large-Cap Rankings",
+  "published_at": "2026-05-04T07:00:00+00:00",
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ }
+]

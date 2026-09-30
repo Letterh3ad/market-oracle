@@ -29,7 +29,7 @@ class Article:
     published: datetime | None
     """Timezone-aware, or None when the feed gave no usable date."""
     summary: str | None = field(default=None, compare=False)
-    """A search snippet, shown with the article but not stored."""
+    """A search snippet, stored as first seen (what Laya reads beside the headline)."""
     body: str | None = field(default=None, compare=False)
     """Stored text, for evidence written by Market Oracle itself."""
     site: str | None = field(default=None, compare=False)

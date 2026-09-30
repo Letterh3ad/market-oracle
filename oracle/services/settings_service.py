@@ -14,7 +14,7 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -28,7 +28,7 @@ __all__ = [
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "laya", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
@@ -150,6 +150,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
     if (setting.section, setting.key) in BLANK_OFF:
         row["blank_off"] = True
+    if (setting.section, setting.key) == ("laya", "device"):
+        row["choices"] = list(LAYA_DEVICES)
     if setting.section == f"models.{SLOTS_TABLE}":
         row["choices"] = [DEFAULT_PROFILE, *(n for n in raw.get("models", {}) if n not in (DEFAULT_PROFILE, SLOTS_TABLE))]
     if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):
