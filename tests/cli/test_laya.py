@@ -70,6 +70,7 @@ def test_history_plans_scores_and_the_test_prints_the_table_against_the_bar(cli,
     code, out, _ = cli("laya", "test")
     assert code == 0 and "Laya predictive test, main" in out and "INCONCLUSIVE" in out
     assert "5-day excess return" in out and "20-day excess return" in out and "Survivorship" in out
-    assert "no trailing fit" in out and "news-attention baseline (own_attention)" in out
+    assert "no trailing fit" in out and "news-attention baseline (own_attention" in out
+    assert "momentum baseline (own_momentum" in out and "beats both baselines" in out
     code, shown, _ = cli("laya", "test", "--show")
     assert code == 0 and "Laya predictive test, main (links first known" in shown and "INCONCLUSIVE" in shown

@@ -31,8 +31,10 @@ function horizon(h) {
       el("span", { class: tone(h.verdict) }, h.verdict)),
     el("p", { class: "small" }, `IC ${num(h.ic)}, t ${num(h.t, 2)}, ${h.days} IC days, positive in ${h.positive} of `
       + `${h.counted} counted segments.`),
-    el("p", { class: "small" }, `News-attention baseline (own_attention): IC ${num(h.baseline_ic)}, t `
-      + `${num(h.baseline_t, 2)}. Laya ${BEATS[String(h.beats_baseline)]} it (it counts as useful only if it does).`),
+    el("p", { class: "small" }, `News-attention baseline (own_attention, sign fitted): IC ${num(h.baseline_ic)}, t `
+      + `${num(h.baseline_t, 2)}; Laya ${BEATS[String(h.beats_baseline)]} it. Momentum baseline (own_momentum, sign `
+      + `fitted): IC ${num(h.momentum_ic)}, t ${num(h.momentum_t, 2)}; Laya ${BEATS[String(h.beats_momentum)]} it. `
+      + "Laya counts as useful only if it beats both baselines; the pass bar is separate."),
     segments, features,
   ];
 }

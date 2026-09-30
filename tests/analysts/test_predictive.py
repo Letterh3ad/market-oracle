@@ -7,7 +7,7 @@ import pytest
 
 from oracle.analysts.predictive import (
     MIN_NAMES, SegmentIC, combine, date_only, fit_weights, known_moment, lookback, newey_west_t, own_return, pct_ranks,
-    session_open, span_return, spearman, usable_day, verdict,
+    session_open, span_return, spearman, trailing_return, usable_day, verdict,
 )
 from oracle.market.bars import Bar
 from tests.analysts.bars import weekdays
@@ -164,7 +164,9 @@ def test_a_google_stamp_reaches_london_and_xetra_the_next_day_and_tokyo_the_day_
 
 
 def test_an_exactly_timed_stamp_at_the_open_is_still_late():
-    assert usable_day("SAP.DE", known_moment("2026-07-16T07:00:00+00:00")) == date(2026, 7, 17)
+    assert usable_day("AAPL", known_moment("2026-07-16T13:30:00+00:00")) == date(2026, 7, 17)
+    assert usable_day("AAPL", known_moment("2026-07-16T13:29:59+00:00")) == date(2026, 7, 16)
+    assert usable_day("0700.HK", known_moment("2026-07-16T01:20:00+00:00")) == date(2026, 7, 17)
 
 
 def test_opens_are_the_opening_auction_where_the_open_is_fixed():
@@ -187,3 +189,16 @@ def test_a_google_stamp_reaches_tokyo_a_day_after_new_york():
     assert usable_day("AAPL", known) == date(2023, 7, 4), "known 03:00 in New York on the 4th"
     assert usable_day("AAPL", known_moment("2023-07-04T13:30:00+00:00")) == date(2023, 7, 5), "at the open is late"
     assert usable_day("AAPL", known_moment("2023-07-04T13:29:00+00:00")) == date(2023, 7, 4)
+
+
+def test_the_trailing_return_runs_close_to_close_over_bars_dated_before_each_day():
+    b, days = bars([100, 101, 102, 103, 104, 105, 106], closes=[100, 110, 120, 130, 140, 150, 160])
+    assert trailing_return(b, days, days[2], days[5]) == pytest.approx(140 / 110 - 1), "never the bar on t"
+    assert trailing_return(b[:5], days[:5], days[2], days[5]) == trailing_return(b, days, days[2], days[5])
+    assert trailing_return(b, days, days[0], days[5]) is None, "no bar before the start"
+    assert trailing_return(b, days, days[2], days[-1] + timedelta(days=9)) is None, "last bar too far back"
+
+
+def test_a_split_sized_close_move_drops_the_trailing_return():
+    b, days = bars([1] * 6, closes=[100, 101, 40, 41, 42, 43])
+    assert trailing_return(b, days, days[1], days[5]) is None

@@ -16,7 +16,8 @@ HORIZON = {"horizon": 5, "lookback": 7, "ic": 0.031, "t": 2.4, "days": 120, "obs
            "features": [{"name": "own_mean", "ic": 0.02, "t": 1.1, "days": 120, "positive": 1, "in_score": True},
                         {"name": "own_sum", "ic": 0.01, "t": 0.5, "days": 110, "positive": 1, "in_score": False}],
            "verdict": "INCONCLUSIVE", "passed": False, "positive": 1, "counted": 1, "baseline_ic": 0.04,
-           "baseline_t": 2.1, "beats_baseline": False}
+           "baseline_t": 2.1, "beats_baseline": False, "momentum_ic": 0.01, "momentum_t": 0.4,
+           "beats_momentum": True}
 TEST = {"run": "main", "label": "main (links first known by the article's day)", "model": "laya@x",
         "start": "2022-09-21", "end": "2023-09-20", "companies": 51, "articles": {"own": 900, "competitor": 4000},
         "horizons": [HORIZON], "verdict": "INCONCLUSIVE", "passed": False, "run_at": "2026-09-30T23:00:00+00:00",
@@ -49,7 +50,9 @@ def test_the_card_shows_the_kept_table_verdict_segments_left_out_and_the_caveat(
     assert "no: no trailing fit" in text and "own_mean +0.70, own_relevance -0.30" in text
     assert "own_sum (secondary)" in text and "Last scoring run: finished: 51 groups." in text
     assert "Survivorship" in text
-    assert "News-attention baseline (own_attention): IC +0.0400, t +2.10. Laya does not beat it" in text
+    assert "News-attention baseline (own_attention, sign fitted): IC +0.0400, t +2.10; Laya does not beat it" in text
+    assert "Momentum baseline (own_momentum, sign fitted): IC +0.0100, t +0.40; Laya beats it" in text
+    assert "useful only if it beats both baselines" in text
 
 
 def test_scoring_asks_for_the_cpu_only_when_the_box_is_ticked():

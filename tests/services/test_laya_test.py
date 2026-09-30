@@ -347,6 +347,31 @@ def test_a_score_that_is_only_attention_with_its_sign_flipped_never_beats_the_ba
     assert r.baseline_ic == pytest.approx(r.ic) and r.beats_baseline is False, "same ranks, fitted the same way"
 
 
+def test_headlines_that_echo_past_moves_never_beat_the_momentum_baseline():
+    """Each company trends for a quarter at a time; every Monday its news says which way last week went."""
+    rng = random.Random(11)
+    mains = [f"S{i}" for i in range(8)]
+    days = weekdays(FIRST, LAST)
+    daily, bars = {m: {} for m in mains}, {}
+    for m in mains:
+        price, rows, drift = 100.0, [], 0.0
+        for k, d in enumerate(days):
+            if k % 63 == 0:
+                drift = rng.choice((-0.004, 0.004))
+            opened = price
+            price = opened * (1 + drift + rng.gauss(0, 0.01))
+            rows.append(Bar(m, d, opened, max(opened, price), min(opened, price), price, price, 1, "USD", "t"))
+            if d.weekday() == 0 and k >= 5:
+                daily[m][d] = {"own": (1, 0.8 if rows[k - 1].close > rows[k - 5].close else -0.8, 0.2)}
+        bars[m] = rows
+    panel = Panel(mains, daily, bars, {m: [] for m in mains})
+    r = horizon_result(panel, 20, 28, segments(date(2022, 9, 21), END), MAIN_RELATIONS, None)
+    assert r.momentum_raw_ic > 0 and r.momentum_ic > 0, "trends persist"
+    assert r.ic > 0, "the echo looks predictive"
+    assert r.beats_momentum is False, "but no better than the price it echoes"
+    assert {f.name for f in r.features} >= {"own_attention", "own_momentum"}
+
+
 def test_future_bars_and_articles_change_no_segment_that_ended_before_them(ctx):
     market(ctx, signal=True)
     score_history(ctx, scorer=FakeLaya())
@@ -374,7 +399,8 @@ def test_news_that_leads_the_price_passes_the_bar_and_the_result_is_kept(ctx):
     assert five.baseline_ic is not None and five.beats_baseline, "direction beats news attention alone"
     assert five.verdict == "PASS" and five.ic > 0 and five.t > 2 and five.positive == 2
     assert {f.name for f in five.features if not f.in_score} == {"own_sum", "competitor_sum", "industry_sum",
-                                                                 "own_relevance", "own_attention"}
+                                                                 "own_relevance", "own_attention", "own_momentum"}
+    assert five.beats_momentum and five.momentum_ic is not None, "news that leads the price beats its past"
     assert t.companies == len(MAINS) and t.articles["own"] > 0 and "Survivorship" in t.caveat
     kept = keep_laya_test(ctx, t)
     assert laya_tests(ctx) == [kept] and kept.id is not None and kept.horizons == t.horizons

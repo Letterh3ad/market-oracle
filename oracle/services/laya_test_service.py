@@ -18,7 +18,7 @@ from datetime import date, timedelta
 
 from oracle.analysts.predictive import (
     MIN_DAYS, PEER_SLACK_DAYS, SegmentIC, combine, fit_weights, known_moment, lookback, mean, newey_west_t, own_return,
-    span_return, spearman, usable_day, verdict,
+    span_return, spearman, trailing_return, usable_day, verdict,
 )
 from oracle.broker.walk_forward import segments
 from oracle.market.bars import Bar
@@ -51,6 +51,9 @@ MAIN_LINK_SOURCES = ("user", "discovery", "chat")
 INDUSTRY_SOURCES = ("industry", "industry_group")
 BASELINE = "own_attention"
 """log(1 + own articles in the window): news attention alone, Laya's reading left out."""
+MOMENTUM = "own_momentum"
+"""The listing's industry-excess return over the feature window, closes before t: the price a headline may echo."""
+BASELINES = (BASELINE, MOMENTUM)
 MIN_INDUSTRY = 3
 COVERAGE_SHARE = 0.5
 CAVEAT = ("Survivorship: today's main list and industry maps taken back in time. Laya's probabilities are "
@@ -173,6 +176,12 @@ class HorizonResult:
     """Laya only counts as useful when its combined IC beats the baseline's (the bar is separate)."""
     baseline_raw_ic: float | None = None
     """The baseline as it is (more attention ranked higher), over the counted days."""
+    momentum_ic: float | None = None
+    """The trailing industry-excess momentum baseline, fitted and scored like the attention one."""
+    momentum_t: float | None = None
+    beats_momentum: bool | None = None
+    """Laya only counts as useful when its combined IC beats both baselines (the bar is separate)."""
+    momentum_raw_ic: float | None = None
 
 
 @dataclass(frozen=True)
@@ -195,7 +204,7 @@ class LayaTest:
 
 def _features(relations: Sequence[str]) -> tuple[list[str], list[str]]:
     """(in the combined score, secondary): per-article means and own relevance, then the sums."""
-    return [f"{r}_mean" for r in relations], [f"{r}_sum" for r in relations] + ["own_relevance", BASELINE]
+    return [f"{r}_mean" for r in relations], [f"{r}_sum" for r in relations] + ["own_relevance", *BASELINES]
 
 
 def _quarter_span(q: str) -> tuple[date, date]:
@@ -224,13 +233,26 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
     in_score, secondary = _features(relations)
     names = in_score + secondary
     dates = {s: [b.date for b in bars] for s, bars in panel.bars.items()}
-    cache: dict[tuple[str, date, date], float | None] = {}
+    cache: dict[tuple[str, date, date, bool], float | None] = {}
 
-    def ret(symbol: str, a: date, b: date) -> float | None:
-        key = (symbol, a, b)
+    def ret(symbol: str, a: date, b: date, trailing: bool = False) -> float | None:
+        key = (symbol, a, b, trailing)
         if key not in cache:
-            cache[key] = span_return(panel.bars.get(symbol, []), dates.get(symbol, []), a, b)
+            how = trailing_return if trailing else span_return
+            cache[key] = how(panel.bars.get(symbol, []), dates.get(symbol, []), a, b)
         return cache[key]
+
+    def excess(m: str, a: date, b: date, trailing: bool = False) -> float | None:
+        """`m`'s return minus its industry's (3 or more peers), else the other mains' (3 or more)."""
+        own = ret(m, a, b, trailing)
+        if own is None:
+            return None
+        bench = [x for p in panel.peers.get(m, []) if (x := ret(p, a, b, trailing)) is not None]
+        if len(bench) < MIN_INDUSTRY:
+            bench = [x for o in panel.mains if o != m and (x := ret(o, a, b, trailing)) is not None]
+            if len(bench) < MIN_INDUSTRY:
+                return None
+        return own - sum(bench) / len(bench)
 
     first, last = spans[0][0] - timedelta(days=FIT_DAYS), spans[-1][1]
     days = sorted({d for m in panel.mains for d in dates.get(m, []) if first <= d <= last})
@@ -241,13 +263,12 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
             own = own_return(panel.bars.get(m, []), dates.get(m, []), t, h)
             if own is None:
                 continue
-            r, exit_day = own
-            bench = [x for p in panel.peers.get(m, []) if (x := ret(p, t, exit_day)) is not None]
-            if len(bench) < MIN_INDUSTRY:
-                bench = [x for o in panel.mains if o != m and (x := ret(o, t, exit_day)) is not None]
-                if len(bench) < MIN_INDUSTRY:
-                    continue
-            today.append((lookback(panel.daily.get(m, {}), t, lb, relations), r - sum(bench) / len(bench), exit_day))
+            exit_day = own[1]
+            if (y := excess(m, t, exit_day)) is None:
+                continue
+            x = lookback(panel.daily.get(m, {}), t, lb, relations)
+            x[MOMENTUM] = excess(m, t - timedelta(days=lb), t, trailing=True) or 0.0
+            today.append((x, y, exit_day))
         if today:
             obs[t] = today
     ics: dict[str, dict[date, float]] = {f: {} for f in names}
@@ -256,12 +277,13 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
         for f in names:
             if (ic := spearman([x[f] for x, _, _ in rows], ys)) is not None:
                 ics[f][t] = ic
-    out_segments, counted_ics, counted_base = [], [], []
+    out_segments, counted_ics = [], []
+    counted_base: dict[str, list[tuple[date, float]]] = {b: [] for b in BASELINES}
     for s, e in spans:
         train = [t for t in obs if s - timedelta(days=FIT_DAYS) <= t < s
                  and max(x[2] for x in obs[t]) + timedelta(days=PEER_SLACK_DAYS) < s]
         w = fit_weights({f: [ics[f][t] for t in train if t in ics[f]] for f in in_score})
-        sign = fit_weights({BASELINE: [ics[BASELINE][t] for t in train if t in ics[BASELINE]]})[BASELINE]
+        signs = {b: fit_weights({b: [ics[b][t] for t in train if t in ics[b]]})[b] for b in BASELINES}
         seg = []
         if any(w.values()):
             for t in sorted(x for x in obs if s <= x <= e):
@@ -276,7 +298,8 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
                                        {f: round(v, 4) for f, v in w.items()}))
         if why is None:
             counted_ics += seg
-            counted_base += [(t, sign * ics[BASELINE].get(t, 0.0)) for t, _ in seg]
+            for b in BASELINES:
+                counted_base[b] += [(t, signs[b] * ics[b].get(t, 0.0)) for t, _ in seg]
     counted = [x for x in out_segments if x.counted]
     features = []
     for f in names:
@@ -289,12 +312,14 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
     vals = [ic for _, ic in sorted(counted_ics)]
     ic, t = mean(vals), newey_west_t(vals, h)
     v = verdict(ic, t, [SegmentIC(x.start, x.end, x.ic, x.t, x.days, x.counted, x.why) for x in out_segments])
-    base = [x for _, x in sorted(counted_base)]
-    base_ic = mean(base)
-    beats = None if ic is None or base_ic is None else ic > base_ic
+    fitted = {}
+    for b in BASELINES:
+        series = [x for _, x in sorted(counted_base[b])]
+        b_ic = mean(series)
+        fitted[b] = (_r(b_ic), _r(newey_west_t(series, h)), None if ic is None or b_ic is None else ic > b_ic,
+                     next(f.ic for f in features if f.name == b))
     return HorizonResult(h, lb, _r(ic), _r(t), len(vals), sum(len(x) for x in obs.values()), tuple(out_segments),
-                         tuple(features), v.label, v.passed, v.positive, v.counted, _r(base_ic), _r(newey_west_t(base, h)), beats,
-                         next(f.ic for f in features if f.name == BASELINE))
+                         tuple(features), v.label, v.passed, v.positive, v.counted, *fitted[BASELINE], *fitted[MOMENTUM])
 
 
 def _r(x: float | None) -> float | None:

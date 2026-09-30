@@ -16,7 +16,7 @@ from oracle.market.bars import Bar
 
 __all__ = ["MIN_COUNTED", "MIN_DAYS", "MIN_NAMES", "PEER_SLACK_DAYS", "T_BAR", "Daily", "SegmentIC", "Verdict",
            "combine", "date_only", "fit_weights", "known_moment", "lookback", "mean", "newey_west_t", "own_return",
-           "pct_ranks", "session_open", "span_return", "spearman", "usable_day", "verdict"]
+           "pct_ranks", "session_open", "span_return", "spearman", "trailing_return", "usable_day", "verdict"]
 
 MIN_NAMES = 5
 """Companies a day's IC needs."""
@@ -173,6 +173,18 @@ def span_return(bars: Sequence[Bar], days: Sequence[date], start: date, end: dat
     if j >= len(days) or (days[i] - start).days > PEER_SLACK_DAYS or (days[j] - end).days > PEER_SLACK_DAYS:
         return None
     return _window(bars, i, j)
+
+
+def trailing_return(bars: Sequence[Bar], days: Sequence[date], start: date, end: date) -> float | None:
+    """Close of the last bar dated before `start` to close of the last dated before `end` (so
+    known before `end`'s open), each within PEER_SLACK_DAYS; None with a split-sized move between."""
+    i, j = bisect_left(days, start) - 1, bisect_left(days, end) - 1
+    if i < 0 or j <= i or (start - days[i]).days > PEER_SLACK_DAYS or (end - days[j]).days > PEER_SLACK_DAYS:
+        return None
+    closes = [b.close for b in bars[i:j + 1]]
+    if not all(is_price(x) for x in closes) or not steady(closes):
+        return None
+    return closes[-1] / closes[0] - 1
 
 
 Daily = Mapping[date, Mapping[str, tuple[int, float, float]]]
