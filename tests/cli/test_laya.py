@@ -52,3 +52,24 @@ def test_score_then_show_lists_each_article_newest_first_badged_uncalibrated(cli
 
 def test_show_before_any_score_says_how_to_score(cli):
     assert cli("laya", "show", "KO")[1].strip() == "no Laya scores for KO; run `oracle laya score KO`"
+
+
+def test_history_plans_scores_and_the_test_prints_the_table_against_the_bar(cli, tmp_path):
+    with open_context(*load_settings(tmp_path / "oracle.toml")) as ctx:
+        from oracle.services.watch_service import watch
+        from oracle.store.history import HistoryRepo, Window
+        watch(ctx, "AAPL")
+        ids = ArticleRepo(ctx.conn).save([Article("https://news.test/h", "Apple beats", "Wire",
+                                                  datetime(2023, 1, 3, 12, tzinfo=timezone.utc))], "google_news", "x")
+        HistoryRepo(ctx.conn).finish(Window("AAPL", "google_news", datetime(2023, 1, 1).date(),
+                                            datetime(2023, 4, 1).date(), 1, 1, 0, 0), ids, "x")
+    code, out, _ = cli("laya", "history", "--plan")
+    assert code == 0 and "1 pairs for 1 companies" in out and "1 not scored" in out
+    code, out, _ = cli("laya", "history")
+    assert code == 0 and "1 pairs scored" in out and "on cuda" in out
+    code, out, _ = cli("laya", "test")
+    assert code == 0 and "Laya predictive test, main" in out and "INCONCLUSIVE" in out
+    assert "5-day excess return" in out and "20-day excess return" in out and "Survivorship" in out
+    assert "no trailing fit" in out
+    code, shown, _ = cli("laya", "test", "--show")
+    assert code == 0 and "Laya predictive test, main (links first known" in shown and "INCONCLUSIVE" in shown

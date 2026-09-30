@@ -104,6 +104,16 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # [laya] in Settings.
     "laya score": "POST /api/jobs/laya",
     "laya show": "GET /api/companies/{symbol}/laya",
+    # Ledgers tab, Backtest, "Laya predictive test" card: its buttons and table.
+    "laya history": "POST /api/jobs/laya-history",
+    "laya history --list": "POST /api/jobs/laya-history",
+    "laya history --plan": "GET /api/laya/plan",
+    "laya history --own-only": Exempt("a measuring run on a DB copy; the card scores the whole history"),
+    "laya history --only": Exempt("a measuring run on a DB copy; the card scores the whole history"),
+    "laya test": "POST /api/jobs/laya-test",
+    "laya test --list": "POST /api/jobs/laya-test",
+    "laya test --sensitivity": "POST /api/jobs/laya-test",
+    "laya test --show": "GET /api/laya/tests",
     # Company tab, Industry panel: "Find suppliers and customers" (this company or the main list),
     # the ties list and each unconfirmed tie's Confirm and Delete.
     "edges find": "POST /api/jobs/edges",
