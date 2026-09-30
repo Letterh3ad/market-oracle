@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_edges, submit_fill, submit_history, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -55,6 +55,14 @@ async def edges(symbol: str | None = None, watchlist: str | None = None, ctx: Ap
     """Read the company's (or the list's) headlines and US 10-Ks not yet read for supplier, customer,
     competitor and partner ties; it waits while model work runs."""
     return shapes.job(submit_edges(ctx, runner, symbol, watchlist))
+
+
+@router.post("/industry", status_code=202)
+async def industry(symbol: str | None = None, ctx: AppContext = Depends(get_ctx),
+                   runner: JobRunner = Depends(get_runner)) -> dict:
+    """Research industry: new headlines of the company (or the tick's daily set) and its industry map,
+    scored with Laya per related pair into daily features; it waits while model work runs."""
+    return shapes.job(submit_industry(ctx, runner, symbol))
 
 
 @router.post("/tick", status_code=202)

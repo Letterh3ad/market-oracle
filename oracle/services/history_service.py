@@ -36,12 +36,12 @@ from oracle.store.db import to_utc_iso
 from oracle.store.history import HistoryRepo, Window
 from oracle.store.meta import MetaRepo
 from oracle.store.sec import SecTickerRepo
-from oracle.store.universe import UniverseRepo
+from oracle.store.universe import ListingProfile, UniverseRepo
 from oracle.universe.listings import is_exchange_product, is_receipt, is_receipt_symbol
 
 __all__ = ["FILING_FORMS", "GOOGLE_CAP", "NEWS_START", "NOISY", "PRICE_START", "STAGES", "THIN", "Cell", "Company",
            "Coverage", "CoverageRow", "HistoryRun", "backfill_history", "clear_search_name", "company_history",
-           "coverage", "history_companies", "last_run", "news_query", "news_windows", "search_for",
+           "coverage", "history_companies", "last_run", "news_query", "news_windows", "plain_company", "search_for",
            "set_search_name"]
 
 NEWS_START = date(2022, 9, 1)
@@ -168,20 +168,30 @@ def history_companies(ctx: AppContext, watchlist: str = DEFAULT_LIST) -> list[Co
     return [Company(c.symbol, c.name, c.main, c.of, search_for(ctx, c.symbol, c.name)) for c in plan]
 
 
-def _plan(ctx: AppContext, symbols: list[str]) -> list[Company]:
+def plain_company(ctx: AppContext, symbol: str, *, strict: bool = True) -> ListingProfile | None:
+    """The listing's profile when its company's news is searched: an equity never on the never
+    list (Tesla); `strict` (a map's line, not one the user chose) also never a depositary receipt,
+    an exchange product, a warrant or preferred share, or a listing code for a name."""
     universe = UniverseRepo(ctx.conn)
+    p = universe.profile(symbol) if universe.resolve(symbol) else None
+    if p is None or p.type.lower() != "equity" or never_company(ctx, symbol, user=True):
+        return None
+    key = p.primary_symbol
+    if strict and (is_receipt(p.name) or is_receipt_symbol(key) or is_exchange_product(p.name)
+                   or _NOT_SHARES_SYMBOL.search(key) or _NOT_SHARES_NAME.search(p.name) or is_listing_code(p.name)):
+        return None
+    return p
+
+
+def _plan(ctx: AppContext, symbols: list[str]) -> list[Company]:
     out: dict[str, Company] = {}
     names: dict[str, str] = {}
 
     def add(symbol: str, main: bool, of: str | None) -> str | None:
-        p = universe.profile(symbol) if universe.resolve(symbol) else None
-        if p is None or p.type.lower() != "equity" or never_company(ctx, symbol, user=True):
+        p = plain_company(ctx, symbol, strict=not main)
+        if p is None:
             return None
         key = p.primary_symbol
-        if not main and (is_receipt(p.name) or is_receipt_symbol(key) or is_exchange_product(p.name)
-                         or _NOT_SHARES_SYMBOL.search(key) or _NOT_SHARES_NAME.search(p.name)
-                         or is_listing_code(p.name)):
-            return None
         have = out.get(key.casefold())
         if have is None:
             same = default_search(p.name).query.casefold()

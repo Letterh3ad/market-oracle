@@ -211,6 +211,13 @@ class LayaConfig:
     enabled: bool = True
     device: str = "auto"
     """auto (the GPU when it has room beside Ollama, else the CPU), gpu or cpu."""
+    industry_daily: bool = True
+    """The tick's industry research: new headlines of held, watched and main-list companies and their
+    industry maps, scored with Laya per related pair."""
+    industry_requests: int = 400
+    """News searches one tick's industry research may make."""
+    industry_minutes: int = 30
+    """Minutes one tick's industry research may take, searches and scoring together."""
 
 
 @dataclass(frozen=True)
@@ -984,6 +991,8 @@ def _regime_v2(raw: object) -> RegimeV2Config:
 
 
 LAYA_DEVICES = ("auto", "gpu", "cpu")
+INDUSTRY_REQUESTS_RANGE = (0, 5000)
+INDUSTRY_MINUTES_RANGE = (1, 240)
 
 
 def _laya(raw: object) -> LayaConfig:
@@ -995,6 +1004,11 @@ def _laya(raw: object) -> LayaConfig:
         raise ConfigError(f"laya.enabled must be true or false, got {config.enabled!r}")
     if config.device not in LAYA_DEVICES:
         raise ConfigError(f"laya.device must be one of {', '.join(LAYA_DEVICES)}, got {config.device!r}")
+    if not isinstance(config.industry_daily, bool):
+        raise ConfigError(f"laya.industry_daily must be true or false, got {config.industry_daily!r}")
+    for key, (low, high) in (("industry_requests", INDUSTRY_REQUESTS_RANGE), ("industry_minutes", INDUSTRY_MINUTES_RANGE)):
+        if not _whole(getattr(config, key), low, high):
+            raise ConfigError(f"laya.{key} must be a whole number from {low} to {high}, got {getattr(config, key)!r}")
     return config
 
 

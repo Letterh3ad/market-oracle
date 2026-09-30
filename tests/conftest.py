@@ -41,6 +41,20 @@ def _no_real_tilt_model(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _tick_industry_idle(monkeypatch):
+    """A tick's industry stage would search Google News for every watched company and load Laya:
+    in tests it researches nothing, unless a test puts `industry_research_service.research_industry` back."""
+    from oracle.services.industry_research_service import IndustryRun
+
+    async def idle(ctx, **kwargs):
+        return IndustryRun()
+
+    monkeypatch.setattr("oracle.services.tick_service.research_industry", idle)
+    # The real check asks nvidia-smi; a fake model on "cpu" would be moved by whatever GPU the machine has.
+    monkeypatch.setattr("oracle.services.industry_research_service.gpu_room", lambda ctx: False)
+
+
+@pytest.fixture(autouse=True)
 def tilt_waits(monkeypatch):
     """The tilt's retry waits: recorded, never slept."""
     waited: list[float] = []

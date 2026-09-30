@@ -6,7 +6,7 @@ from oracle.store.migrations import run_ddl
 
 # Laya's reading of one article for one target company, one row per model tag: the same pair
 # and model is never scored twice, and a new checkpoint scores under its own tag. `relation` is
-# the target's relation to the article's subject (own, competitor, supplier, customer, industry).
+# what the article's subject is to the target (own, competitor, supplier, customer, industry).
 # Search snippets, first seen, so Laya reads headline and snippet only.
 DDL = """
 CREATE TABLE laya_scores (

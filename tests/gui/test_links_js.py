@@ -98,13 +98,54 @@ def test_opening_the_panel_asks_only_for_the_stored_map():
     out = run("industry.js", f"""
         ANSWERS["/api/companies/7203.T/industry"] = {json.dumps(MAP)};
         ANSWERS["/api/companies/7203.T/edges"] = {json.dumps({"enabled": True, "edges": [TIE]})};
+        ANSWERS["/api/companies/7203.T/industry-news"] = {json.dumps(NEWS)};
         const box = Object.assign(new Node("div"), {{ style: {{}}, offsetHeight: 0 }});
         await m.showIndustry(box, "7203.T");
         console.log(JSON.stringify({{ asked, filled: box.textContent.includes("DENSO Corporation"),
-                                      ties: box.textContent.includes("BorgWarner orders parts") }}));
+                                      ties: box.textContent.includes("BorgWarner orders parts"),
+                                      news: box.textContent.includes("Denso cuts output") }}));
     """)
-    assert out == {"asked": ["GET /api/companies/7203.T/industry", "GET /api/companies/7203.T/edges"],
-                   "filled": True, "ties": True}
+    assert out == {"asked": ["GET /api/companies/7203.T/industry", "GET /api/companies/7203.T/industry-news",
+                             "GET /api/companies/7203.T/edges"], "filled": True, "ties": True, "news": True}
+
+
+EVENT = {"article_id": 1, "title": "Denso cuts output", "url": "https://news.test/9", "link": "https://news.test/9",
+         "outlet": "Wire", "known_at": "2026-09-30T08:00:00+00:00", "relation": "supplier", "direction": "down",
+         "direction_prob": 0.8, "signed": -0.8, "event": "supply_production", "event_prob": 0.7}
+NEWS = {"enabled": True, "symbol": "7203.T", "day": "2026-09-30", "model": "laya",
+        "last_searched": "2026-09-30T22:05:00+00:00",
+        "features": [{"symbol": "7203.T", "day": "2026-09-30", "relation": "supplier", "articles": 1, "score": -0.8,
+                      "events": {"supply_production": 1}}], "recent": [], "caveat": "",
+        "own": {"symbol": "7203.T", "relation": "own", "events": [], "day_articles": 0, "day_score": 0},
+        "related": [{"symbol": "6902.T", "relation": "supplier",
+                     "events": [EVENT, {**EVENT, "link": "javascript:alert(1)", "title": "Old news"}],
+                     "day_articles": 1, "day_score": -0.8}]}
+
+
+def test_the_news_section_shows_what_each_related_company_moved_today_and_researches_on_click():
+    out = run("industry.js", f"""
+        ANSWERS["/api/jobs/industry"] = {{ id: 9, state: "done", result: {{}} }};
+        let changes = 0;
+        const box = m.newsSection("7203.T", {json.dumps(NEWS)}, () => changes++);
+        button(box, "Research industry").fire("click");
+        await settle(10);
+        button(box, "Research the daily set").fire("click");
+        await settle(10);
+        const links = box.all((n) => n.tag === "a").map((a) => a.attrs.href);
+        console.log(JSON.stringify({{ asked, changes, links, text: box.textContent }}));
+    """)
+    assert out["asked"] == ["POST /api/jobs/industry?symbol=7203.T", "POST /api/jobs/industry"] and out["changes"] == 2
+    text = out["text"]
+    assert "Today (2026-09-30): supplier -0.80 (1)" in text
+    assert "6902.T" in text and "supplier-0.80 (1)" in text and "Denso cuts output down 80%, supply production" in text
+    assert "javascript:alert(1)" not in out["links"] and "uncalibrated" in text
+    assert "last searched 2026-09-30 22:05" in text
+
+
+def test_laya_off_offers_no_research_button():
+    body = json.dumps({**NEWS, "enabled": False, "related": [], "features": []})
+    out = run("industry.js", f'console.log(JSON.stringify(m.newsSection("7203.T", {body}, () => {{}}).textContent));')
+    assert "Laya is off" in out and "Research industry" not in out.split("No scored")[0] and "No scored industry news yet" in out
 
 
 TIE = {"id": 4, "symbol": "7203.T", "other": "BWA", "other_name": "BorgWarner Inc.", "kind": "news",

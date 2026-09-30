@@ -21,13 +21,14 @@ from oracle.store.db import to_utc_iso
 from oracle.store.laya import LayaRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["BATCH", "MODEL_TAG", "RELATIONS", "ScoreRun", "ScoredArticle", "YIELD_STEP_S", "company_articles", "laya_scores",
-           "load_scorer", "score_articles", "score_company"]
+__all__ = ["BATCH", "MODEL_TAG", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S", "company_articles",
+           "laya_scores", "load_scorer", "primary", "score_articles", "score_company"]
 
 log = logging.getLogger(__name__)
 
 RELATIONS = ("own", "competitor", "supplier", "customer", "industry")
-"""The target's relation to the article's subject."""
+"""What the article's subject is to the target: "supplier" is news about one of the target's
+suppliers (competitor and industry read the same either way)."""
 BATCH = 16
 YIELD_STEP_S = 5.0
 SNIPPET_CHARS = 600
@@ -77,6 +78,34 @@ def load_scorer(ctx: AppContext) -> Scorer:
         raise InvalidQuery(str(exc)) from exc
 
 
+class SharedScorer:
+    """One model for many `score_articles` calls (a run over many companies): loaded when first
+    asked to score, closed by `score_articles` while live model work runs and loaded again after,
+    and closed by its owner when the run ends."""
+
+    def __init__(self, load: Callable[[], Scorer], tag: str = MODEL_TAG) -> None:
+        self._load, self.tag = load, tag
+        self._model: Scorer | None = None
+        self.device: str | None = None
+        self.loads = 0
+
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
+    def score(self, items: list[LayaInput]) -> list:
+        if self._model is None:
+            self._model = self._load()
+            self.loads += 1
+            self.device = self._model.device
+        return self._model.score(items)
+
+    def close(self) -> None:
+        if self._model is not None:
+            self._model.close()
+            self._model = None
+
+
 @dataclass(frozen=True)
 class _Company:
     symbol: str
@@ -90,6 +119,11 @@ def _company(ctx: AppContext, symbol: str) -> _Company:
     universe = UniverseRepo(ctx.conn)
     primary = universe.primary_symbol(found.company_key) or found.symbol
     return _Company(primary, f"{found.name} ({primary})", universe.company_symbols(found.company_key) or [found.symbol])
+
+
+def primary(ctx: AppContext, symbol: str) -> str:
+    """The company's primary listing, under which its scores are stored."""
+    return _company(ctx, symbol).symbol
 
 
 def company_articles(ctx: AppContext, symbol: str) -> list[int]:
@@ -110,7 +144,8 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
     """Score `article_ids` for `symbol` as `relation`, a batch at a time, each batch kept as it
     finishes. Without a `scorer` the model is loaded only when something needs scoring, and closed
     after. `busy` names live model work (research, a tick): before each batch it waits while that
-    runs, closing a model it loaded so the GPU is Ollama's meanwhile. `stop` ends it between batches."""
+    runs, closing a model it loaded (or a SharedScorer's) so the GPU is Ollama's meanwhile. `stop`
+    ends it between batches."""
     if not ctx.config.laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
     if relation not in RELATIONS:
@@ -132,6 +167,8 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
                 if owned and scorer is not None:
                     scorer.close()
                     scorer = None
+                elif isinstance(scorer, SharedScorer):
+                    scorer.close()
                 while other and not (stop and stop()):
                     say(f"{scored} of {len(todo)} scored; waiting for {other} to finish")
                     wait(YIELD_STEP_S)
@@ -141,10 +178,10 @@ def score_articles(ctx: AppContext, symbol: str, article_ids: list[int], *, rela
                     break
             if scorer is None:
                 scorer = load_scorer(ctx)
-            device = scorer.device
             part = todo[i:i + batch]
             scores = scorer.score([LayaInput(listing.label, a.title, (a.snippet or "")[:SNIPPET_CHARS] or None)
                                    for a in part])
+            device = scorer.device
             repo.save(listing.symbol, tag, relation, [(a.id, s) for a, s in zip(part, scores)],
                       to_utc_iso(ctx.clock.utcnow()))
             scored += len(part)

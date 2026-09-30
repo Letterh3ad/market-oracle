@@ -111,6 +111,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "edges show": "GET /api/companies/{symbol}/edges",
     "edges confirm": "POST /api/companies/{symbol}/edges/{edge_id}/confirm",
     "edges delete": "DELETE /api/companies/{symbol}/edges/{edge_id}",
+    # Company tab, Industry panel: "Research industry" (a symbol) and "Research the daily set" (none).
+    "industry-news run": "POST /api/jobs/industry",
+    "industry-news show": "GET /api/companies/{symbol}/industry-news",
+    "industry-news show --days": "GET /api/companies/{symbol}/industry-news",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",
