@@ -16,6 +16,7 @@ class DailyRow:
     articles: int
     score: float
     events: dict[str, int]
+    event_scores: dict[str, float]
 
 
 class IndustryNewsRepo:
@@ -25,6 +26,15 @@ class IndustryNewsRepo:
     def fetched_at(self, symbol: str) -> str | None:
         row = self._conn.execute("SELECT fetched_at FROM industry_fetches WHERE symbol = ?", (symbol,)).fetchone()
         return row[0] if row else None
+
+    def fetched(self, symbols: list[str]) -> dict[str, str]:
+        """Casefolded symbol -> when last searched, for those searched before."""
+        out: dict[str, str] = {}
+        for i in range(0, len(symbols), 500):
+            part = symbols[i:i + 500]
+            out |= {s.casefold(): at for s, at in self._conn.execute(
+                f"SELECT symbol, fetched_at FROM industry_fetches WHERE symbol IN ({','.join('?' * len(part))})", part)}
+        return out
 
     def record_fetch(self, symbol: str, article_ids: Iterable[int], found: int, at: str) -> None:
         """The search and what it kept, in one transaction."""
@@ -69,13 +79,15 @@ class IndustryNewsRepo:
             self._conn.execute("DELETE FROM laya_daily WHERE symbol = ? AND model = ? AND day BETWEEN ? AND ?",
                                (symbol, model, start, end))
             self._conn.executemany(
-                "INSERT INTO laya_daily (symbol, model, day, relation, articles, score, events, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [(symbol, model, r.day, r.relation, r.articles, r.score, json.dumps(r.events, sort_keys=True), at)
+                "INSERT INTO laya_daily (symbol, model, day, relation, articles, score, events, event_scores, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(symbol, model, r.day, r.relation, r.articles, r.score, json.dumps(r.events),
+                  json.dumps(r.event_scores), at)
                  for r in rows])
 
     def daily(self, symbol: str, model: str, start: str, end: str) -> list[DailyRow]:
         rows = self._conn.execute(
-            "SELECT symbol, day, relation, articles, score, events FROM laya_daily WHERE symbol = ? AND model = ? "
+            "SELECT symbol, day, relation, articles, score, events, event_scores FROM laya_daily WHERE symbol = ? "
+            "AND model = ? "
             "AND day BETWEEN ? AND ? ORDER BY day, relation", (symbol, model, start, end))
-        return [DailyRow(*r[:5], json.loads(r[5])) for r in rows]
+        return [DailyRow(*r[:5], json.loads(r[5]), json.loads(r[6])) for r in rows]

@@ -50,6 +50,8 @@ def _tick_industry_idle(monkeypatch):
         return IndustryRun()
 
     monkeypatch.setattr("oracle.services.tick_service.research_industry", idle)
+    # The real check asks nvidia-smi; a fake model on "cpu" would be moved by whatever GPU the machine has.
+    monkeypatch.setattr("oracle.services.industry_research_service.gpu_room", lambda ctx: False)
 
 
 @pytest.fixture(autouse=True)

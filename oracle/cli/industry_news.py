@@ -18,7 +18,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     run.set_defaults(handler=run_cmd)
     show = sub.add_parser("show", help="a company's features and each related company's latest scored events")
     show.add_argument("symbol")
-    show.add_argument("--days", type=int, default=7, help="days of features before today (default 7)")
+    show.add_argument("--days", type=int, default=7, choices=range(0, 366), metavar="0-365",
+                      help="days of features before today (default 7)")
     show.set_defaults(handler=show_cmd)
 
 

@@ -52,8 +52,9 @@ def test_a_day_sums_direction_times_its_probability_per_relation_and_counts_even
     score(ctx, "competitor", stored(ctx, "Samsung profits rise", at(28)))
     rows = daily_features(ctx, "AAPL", date(2026, 9, 1), date(2026, 9, 30), model=MODEL)
     assert rows == [
-        DailyFeature("AAPL", date(2026, 9, 28), "own", 3, 0.0, {"earnings": 1, "recall_safety": 1, "other": 1}),
-        DailyFeature("AAPL", date(2026, 9, 28), "competitor", 1, 0.8, {"other": 1}),
+        DailyFeature("AAPL", date(2026, 9, 28), "own", 3, 0.0, {"earnings": 1, "recall_safety": 1, "other": 1},
+                     {"earnings": 0.8, "recall_safety": -0.8, "other": 0.0}),
+        DailyFeature("AAPL", date(2026, 9, 28), "competitor", 1, 0.8, {"other": 1}, {"other": 0.8}),
     ], "up +0.8, down -0.8, none 0; own before competitor"
 
 
@@ -97,3 +98,13 @@ def test_features_are_stored_per_day_and_a_rerun_restates_the_days_it_covers(ctx
     ctx.conn.execute("DELETE FROM laya_scores")
     assert store_features(ctx, "AAPL", date(2026, 9, 27), date(2026, 9, 30), model=MODEL) == 0
     assert stored_features(ctx, "AAPL", date(2026, 9, 1), date(2026, 9, 30), model=MODEL) == []
+
+
+def test_each_event_type_also_gets_its_signed_score(ctx):
+    score(ctx, "own", stored(ctx, "Apple beats estimates", at(28)), stored(ctx, "Apple beats again", at(28)),
+          stored(ctx, "Apple recall of chargers", at(28)), stored(ctx, "Apple opens a store", at(28)))
+    [row] = daily_features(ctx, "AAPL", date(2026, 9, 28), date(2026, 9, 28), model=MODEL)
+    assert row.events == {"earnings": 2, "recall_safety": 1, "other": 1}, "counts unchanged"
+    assert row.event_scores == {"earnings": 1.6, "recall_safety": -0.8, "other": 0.0}
+    store_features(ctx, "AAPL", date(2026, 9, 28), date(2026, 9, 28), model=MODEL)
+    assert stored_features(ctx, "AAPL", date(2026, 9, 28), date(2026, 9, 28), model=MODEL) == [row]

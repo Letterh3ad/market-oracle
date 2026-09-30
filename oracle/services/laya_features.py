@@ -1,6 +1,6 @@
 """Laya's daily features per company: for each day and relation (own, competitor, supplier,
 customer, industry), how many scored articles, the sum of direction x its probability (up +p,
-down -p, none 0) and the count per event type. One aggregator for the live tick and for history
+down -p, none 0), and per event type the count and the same signed sum. One aggregator for the live tick and for history
 tests (06), over any date range.
 
 Point in time: an article counts on the UTC day it was known (published_at, else fetched_at);
@@ -37,6 +37,8 @@ class DailyFeature:
     """Sum over the day's articles of direction x its probability."""
     events: dict[str, int] = field(default_factory=dict)
     """Event type -> articles; types with none are left out."""
+    event_scores: dict[str, float] = field(default_factory=dict)
+    """Event type -> the sum of direction x its probability over those articles (same keys as `events`)."""
 
 
 def signed(s: ScoredArticle) -> float:
@@ -67,11 +69,13 @@ def daily_features(ctx: AppContext, symbol: str, start: date, end: date, *, mode
     out = []
     for (day, relation), scores in sorted(groups.items(), key=lambda x: (x[0][0], _order(x[0][1]))):
         events: dict[str, int] = {}
+        sums: dict[str, float] = {}
         for s in scores:
             events[s.event] = events.get(s.event, 0) + 1
+            sums[s.event] = sums.get(s.event, 0.0) + signed(s)
+        order = [e for e in EVENT_TYPES if e in events] + [e for e in events if e not in EVENT_TYPES]
         out.append(DailyFeature(listing, day, relation, len(scores), round(sum(signed(s) for s in scores), 6),
-                                {e: events[e] for e in EVENT_TYPES if e in events}
-                                | {e: n for e, n in events.items() if e not in EVENT_TYPES}))
+                                {e: events[e] for e in order}, {e: round(sums[e], 6) for e in order}))
     return out
 
 
@@ -86,7 +90,8 @@ def store_features(ctx: AppContext, symbol: str, start: date, end: date, *, mode
     rows = daily_features(ctx, symbol, start, end, model=model)
     IndustryNewsRepo(ctx.conn).save_daily(
         primary(ctx, symbol), model, start.isoformat(), end.isoformat(),
-        [DailyRow(r.symbol, r.day.isoformat(), r.relation, r.articles, r.score, r.events) for r in rows],
+        [DailyRow(r.symbol, r.day.isoformat(), r.relation, r.articles, r.score, r.events, r.event_scores)
+         for r in rows],
         to_utc_iso(ctx.clock.utcnow()))
     return len(rows)
 
@@ -94,7 +99,8 @@ def store_features(ctx: AppContext, symbol: str, start: date, end: date, *, mode
 def stored_features(ctx: AppContext, symbol: str, start: date, end: date, *,
                     model: str = MODEL_TAG) -> list[DailyFeature]:
     rows = IndustryNewsRepo(ctx.conn).daily(primary(ctx, symbol), model, start.isoformat(), end.isoformat())
-    return sorted((DailyFeature(r.symbol, date.fromisoformat(r.day), r.relation, r.articles, r.score, r.events)
+    return sorted((DailyFeature(r.symbol, date.fromisoformat(r.day), r.relation, r.articles, r.score, r.events,
+                                r.event_scores)
                    for r in rows), key=lambda r: (r.day, _order(r.relation)))
 
 
