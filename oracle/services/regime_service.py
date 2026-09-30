@@ -22,17 +22,16 @@ from oracle.broker.regime import (
 from oracle.broker.rules import Decision, Lean
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
-from oracle.services.models_service import slot_profile
 from oracle.services.core_sat_service import (
     core_card, core_step, satellite_inputs, satellite_settings, satellite_traded, sleeves,
 )
+from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
     CORE_SAT, GONE, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, frozen, step_account, traded_by,
     verdict_history,
 )
-from oracle.services.regime_lines import CORE_SAT_SOURCE
 from oracle.services.prices_service import ConvertedBar
-from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
+from oracle.services.regime_lines import CORE_SAT_SOURCE, HISTORY_DAYS, market_history, regime_inputs
 from oracle.services.regime_tilt import DailyTilt
 from oracle.services.watch_service import discovered_only
 from oracle.store.db import to_utc_iso
@@ -40,7 +39,7 @@ from oracle.store.paper import DecisionRepo, LoggedDecision
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
+__all__ = ["CORE_SAT_OFF", "FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
            "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "

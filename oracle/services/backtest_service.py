@@ -180,7 +180,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
     walked = None
     if spans:
-        sources = {"strategy": lambda a, b: run(first=a, last=b), "buy_and_hold": lambda a, b: _held(closes, a, b, capital),
+        sources = {"strategy": lambda a, b: run(first=a, last=b),
+                   "buy_and_hold": lambda a, b: _held(closes, a, b, capital),
                    "momentum": lambda a, b: run(momentum_leans, first=a, last=b),
                    **{n: (lambda a, b, x=x: run_line(x, a, b)) for n, x in blends.items()}}
         equities = {n: [_equity(source(a, b)) for a, b in spans] for n, source in sources.items()}
