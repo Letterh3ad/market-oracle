@@ -320,3 +320,97 @@ async def test_a_budget_that_runs_out_while_scoring_maps_leaves_every_target_its
         own = [f for f in stored_features(ctx, symbol, date(2026, 9, 27), date(2026, 9, 30), model="fake-laya")
                if f.relation == "own"]
         assert own, symbol
+
+
+async def test_every_target_is_searched_first_and_a_short_budget_rotates_the_map_by_oldest_search(env):
+    ctx, news = env
+    watch(ctx, "GM")
+    first = await run(ctx, max_requests=2)
+    assert first.searches_stopped == "request budget (2)"
+    assert news.queries == [q(ctx, "HMC", "Honda Motor Co."), q(ctx, "GM", "General Motors")], "own searches first"
+    news.queries.clear()
+    ctx.clock.advance(13 * 3600)
+    await run(ctx, max_requests=3)
+    assert news.queries[2] == f"{search_for(ctx, 'BWA', 'BorgWarner').query} after:2026-09-28", \
+        "a map company never searched goes before ones searched before"
+
+
+async def test_a_cpu_model_moves_to_the_gpu_when_it_has_room_and_the_summary_warns_on_cpu(env, monkeypatch):
+    ctx, news = env
+    watch(ctx, "GM")
+    give(ctx, news, "HMC", "Honda Motor Co.", ("Honda profits rise", when(29)))
+    give(ctx, news, "GM", "General Motors", ("GM profits rise", when(29)))
+    devices = iter(["cpu", "cuda"])
+    shared = SharedScorer(lambda: FakeLaya(device=next(devices)), "fake-laya")
+    monkeypatch.setattr(industry_research_service, "gpu_room", lambda c: True)
+    r = await research_industry(ctx, scorer=shared)
+    assert shared.loads == 2 and r.device == "cuda"
+    stuck = SharedScorer(lambda: FakeLaya(device="cpu"), "other-tag")
+    monkeypatch.setattr(industry_research_service, "gpu_room", lambda c: False)
+    r = await research_industry(ctx, scorer=stuck)
+    assert stuck.loads == 1 and "on the CPU" in r.summary
+
+
+async def test_map_scoring_starts_with_the_target_least_recently_reached(env):
+    ctx, news = env
+    give(ctx, news, "HMC", "Honda Motor Co.", ("Honda profits rise", when(29)))
+    give(ctx, news, "GM", "General Motors", ("GM recall of trucks", when(29)))
+    give(ctx, news, "BWA", "BorgWarner", ("BorgWarner beats estimates", when(29)))
+    await run(ctx, symbols=["HMC"])
+    watch(ctx, "GM")
+    ctx.clock.advance(13 * 3600)
+    give(ctx, news, "BWA", "BorgWarner", ("BorgWarner beats estimates", when(29)), ("BorgWarner lifts outlook", when(30)))
+    news.results[f"{search_for(ctx, 'BWA', 'BorgWarner').query} after:2026-09-28"] = news.results.pop(
+        q(ctx, "BWA", "BorgWarner"))
+    lines = []
+    await run(ctx, on_progress=lines.append)
+    mapped = [x.split()[0] for x in lines if " own:" not in x and "scored" in x]
+    assert mapped[0] == "GM", "never reached before HMC, reached last run"
+
+
+async def test_the_lock_is_kept_alive_while_scoring(env, monkeypatch):
+    ctx, news = env
+    give(ctx, news, "HMC", "Honda Motor Co.", *((f"Honda news {n}", when(29)) for n in range(20)))
+    from oracle.jobs import JobLock
+
+    beats = []
+    real = JobLock.heartbeat
+    monkeypatch.setattr(JobLock, "heartbeat", lambda self, h: beats.append(h.job) or real(self, h))
+
+    class Counting(FakeLaya):
+        def score(self, items):
+            beats.append("score")
+            return super().score(items)
+
+    await run(ctx, Counting())
+    scored = [i for i, b in enumerate(beats) if b == "score"]
+    assert len(scored) == 2 and all(beats[i - 1] == "industry_research" for i in scored), "a heartbeat before each batch"
+
+
+async def test_routine_outcomes_stay_in_the_summary_and_only_a_stopped_source_or_laya_marks_the_stage(env, monkeypatch):
+    ctx, _ = env
+    Run = industry_research_service.IndustryRun
+    runs = iter([Run(("HMC",), failures=["HMC news: HTTP 500"], stopped="time budget (30 min)"),
+                 Run(("HMC",), searches_stopped="google_news resting: open"),
+                 Run(("HMC",), searches_stopped="request budget (400)"),
+                 Run(("HMC",), stopped="Laya: will not load")])
+
+    async def canned(c, **kw):
+        return next(runs)
+
+    monkeypatch.setattr(tick_service, "research_industry", canned)
+    assert (await tick_service._industry(ctx, lambda _: None))[1] is None
+    assert "resting" in (await tick_service._industry(ctx, lambda _: None))[1]
+    assert (await tick_service._industry(ctx, lambda _: None))[1] is None
+    assert "will not load" in (await tick_service._industry(ctx, lambda _: None))[1]
+
+
+async def test_a_whole_tick_runs_the_real_stage(env, monkeypatch):
+    ctx, news = env
+    give(ctx, news, "HMC", "Honda Motor Co.", ("Honda profits rise", when(29)))
+    monkeypatch.setattr(tick_service, "research_industry", research_industry)
+    monkeypatch.setattr("oracle.services.laya_service.load_scorer", lambda c: FakeLaya(tag=MODEL_TAG))
+    monkeypatch.setattr(industry_research_service, "gpu_room", lambda c: False)
+    tick = await tick_service.run_tick(ctx)
+    [stage] = [s for s in tick.stages if s.name == "industry"]
+    assert stage.state == "ok" and stage.summary.startswith("1 of 1 companies") and "1 pairs scored" in stage.summary

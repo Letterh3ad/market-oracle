@@ -133,17 +133,24 @@ const NEWS_TIP = "Each company's headlines of the last few days, read by Laya fo
   + "headline is left out for it.";
 const moved = (v) => el("span", { class: tone(v) }, `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
 
-function researchButton(symbol, enabled, changed) {
+const DAILY_TIP = "What the tick runs each day: held, watched and main-list companies and their industry maps, "
+  + "within the Settings budget ([laya] industry_requests and industry_minutes).";
+
+// This company's Research industry, and the tick's daily set on demand.
+function researchButtons(symbol, enabled, changed) {
   if (!enabled) return el("span", { class: "dim small" }, "Laya is off (Settings, [laya] enabled): no industry research.");
-  return busyButton("Research industry", async (onState) => {
+  const run = (label, path) => busyButton(label, async (onState) => {
     try {
       clearError();
-      await runJob(`/api/jobs/industry?symbol=${encodeURIComponent(symbol)}`, onState);
+      await runJob(path, onState);
     } catch (err) {
       showError(err.message);
     }
     changed();
   });
+  const daily = run("Research the daily set", "/api/jobs/industry");
+  daily.title = DAILY_TIP;
+  return el("span", null, run("Research industry", `/api/jobs/industry?symbol=${encodeURIComponent(symbol)}`), daily);
 }
 
 function eventLine(e) {
@@ -162,7 +169,7 @@ function newsRow(c) {
 
 // Today's features and each related company's latest scored events, with Research industry.
 function newsSection(symbol, body, changed) {
-  const head = el("div", { class: "row" }, researchButton(symbol, body.enabled, changed),
+  const head = el("div", { class: "row" }, researchButtons(symbol, body.enabled, changed),
     el("span", { class: "badge warn", title: NEWS_TIP }, "uncalibrated"),
     el("span", { class: "dim small" }, ` last searched ${body.last_searched ? body.last_searched.slice(0, 16).replace("T", " ") : "never"}`));
   const features = body.features.length

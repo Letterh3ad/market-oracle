@@ -12,6 +12,7 @@ earlier than the next session."""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable, Sequence
@@ -19,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
 from oracle.net.errors import CircuitOpen, RequestFailed
-from oracle.research.laya import Scorer
+from oracle.research.laya import GPU_FREE_MB, Scorer, gpu_free_mb
 from oracle.research.news import GOOGLE_NEWS, FeedUnreadable, google_news_params, parse_google_news
 from oracle.services import laya_service
 from oracle.services.context import AppContext
@@ -36,17 +37,22 @@ from oracle.services.watch_service import DEFAULT_LIST, watchlist_symbols
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.industry_news import IndustryNewsRepo
+from oracle.store.meta import MetaRepo
 from oracle.store.paper import PaperRepo
 from oracle.store.watchlists import WatchlistRepo
 
 __all__ = ["BUTTON_FRESH_H", "EVENTS_SHOWN", "FRESH_H", "KIND_RELATION", "LOOKBACK_DAYS", "CompanyNews", "IndustryNews",
-           "IndustryRun", "ScoredEvent", "daily_targets", "industry_news", "live_model_work", "relation_for_kinds",
+           "IndustryRun", "ScoredEvent", "daily_targets", "gpu_room", "industry_news", "live_model_work",
+           "relation_for_kinds",
            "research_industry"]
 
 log = logging.getLogger(__name__)
 
 JOB = "industry_research"
 LEASE_S = 3600.0
+"""Beyond the run's time budget; the lock is also kept alive before each batch."""
+MAP_SCORED = "industry_map_scored"
+"""Meta key: when each target's map news was last scored, so the next run starts with the oldest."""
 NEWS = "google_news"
 LOOKBACK_DAYS = 3
 """Days of headlines a search asks for and a run scores: yesterday's late news and a missed tick."""
@@ -106,6 +112,8 @@ class IndustryRun:
         head = f"{self.reached} of {len(self.targets)} companies"
         parts = [f"{self.searched} searched ({self.requests} requests, {self.kept} new headlines kept)",
                  f"{self.scored} pairs scored" + (f" on {self.device}" if self.device else ""),
+                 *(["WARNING scored on the CPU, about 30 times slower (the GPU was busy)"]
+                   if self.device == "cpu" else []),
                  f"{self.feature_rows} feature rows", f"{self.seconds:.0f} s"]
         if self.searches_stopped:
             parts.append(f"searching stopped: {self.searches_stopped}")
@@ -131,6 +139,14 @@ def daily_targets(ctx: AppContext) -> list[str]:
         if p is not None:
             out.setdefault(p.primary_symbol)
     return list(out)
+
+
+def gpu_room(ctx: AppContext) -> bool:
+    """Whether `auto` would now load Laya on the GPU."""
+    if ctx.config.laya.device != "auto":
+        return False
+    free = gpu_free_mb()
+    return free is not None and free >= GPU_FREE_MB
 
 
 def live_model_work(ctx: AppContext) -> str | None:
@@ -161,7 +177,7 @@ async def research_industry(ctx: AppContext, symbols: Sequence[str] | None = Non
     while busy and (other := busy()) and not (stop and stop()) and ctx.clock.utcnow() < deadline:
         say(f"waiting for {other} to finish")
         await ctx.clock.sleep(WAIT_STEP_S)
-    with single_flight(ctx, JOB, LEASE_S) as held:
+    with single_flight(ctx, JOB, max(LEASE_S, budget_s + LEASE_S)) as held:
         run = _Run(ctx, held.check, targets, laya.industry_requests if max_requests is None else max_requests,
                    deadline, budget_s, fresh_h, scorer, stop, busy, say)
         try:
@@ -194,28 +210,56 @@ class _Run:
 
     async def all(self) -> None:
         """Every search first (minutes at Google News' pace, which also gives a just-used Ollama model
-        time to leave the GPU before Laya picks its device), then every target's own news, then the
-        map's news, so a budget that runs out leaves every target its own features."""
+        time to leave the GPU before Laya picks its device): each target's own, then the map companies
+        searched longest ago, so a short request budget rotates through them. Then every target's own
+        news is scored, then the maps' news starting with the target whose map was scored longest ago,
+        so a budget that runs out leaves every target its own features and never starves the same maps."""
         plans: list[tuple[str, list[_Subject]]] = []
+        stored: set[str] = set()
         try:
             async with open_client(self.ctx) as client:
                 for n, target in enumerate(self.result.targets, 1):
                     self._check()
                     plans.append((target, self._subjects(target)))
-                    for s in plans[-1][1]:
-                        await self._search(client, s, f"{target} ({n}/{len(self.result.targets)})")
-            for own in (True, False):
-                for target, subjects in plans:
-                    self._score(target, subjects, own)
-                    self.result.feature_rows += store_features(self.ctx, target, self.since_day,
-                                                               self.ctx.clock.utcnow().date(),
-                                                               model=self.scorer.tag) if not own else 0
-                    self.result.reached += not own
+                    await self._search(client, plans[-1][1][0], f"{target} ({n}/{len(self.result.targets)})")
+                mapped = list({s.symbol: s for _, subjects in plans for s in subjects[1:]}.values())
+                last = self.repo.fetched([s.symbol for s in mapped])
+                mapped.sort(key=lambda s: last.get(s.symbol.casefold()) or "")
+                for n, s in enumerate(mapped, 1):
+                    await self._search(client, s, f"map companies ({n}/{len(mapped)})")
+            for target, subjects in plans:
+                self._to_gpu()
+                self._score(target, subjects, True)
+            reached = self._map_scored()
+            for target, subjects in sorted(plans, key=lambda p: reached.get(p[0], "")):
+                self._to_gpu()
+                self._score(target, subjects, False)
+                self.result.feature_rows += self._store(target)
+                stored.add(target)
+                self.result.reached += 1
+                reached[target] = to_utc_iso(self.ctx.clock.utcnow())
+                MetaRepo(self.ctx.conn).set(MAP_SCORED, json.dumps(reached))
         except _Stopped:
             # Features of what was scored before the stop.
-            for target, _ in plans[self.result.reached:]:
-                store_features(self.ctx, target, self.since_day, self.ctx.clock.utcnow().date(), model=self.scorer.tag)
+            for target, _ in plans:
+                if target not in stored:
+                    self._store(target)
         self.result.seconds = round(time.monotonic() - self.started, 1)
+
+    def _store(self, target: str) -> int:
+        return store_features(self.ctx, target, self.since_day, self.ctx.clock.utcnow().date(), model=self.scorer.tag)
+
+    def _map_scored(self) -> dict[str, str]:
+        raw = MetaRepo(self.ctx.conn).get(MAP_SCORED)
+        return json.loads(raw) if raw else {}
+
+    def _to_gpu(self) -> None:
+        """A shared model that `auto` put on the CPU (the GPU was busy) is closed when the GPU has room
+        again, so its next batch loads there."""
+        if isinstance(self.scorer, SharedScorer) and self.scorer.loaded and self.scorer.device == "cpu" \
+                and gpu_room(self.ctx):
+            self.say("the GPU has room now: moving Laya there")
+            self.scorer.close()
 
     def _subjects(self, target: str) -> list[_Subject]:
         own = plain_company(self.ctx, target, strict=False)
@@ -309,6 +353,8 @@ class _Run:
                 raise _Stopped
 
     def _should_stop(self) -> bool:
+        """Asked before each batch; also keeps the lock alive while scoring."""
+        self.heartbeat()
         return self.stop() or self.ctx.clock.utcnow() >= self.deadline
 
     def _check(self) -> None:

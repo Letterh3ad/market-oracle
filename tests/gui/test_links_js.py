@@ -129,10 +129,12 @@ def test_the_news_section_shows_what_each_related_company_moved_today_and_resear
         const box = m.newsSection("7203.T", {json.dumps(NEWS)}, () => changes++);
         button(box, "Research industry").fire("click");
         await settle(10);
+        button(box, "Research the daily set").fire("click");
+        await settle(10);
         const links = box.all((n) => n.tag === "a").map((a) => a.attrs.href);
         console.log(JSON.stringify({{ asked, changes, links, text: box.textContent }}));
     """)
-    assert out["asked"] == ["POST /api/jobs/industry?symbol=7203.T"] and out["changes"] == 1
+    assert out["asked"] == ["POST /api/jobs/industry?symbol=7203.T", "POST /api/jobs/industry"] and out["changes"] == 2
     text = out["text"]
     assert "Today (2026-09-30): supplier -0.80 (1)" in text
     assert "6902.T" in text and "supplier-0.80 (1)" in text and "Denso cuts output down 80%, supply production" in text

@@ -10,7 +10,7 @@ from oracle.store.migrations import run_ddl
 # company, which company's search brought each article it had scored (own articles have the
 # target itself). `laya_daily`: the per company, day and relation features, a stored copy of the
 # aggregator's answer (day = when the news was known, UTC); `events` is a JSON map of event type
-# to count.
+# to count, `event_scores` of event type to the signed sum of its articles.
 DDL = """
 CREATE TABLE industry_news (
     symbol     TEXT NOT NULL COLLATE NOCASE,
@@ -38,6 +38,7 @@ CREATE TABLE laya_daily (
     articles   INTEGER NOT NULL,
     score      REAL NOT NULL,
     events     TEXT NOT NULL,
+    event_scores TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (symbol, model, day, relation)
 ) WITHOUT ROWID;

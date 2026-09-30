@@ -222,7 +222,12 @@ async def _industry(ctx: AppContext, say: Say) -> tuple[str, str | None]:
         run = await research_industry(ctx, busy=lambda: live_model_work(ctx), on_progress=say)
     except JobAlreadyRunning:
         return "a Research industry job is running: nothing more this tick", None
-    return run.summary, run.failures[0] if run.failures else run.stopped
+    # A failed search or the time budget is routine (said in the summary); a source that stopped
+    # answering or a Laya that will not load is the stage's error.
+    source = run.searches_stopped if run.searches_stopped and not run.searches_stopped.startswith("request budget") \
+        else None
+    laya_failed = run.stopped if run.stopped and run.stopped.startswith("Laya") else None
+    return run.summary, source or laya_failed
 
 
 def _line_step(account: str) -> StageRun:
