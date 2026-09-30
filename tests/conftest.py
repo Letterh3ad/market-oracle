@@ -48,6 +48,24 @@ def tilt_waits(monkeypatch):
     return waited
 
 
+@pytest.fixture(autouse=True)
+def _no_real_laya(monkeypatch):
+    """Loading Laya takes a GPU and gigabytes: a test that would load it fails instead, unless it
+    passes a fake. The opt-in live tests (-m laya) undo this."""
+    def refuse(ctx):
+        raise AssertionError("tests never load the real Laya model: pass a FakeLaya")
+
+    monkeypatch.setattr("oracle.services.laya_service.load_scorer", refuse)
+
+
+@pytest.fixture(autouse=True)
+def laya_waits(monkeypatch):
+    """Laya's waits for live model work: recorded, never slept."""
+    waited: list[float] = []
+    monkeypatch.setattr("oracle.services.laya_service.wait", waited.append)
+    return waited
+
+
 @pytest.fixture
 def conn(tmp_path):
     connection = connect(tmp_path / "test.db")

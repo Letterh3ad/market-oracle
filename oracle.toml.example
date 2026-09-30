@@ -154,6 +154,13 @@ rotation_min_hold_days = 20   # trading days a holding is kept before it can be 
 rotation_margin = 0.25        # sold when its blended score is this far under the best buy not held
 rotation_max = 2              # holdings rotated out a step at most (1 to 10)
 
+# Laya: a small local model that reads each stored headline for a company and says whether it
+# is about it, which way it points and what kind of event it is (Company tab, "Score with Laya").
+# Its probabilities are uncalibrated. Needs `pip install -e .[laya]`.
+[laya]
+enabled = true             # false: nothing is scored with Laya
+device = "auto"            # auto (the GPU when it has room beside Ollama, else the CPU), gpu or cpu
+
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big
 # risers and fallers, unusual volume, results surprises) in the countries you watch. The

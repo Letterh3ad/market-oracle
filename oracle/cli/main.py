@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from oracle.cli import (
-    analyse, automation, backtest, company, discover, events, factors, fx, gui, holiday, jobs, links, models, net,
+    analyse, automation, backtest, company, discover, events, factors, fx, gui, holiday, jobs, laya, links, models, net,
     paper, peers, prices, replay, research, schedule, status, tag, tick, universe, watch,
 )
 from oracle.services.context import load_settings, open_context
@@ -31,6 +31,7 @@ SUBCOMMANDS: list[tuple[str, Callable]] = [
     ("models", models.register),
     ("discover", discover.register),
     ("links", links.register),
+    ("laya", laya.register),
     ("paper", paper.register),
     ("backtest", backtest.register),
     ("tick", tick.register),

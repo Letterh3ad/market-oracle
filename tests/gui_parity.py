@@ -97,6 +97,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "discover auto": "PUT /api/questions/{question_id}/auto",  # Discover tab, a question's Auto switch
     "links show": "GET /api/companies/{symbol}/links",  # Company tab, "Linked companies"
     "links delete": "DELETE /api/companies/{symbol}/links/{link_id}",
+    # Company tab, Laya section: "Score with Laya" and the scored headlines. On/off and device are
+    # [laya] in Settings.
+    "laya score": "POST /api/jobs/laya",
+    "laya show": "GET /api/companies/{symbol}/laya",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",

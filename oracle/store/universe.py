@@ -373,6 +373,10 @@ class UniverseRepo:
             f"SELECT DISTINCT company_key FROM listings WHERE is_primary AND delisted = 0 "
             f"AND company_key IN ({', '.join('?' * len(keys)) or 'NULL'})", keys)}
 
+    def primary_symbol(self, company_key: str) -> str | None:
+        row = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ? AND is_primary", (company_key,))
+        return next((r[0] for r in row), None)
+
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]

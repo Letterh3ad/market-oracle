@@ -99,6 +99,12 @@ const GLOSSARY = {
     "or of the same industry when discovery added one for that. Research on this company also searches the news " +
     "on the two with the most headlines, and its evidence says which link found an article. Delete a wrong " +
     "link: it is never recorded again.",
+  laya:
+    "Laya, a small local model, reads each stored headline about this company (from its research and SEC " +
+    "filings, headline and snippet only) and gives how likely it is about the company, which way it points and " +
+    "what kind of event it is. The percentages are uncalibrated: not yet fitted to how often it is right. On a " +
+    "hand-labelled set of 110 headlines it was right on direction about two times in three and on event type " +
+    "about half the time, and barely told relevant from irrelevant. Scoring waits while research or a tick runs.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",

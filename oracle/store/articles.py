@@ -31,9 +31,9 @@ class ArticleRepo:
         with transaction(self._conn):
             self._conn.executemany(
                 "INSERT OR IGNORE INTO articles (url, title, outlet, published_at, source, fetched_at, query, body, "
-                "site) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "site, snippet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(a.url, a.title, a.outlet, to_utc_iso(a.published) if a.published else None, source, fetched_at,
-                  query, a.body, a.site) for a in articles],
+                  query, a.body, a.site, a.summary) for a in articles],
             )
         return [self._conn.execute("SELECT id FROM articles WHERE url = ?", (a.url,)).fetchone()[0] for a in articles]
 
