@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_fill, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_fill, submit_history, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -131,3 +131,11 @@ async def cutoff_probe(model: str | None = None, ctx: AppContext = Depends(get_c
     """Ask the research slot's model (or `model`) dated questions and keep its measured cutoff
     (`/api/replay/cutoff`); an unknown profile is refused now."""
     return shapes.job(submit_cutoff_probe(ctx, runner, model or None))
+
+
+@router.post("/history", status_code=202)
+async def history(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_ctx),
+                  runner: JobRunner = Depends(get_runner)) -> dict:
+    """The history backfill of a list and its industry maps (hours); it waits while live work runs
+    and resumes where it stopped."""
+    return shapes.job(submit_history(ctx, runner, watchlist))

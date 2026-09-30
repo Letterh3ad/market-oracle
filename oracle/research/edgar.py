@@ -15,6 +15,7 @@ from oracle.research.notes import MAX_NOTE_TEXT
 
 TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
+SUBMISSIONS = "https://data.sec.gov/submissions"
 # Reports and events; insider and ownership forms (3, 4, 5, 13G, 144) are left out as noise.
 KEY_FORMS = frozenset({
     "10-K", "10-K/A", "10-Q", "10-Q/A", "8-K", "8-K/A", "20-F", "20-F/A", "40-F", "6-K", "DEF 14A", "S-1", "S-4",
@@ -93,7 +94,7 @@ def _named(kind: str, description: str) -> str:
 
 
 def submissions_url(cik: int) -> str:
-    return f"https://data.sec.gov/submissions/CIK{cik:010d}.json"
+    return f"{SUBMISSIONS}/CIK{cik:010d}.json"
 
 
 def user_agent(contact: str) -> str:
@@ -115,8 +116,29 @@ def parse_tickers(body: object) -> dict[str, tuple[int, str]]:
 def parse_filings(body: object, cik: int) -> list[Filing]:
     """Key filings from the submissions' recent list, as filed (newest first)."""
     recent = body.get("filings", {}).get("recent", {}) if isinstance(body, dict) else {}
-    columns = [recent.get(k, []) for k in ("form", "filingDate", "accessionNumber", "primaryDocument",
-                                            "primaryDocDescription")]
+    return parse_filing_columns(recent, cik)
+
+
+def older_pages(body: object, since: date) -> list[str]:
+    """The submissions pages beyond the recent list (about the last 1000 filings) that reach
+    back to `since` or later, as addresses."""
+    files = body.get("filings", {}).get("files", []) if isinstance(body, dict) else []
+    out = []
+    for f in files if isinstance(files, list) else []:
+        try:
+            if isinstance(f, dict) and f.get("name") and date.fromisoformat(f.get("filingTo", "")) >= since:
+                out.append(f"{SUBMISSIONS}/{f['name']}")
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def parse_filing_columns(columns: object, cik: int) -> list[Filing]:
+    """Key filings from one list of the submissions' parallel columns (the recent list, or an
+    older page, which holds them at its top level)."""
+    columns = columns if isinstance(columns, dict) else {}
+    columns = [columns.get(k, []) for k in ("form", "filingDate", "accessionNumber", "primaryDocument",
+                                             "primaryDocDescription")]
     out = []
     for form, filed, accession, document, description in zip(*columns):
         if form not in KEY_FORMS or not document:
