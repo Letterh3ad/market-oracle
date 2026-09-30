@@ -11,12 +11,15 @@ from oracle.market.bars import Bar
 from oracle.config import AutomationConfig, ScheduleConfig
 from oracle.services.activity_service import JobRunner, _history_waits, retry, submit_history
 from oracle.services.context import open_context
-from oracle.services.history_names import default_search, mentions
+from oracle.services.history_names import default_search, mentions, seeded
 from oracle.services.history_service import (
     GOOGLE_CAP, backfill_history, clear_search_name, company_history, coverage, history_companies, last_run,
     news_query, news_windows, set_search_name,
 )
 from oracle.store.sources import SourceStateRepo
+from oracle.services.errors import JobAlreadyRunning
+from oracle.services.jobs_service import single_flight
+from oracle.services.history_service import JOB, LEASE_S
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
@@ -117,6 +120,7 @@ ONE_WORD = " (shares OR stock OR earnings)"
     ("Siemens Aktiengesellschaft", '"Siemens"'),
     ("LVMH Moet Hennessy - Louis Vuitton, Societe Europeenne", '"LVMH Moet Hennessy"'),
     ("BT Group", '"BT Group"'),
+    ("BT Group plc", '"BT Group"'),
 ])
 def test_the_default_search_is_the_name_headlines_use_and_one_word_gets_context(name, query):
     assert default_search(name).query == query
@@ -365,3 +369,30 @@ def test_the_backfill_waits_ahead_of_a_scheduled_tick_and_until_it_has_run(env):
     assert "scheduled tick due" in _history_waits(ctx, runner), "due, not yet run"
     ctx.clock.advance(20 * 60)
     assert _history_waits(ctx, runner) is None, "a tick left unrun this long no longer holds it"
+
+
+@pytest.mark.parametrize("name, aliases", [
+    ("Home Depot, Inc.", ("Home Depot",)),
+    ("Public Storage", ("Public Storage",)),
+    ("Texas Instruments Incorporated", ("Texas Instruments",)),
+    ("Deutsche Telekom AG", ("Deutsche Telekom",)),
+    ("Honda Motor Co.", ("Honda Motor", "Honda")),
+])
+def test_a_generic_first_word_alone_never_counts_as_naming_the_company(name, aliases):
+    assert default_search(name).aliases == aliases
+
+
+def test_legal_names_headlines_do_not_use_are_seeded():
+    assert seeded("DAI.BE").query == '"Mercedes-Benz"'
+    assert {s: seeded(s).query for s in ("AMD", "2330.TW", "COST", "WAB")} == {
+        "AMD": '"AMD"', "2330.TW": '"TSMC"', "COST": '"Costco"', "WAB": '"Wabtec"'}
+
+
+def test_a_search_name_cannot_change_while_the_backfill_runs(env):
+    ctx, *_ = env
+    with single_flight(ctx, JOB, LEASE_S):
+        with pytest.raises(JobAlreadyRunning, match="cancel it"):
+            set_search_name(ctx, "GM", '"GM"')
+        with pytest.raises(JobAlreadyRunning, match="cancel it"):
+            clear_search_name(ctx, "GM")
+    assert set_search_name(ctx, "GM", '"GM"')[0] == "GM"

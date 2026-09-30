@@ -90,6 +90,7 @@ SEEDS: dict[str, SearchName] = {
     "CNR.TO": _seed('"Canadian National Railway" OR "CN Rail"', "Canadian National"),
     "PETR3.SA": _seed('"Petrobras"'),
     # Map companies.
+    # MAN SE has been delisted since 2021: this line is effectively Traton, MAN's listed parent.
     "MAN.DE": _seed('"MAN Truck" OR "MAN SE" OR "MAN Energy Solutions" OR "Traton"', "MAN"),
     "IBM": _seed('"IBM"'),
     "BMW.DE": _seed('"BMW"'),
@@ -107,6 +108,21 @@ SEEDS: dict[str, SearchName] = {
     "KRZ.IR": _seed('"Kerry Group"', "Kerry"),
     "VALE3.SA": _seed('"Vale" (mining OR iron OR nickel OR shares)'),
     "FP.PA": _seed('"TotalEnergies"'),
+    "DAI.BE": _seed('"Mercedes-Benz"', "Mercedes"),
+    "AMD": _seed('"AMD"'),
+    "2330.TW": _seed('"TSMC"'),
+    "COST": _seed('"Costco"'),
+    "UBER": _seed('"Uber"'),
+    "CSCO": _seed('"Cisco"'),
+    "MU": _seed('"Micron"'),
+    "PHIA.AS": _seed('"Philips"'),
+    "AD.AS": _seed('"Ahold Delhaize"'),
+    "AI.PA": _seed('"Air Liquide"'),
+    "601398.SS": _seed('"ICBC"'),
+    "EBK.DE": _seed('"EnBW"'),
+    "WAB": _seed('"Wabtec"'),
+    "LULU": _seed('"Lululemon"'),
+    "BIP": _seed('"Brookfield Infrastructure"'),
 }
 
 
@@ -117,14 +133,7 @@ def seeded(symbol: str) -> SearchName | None:
 # Share-class and listing words, and long legal forms short_name keeps, that no headline uses.
 _LISTING_WORDS = re.compile(r"[\s,]+(?:class [a-z]\b|common stock|ordinary shares|sponsored adr|adr|ads|gdr|"
                             r"aktiengesellschaft|societe europeenne)\b.*$", re.IGNORECASE)
-_LEFTOVERS = re.compile(r"(?:[\s,]+(?:&|and|company|companies|p\.l\.c\.?|\(the\)))+\s*$", re.IGNORECASE)
-# First words that name no company on their own, so a headline using only them is not counted
-# as naming it ("Taiwan", "International").
-_GENERIC = frozenset({
-    "american", "british", "canadian", "china", "chinese", "first", "general", "global", "international", "japan",
-    "national", "royal", "taiwan", "united", "universal", "western", "eastern", "northern", "southern", "new",
-    "bank", "banco", "grupo", "compagnie", "societe", "industrial", "industrias", "industria",
-})
+_LEFTOVERS = re.compile(r"(?:[\s,]+(?:&|and|company|companies|p\.l\.c\.?|plc|\(the\)))+\s*$", re.IGNORECASE)
 # One-word company names that are also everyday words or places, found on the live maps.
 _COMMON_WORDS = frozenset({
     "oracle", "target", "orange", "flex", "vale", "shell", "total", "puma", "corning", "travelers", "prudential",
@@ -132,6 +141,15 @@ _COMMON_WORDS = frozenset({
 })
 SHORT_NAME = 4
 """A one-word name this short (MAN, SAP, DBS, NIO) is an acronym or a word in many headlines."""
+# First words that name no company on their own, so a headline using only them is not counted as
+# naming it ("Taiwan", "Home" of Home Depot, "Public" of Public Storage).
+_GENERIC = frozenset({
+    "advanced", "american", "asian", "atlas", "bank", "banco", "british", "canadian", "central", "check", "china",
+    "chinese", "church", "compagnie", "crown", "delivery", "deutsche", "digital", "east", "eastern", "first",
+    "general", "global", "grupo", "home", "industria", "industrial", "industrias", "international", "japan",
+    "koninklijke", "national", "new", "north", "northern", "public", "royal", "societe", "south", "southern",
+    "sunny", "taiwan", "texas", "union", "united", "universal", "west", "western",
+})
 MIN_NAME = 3
 """A shorter name ("BT") matches every headline with those letters: the fuller one is searched."""
 

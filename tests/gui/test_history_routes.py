@@ -41,3 +41,13 @@ async def test_backfill_history_is_queued_as_one_job_and_pressed_again_joins_it(
     assert first.status_code == 202 and first.json()["kind"] == "history"
     assert again.json()["id"] == first.json()["id"]
     assert (await loaded.post("/api/jobs/history?watchlist=nope")).status_code == 404
+
+
+async def test_a_search_name_is_refused_while_the_backfill_runs(loaded, ctx):
+    from oracle.services.history_service import JOB, LEASE_S
+    from oracle.services.jobs_service import single_flight
+
+    watch(ctx, "KO")
+    with single_flight(ctx, JOB, LEASE_S):
+        put = await loaded.put("/api/history/names/KO", json={"query": "Coca-Cola"})
+    assert put.status_code == 409 and "cancel it" in put.json()["error"]

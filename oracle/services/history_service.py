@@ -19,11 +19,11 @@ from oracle.net.gate import SourceGate
 from oracle.research.news import GOOGLE_NEWS, FeedUnreadable, google_news_params, parse_google_news
 from oracle.research.tools import ToolError
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, PriceUnavailable, UnknownSymbol
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning, PriceUnavailable, UnknownSymbol
 from oracle.services.history_names import SearchName, default_search, is_listing_code, mentions, seeded
 from oracle.services.http import open_client
 from oracle.services.industry_service import industry_map
-from oracle.services.jobs_service import Held, single_flight
+from oracle.services.jobs_service import Held, job_statuses, single_flight
 from oracle.services.never_list import never_company
 from oracle.services.prices_service import backfill_listing, price_sources
 from oracle.services.research_tools.filings import NoFilings, filing_article, filings_since, submissions
@@ -127,6 +127,7 @@ def set_search_name(ctx: AppContext, symbol: str, query: str, aliases: Sequence[
     """Search the company's news by `query` (a quoted phrase, several joined by OR, context words)
     or with `skip` not at all; the headlines naming one of `aliases` count as on topic. Its news
     found so far is forgotten, so it is asked again. Returns (primary listing, windows forgotten)."""
+    _refuse_while_running(ctx)
     query = query.strip()
     if not skip and not query:
         raise InvalidQuery("a search name needs a query, or skip")
@@ -140,6 +141,7 @@ def set_search_name(ctx: AppContext, symbol: str, query: str, aliases: Sequence[
 
 
 def clear_search_name(ctx: AppContext, symbol: str) -> tuple[str, int]:
+    _refuse_while_running(ctx)
     symbol = _primary(ctx, symbol)
     forgotten = HistoryRepo(ctx.conn).clear_name(symbol)
     if forgotten is None:
@@ -531,6 +533,14 @@ class _Counting:
     async def post(self, *args, **kwargs):
         self._result.requests += 1
         return await self._client.post(*args, **kwargs)
+
+
+def _refuse_while_running(ctx: AppContext) -> None:
+    """A run reads each company's search name once, at its start: a name changed under it would
+    leave the windows it has still to ask searched by the old one and never asked again."""
+    if any(s.job == JOB and s.stale_reason is None for s in job_statuses(ctx)):
+        raise JobAlreadyRunning("the history backfill is running: cancel it (Activity tab), then change the "
+                                "search name; the next run asks that company's news again")
 
 
 def _primary(ctx: AppContext, symbol: str) -> str:
