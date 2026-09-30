@@ -185,6 +185,7 @@ def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequ
                     while other and not halt():
                         say(f"{run.scored} of {len(todo)} read; waiting for {other}")
                         laya_service.wait(laya_service.YIELD_STEP_S)
+                        held.check()
                         other = busy()
                     if other:
                         run.stopped = "cancelled"
