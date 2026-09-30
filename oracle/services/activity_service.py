@@ -63,7 +63,7 @@ RECENT = 50
 PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
-PREEMPTED_BY = ("research", "tick", "ask", "discover")
+PREEMPTED_BY = ("research", "tick", "ask", "discover", "industry")
 """Kinds of work that need the model: a replay study or a regime-AI backtest gives way to them."""
 LIVE_WORK = (*PREEMPTED_BY, "prices")
 """Kinds of work the history backfill steps aside for: they read the same news and price sources."""
@@ -582,10 +582,18 @@ def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
                          progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
-def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST) -> Job:
+LAYA_CPU = "cpu"
+"""The last part of a Laya history subject that allowed the CPU."""
+_BUT_INDUSTRY = tuple(k for k in PREEMPTED_BY if k != "industry")
+"""What an industry job gives way to: never itself."""
+
+
+def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST,
+                        allow_cpu: bool = False) -> Job:
     """Score the backfilled history of `watchlist` and its industry maps with Laya per (article,
-    target) pair (hours). It waits while research, a tick, a question or discovery runs, closing
-    the model; a Cancel stops it between batches; a retry resumes where it stopped."""
+    target) pair (hours). It waits while research, a tick, a question, discovery or industry
+    research runs here or elsewhere, closing the model, and for GPU room unless `allow_cpu`; a
+    Cancel stops it between batches; a retry resumes where it stopped."""
     if not ctx.config.laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
     name = watchlist_symbols(ctx, watchlist)[0]
@@ -593,12 +601,15 @@ def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEF
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        r = score_history(c, name, stop=stopped.is_set, busy=lambda: _model_work(runner), on_progress=stage.append)
+        r = score_history(c, name, allow_cpu=allow_cpu, stop=stopped.is_set, busy=lambda: _model_work(runner),
+                          on_progress=stage.append)
         if r.stopped and r.stopped != "cancelled":
             raise ServiceError(r.summary)
         return r
 
-    return runner.submit("laya_history", f"Laya on history ({name} and industry maps)", work, subject=name,
+    label = f"Laya on history ({name} and industry maps)" + (", CPU allowed" if allow_cpu else "")
+    subject = BACKTEST_SEP.join((name, LAYA_CPU)) if allow_cpu else name
+    return runner.submit("laya_history", label, work, subject=subject,
                          link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
@@ -664,7 +675,8 @@ def submit_industry(ctx: AppContext, runner: JobRunner, symbol: str | None = Non
 
     async def work(c: AppContext):
         return await research_industry(c, [listing] if listing else None, fresh_h=BUTTON_FRESH_H,
-                                       stop=stopped.is_set, busy=lambda: _model_work(runner), on_progress=stage.append)
+                                       stop=stopped.is_set, busy=lambda: _live_work(runner, _BUT_INDUSTRY),
+                                       on_progress=stage.append)
 
     label = f"Research industry {listing}" if listing else "Research industry (held, watched and main list)"
     return runner.submit("industry", label, work, subject=listing or INDUSTRY_DAILY,
@@ -830,7 +842,9 @@ def _retry_laya(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_laya_history(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_laya_history(ctx, runner, job.subject or DEFAULT_LIST)
+    subject = job.subject or DEFAULT_LIST
+    cpu = subject.endswith(BACKTEST_SEP + LAYA_CPU)
+    return submit_laya_history(ctx, runner, subject.removesuffix(BACKTEST_SEP + LAYA_CPU), cpu)
 
 
 def _retry_laya_test(ctx: AppContext, runner: JobRunner, job) -> Job:

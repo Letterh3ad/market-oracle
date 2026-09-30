@@ -8,14 +8,15 @@ import math
 from bisect import bisect_left
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from oracle.analysts.breaks import is_price, steady
 from oracle.market.bars import Bar
 
 __all__ = ["MIN_COUNTED", "MIN_DAYS", "MIN_NAMES", "PEER_SLACK_DAYS", "T_BAR", "Daily", "SegmentIC", "Verdict",
-           "combine", "fit_weights", "lookback", "mean", "newey_west_t", "own_return", "pct_ranks", "span_return",
-           "spearman", "verdict"]
+           "combine", "date_only", "fit_weights", "known_moment", "lookback", "mean", "newey_west_t", "own_return",
+           "pct_ranks", "session_open", "span_return", "spearman", "usable_day", "verdict"]
 
 MIN_NAMES = 5
 """Companies a day's IC needs."""
@@ -175,13 +176,14 @@ def span_return(bars: Sequence[Bar], days: Sequence[date], start: date, end: dat
 
 
 Daily = Mapping[date, Mapping[str, tuple[int, float, float]]]
-"""Feature day -> relation -> (articles, sum of direction x prob, sum of relevance)."""
+"""First usable decision day -> relation -> (articles, sum of direction x prob, sum of relevance)."""
 
 
 def lookback(daily: Daily, day: date, days: int, relations: Sequence[str]) -> dict[str, float]:
-    """The features a decision on `day` sees: feature days from `day - days` to the day before."""
+    """The features a decision on `day` sees: articles first usable on one of the `days` days up to
+    and including it; `own_attention` = log(1 + own articles) is the news-attention baseline."""
     sums = {r: [0, 0.0, 0.0] for r in relations}
-    for k in range(1, days + 1):
+    for k in range(days):
         for r, (n, score, relevance) in daily.get(day - timedelta(days=k), {}).items():
             if r in sums:
                 s = sums[r]
@@ -194,4 +196,60 @@ def lookback(daily: Daily, day: date, days: int, relations: Sequence[str]) -> di
         out[f"{r}_mean"] = score / n if n else 0.0
         if r == "own":
             out["own_relevance"] = relevance / n if n else 0.0
+            out["own_attention"] = math.log1p(n)
     return out
+
+
+PACIFIC = ZoneInfo("America/Los_Angeles")
+
+
+def _utc(stamp: str) -> datetime:
+    return datetime.fromisoformat(stamp).astimezone(timezone.utc)
+
+
+def date_only(stamp: str) -> bool:
+    """A stamp that gives a day, not a time: exactly midnight US Pacific (Google News) or UTC (SEC)."""
+    t = _utc(stamp)
+    return t.time() == time(0) or t.astimezone(PACIFIC).time() == time(0)
+
+
+def known_moment(stamp: str) -> datetime:
+    """When an article was surely known: a date-only stamp at the end of its day (24 hours later)."""
+    t = _utc(stamp)
+    return t + timedelta(days=1) if date_only(stamp) else t
+
+
+_OPENS = {
+    "": ("America/New_York", time(9, 30)), "TO": ("America/Toronto", time(9, 30)),
+    "SA": ("America/Sao_Paulo", time(10)), "L": ("Europe/London", time(8)),
+    "DE": ("Europe/Berlin", time(9)), "F": ("Europe/Berlin", time(9)), "PA": ("Europe/Paris", time(9)),
+    "AS": ("Europe/Amsterdam", time(9)), "MC": ("Europe/Madrid", time(9)), "MI": ("Europe/Rome", time(9)),
+    "BR": ("Europe/Brussels", time(9)), "SW": ("Europe/Zurich", time(9)), "CO": ("Europe/Copenhagen", time(9)),
+    "OL": ("Europe/Oslo", time(9)), "ST": ("Europe/Stockholm", time(9)), "HE": ("Europe/Helsinki", time(10)),
+    "VI": ("Europe/Vienna", time(9)), "IR": ("Europe/Dublin", time(8)), "T": ("Asia/Tokyo", time(9)),
+    "AX": ("Australia/Sydney", time(10)), "KS": ("Asia/Seoul", time(9)), "KQ": ("Asia/Seoul", time(9)),
+    "SI": ("Asia/Singapore", time(9)), "HK": ("Asia/Hong_Kong", time(9, 30)), "NS": ("Asia/Kolkata", time(9, 15)),
+    "BO": ("Asia/Kolkata", time(9, 15)), "SS": ("Asia/Shanghai", time(9, 30)), "SZ": ("Asia/Shanghai", time(9, 30)),
+    "TW": ("Asia/Taipei", time(9)), "JO": ("Africa/Johannesburg", time(9)),
+}
+EARLIEST = ("Pacific/Auckland", time(10))
+"""An exchange not listed opens at the earliest open there is, so nothing reaches it early."""
+
+
+def _exchange(symbol: str) -> tuple[ZoneInfo, time]:
+    suffix = symbol.rsplit(".", 1)[1].upper() if "." in symbol else ""
+    zone, opens = _OPENS.get(suffix, EARLIEST)
+    return ZoneInfo(zone), opens
+
+
+def session_open(symbol: str, day: date) -> datetime:
+    """The listing's open on its local `day`, in UTC."""
+    zone, opens = _exchange(symbol)
+    return datetime.combine(day, opens, zone).astimezone(timezone.utc)
+
+
+def usable_day(symbol: str, known: datetime) -> date:
+    """The first local day whose open comes strictly after `known`: the first decision it may feed."""
+    zone, opens = _exchange(symbol)
+    local = known.astimezone(zone)
+    return local.date() + timedelta(days=1) if local.time() >= opens else local.date()

@@ -17,8 +17,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
 
 from oracle.analysts.predictive import (
-    MIN_DAYS, SegmentIC, combine, fit_weights, lookback, mean, newey_west_t, own_return, span_return, spearman,
-    verdict,
+    MIN_DAYS, PEER_SLACK_DAYS, SegmentIC, combine, fit_weights, known_moment, lookback, mean, newey_west_t, own_return,
+    span_return, spearman, usable_day, verdict,
 )
 from oracle.broker.walk_forward import segments
 from oracle.market.bars import Bar
@@ -27,7 +27,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.history_service import Coverage, company_history, coverage, history_companies
 from oracle.services.industry_research_service import KIND_RELATION, relation_for_kinds
 from oracle.services.industry_service import Related
-from oracle.services.laya_features import daily_features, known_day
+from oracle.services.laya_features import daily_features
 from oracle.services.laya_history_service import MapSubject, map_subjects
 from oracle.services.laya_service import MODEL_TAG, ScoredArticle
 from oracle.services.watch_service import DEFAULT_LIST
@@ -49,6 +49,8 @@ SENSITIVITY_RELATIONS = ("own", "competitor", "supplier", "customer", "industry"
 MAIN_LINK_SOURCES = ("user", "discovery", "chat")
 """Links the main run counts; 03's `filing` and `laya` links wait for the sensitivity run."""
 INDUSTRY_SOURCES = ("industry", "industry_group")
+BASELINE = "own_attention"
+"""log(1 + own articles in the window): news attention alone, Laya's reading left out."""
 MIN_INDUSTRY = 3
 COVERAGE_SHARE = 0.5
 CAVEAT = ("Survivorship: today's main list and industry maps taken back in time. Laya's probabilities are "
@@ -68,7 +70,7 @@ def relation_for(own: set[int], about: dict[int, list[Related]], sensitivity: bo
             return None
         if sensitivity:
             return relation_for_kinds([k for r in related for k in r.kinds])
-        end = (known_day(s.known_at) + timedelta(days=1)).isoformat()
+        end = (known_moment(s.known_at).date() + timedelta(days=1)).isoformat()
         found = set()
         for r in related:
             for x in r.relations:
@@ -110,7 +112,8 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
             for i in company_history(ctx, s.symbol):
                 about.setdefault(i, []).append(s.related)
         rows = daily_features(ctx, m, first, end, model=model, history=True,
-                              relation_for=relation_for(set(company_history(ctx, m)), about, sensitivity))
+                              relation_for=relation_for(set(company_history(ctx, m)), about, sensitivity),
+                              day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)))
         days: dict[date, dict[str, tuple[int, float, float]]] = {}
         for r in rows:
             days.setdefault(r.day, {})[r.relation] = (r.articles, r.score, r.relevance)
@@ -162,6 +165,11 @@ class HorizonResult:
     passed: bool
     positive: int
     counted: int
+    baseline_ic: float | None = None
+    """The news-attention baseline's IC over the same counted days."""
+    baseline_t: float | None = None
+    beats_baseline: bool | None = None
+    """Laya only counts as useful when its combined IC beats the baseline's (the bar is separate)."""
 
 
 @dataclass(frozen=True)
@@ -184,7 +192,7 @@ class LayaTest:
 
 def _features(relations: Sequence[str]) -> tuple[list[str], list[str]]:
     """(in the combined score, secondary): per-article means and own relevance, then the sums."""
-    return [f"{r}_mean" for r in relations] + ["own_relevance"], [f"{r}_sum" for r in relations]
+    return [f"{r}_mean" for r in relations], [f"{r}_sum" for r in relations] + ["own_relevance", BASELINE]
 
 
 def _quarter_span(q: str) -> tuple[date, date]:
@@ -247,7 +255,8 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
                 ics[f][t] = ic
     out_segments, counted_ics = [], []
     for s, e in spans:
-        train = [t for t in obs if s - timedelta(days=FIT_DAYS) <= t < s and max(x[2] for x in obs[t]) < s]
+        train = [t for t in obs if s - timedelta(days=FIT_DAYS) <= t < s
+                 and max(x[2] for x in obs[t]) + timedelta(days=PEER_SLACK_DAYS) < s]
         w = fit_weights({f: [ics[f][t] for t in train if t in ics[f]] for f in in_score})
         seg = []
         if any(w.values()):
@@ -275,8 +284,10 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
     vals = [ic for _, ic in sorted(counted_ics)]
     ic, t = mean(vals), newey_west_t(vals, h)
     v = verdict(ic, t, [SegmentIC(x.start, x.end, x.ic, x.t, x.days, x.counted, x.why) for x in out_segments])
+    base = next(f for f in features if f.name == BASELINE)
+    beats = None if ic is None or base.ic is None else ic > base.ic
     return HorizonResult(h, lb, _r(ic), _r(t), len(vals), sum(len(x) for x in obs.values()), tuple(out_segments),
-                         tuple(features), v.label, v.passed, v.positive, v.counted)
+                         tuple(features), v.label, v.passed, v.positive, v.counted, base.ic, base.t, beats)
 
 
 def _r(x: float | None) -> float | None:

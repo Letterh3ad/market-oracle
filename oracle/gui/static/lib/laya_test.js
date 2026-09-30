@@ -7,6 +7,8 @@ import { repaint } from "./repaint.js";
 import { busyButton, runJob } from "./ui.js";
 
 const num = (v, digits = 4) => (v == null ? "n/a" : (v > 0 ? "+" : "") + v.toFixed(digits));
+const BEATS = { true: "beats", false: "does not beat", null: "cannot be set against",
+  undefined: "cannot be set against" };
 const tone = (label) => (label === "PASS" ? "up" : label === "FAIL" ? "down" : "dim");
 
 function horizon(h) {
@@ -29,6 +31,8 @@ function horizon(h) {
       el("span", { class: tone(h.verdict) }, h.verdict)),
     el("p", { class: "small" }, `IC ${num(h.ic)}, t ${num(h.t, 2)}, ${h.days} IC days, positive in ${h.positive} of `
       + `${h.counted} counted segments.`),
+    el("p", { class: "small" }, `News-attention baseline (own_attention): IC ${num(h.baseline_ic)}, t `
+      + `${num(h.baseline_t, 2)}. Laya ${BEATS[String(h.beats_baseline)]} it (it counts as useful only if it does).`),
     segments, features,
   ];
 }
@@ -63,9 +67,10 @@ function layaTestSection() {
       ...(got.tests.length ? got.tests.map(result) : [el("p", { class: "dim" }, "No test run yet.")])]);
   }
 
+  const cpu = el("input", { type: "checkbox", "aria-label": "Allow the CPU" });
   const score = busyButton("Score history with Laya", async (onState) => {
     try {
-      const r = await runJob("/api/jobs/laya-history", onState);
+      const r = await runJob(`/api/jobs/laya-history${cpu.checked ? "?allow_cpu=true" : ""}`, onState);
       say(r.summary);
     } catch (err) {
       say(err.message);
@@ -105,6 +110,8 @@ function layaTestSection() {
       + "in six-month segments from 2022-09-21 against a bar fixed before any result: rank IC above 0 with t above 2 "
       + "overall and positive in most counted segments, at both horizons. Laya's probabilities are uncalibrated."),
     el("div", { class: "row" }, score, " ", estimate, " ", test(false), " ", test(true)),
+    el("div", { class: "row small" }, el("label", null, cpu, " Allow the CPU when the GPU has no room (about 40 times "
+      + "slower: days, not hours); otherwise scoring waits for GPU room")),
     plan, note, body);
   return { node, start };
 }

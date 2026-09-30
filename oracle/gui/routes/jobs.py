@@ -150,11 +150,12 @@ async def cutoff_probe(model: str | None = None, ctx: AppContext = Depends(get_c
 
 
 @router.post("/laya-history", status_code=202)
-async def laya_history(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_ctx),
+async def laya_history(watchlist: str = DEFAULT_LIST, allow_cpu: bool = False, ctx: AppContext = Depends(get_ctx),
                        runner: JobRunner = Depends(get_runner)) -> dict:
     """Score the backfilled history of a list and its maps with Laya per (article, target) pair
-    (hours); it waits while live model work runs, and a retry resumes."""
-    return shapes.job(submit_laya_history(ctx, runner, watchlist))
+    (hours); it waits while live model work runs and for GPU room unless `allow_cpu`, and a retry
+    resumes."""
+    return shapes.job(submit_laya_history(ctx, runner, watchlist, allow_cpu))
 
 
 @router.post("/laya-test", status_code=202)

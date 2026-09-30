@@ -107,6 +107,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Ledgers tab, Backtest, "Laya predictive test" card: its buttons and table.
     "laya history": "POST /api/jobs/laya-history",
     "laya history --list": "POST /api/jobs/laya-history",
+    "laya history --allow-cpu": "POST /api/jobs/laya-history",
     "laya history --plan": "GET /api/laya/plan",
     "laya history --own-only": Exempt("a measuring run on a DB copy; the card scores the whole history"),
     "laya history --only": Exempt("a measuring run on a DB copy; the card scores the whole history"),

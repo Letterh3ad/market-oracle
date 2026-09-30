@@ -19,6 +19,7 @@ from oracle.services.history_names import default_search
 from oracle.services.history_service import Company, company_history, history_companies, plain_company
 from oracle.services.industry_research_service import relation_for_kinds
 from oracle.services.industry_service import Related, industry_map
+from oracle.services.jobs_service import job_statuses, single_flight
 from oracle.services.laya_service import MODEL_TAG, SharedScorer
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.db import to_utc_iso
@@ -26,9 +27,15 @@ from oracle.store.laya import LayaRepo
 from oracle.store.meta import MetaRepo
 
 __all__ = ["GPU_MS", "LayaHistoryRun", "MapSubject", "PairGroup", "PairPlan", "history_pairs", "last_history_run",
-           "map_subjects", "plan_history", "score_history"]
+           "map_subjects", "model_work_anywhere", "plan_history", "score_history"]
 
 LAST_RUN = "laya_history_last_run"
+JOB = "laya_history"
+LEASE_S = 1800.0
+GPU_WAIT_S = 60.0
+"""How often a run with no GPU room tries the GPU again."""
+MODEL_LOCKS = ("research", "discovery_chat", "discovery", "tick", "industry_research")
+"""Job locks of live model work (any process) a history run gives way to."""
 GPU_MS = 19.0
 """Milliseconds a pair on the GPU (ticket 01's measure: 11 to 19), for an estimate before any run."""
 CPU_MS = 410.0
@@ -156,43 +163,86 @@ def last_history_run(ctx: AppContext) -> LayaHistoryRun | None:
     return LayaHistoryRun(**json.loads(raw)) if raw else None
 
 
+class _Cancelled(Exception):
+    pass
+
+
+def model_work_anywhere(ctx: AppContext) -> str | None:
+    """Live model work any process holds a lock for (research, discovery, a tick, industry
+    research), by name: read from the job locks, so a CLI run sees the app's work and back."""
+    return next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in MODEL_LOCKS and s.stale_reason is None),
+                None)
+
+
+def _gpu_loader(ctx: AppContext, allow_cpu: bool, stop: Callable[[], bool],
+                say: Callable[[str], None]) -> Callable[[], Scorer]:
+    """A loader that never settles for the CPU unless allowed: a model that loads there is closed
+    and the GPU is tried again every GPU_WAIT_S, until it has room or `stop`."""
+    cpu_ok = allow_cpu or ctx.config.laya.device == "cpu"
+
+    def load() -> Scorer:
+        while True:
+            model = laya_service.load_scorer(ctx)
+            if cpu_ok or model.device != "cpu":
+                return model
+            model.close()
+            say(f"waiting for GPU room: Laya loaded on the CPU (about {CPU_MS:.0f} ms a pair against {GPU_MS:.0f}); "
+                f"trying again every {GPU_WAIT_S:.0f} s (allow the CPU to score there)")
+            for _ in range(int(GPU_WAIT_S / laya_service.YIELD_STEP_S)):
+                if stop():
+                    raise _Cancelled
+                laya_service.wait(laya_service.YIELD_STEP_S)
+
+    return load
+
+
 def score_history(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Sequence[str] | None = None,
-                  own_only: bool = False, scorer: Scorer | None = None, stop: Callable[[], bool] | None = None,
-                  busy: Callable[[], str | None] | None = None,
+                  own_only: bool = False, allow_cpu: bool = False, scorer: Scorer | None = None,
+                  stop: Callable[[], bool] | None = None, busy: Callable[[], str | None] | None = None,
                   on_progress: Callable[[str], None] | None = None) -> LayaHistoryRun:
-    """Score every pair `history_pairs` plans that this model has not scored, own groups first.
-    A model it loads is closed at the end and while `busy` names live model work."""
+    """Score every pair `history_pairs` plans that this model has not scored, own groups first,
+    holding the `laya_history` lock (one run across processes). A model it loads is closed at the
+    end and while `busy` or any process's live model work runs, and never kept on the CPU unless
+    `allow_cpu` or Settings (`device = "cpu"`) say so."""
     if not ctx.config.laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
     say = on_progress or (lambda _: None)
-    say("planning the pairs")
-    groups = history_pairs(ctx, watchlist, only=only, own_only=own_only)
-    shared = scorer if scorer is not None else SharedScorer(lambda: laya_service.load_scorer(ctx))
-    run = LayaHistoryRun(len({g.target for g in groups}), len(groups))
-    began = time.monotonic()
-    try:
-        for n, g in enumerate(groups, 1):
-            if stop and stop():
-                run.stopped = "cancelled"
-                break
-            where = f"{g.target} {g.relation} ({g.subject}, group {n}/{len(groups)})"
-            t0 = time.monotonic()
-            done = laya_service.score_articles(ctx, g.target, list(g.ids), relation=g.relation, scorer=shared,
-                                               stop=stop, busy=busy, on_progress=lambda line: say(f"{where}: {line}"))
-            run.score_seconds += time.monotonic() - t0 if done.scored else 0.0
-            run.pairs += done.articles
-            run.scored += done.scored
-            run.already += done.already
-            run.device = done.device or run.device
-            if done.stopped:
-                run.stopped = "cancelled" if stop and stop() else "stopped while waiting for live work"
-                break
-            run.groups_done += 1
-    finally:
-        if scorer is None and isinstance(shared, SharedScorer):
-            shared.close()
-        run.seconds = round(time.monotonic() - began, 1)
-        run.score_seconds = round(run.score_seconds, 2)
-        run.finished_at = to_utc_iso(ctx.clock.utcnow())
-        MetaRepo(ctx.conn).set(LAST_RUN, json.dumps(asdict(run)))
+    halt = stop or (lambda: False)
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        def waiting() -> str | None:
+            held.check()
+            return (busy() if busy else None) or model_work_anywhere(ctx)
+
+        say("planning the pairs")
+        groups = history_pairs(ctx, watchlist, only=only, own_only=own_only)
+        shared = scorer if scorer is not None else SharedScorer(_gpu_loader(ctx, allow_cpu, halt, say))
+        run = LayaHistoryRun(len({g.target for g in groups}), len(groups))
+        began = time.monotonic()
+        try:
+            for n, g in enumerate(groups, 1):
+                if halt():
+                    run.stopped = "cancelled"
+                    break
+                where = f"{g.target} {g.relation} ({g.subject}, group {n}/{len(groups)})"
+                done = laya_service.score_articles(ctx, g.target, list(g.ids), relation=g.relation, scorer=shared,
+                                                   stop=halt, busy=waiting,
+                                                   on_progress=lambda line: say(f"{where}: {line}"))
+                run.score_seconds += done.model_seconds
+                run.pairs += done.articles
+                run.scored += done.scored
+                run.already += done.already
+                run.device = done.device or run.device
+                if done.stopped:
+                    run.stopped = "cancelled" if halt() else "stopped while waiting for live work"
+                    break
+                run.groups_done += 1
+        except _Cancelled:
+            run.stopped = "cancelled"
+        finally:
+            if scorer is None and isinstance(shared, SharedScorer):
+                shared.close()
+            run.seconds = round(time.monotonic() - began, 1)
+            run.score_seconds = round(run.score_seconds, 2)
+            run.finished_at = to_utc_iso(ctx.clock.utcnow())
+            MetaRepo(ctx.conn).set(LAST_RUN, json.dumps(asdict(run)))
     return run

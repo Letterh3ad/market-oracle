@@ -6,8 +6,8 @@ from datetime import date, timedelta
 import pytest
 
 from oracle.analysts.predictive import (
-    MIN_NAMES, SegmentIC, combine, fit_weights, lookback, newey_west_t, own_return, pct_ranks, span_return, spearman,
-    verdict,
+    MIN_NAMES, SegmentIC, combine, date_only, fit_weights, known_moment, lookback, newey_west_t, own_return, pct_ranks,
+    session_open, span_return, spearman, usable_day, verdict,
 )
 from oracle.market.bars import Bar
 from tests.analysts.bars import weekdays
@@ -122,13 +122,46 @@ def test_a_peer_return_spans_its_first_bars_on_or_after_the_days_within_slack():
     assert span_return(b, days, days[0] - timedelta(days=9), days[2]) is None, "start too far"
 
 
-def test_lookback_sums_feature_days_before_the_decision_day_only():
+def test_lookback_sums_the_usable_days_up_to_the_decision_day_with_the_attention_baseline():
     d = date(2025, 3, 10)
-    daily = {d - timedelta(days=1): {"own": (2, 1.2, 0.8), "competitor": (4, -0.4, 1.0)},
-             d - timedelta(days=7): {"own": (1, -0.2, 0.1)},
-             d - timedelta(days=8): {"own": (5, 9.0, 5.0)},
-             d: {"own": (3, 7.0, 3.0)}}
+    daily = {d: {"own": (2, 1.2, 0.8), "competitor": (4, -0.4, 1.0)},
+             d - timedelta(days=6): {"own": (1, -0.2, 0.1)},
+             d - timedelta(days=7): {"own": (5, 9.0, 5.0)},
+             d + timedelta(days=1): {"own": (3, 7.0, 3.0)}}
     f = lookback(daily, d, 7, ("own", "competitor", "industry"))
     assert f == pytest.approx({"own_sum": 1.0, "own_mean": 1.0 / 3, "own_relevance": 0.9 / 3,
-                               "competitor_sum": -0.4, "competitor_mean": -0.1,
+                               "own_attention": math.log(4), "competitor_sum": -0.4, "competitor_mean": -0.1,
                                "industry_sum": 0.0, "industry_mean": 0.0})
+
+
+@pytest.mark.parametrize("stamp, only", [
+    ("2023-07-03T07:00:00+00:00", True),   # midnight Pacific, summer
+    ("2023-01-03T08:00:00+00:00", True),   # midnight Pacific, winter
+    ("2023-03-01T00:00:00+00:00", True),   # an SEC filing day
+    ("2023-01-03T07:00:00+00:00", False),  # 23:00 Pacific the day before
+    ("2023-07-03T07:00:05+00:00", False),
+    ("2023-07-03T13:45:00+00:00", False),
+])
+def test_a_date_only_stamp_is_midnight_pacific_or_utc(stamp, only):
+    assert date_only(stamp) is only
+
+
+def test_a_date_only_stamp_is_known_a_day_later_and_a_timed_one_when_stamped():
+    assert known_moment("2023-07-03T07:00:00+00:00").isoformat() == "2023-07-04T07:00:00+00:00"
+    assert known_moment("2023-07-03T13:45:00+00:00").isoformat() == "2023-07-03T13:45:00+00:00"
+
+
+def test_each_listing_opens_at_its_own_exchanges_local_time_in_utc():
+    assert session_open("AAPL", date(2023, 7, 3)).isoformat() == "2023-07-03T13:30:00+00:00"
+    assert session_open("7203.T", date(2023, 7, 3)).isoformat() == "2023-07-03T00:00:00+00:00"
+    assert session_open("BHP.AX", date(2023, 1, 3)).isoformat() == "2023-01-02T23:00:00+00:00", "Sydney summer"
+    assert session_open("SHEL.L", date(2023, 7, 3)).isoformat() == "2023-07-03T07:00:00+00:00"
+    assert session_open("X.ZZ", date(2023, 7, 3)).isoformat() == "2023-07-02T22:00:00+00:00", "unknown: earliest"
+
+
+def test_a_google_stamp_reaches_tokyo_a_day_after_new_york():
+    known = known_moment("2023-07-03T07:00:00+00:00")
+    assert usable_day("7203.T", known) == date(2023, 7, 5), "known 16:00 JST on the 4th, after that open"
+    assert usable_day("AAPL", known) == date(2023, 7, 4), "known 03:00 in New York on the 4th"
+    assert usable_day("AAPL", known_moment("2023-07-04T13:30:00+00:00")) == date(2023, 7, 5), "at the open is late"
+    assert usable_day("AAPL", known_moment("2023-07-04T13:29:00+00:00")) == date(2023, 7, 4)

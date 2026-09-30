@@ -25,6 +25,8 @@ def register(parser: argparse.ArgumentParser) -> None:
     history.add_argument("--plan", action="store_true", help="count the pairs and estimate the time, scoring nothing")
     history.add_argument("--own-only", action="store_true", help="only each company's own news (a measuring run)")
     history.add_argument("--only", nargs="+", metavar="SYMBOL", help="only these main-list companies (a measuring run)")
+    history.add_argument("--allow-cpu", action="store_true",
+                         help="score on the CPU when the GPU has no room (about 40 times slower); else it waits")
     history.set_defaults(handler=history_cmd)
     test = sub.add_parser("test", help="the pre-registered predictive test over the scored history")
     test.add_argument("--list", default=DEFAULT_LIST)
@@ -62,7 +64,8 @@ def history_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
           f"about {plan.estimate_s / 3600:.1f} h at {plan.ms_per_pair} ms a pair ({plan.basis})")
     if args.plan:
         return 0
-    run = score_history(ctx, args.list, on_progress=lambda line: print(line, flush=True), **kw)
+    run = score_history(ctx, args.list, allow_cpu=args.allow_cpu, on_progress=lambda line: print(line, flush=True),
+                        **kw)
     print(run.summary)
     return 1 if run.stopped else 0
 
@@ -91,8 +94,11 @@ def format_test(t: LayaTest) -> str:
              + ", ".join(f"{r} {n}" for r, n in t.articles.items()),
              f"t-stat: {t.t_method}"]
     for h in t.horizons:
+        beats = {True: "beats", False: "does not beat", None: "cannot be set against"}[h.beats_baseline]
         lines += ["", f"{h.horizon}-day excess return (features over {h.lookback} days): {h.verdict}: IC {_num(h.ic)}, "
                       f"t {_num(h.t, '.2f')}, {h.days} IC days, positive in {h.positive} of {h.counted} counted segments",
+                  f"  news-attention baseline (own_attention): IC {_num(h.baseline_ic)}, t {_num(h.baseline_t, '.2f')}; "
+                  f"Laya {beats} it (useful only if it does)",
                   f"  {'segment':<24} {'IC':>8} {'t':>6} {'days':>5}  counted  weights (fitted on trailing data)"]
         for s in h.segments:
             w = " ".join(f"{k.removesuffix('_mean')}:{v:+.2f}" for k, v in s.weights.items() if v)

@@ -3,18 +3,24 @@ relations counted point in time, no look-ahead, and the fixed bar on synthetic m
 news does and does not lead the price."""
 
 import random
+import time as time_module
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from oracle.config import AnalystsConfig, Config
 from oracle.market.bars import Bar
 from oracle.research.news import Article
-from oracle.services.activity_service import JobRunner, retry, submit_laya_history, submit_laya_test
+from oracle.services.activity_service import PREEMPTED_BY, JobRunner, retry, submit_laya_history, submit_laya_test
 from oracle.services.context import open_context
 from oracle.services.laya_features import known_day
-from oracle.services.laya_history_service import history_pairs, last_history_run, plan_history, score_history
+from oracle.services.errors import JobAlreadyRunning
+from oracle.services.jobs_service import single_flight
+from oracle.services.laya_history_service import (
+    history_pairs, last_history_run, model_work_anywhere, plan_history, score_history,
+)
 from oracle.services.laya_service import SharedScorer, laya_scores
 from oracle.services.laya_test_service import (
     HORIZONS, MAIN_RELATIONS, build_panel, horizon_result, keep_laya_test, laya_tests, run_laya_test,
@@ -49,7 +55,11 @@ async def ctx(tmp_path):
     # Another sector, so it is on HMC's map only through the link.
     rows.append(equity("BWA", "BorgWarner", market_cap="Mid Cap", industry="Machinery", sector="Industrials",
                        industry_group="Capital Goods", currency="USD"))
-    web = FakeWeb(FakeFinanceDatabase(rows), FakeYahoo())
+    # A Tokyo listing on no map, watched only by the tests that need it.
+    rows.append(equity("8058.T", "Mitsubishi Corporation", country="Japan", exchange="JPX", market_cap="Large Cap",
+                       industry="Trading Companies", sector="Industrials", industry_group="Capital Goods",
+                       currency="JPY"))
+    web =FakeWeb(FakeFinanceDatabase(rows), FakeYahoo())
     with open_context(Config(db_path=tmp_path / "o.db", analysts=AnalystsConfig(peers=5)), None, FakeClock(NOW),
                       web.transport) as c:
         await refresh_universe(c)
@@ -142,6 +152,65 @@ def test_a_cancel_stops_between_groups_and_live_work_closes_the_shared_model(ctx
     assert run.scored > 0 and fake.closed and shared.loads == 2, "closed while research ran, loaded again after"
 
 
+def loads(monkeypatch, *devices):
+    """Each model load gives the next device; the models handed out, to check which were closed."""
+    made, left = [], list(devices)
+
+    def load(c):
+        made.append(FakeLaya(MODEL, left.pop(0) if len(left) > 1 else left[0]))
+        return made[-1]
+
+    monkeypatch.setattr("oracle.services.laya_service.load_scorer", load)
+    monkeypatch.setattr("oracle.services.laya_service.wait", lambda s: None)
+    return made
+
+
+def test_a_model_that_loads_on_the_cpu_is_closed_and_the_run_waits_for_gpu_room(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    made = loads(monkeypatch, "cpu", "cpu", "cuda")
+    said = []
+    run = score_history(ctx, on_progress=said.append)
+    assert run.scored == len(MAINS) and run.device == "cuda"
+    assert [m.device for m in made] == ["cpu", "cpu", "cuda"] and made[0].closed and made[1].closed
+    assert any("waiting for GPU room" in line for line in said)
+
+
+def test_the_cpu_is_used_only_when_allowed_or_set_in_settings(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    loads(monkeypatch, "cpu")
+    assert score_history(ctx, allow_cpu=True).device == "cpu"
+    backfill(ctx, "GM", [("GM shares fall", date(2023, 1, 4))])
+    ctx.config = replace(ctx.config, laya=replace(ctx.config.laya, device="cpu"))
+    assert score_history(ctx).device == "cpu"
+
+
+def test_a_cancel_while_waiting_for_gpu_room_stops_the_run(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    loads(monkeypatch, "cpu")
+    asked = iter([False, False] + [True] * 100)
+    run = score_history(ctx, stop=lambda: next(asked))
+    assert run.stopped == "cancelled" and run.scored == 0
+
+
+def test_one_history_run_at_a_time_across_processes_and_it_yields_to_model_work_anywhere(ctx):
+    with single_flight(ctx, "laya_history", 60):
+        with pytest.raises(JobAlreadyRunning):
+            score_history(ctx, scorer=FakeLaya())
+    assert model_work_anywhere(ctx) is None
+    for lock, name in (("tick", "tick"), ("industry_research", "industry research"), ("research", "research")):
+        with single_flight(ctx, lock, 60):
+            assert model_work_anywhere(ctx) == name
+    assert "industry" in PREEMPTED_BY
+
+
+def test_the_measured_time_a_pair_leaves_out_waiting_for_live_work(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    monkeypatch.setattr("oracle.services.laya_service.wait", lambda s: time_module.sleep(0.3))
+    calls = iter([None, "research"] + [None] * 1000)
+    run = score_history(ctx, scorer=FakeLaya(), busy=lambda: next(calls))
+    assert run.seconds >= 0.3 and run.score_seconds < 0.2
+
+
 def test_a_link_counts_only_from_when_it_was_first_known_and_03_links_wait_for_the_sensitivity_run(ctx):
     ctx.conn.execute("UPDATE company_links SET first_seen = '2023-06-01T00:00:00+00:00'")
     ctx.conn.execute("INSERT INTO company_links (symbol, other, relation, source, first_seen, last_seen) "
@@ -164,7 +233,7 @@ def test_future_articles_change_no_feature_before_their_day(ctx):
     backfill(ctx, "HMC", [("Honda shares fall", date(2023, 3, 6)), ("Honda shares fall later", date(2023, 4, 1))])
     score_history(ctx, scorer=FakeLaya())
     after = build_panel(ctx, model=MODEL).daily["HMC"]
-    for day in weekdays(date(2023, 2, 1), date(2023, 3, 6)):
+    for day in weekdays(date(2023, 2, 1), date(2023, 3, 5)):
         assert lookback(after, day, 28, MAIN_RELATIONS) == lookback(before, day, 28, MAIN_RELATIONS), day
     assert lookback(after, date(2023, 3, 7), 7, MAIN_RELATIONS)["own_sum"] == pytest.approx(0.0), "0.8 - 0.8"
 
@@ -177,6 +246,52 @@ def test_an_sec_filing_dated_at_midnight_acts_from_the_next_session(ctx):
     daily = build_panel(ctx, model=MODEL).daily["HMC"]
     assert lookback(daily, date(2023, 3, 1), 7, MAIN_RELATIONS)["own_relevance"] == 0.0
     assert lookback(daily, date(2023, 3, 2), 7, MAIN_RELATIONS)["own_relevance"] == pytest.approx(0.9)
+
+
+def tokyo_news(ctx, items):
+    """(title, stamp) as 8058.T's backfilled news."""
+    ids = ArticleRepo(ctx.conn).save([Article(f"https://n.test/8058/{t}", t, "Wire", at) for t, at in items],
+                                     "google_news", "x")
+    HistoryRepo(ctx.conn).finish(Window("8058.T", "google_news", FIRST, LAST, len(ids), len(ids), 0, 0), ids, "x")
+
+
+def test_a_date_only_google_stamp_reaches_a_tokyo_listing_a_day_after_a_new_york_one(ctx):
+    watch(ctx, "8058.T")
+    stamp = datetime(2023, 7, 3, 7, tzinfo=timezone.utc)
+    tokyo_news(ctx, [("Mitsubishi shares rise", stamp)])
+    backfill_at(ctx, "HMC", [("Honda shares rise", stamp)])
+    score_history(ctx, scorer=FakeLaya())
+    daily = build_panel(ctx, model=MODEL).daily
+    assert list(daily["HMC"]) == [date(2023, 7, 4)], "known 07-04 07:00 UTC, before New York's open"
+    assert list(daily["8058.T"]) == [date(2023, 7, 5)], "after Tokyo's open on the 4th"
+    assert lookback(daily["8058.T"], date(2023, 7, 4), 7, MAIN_RELATIONS)["own_sum"] == 0.0
+    assert lookback(daily["8058.T"], date(2023, 7, 5), 7, MAIN_RELATIONS)["own_sum"] == pytest.approx(0.8)
+
+
+def test_a_headline_about_a_tokyo_session_stamped_midnight_pacific_before_it_never_feeds_that_session(ctx):
+    """The gate's leak: news written during the Tokyo session is stamped the Pacific day before."""
+    watch(ctx, "8058.T")
+    rng = random.Random(3)
+    days = weekdays(date(2023, 1, 9), date(2023, 6, 30))
+    way = {d: rng.choice(("rise", "fall")) for d in days}
+    pacific = ZoneInfo("America/Los_Angeles")
+    tokyo_news(ctx, [(f"Mitsubishi shares {way[d]} {d}", datetime.combine(d - timedelta(days=1), time(0), pacific))
+                     for d in days])
+    score_history(ctx, scorer=FakeLaya())
+    daily = build_panel(ctx, model=MODEL).daily["8058.T"]
+    for d in days:
+        before = d - timedelta(days=1)
+        want = {"own": (1, 0.8 if way[before] == "rise" else -0.8, 0.9)} if before in way else None
+        assert daily.get(d) == want, "a session's own headline first feeds the next one"
+    hits = sum(1 for d in days if (x := lookback(daily, d, 1, MAIN_RELATIONS)["own_sum"])
+               and (x > 0) == (way[d] == "rise"))
+    assert hits < 0.65 * len(days), "no better than chance at the session it describes"
+
+
+def backfill_at(ctx, symbol, items):
+    ids = ArticleRepo(ctx.conn).save([Article(f"https://n.test/{symbol}/{t}", t, "Wire", at) for t, at in items],
+                                     "google_news", "x")
+    HistoryRepo(ctx.conn).finish(Window(symbol, "google_news", FIRST, LAST, len(ids), len(ids), 0, 0), ids, "x")
 
 
 def test_future_bars_and_articles_change_no_segment_that_ended_before_them(ctx):
@@ -202,8 +317,11 @@ def test_news_that_leads_the_price_passes_the_bar_and_the_result_is_kept(ctx):
     assert [s.counted for s in five.segments] == [False, True, True]
     assert five.segments[0].why == "no trailing fit"
     assert five.segments[1].weights["own_mean"] > 0, "fitted on the first segment's days only"
+    assert set(five.segments[1].weights) == {"own_mean", "competitor_mean", "industry_mean"}, "relevance left out"
+    assert five.baseline_ic is not None and five.beats_baseline, "direction beats news attention alone"
     assert five.verdict == "PASS" and five.ic > 0 and five.t > 2 and five.positive == 2
-    assert {f.name for f in five.features if not f.in_score} == {"own_sum", "competitor_sum", "industry_sum"}
+    assert {f.name for f in five.features if not f.in_score} == {"own_sum", "competitor_sum", "industry_sum",
+                                                                 "own_relevance", "own_attention"}
     assert t.companies == len(MAINS) and t.articles["own"] > 0 and "Survivorship" in t.caveat
     kept = keep_laya_test(ctx, t)
     assert laya_tests(ctx) == [kept] and kept.id is not None and kept.horizons == t.horizons
@@ -229,18 +347,19 @@ def test_a_thin_segment_is_named_and_left_out(ctx):
 
 async def test_jobs_score_and_test_and_retry_rebuilds_them(ctx, monkeypatch):
     backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
-    monkeypatch.setattr("oracle.services.laya_service.load_scorer", lambda c: FakeLaya(MODEL))
+    monkeypatch.setattr("oracle.services.laya_service.load_scorer", lambda c: FakeLaya(MODEL, "cuda"))
     runner = JobRunner(ctx)
     job = submit_laya_history(ctx, runner)
     done = await runner.wait(job.id)
     assert done.state == "done" and done.result.scored == len(MAINS)
     t = await runner.wait(submit_laya_test(ctx, runner, sensitivity=True, model=MODEL).id)
     assert t.state == "done" and t.result.run == "sensitivity" and laya_tests(ctx)[0].id == t.result.id
-    for submit in (lambda: submit_laya_history(ctx, runner), lambda: submit_laya_test(ctx, runner, model=MODEL)):
+    for submit in (lambda: submit_laya_history(ctx, runner), lambda: submit_laya_history(ctx, runner, allow_cpu=True),
+                   lambda: submit_laya_test(ctx, runner, model=MODEL)):
         job = submit()
         runner.cancel(job.id)
         await runner.wait(job.id)
         again = retry(ctx, runner, job.id)
-        assert (again.kind, again.subject) == (job.kind, job.subject) and again.id != job.id
+        assert (again.kind, again.subject, again.label) == (job.kind, job.subject, job.label) and again.id != job.id
         await runner.wait(again.id)
     await runner.stop()

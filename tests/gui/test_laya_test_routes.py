@@ -16,7 +16,7 @@ async def test_scoring_the_history_and_the_test_are_jobs_whose_results_the_card_
                                               datetime(2023, 1, 3, 12, tzinfo=timezone.utc))], "google_news", "x")
     HistoryRepo(ctx.conn).finish(Window("AAPL", "google_news", datetime(2023, 1, 1).date(), datetime(2023, 4, 1).date(),
                                         1, 1, 0, 0), ids, "x")
-    monkeypatch.setattr(laya_service, "load_scorer", lambda c: FakeLaya(tag=MODEL_TAG))
+    monkeypatch.setattr(laya_service, "load_scorer", lambda c: FakeLaya(tag=MODEL_TAG, device="cuda"))
     assert (await loaded.get("/api/laya/tests")).json() == {"tests": [], "last_scoring": None}
     plan = (await loaded.get("/api/laya/plan")).json()
     assert (plan["targets"], plan["unscored"]) == (1, 1)

@@ -15,7 +15,8 @@ SEGMENTS = [{"start": "2022-09-21", "end": "2023-03-20", "ic": None, "t": None, 
 HORIZON = {"horizon": 5, "lookback": 7, "ic": 0.031, "t": 2.4, "days": 120, "observations": 5000, "segments": SEGMENTS,
            "features": [{"name": "own_mean", "ic": 0.02, "t": 1.1, "days": 120, "positive": 1, "in_score": True},
                         {"name": "own_sum", "ic": 0.01, "t": 0.5, "days": 110, "positive": 1, "in_score": False}],
-           "verdict": "INCONCLUSIVE", "passed": False, "positive": 1, "counted": 1}
+           "verdict": "INCONCLUSIVE", "passed": False, "positive": 1, "counted": 1, "baseline_ic": 0.04,
+           "baseline_t": 2.1, "beats_baseline": False}
 TEST = {"run": "main", "label": "main (links first known by the article's day)", "model": "laya@x",
         "start": "2022-09-21", "end": "2023-09-20", "companies": 51, "articles": {"own": 900, "competitor": 4000},
         "horizons": [HORIZON], "verdict": "INCONCLUSIVE", "passed": False, "run_at": "2026-09-30T23:00:00+00:00",
@@ -48,6 +49,19 @@ def test_the_card_shows_the_kept_table_verdict_segments_left_out_and_the_caveat(
     assert "no: no trailing fit" in text and "own_mean +0.70, own_relevance -0.30" in text
     assert "own_sum (secondary)" in text and "Last scoring run: finished: 51 groups." in text
     assert "Survivorship" in text
+    assert "News-attention baseline (own_attention): IC +0.0400, t +2.10. Laya does not beat it" in text
+
+
+def test_scoring_asks_for_the_cpu_only_when_the_box_is_ticked():
+    [asked] = run("""
+        section.start(); await settle();
+        asked.length = 0;
+        button(node, "Score history with Laya").fire("click"); await settle();
+        labelled(node, "Allow the CPU").checked = true;
+        button(node, "Score history with Laya").fire("click"); await settle();
+        console.log(JSON.stringify([asked.filter((a) => a.startsWith("POST"))]));
+    """)
+    assert asked == ["POST /api/jobs/laya-history", "POST /api/jobs/laya-history?allow_cpu=true"]
 
 
 def test_the_sensitivity_button_starts_that_run_and_the_estimate_reads_the_plan():
