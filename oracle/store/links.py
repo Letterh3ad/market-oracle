@@ -42,6 +42,18 @@ class LinkRepo:
             self._conn.executemany("INSERT OR IGNORE INTO company_link_evidence VALUES (?, ?)",
                                    [(link_id, a) for a in evidence])
 
+    def add(self, symbol: str, other: str, relation: str, source: str, now: str) -> None:
+        """The user's link: a deleted row of the same link comes back, first seen now and as
+        theirs; a live one keeps who found it and when."""
+        with transaction(self._conn):
+            self._conn.execute(
+                "INSERT INTO company_links (symbol, other, relation, source, first_seen, last_seen) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (symbol, other, relation) DO UPDATE SET "
+                "source = CASE WHEN deleted_at IS NULL THEN source ELSE excluded.source END, "
+                "first_seen = CASE WHEN deleted_at IS NULL THEN first_seen ELSE excluded.first_seen END, "
+                "last_seen = excluded.last_seen, deleted_at = NULL",
+                (symbol, other, relation, source, now, now))
+
     def of(self, symbols: Collection[str], seen_before: str | None = None) -> list[StoredLink]:
         """Live links with any of `symbols` at either end, most evidence first, then newest.
         `seen_before` (an ISO day) leaves out links first seen on or after it."""

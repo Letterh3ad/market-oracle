@@ -1,6 +1,6 @@
 import pytest
 
-from oracle.universe.listings import Listing, band_of_usd, group_companies, is_receipt, is_receipt_symbol, place_line
+from oracle.universe.listings import Listing, band_of_usd, group_companies, is_exchange_product, is_receipt, is_receipt_symbol, place_line
 
 
 @pytest.mark.parametrize("name", ["Samsung Electronics GDR", "Infosys ADR", "Apple Inc. BDR", "Apple CDR (CAD Hedged)",
@@ -53,3 +53,13 @@ def test_a_new_line_never_joins_by_a_placeholder_name_or_isin():
         placed = place_line(line, grouped)
         assert placed == {x.symbol: x.company_key for x in group_companies([*grouped, line])}[line.symbol]
         assert placed not in {x.company_key for x in grouped}
+
+
+@pytest.mark.parametrize("name, product", [
+    ("Leverage Shares -1x Microsoft ETC", True), ("Microsoft 2x ETP", True), ("UBS AG ETRACS Alerian ETN", True),
+    ("Amazon 3X Long", True), ("Microsoft Corporation", False), ("Etcetera Holdings", False),
+    ("3M Company", False), ("Xiaomi Corporation", False), ("10x Genomics, Inc.", False),
+    ("Etn. Fr. Colruyt NV", False), ("UBS ETRACS Silver Shares Covered Call ETNs", True),
+])
+def test_exchange_products_are_told_by_name(name, product):
+    assert is_exchange_product(name) is product

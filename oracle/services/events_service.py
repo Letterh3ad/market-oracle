@@ -172,13 +172,13 @@ def _event(release: edgar.Release, bars: list[Bar], bench: list[Bar]) -> Earning
         if i + h >= len(bars):
             windows.append(Window(h, None, None))
             continue
-        move = _change(bars[i], bars[i + h])
+        move = bar_change(bars[i], bars[i + h])
         other = _bench_change(bench, days[i], days[i + h])
         windows.append(Window(h, move, move - other if other is not None else None))
     return EarningsEvent(release.day, release.before_open, days[i], tuple(windows))
 
 
-def _change(a: Bar, b: Bar) -> float:
+def bar_change(a: Bar, b: Bar) -> float:
     # Adjusted closes only as a pair: one end adjusted and the other not would be a made-up move.
     if is_price(a.adj_close) and is_price(b.adj_close):
         return b.adj_close / a.adj_close - 1
@@ -196,7 +196,7 @@ def _bench_change(bench: list[Bar], start: date, end: date) -> float | None:
     span = bench[i:j + 1]
     if first_break([b.close for b in span]) is not None:
         return None
-    return _change(bench[i], bench[j])
+    return bar_change(bench[i], bench[j])
 
 
 def _summary(events: tuple[EarningsEvent, ...], k: int) -> Summary:

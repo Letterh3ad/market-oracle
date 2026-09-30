@@ -8,10 +8,32 @@ from tests.gui.test_research_js import NODE, PRELUDE
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page's modules")
 
-LINK = {"id": 7, "symbol": "6902.T", "name": "DENSO Corporation", "why": "a supplier", "last_seen": "2026-09-24T12:00:00Z",
-        "evidence": [{"title": "Denso to supply Toyota", "link": "https://news.test/1", "outlet": "Wire",
-                      "published_at": "2026-09-23T08:00:00+00:00"},
-                     {"title": "Bad link", "link": "javascript:alert(1)", "outlet": None, "published_at": None}]}
+EVIDENCE = [{"title": "Denso to supply Toyota", "link": "https://news.test/1", "outlet": "Wire",
+             "published_at": "2026-09-23T08:00:00+00:00"},
+            {"title": "Bad link", "link": "javascript:alert(1)", "outlet": None, "published_at": None}]
+NOTHING = {"last_close": None, "move_5d": None, "move_20d": None, "last_earnings": None, "next_earnings": None,
+           "headlines": []}
+MAP = {
+    "symbol": "7203.T", "name": "Toyota", "basis": "industry Automobiles", "note": None,
+    "relations": ["supplier", "customer", "competitor", "partner"],
+    "related": [
+        {"symbol": "6902.T", "name": "DENSO Corporation", "market_cap": "Large Cap", "link_id": 7,
+         "first_known": None,
+         "relations": [{"kind": "supplier", "why": "a supplier", "source": "discovery",
+                        "first_known": "2026-09-24T12:00:00+00:00"},
+                       {"kind": "competitor", "why": "a peer (industry group Autos)", "source": "peers",
+                        "first_known": None}],
+         "evidence": EVIDENCE,
+         "now": {"last_close": "2026-09-29", "move_5d": 0.021, "move_20d": -0.05, "last_earnings": "2026-08-05",
+                 "next_earnings": None,
+                 "headlines": [{"title": "Denso lifts outlook", "link": "https://news.test/2", "outlet": "Nikkei",
+                                "published_at": "2026-09-28T01:00:00+00:00"}]}},
+        {"symbol": "HMC", "name": "Honda", "market_cap": None, "link_id": None, "first_known": None,
+         "relations": [{"kind": "competitor", "why": "same industry (Automobiles)", "source": "industry",
+                        "first_known": None}],
+         "evidence": [], "now": NOTHING},
+    ],
+}
 
 
 def run(module: str, body: str):
@@ -25,24 +47,61 @@ def run(module: str, body: str):
     return json.loads(out.stdout)
 
 
-def test_each_link_shows_why_its_dated_headlines_and_a_delete_that_reloads():
-    out = run("links.js", f"""
+def test_each_related_company_shows_how_since_when_what_it_is_doing_and_a_delete_on_a_link():
+    out = run("industry.js", f"""
         let changes = 0;
-        const table = m.linksTable("7203.T", [{json.dumps(LINK)}], () => changes++);
-        const links = table.all((n) => n.tag === "a").map((a) => a.attrs.href);
-        button(table, "Delete").fire("click");
+        const panel = m.industryPanel("7203.T", {json.dumps(MAP)}, () => changes++);
+        const links = panel.all((n) => n.tag === "a").map((a) => a.attrs.href);
+        const deletes = panel.all((n) => n.tag === "button" && n.textContent === "Delete").length;
+        button(panel, "Delete").fire("click");
         await settle();
-        console.log(JSON.stringify({{ text: table.textContent, links, asked, changes }}));
+        console.log(JSON.stringify({{ text: panel.textContent, links, deletes, asked, changes }}));
     """)
-    assert "a supplier" in out["text"] and "2026-09-23 Denso to supply Toyota (Wire)" in out["text"]
-    assert "undated Bad link" in out["text"] and "2026-09-24" in out["text"]
-    assert out["links"] == ["#company/6902.T", "https://news.test/1"], "only a web address becomes a link"
+    text = out["text"]
+    assert "Competitors by industry Automobiles." in text
+    assert "a supplier (discovery, first known 2026-09-24)" in text
+    assert "a peer (industry group Autos) (peers, static field)" in text
+    assert "2026-09-23 Denso to supply Toyota (Wire)" in text and "undated Bad link" in text
+    assert "5d +2.10% 20d -5.00% to 2026-09-29" in text
+    assert "last earnings 2026-08-05, next earnings not known" in text
+    assert "2026-09-28 Denso lifts outlook (Nikkei)" in text
+    assert "5d n/a 20d n/a (no stored prices)" in text and "no stored headlines" in text
+    assert "https://news.test/1" in out["links"] and "javascript:alert(1)" not in out["links"]
+    assert out["deletes"] == 1, "a competitor from static fields has nothing to delete"
     assert out["asked"] == ["DELETE /api/companies/7203.T/links/7"] and out["changes"] == 1
 
 
-def test_no_links_says_where_they_come_from():
-    out = run("links.js", 'console.log(JSON.stringify(m.linksTable("KO", [], () => {}).textContent));')
-    assert out.startswith("No linked companies yet.") and "strongest two" in out
+def test_add_link_posts_the_symbol_and_relation_then_reloads():
+    out = run("industry.js", f"""
+        let changes = 0;
+        const panel = m.industryPanel("7203.T", {json.dumps({**MAP, "related": []})}, () => changes++);
+        const [input] = panel.all((n) => n.tag === "input");
+        const [pick] = panel.all((n) => n.tag === "select");
+        const options = pick.children.map((o) => o.textContent);
+        input.value = " KO ";
+        pick.value = "customer";
+        const sent = [];
+        const real = globalThis.fetch;
+        globalThis.fetch = async (url, options) => {{ sent.push(options.body); return real(url, options); }};
+        button(panel, "Add link").fire("click");
+        await settle();
+        console.log(JSON.stringify({{ text: panel.textContent, options, asked, sent, changes }}));
+    """)
+    assert "No related companies yet." in out["text"]
+    assert out["options"] == ["is a supplier of 7203.T", "is a customer of 7203.T", "is a competitor of 7203.T",
+                              "is a partner of 7203.T"]
+    assert out["asked"] == ["POST /api/companies/7203.T/links"]
+    assert json.loads(out["sent"][0]) == {"other": "KO", "relation": "customer"} and out["changes"] == 1
+
+
+def test_opening_the_panel_asks_only_for_the_stored_map():
+    out = run("industry.js", f"""
+        ANSWERS["/api/companies/7203.T/industry"] = {json.dumps(MAP)};
+        const box = Object.assign(new Node("div"), {{ style: {{}}, offsetHeight: 0 }});
+        await m.showIndustry(box, "7203.T");
+        console.log(JSON.stringify({{ asked, filled: box.textContent.includes("DENSO Corporation") }}));
+    """)
+    assert out == {"asked": ["GET /api/companies/7203.T/industry"], "filled": True}
 
 
 def test_evidence_found_by_a_links_search_says_which_link():
