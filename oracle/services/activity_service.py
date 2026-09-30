@@ -43,7 +43,7 @@ from oracle.services.universe_service import proposed_merges, refresh_universe, 
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
-__all__ = ["FinishedPage", "Job", "JobRunner", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
+__all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
            "submit_fill", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
@@ -56,6 +56,8 @@ RECENT = 50
 PAGE_SIZE = 20
 """Finished jobs per page of the listing."""
 
+PREEMPTED_BY = ("research", "tick", "ask", "discover")
+"""Kinds of work that need the model: a replay study or a regime-AI backtest gives way to them."""
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
 """Finished states worth another try; `done` needs no retry."""
 MISSED_LATE = "missed: started too late"
@@ -504,7 +506,8 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
 
     async def work(c: AppContext):
         b = run_backtest(c, name, start, end, slippage_bps, commission, regime_ai=regime_ai,
-                         progress=stage.append if regime_ai else None, stop=stopped.is_set)
+                         progress=stage.append if regime_ai else None, stop=stopped.is_set,
+                         busy=lambda: _model_work(runner))
         # The replay never yields, so a Cancel pressed during it lands here, before the result is kept.
         await asyncio.sleep(0)
         return keep_backtest(c, b)
@@ -619,6 +622,17 @@ def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_fx(runner, sources)
 
 
+def _model_work(runner: JobRunner) -> str | None:
+    """The label of running work that needs the model, which a regime-AI backtest waits for, as
+    the replay study does. Read from the replay's worker thread, so a queue changing under the
+    read is taken as nothing found; the next look catches it."""
+    try:
+        return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind in PREEMPTED_BY),
+                    None)
+    except RuntimeError:
+        return None
+
+
 def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
     # From the right: the other parts never hold the separator, a list name might.
     subject = job.subject or ""
@@ -657,7 +671,8 @@ def retry(ctx: AppContext, runner: JobRunner, job_id: int) -> Job:
 def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
     """Every finished job that ended cancelled, interrupted or failed, still needs it (no
     later run of the same kind and subject succeeded since), is not already queued or
-    running, and is a kind this app can rebuild on a profile that still exists. The newest
+    running, and is a kind this app can rebuild on a profile that still exists. Not a regime-AI
+    backtest: hours of model calls are retried one at a time, on purpose. The newest
     run is found by subject alone, whatever profile it ran on: a listing researched since on
     another profile needs no retry."""
     out = []
@@ -670,6 +685,8 @@ def retryable(ctx: AppContext, runner: JobRunner) -> list[JobRow]:
         if any(j.subject == row.subject for j in runner.active(row.kind)):
             continue
         if row.kind == "research" and "@" in (row.subject or "") and _refused_replay(ctx, row):
+            continue
+        if row.kind == "backtest" and (row.subject or "").endswith(BACKTEST_SEP + REGIME_AI_PART):
             continue
         out.append(row)
     return out

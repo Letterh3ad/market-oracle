@@ -2720,3 +2720,8 @@ the watch for days).
 **Context:** Gate 05 N1: the model's reason was cut to 300 characters, then the "kept at x1" notes were appended, up to about 480.
 **Decision:** The model's words are cut to leave room for the notes, which are kept whole.
 **Alternatives:** Cutting the whole string (would cut the notes, the part that explains the guards).
+
+## 2026-09-30 - A regime-AI backtest gives the model way to live work
+**Context:** Gate 06 #1: the hours-long replay makes a call every few seconds on the same Ollama as ticks, research, questions and discovery, which could slow them past a timeout or cost the live regime-ai tilt its one retry.
+**Decision:** Before each model call (never for a cached answer) the replay waits, in 5 s steps that also read its stop flag, while a job of a kind in `activity_service.PREEMPTED_BY` (research, tick, ask, discover; moved there from the replay study, which shares it) is running, and its progress reads "waiting for <job> to finish". Once stopped it also skips the 45 s retry of a call that got no answer, so Cancel and server stop are prompt. "Retry all" leaves regime-AI backtests out; a single retry still reruns one.
+**Alternatives:** Only a warning in the tick box (the live line would still pay); refusing to start near a scheduled tick (a tick can also be pressed, and research runs outside ticks).

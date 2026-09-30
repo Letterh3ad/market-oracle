@@ -88,10 +88,11 @@ def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slip
 
 def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
                  commission: float = 0.0, *, regime_ai: bool = False, progress: Callable[[str], None] | None = None,
-                 stop: Callable[[], bool] | None = None) -> Backtest:
+                 stop: Callable[[], bool] | None = None, busy: Callable[[], str | None] | None = None) -> Backtest:
     """Replay the strategy's rules day by day from `start` to `end` over the list's stored
     bars, each day seeing only bars up to its own close. `regime_ai` adds the replayed model
-    tilt line, telling `progress` where it is; once `stop` says so it asks the model no more."""
+    tilt line, telling `progress` where it is; once `stop` says so it asks the model no more,
+    and while `busy` names other model work it waits before each call."""
     name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
     symbols = watchlist_symbols(ctx, name)[1]
     history, gone, no_prices = {}, [], []
@@ -125,10 +126,12 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     tilt, label = None, ""
     if regime_ai:
         model, label = regime_tilt.tilt_model(ctx)
-        tilt = regime_tilt.ReplayTilt(model, ctx.config.regime.tilt_cap, start, end, stop, progress)
+        tilt = regime_tilt.ReplayTilt(model, ctx.config.regime.tilt_cap, start, end, stop, progress, busy)
     blends = regime_lines(ctx, start, end, rules, history, tilt=tilt)
     runs = {name: run(x.book.lean_source(), x.book.cap) for name, x in blends.items()}
-    captions = {name: x.caption for name, x in blends.items()} | ({REGIME_AI_LINE: _ai_caption(label)} if tilt else {})
+    captions = {name: x.caption for name, x in blends.items()}
+    if tilt:
+        captions[REGIME_AI_LINE] = _ai_caption(label) + captions[REGIME_AI_LINE].removeprefix("Regime: ")
     regimes = tuple(traded(name, captions[name], x, LINE_LABELS[name]) for name, x in runs.items())
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
@@ -163,7 +166,8 @@ def _ai_caption(label: str) -> str:
     return (f"Regime AI: the regime line with the live regime-ai tilt, the model ({label}) asked for every replayed "
             "day with the date left out of the prompt, under the same validation, evidence and direction guards; a "
             "failed day keeps the rules weights. Date-blind is not hindsight-free: a model trained on these years "
-            "may still recognise a market from its readings, so read a win over the regime line with care.")
+            "may still recognise a market from its readings, so read a win over the regime line with care. "
+            "Otherwise as the regime line: ")
 
 
 @dataclass(frozen=True)

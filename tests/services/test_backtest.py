@@ -19,6 +19,7 @@ from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.universe.listings import Listing
 from tests.broker.test_backtest import rising
+from oracle.services import regime_tilt
 from oracle.services.regime_tilt import TILTED
 from tests.fakes.clock import FakeClock
 from tests.fakes.tilt_model import TiltModel
@@ -344,6 +345,58 @@ async def test_a_cancelled_regime_ai_job_stops_asking_the_model(make_ctx, monkey
     holder["job"] = job = submit_backtest(ctx, r, "tech", START, END, regime_ai=True)
     await r.wait(job.id)
     assert len(model.asked) == 1, "the flag a Cancel sets ends the asking"
+    await r.stop()
+
+
+def test_the_regime_ai_caption_keeps_the_regime_lines_caveats(make_ctx, monkeypatch):
+    r = run_backtest(ai_ctx(make_ctx, monkeypatch, TiltModel(KEPT)), "tech", START, END, regime_ai=True)
+    regime, ai = r.lines[3].caption, r.lines[5].caption
+    assert ai.startswith("Regime AI: ") and ai.endswith(regime.removeprefix("Regime: "))
+    assert "Otherwise as the regime line: trend, 12-1 momentum" in ai and "survivors and later picks" in ai
+
+
+def test_a_regime_ai_backtest_waits_for_other_model_work(make_ctx, monkeypatch, tilt_waits):
+    others, said = ["Tick (manual)"], []
+    model = TiltModel(KEPT)
+    run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END, regime_ai=True, progress=said.append,
+                 busy=lambda: others.pop() if others else None)
+    assert tilt_waits == [regime_tilt.YIELD_STEP_S] and "waiting for Tick (manual) to finish" in said[0]
+
+
+async def test_a_regime_ai_backtest_waits_only_for_running_model_work(make_ctx):
+    from oracle.services.activity_service import _model_work
+    from tests.services.test_activity import Gate, settle
+
+    ctx = make_ctx({"UP": BARS})
+    r = JobRunner(ctx)
+    assert _model_work(r) is None
+    research = r.submit("research", "Research AAPL", Gate("a", []))
+    r.submit("research", "Research MSFT", Gate("b", []))
+    r.submit("fx", "Update exchange rates", Gate("c", []))
+    await settle()
+    assert _model_work(r) == "Research AAPL"
+    r.cancel(research.id)
+    await settle()
+    assert _model_work(r) == "Research MSFT"
+    await r.stop()
+
+
+async def test_retry_all_leaves_regime_ai_backtests_to_a_single_retry(make_ctx, monkeypatch):
+    from oracle.services.activity_service import retry_all, retryable
+
+    ctx = ai_ctx(make_ctx, monkeypatch, TiltModel(KEPT))
+    r = JobRunner(ctx)
+    ai = submit_backtest(ctx, r, "tech", START, END, regime_ai=True)
+    plain = submit_backtest(ctx, r, "tech", START, END, 3.0)
+    r.cancel(ai.id)
+    r.cancel(plain.id)
+    assert [row.id for row in retryable(ctx, r)] == [plain.id]
+    [again] = retry_all(ctx, r)
+    assert again.subject == plain.subject
+    alone = retry(ctx, r, ai.id)
+    await r.wait(alone.id)
+    await r.wait(again.id)
+    assert alone.state == "done" and alone.result.backtest.lines[-1].name == "regime_ai"
     await r.stop()
 
 

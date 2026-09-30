@@ -30,7 +30,7 @@ from oracle.store.db import to_utc_iso
 from oracle.store.regime import StoredTilt, TiltRepo
 
 __all__ = ["GIVE_UP_AFTER", "MAX_REASON", "RETRY_AFTER_S", "SYSTEM", "TILTED", "BadTilt", "DailyTilt", "ReplayStats",
-           "ReplayTilt", "grounded", "tilt_messages", "tilt_model", "tilt_schema", "validated"]
+           "ReplayTilt", "Stopped", "YIELD_STEP_S", "grounded", "tilt_messages", "tilt_model", "tilt_schema", "validated"]
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,8 @@ RETRY_AFTER_S = 45.0
 """Wait before the one retry of a call that got no answer at all (a timeout or no connection)."""
 wait = time.sleep
 """How the retry waits; tests replace it, so none of them sleeps."""
+YIELD_STEP_S = 5.0
+"""How often a replay waiting for other model work looks again (and at its stop flag)."""
 GIVE_UP_AFTER = 3
 """Days in a row a replay's model gives no answer at all before it stops asking: with Ollama
 down, every later day would otherwise cost a retry wait for nothing."""
@@ -271,12 +273,16 @@ class ReplayTilt:
     day. Answers are kept by exact prompt text for the run, so identical states (temperature 0)
     cost one call. Nothing is stored: a backtest only reads. Days before `start` get no tilt,
     so the replayed smoothing starts from the rules weights. `stop` ends the asking early (a
-    cancelled job): the rest of the days replay on the rules weights in seconds."""
+    cancelled job), skipping a pending retry too: the rest of the days replay on the rules
+    weights in seconds. `busy` names other work that needs the model (a tick, research): the
+    replay waits before each call while it runs, as the replay study does, so hours of replay
+    never slow the live line's work (gate 06 #1)."""
 
     def __init__(self, model: ChatModel, cap: float, start: date, end: date,
-                 stop: Callable[[], bool] | None = None, on_progress: Callable[[str], None] | None = None) -> None:
+                 stop: Callable[[], bool] | None = None, on_progress: Callable[[str], None] | None = None,
+                 busy: Callable[[], str | None] | None = None) -> None:
         self._model, self._cap, self._start, self._end = model, cap, start, end
-        self._stop, self._on_progress = stop, on_progress
+        self._stop, self._on_progress, self._busy = stop, on_progress, busy
         self._answers: dict[str, object] = {}
         self._silent = 0
         self.stats = ReplayStats()
@@ -293,7 +299,7 @@ class ReplayTilt:
 
     def _tilt(self, state: RegimeState) -> dict[str, float]:
         s = self.stats
-        if s.gave_up or (self._stop and self._stop()):
+        if s.gave_up or self._stopped():
             s.skipped += 1
             return {}
         messages = tilt_messages(state, self._cap)
@@ -301,10 +307,17 @@ class ReplayTilt:
         if key in self._answers:
             s.cached += 1
         else:
+            self._yield(state.day)
+            if self._stopped():
+                s.skipped += 1
+                return {}
             s.calls += 1
             try:
-                self._answers[key] = _asked(self._model, messages, tilt_schema())
+                self._answers[key] = _asked(self._model, messages, tilt_schema(), self._stopped)
                 self._silent = 0
+            except Stopped:
+                s.skipped += 1
+                return {}
             except Exception as exc:
                 return self._failed(state, exc)
         try:
@@ -319,6 +332,15 @@ class ReplayTilt:
         s.moved += bool(moved)
         s.reset += bool(bare or against)
         return tilt
+
+    def _stopped(self) -> bool:
+        return bool(self._stop and self._stop())
+
+    def _yield(self, day: date) -> None:
+        while self._busy and not self._stopped() and (other := self._busy()):
+            if self._on_progress:
+                self._on_progress(f"{self._progress(day)}; waiting for {other} to finish")
+            wait(YIELD_STEP_S)
 
     def _failed(self, state: RegimeState, exc: Exception) -> dict[str, float]:
         error = str(exc) or type(exc).__name__
@@ -339,14 +361,22 @@ class ReplayTilt:
                 f"{_count(s.calls, 'model call')}, {s.cached} from cache, {s.failed} failed")
 
 
-def _asked(model: ChatModel, messages: list[dict], schema: dict) -> object:
-    """The reply, asking once more after RETRY_AFTER_S when the first call got no answer at all.
+class Stopped(Exception):
+    """The asker was stopped before a retry: nothing more is asked."""
+
+
+def _asked(model: ChatModel, messages: list[dict], schema: dict,
+           stopped: Callable[[], bool] | None = None) -> object:
+    """The reply, asking once more after RETRY_AFTER_S when the first call got no answer at all,
+    unless `stopped` says so by then (a Cancel must not sit through the wait and a second call).
     A bad answer is never asked again: that would let the line pick among the model's answers."""
     try:
         return _answer(model, messages, schema)
     except Exception as exc:
         if not _transient(exc):
             raise
+        if stopped and stopped():
+            raise Stopped from exc
         log.warning("regime-ai tilt: %s; asking once more in %.0f s", exc, RETRY_AFTER_S)
         wait(RETRY_AFTER_S)
         try:

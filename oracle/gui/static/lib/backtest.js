@@ -214,7 +214,7 @@ function backtestSection() {
       tip("commission", "commission"), commission, " ", currency, " per trade ", run),
     el("div", { class: "row small" }, el("label", null, withAi, " Add the regime AI line: the regime line with the "
       + "live model tilt, asked for every day with no date in the prompt. One model call per day: hours on a local "
-      + "model, so only when ticked.")),
+      + "model, so only when ticked. It waits while a tick, research, a question or discovery uses the model.")),
     note, span, kept, result);
   return { node, start };
 }

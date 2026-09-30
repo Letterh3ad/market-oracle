@@ -15,7 +15,7 @@ from oracle.research.llm import ModelError
 from oracle.services.context import open_context
 from oracle.services import regime_tilt
 from oracle.services.regime_tilt import (
-    GIVE_UP_AFTER, RETRY_AFTER_S, SYSTEM, TILTED, BadTilt, DailyTilt, MAX_REASON, ReplayTilt, grounded,
+    GIVE_UP_AFTER, RETRY_AFTER_S, SYSTEM, TILTED, YIELD_STEP_S, BadTilt, DailyTilt, MAX_REASON, ReplayTilt, grounded,
     tilt_messages, tilt_schema, validated,
 )
 from oracle.store.regime import TiltRepo
@@ -358,6 +358,49 @@ def test_a_bad_answer_breaks_a_run_of_days_without_an_answer(tilt_waits):
         tilt(state(day=date(2026, 9, d), readings={"trend_gap": d / 100}))
     assert tilt.stats.gave_up is None and tilt.stats.skipped == 0, "the model answered in between: not silent"
     assert tilt.stats.failed == GIVE_UP_AFTER + 2
+
+
+def test_a_replay_waits_for_other_model_work_before_each_call_and_says_so(tilt_waits):
+    others, said = ["Tick (manual)", "Research AAPL", None], []
+    model = TiltModel(ANSWER)
+    tilt = replay(model, busy=lambda: others.pop(0) if others else None, on_progress=said.append)
+    assert tilt(state()) != {} and len(model.asked) == 1
+    assert tilt_waits == [YIELD_STEP_S, YIELD_STEP_S] and 1 <= YIELD_STEP_S <= 10
+    assert said[0].endswith("; waiting for Tick (manual) to finish")
+    assert said[1].endswith("; waiting for Research AAPL to finish")
+    assert "waiting" not in said[-1]
+
+
+def test_a_replay_stopped_while_waiting_for_other_model_work_asks_nothing(tilt_waits):
+    stopped, model = [], TiltModel(ANSWER)
+
+    def busy():
+        stopped.append(True)
+        return "Tick (manual)"
+
+    tilt = replay(model, busy=busy, stop=lambda: bool(stopped))
+    assert tilt(state()) == {} and model.asked == [] and tilt.stats.skipped == 1 and tilt_waits == [YIELD_STEP_S]
+
+
+def test_a_cached_answer_never_waits_for_other_model_work(tilt_waits):
+    tilt = replay(TiltModel(ANSWER))
+    tilt(state(day=BEFORE))
+    tilt._busy = lambda: "Tick (manual)"
+    assert tilt(state(day=DAY)) != {} and tilt_waits == []
+
+
+def test_a_replay_stopped_after_a_call_with_no_answer_skips_the_retry(tilt_waits):
+    stopped = []
+
+    class Dropping(TiltModel):
+        async def reply(self, messages, schema):
+            stopped.append(True)
+            return await super().reply(messages, schema)
+
+    model = Dropping(error=transport("down"))
+    tilt = replay(model, stop=lambda: bool(stopped))
+    assert tilt(state()) == {} and len(model.asked) == 1 and tilt_waits == []
+    assert (tilt.stats.skipped, tilt.stats.failed) == (1, 0)
 
 
 def test_a_stopped_replay_asks_nothing_more_and_says_where_it_is():
