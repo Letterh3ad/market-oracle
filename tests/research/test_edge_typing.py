@@ -1,9 +1,11 @@
 """The hand-labelled tie set: 100 candidate ties from the live DB (2026-09-30), 50 headlines and 50
-10-K sentences (8 US main-list names), stratified half on ties the keyword rule named and half on
-ones it did not, each labelled by the builder of ticket 03 with what the text shows the other
-company is. The rule's numbers are pinned here; Laya's are measured opt-in (-m laya) and reported
-in DECISIONS.md, never a gate. Optimistic for the rule: its patterns were written after looking at
-candidates from the same documents."""
+10-K sentences (8 US main-list names), stratified half on ties the first keyword rule named
+(`drawn_rule`) and half on ones it did not, each labelled by the builder of ticket 03 with what the
+text shows the other company is. Live, only about a fifth of candidates are rule-named, so recall
+here overstates the live one (DECISIONS.md gives both). Only 7 labelled ties are supplier or
+customer. The rule's numbers are pinned here; Laya's are measured opt-in (-m laya) and reported in
+DECISIONS.md, never a gate. Optimistic for the rule: its patterns were written, and fixed after
+gate 03, looking at candidates from the same documents."""
 import json
 from pathlib import Path
 
@@ -36,10 +38,11 @@ def test_the_set_is_a_hundred_labelled_ties_from_headlines_and_filings():
     assert sum(r["label"] == "none" for r in TIES) == 56, "most candidates show no tie"
 
 
-def test_the_keyword_rule_beats_always_none_and_is_right_on_about_half_the_ties_it_names():
+def test_the_keyword_rule_beats_always_none_and_is_right_on_over_half_the_ties_it_names():
     rule = scores([rule_of(r) for r in TIES])
     assert scores(["none"] * len(TIES))["accuracy"] == 0.56
-    assert (rule["accuracy"], rule["named"], rule["precision"]) == (0.65, 50, 0.52)
+    assert (rule["accuracy"], rule["named"], round(rule["precision"], 2)) == (0.67, 45, 0.58)
+    assert sum(r["drawn_rule"] != "none" for r in TIES) == 50, "drawn half from ties the rule of the day named"
 
 
 @pytest.mark.laya
@@ -51,7 +54,7 @@ def test_laya_on_the_tie_set(capsys):
     finally:
         model.close()
     laya = scores([t.choice for t in typed])
-    kept = [decide(rule_of(r), t) for r, t in zip(TIES, typed)]
+    kept = [decide(rule_of(r), t, r["names"]) for r, t in zip(TIES, typed)]
     agreed = scores([relation if state == LINKED else "none" for relation, state in kept])
     with capsys.disabled():
         print(f"\nlaya {laya}\nlinked where rule and laya agree {agreed}")

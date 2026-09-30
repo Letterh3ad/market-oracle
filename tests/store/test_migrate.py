@@ -5,6 +5,15 @@ from oracle.store.migrate import SCHEMA_VERSION, SchemaTooNew, current_version, 
 from oracle.store.migrations import run_ddl
 
 
+def test_each_migrations_number_is_its_place_in_the_list():
+    """The schema version is the list position, so a migration out of place would be skipped or run twice."""
+    from oracle.store import migrations
+
+    names = [m.__name__.rsplit(".", 1)[1] for m in migrations.MIGRATIONS]
+    assert [n[:5] for n in names] == [f"m{i:04d}" for i in range(1, len(names) + 1)]
+    assert names[45:47] == ["m0046_history_backfill", "m0047_link_candidates"]
+
+
 def _tables(conn) -> set[str]:
     rows = conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table','view')")
     return {r[0] for r in rows}

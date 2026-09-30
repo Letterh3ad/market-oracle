@@ -23,6 +23,14 @@ MAX_SENTENCE = 600
 """Longer "sentences" are tables or lists run together."""
 _POSSESSIVE = re.compile(r"['’]s\b", re.I)
 _SENTENCE = re.compile(r"(?<=[.!?;])\s+|\n\s*\n")
+_ABBREVIATION = re.compile(r"(?:\b(?:inc|co|corp|ltd|llc|plc|lp|jr|sr|dr|mr|ms|no|st|vs)|\b[a-z]\.[a-z])\.$", re.I)
+_BULLET = re.compile(r"^(?:(?:and|or)\s+)?[\u2022\u25aa\u25cf\u00b7\u2013-]\s")
+MAX_HEADING = 200
+# The cover page (exchange listings, addresses), signatures and exhibit lists.
+_COVER = re.compile(r"\bnasdaq (?:global select |global |capital )?market\b|\bstock market llc\b|"
+                    r"\bnew york stock exchange\b|\btrading symbol|\bprincipal (?:executive|financial|accounting) "
+                    r"(?:offices?|officer)\b|\bincorporated (?:herein )?by reference\b|/s/|\baggregate market value\b|"
+                    r"\bperformance graphs?\b|\bnasdaq (?:\d+|composite)\b", re.I)
 _FILLER_LEAD = ("the",)
 _FILLER_TAIL = frozenset({"company", "companies", "group", "holdings", "holding", "incorporated", "the"})
 
@@ -173,17 +181,30 @@ def named_pairs(index: NameIndex, symbol: str, headline: str) -> set[str]:
 
 
 def sentences(text: str) -> list[str]:
-    out = []
+    """A filing's sentences: an abbreviation ("Inc.") ends none, and a bullet carries the heading
+    that introduced its list ("Our competitors include: • ..."), so it is read as the list's."""
+    parts: list[str] = []
     for part in _SENTENCE.split(text):
         s = " ".join(part.split())
-        if MIN_SENTENCE <= len(s) <= MAX_SENTENCE:
+        if parts and _ABBREVIATION.search(parts[-1]):
+            parts[-1] = f"{parts[-1]} {s}"
+        elif s:
+            parts.append(s)
+    out, heading = [], None
+    for s in parts:
+        if _BULLET.match(s):
+            s = f"{heading} {s}" if heading else s
+        else:
+            heading = s[:s.rindex(":") + 1] if ":" in s and s.rindex(":") < MAX_HEADING else None
+        if MIN_SENTENCE <= len(s) <= MAX_SENTENCE and not _COVER.search(s):
             out.append(s)
     return out
 
 
 def sentences_naming(index: NameIndex, filer: str, text: str) -> list[tuple[str, str]]:
     """(other company, sentence) for each company a filing's sentence names beside its filer,
-    the first sentence naming it; in order of first appearance."""
+    the first sentence naming it; in order of first appearance. The cover page, signatures and
+    exhibit list name companies with no tie."""
     seen: dict[str, str] = {}
     for s in sentences(text):
         for other in index.find(s) - {filer}:
@@ -206,7 +227,11 @@ _CUSTOMER = re.compile(r"\bsales to\b|\brevenues? from\b|\baccounted for\b")
 # A bare "customer" counts only this close to the other company's name.
 _CUSTOMER_WORD = re.compile(r"\bcustomers?\b|\bclients?\b")
 NEAR = 60
-_COMPETITOR = re.compile(r"\bcompet\w*|\brivals?\b|\bvs\b|\bversus\b|\btakes on\b|\bbattles?\b|\bchallengers?\b")
+# "X vs Y" is mostly a which-stock-to-buy piece, not a business tie.
+_COMPETITOR = re.compile(r"\bcompet\w*|\brivals?\b|\btakes on\b|\bbattles?\b|\bchallengers?\b")
+# A competitor list's bullets say "suppliers of ..." about the competitors: read before the supply words.
+_COMPETITOR_LIST = re.compile(r"\bcompetitors? (?:include|includes|including|are|such as)\b|\bour (?:\w+ )?competitors\b|"
+                              r"\bcompet(?:e|es|ing) (?:\w+ )?(?:with|against)\b")
 _PARTNER = re.compile(r"\bpartner\w*|\bteams? up\b|\bjoint venture\b|\bcollaborat\w*|\balliance\b|\bjoins? forces\b|"
                       r"\bagreements? with\b|\bdeals? with\b|\bties? up\b|\btieup\b")
 
@@ -237,6 +262,8 @@ def rule_type(text: str, company: str | Iterable[str], other: str | Iterable[str
     """What `other` is to `company` by keywords and word order; "none" when no keyword says."""
     t = normal(text)
     ca, co = _at(t, company), _at(t, other)
+    if _COMPETITOR_LIST.search(t):
+        return "competitor"
     for pattern, subject, obj in ((_BUY, "customer", "supplier"), (_SUPPLY, "supplier", "customer"),
                                   (_CUSTOMER_OF, "customer", "supplier"), (_SUPPLIER, "customer", "supplier")):
         for m in pattern.finditer(t):

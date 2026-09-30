@@ -91,9 +91,17 @@ class EdgeRepo:
                                  "WHERE c.id = ?", (edge_id,)).fetchone()
         return StoredEdge(*row) if row else None
 
-    def decide(self, edge_id: int, state: str, now: str) -> None:
+    def dismissed(self, symbol: str) -> set[tuple[str, str]]:
+        """(other, relation) of the ties the user deleted for `symbol`."""
+        return {(o.upper(), r) for o, r in self._conn.execute(
+            "SELECT DISTINCT other, relation FROM link_candidates WHERE symbol = ? AND state = 'dismissed' "
+            "AND decided_at IS NOT NULL", (symbol,))}
+
+    def decide_tie(self, symbol: str, other: str, relation: str, state: str, now: str) -> None:
+        """The user's call on every undecided row of the tie."""
         with transaction(self._conn):
-            self._conn.execute("UPDATE link_candidates SET state = ?, decided_at = ? WHERE id = ?", (state, now, edge_id))
+            self._conn.execute("UPDATE link_candidates SET state = ?, decided_at = ? WHERE symbol = ? AND other = ? "
+                               "AND relation = ? AND state = 'unconfirmed'", (state, now, symbol, other, relation))
 
     def set_state(self, edge_ids: Sequence[int], state: str) -> None:
         with transaction(self._conn):

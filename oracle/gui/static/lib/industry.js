@@ -68,9 +68,10 @@ function industryPanel(symbol, body, changed) {
 }
 
 const TIE_TIP = "Read from the company's stored headlines and US 10-Ks. A keyword rule and Laya each say what "
-  + "the other company is; a tie is linked only where both agree. On 100 hand-labelled ties Laya alone did worse than "
-  + "always saying \"no tie\", and the rule alone was right on half the ties it named; where both agree, on about "
-  + "two in three. Ties only the rule names wait here for you.";
+  + "the other company is; a tie is linked only where both agree and the sentence is no list of companies. On 100 "
+  + "hand-labelled ties Laya alone did worse than always saying \"no tie\"; linked ties were right 13 times in 19, "
+  + "mostly competitors and partners: for suppliers and customers only 3 in 5, and it finds perhaps a fifth of the "
+  + "real ties. Ties only the rule names wait here for you; a deleted tie is never linked again.";
 const pctOf = (p) => `${Math.round(p * 100)}%`;
 
 function findButtons(symbol, enabled, changed) {
@@ -102,7 +103,8 @@ function tieRow(symbol, e, changed) {
   return el("tr", null,
     el("td", null, companyLink(e.other), el("div", { class: "dim small" }, e.other_name ?? "")),
     el("td", null, `a ${e.relation}`, el("div", { class: "dim small" }, pending ? "unconfirmed" : e.state)),
-    el("td", null, `"${e.evidence}"`, el("div", { class: "dim small" }, `${e.known_at.slice(0, 10)} `, source)),
+    el("td", null, `"${e.evidence}"`, el("div", { class: "dim small" }, `${e.known_at.slice(0, 10)} `, source,
+      e.documents > 1 ? ` (and ${e.documents - 1} later document${e.documents > 2 ? "s" : ""})` : "")),
     el("td", { class: "dim small" }, `rule ${e.rule}, Laya ${e.choice} ${pctOf(e.prob)}`),
     el("td", null,
       pending ? act("Confirm", "POST", `/api/companies/${encodeURIComponent(symbol)}/edges/${e.id}/confirm`,

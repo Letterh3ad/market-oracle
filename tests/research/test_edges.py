@@ -17,8 +17,37 @@ INDEX = NameIndex([
     listed("TGT", "Target Corporation"), listed("KO", "The Coca-Cola Company", "Mega Cap"),
     listed("AMD", "AMD, Inc."),
     listed("2317.TW", "Hon Hai Precision Industry Co., Ltd."), listed("MU", "Micron Technology, Inc."),
-    listed("GM", "General Motors Company"),
+    listed("GM", "General Motors Company"), listed("NDAQ", "Nasdaq, Inc."),
 ])
+COMPETITORS = ("Our current competitors include: • suppliers of hardware and software for SoC products, such as AMD, "
+               "Micron Technology, Inc. and Apple; and • suppliers of memory, such as Hon Hai Precision Industry.")
+
+
+def test_a_bullet_is_read_with_the_heading_that_introduces_it():
+    found = dict(sentences_naming(INDEX, "7203.T", COMPETITORS))
+    assert found["2317.TW"] == ("Our current competitors include: and • suppliers of memory, such as Hon Hai "
+                                "Precision Industry.")
+    assert found["MU"].startswith("Our current competitors include: • suppliers of hardware")
+
+
+def test_a_competitor_list_is_competitors_whatever_its_bullets_say():
+    found = dict(sentences_naming(INDEX, "7203.T", COMPETITORS))
+    assert rule_type(found["2317.TW"], "Toyota", "Hon Hai Precision Industry") == "competitor"
+    assert rule_type(found["MU"], "Toyota", "Micron") == "competitor"
+    assert rule_type("We compete with Micron, a supplier of memory", "Apple", "Micron") == "competitor"
+
+
+def test_a_which_stock_headline_is_no_tie():
+    assert rule_type("Toyota vs. Micron: Which Stock Is a Better Buy?", "Toyota", "Micron") == "none"
+    assert rule_type("Toyota versus Micron in 2026", "Toyota", "Micron") == "none"
+
+
+def test_a_filings_cover_page_and_signatures_name_no_ties():
+    text = ("Our common stock is traded on The Nasdaq Global Select Market under the symbol AAPL. "
+            "Apple Inc. /s/ Tim Cook Chief Executive Officer, Micron Technology, Inc. director. "
+            "The graph compares our return with the S&P 500 and the Nasdaq 100 Index over five years. "
+            "We buy memory from Micron Technology, Inc. every year.")
+    assert sentences_naming(INDEX, "AAPL", text) == [("MU", "We buy memory from Micron Technology, Inc. every year.")]
 
 
 def test_a_name_is_found_whole_or_by_its_distinctive_first_word_and_possessives_count():

@@ -32,12 +32,12 @@ class LinkRepo:
     def record(self, symbol: str, other: str, relation: str, source: str, evidence: Sequence[int], now: str) -> None:
         """New, or seen again with any new evidence; a deleted link stays deleted. `now` is when it
         was seen: a document's own date for a link read from it, so a link seen in an older
-        document is first seen then, and takes that document's source."""
+        document is first seen then, and takes that document's source (a user's link stays theirs)."""
         with transaction(self._conn):
             self._conn.execute(
                 "INSERT INTO company_links (symbol, other, relation, source, first_seen, last_seen) "
                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (symbol, other, relation) DO UPDATE SET "
-                "source = CASE WHEN excluded.first_seen < first_seen THEN excluded.source ELSE source END, "
+                "source = CASE WHEN excluded.first_seen < first_seen AND source != 'user' THEN excluded.source ELSE source END, "
                 "first_seen = MIN(first_seen, excluded.first_seen), last_seen = MAX(last_seen, excluded.last_seen)",
                 (symbol, other, relation, source, now, now))
             (link_id,) = self._conn.execute(

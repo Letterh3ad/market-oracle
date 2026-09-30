@@ -111,7 +111,7 @@ TIE = {"id": 4, "symbol": "7203.T", "other": "BWA", "other_name": "BorgWarner In
        "relation": "customer", "rule": "customer", "choice": "none", "prob": 0.61, "model": "laya", "state": "unconfirmed",
        "evidence": "BorgWarner orders parts from Toyota", "known_at": "2026-09-07T09:00:00+00:00",
        "title": "BorgWarner orders parts from Toyota", "url": "https://news.test/4", "link": "https://news.test/4"}
-LINKED = {**TIE, "id": 5, "other": "6902.T", "other_name": "DENSO Corporation", "relation": "supplier", "kind": "filing",
+LINKED = {**TIE, "id": 5, "other": "6902.T", "other_name": "DENSO Corporation", "relation": "supplier", "kind": "filing", "documents": 3,
           "rule": "supplier", "choice": "supplier", "prob": 0.9, "state": "linked", "title": "10-K",
           "evidence": "We rely on DENSO for sensors.", "link": "javascript:alert(1)"}
 
@@ -136,6 +136,7 @@ def test_ties_show_evidence_and_only_unconfirmed_ones_can_be_confirmed_or_delete
     text = out["text"]
     assert 'a customerunconfirmed"BorgWarner orders parts from Toyota"2026-09-07' in text
     assert "rule customer, Laya none 61%" in text and '"We rely on DENSO for sensors."' in text
+    assert "(and 2 later documents)" in text and "later document" not in text.split("We rely")[0]
     assert "uncalibrated" in text
     assert "javascript:alert(1)" not in out["links"]
 

@@ -18,7 +18,7 @@ from oracle.services.edges_service import (
 )
 from oracle.services.errors import InvalidQuery, UnknownLink
 from oracle.services.industry_service import industry_map
-from oracle.services.links_service import LinkFound, company_links, delete_link, record_links
+from oracle.services.links_service import LinkFound, add_link, company_links, delete_link, record_links
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from oracle.store.articles import ArticleRepo
@@ -228,3 +228,80 @@ async def test_the_job_finds_a_companys_ties_and_can_be_retried(ctx, monkeypatch
     again = retry(ctx, runner, empty.id)
     await again.finished.wait()
     assert again.state == "done" and again.label == "Find ties for list main" and again.result.symbols == ("7203.T",)
+
+
+def test_a_sentence_listing_four_or_more_companies_is_never_linked_by_itself():
+    agreed = EdgeType("competitor", 0.9, {})
+    assert decide("competitor", agreed, names=3) == ("competitor", LINKED)
+    assert decide("competitor", agreed, names=4) == ("competitor", UNCONFIRMED)
+
+
+async def test_a_10k_list_of_competitors_waits_for_the_user(ctx, sec):
+    apple_files(sec)
+    sec.documents[TEN_K] = ("<html><body><p>Our competitors, and rivals, include Honda Motor, DENSO Corporation, "
+                            "BorgWarner and Toyota Motor Corporation in cars.</p></body></html>")
+    run = await find_edges(ctx, ["AAPL"], typer=FakeLaya())
+    assert (run.linked, run.unconfirmed) == (0, 4) and links_of(ctx, "AAPL") == {}
+    assert {e.relation for e in company_edges(ctx, "AAPL")} == {"competitor"}
+
+
+async def test_a_tie_is_one_row_however_many_documents_show_it(ctx):
+    shown_to_research(ctx, "7203.T", news("Toyota and BorgWarner partner on axles", 7),
+                      news("Toyota and BorgWarner partner on axles again", 12))
+    await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    [tie] = company_edges(ctx, "7203.T")
+    assert (tie.other, tie.relation, tie.state, tie.documents, tie.known_at[:10]) == (
+        "BWA", "partner", UNCONFIRMED, 2, "2026-09-07")
+
+
+async def test_an_unconfirmed_tie_already_linked_by_another_document_shows_as_linked(ctx):
+    shown_to_research(ctx, "7203.T", news("Toyota and BorgWarner partner on axles", 7),
+                      news("Toyota and BorgWarner form joint venture", 12))
+    await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    [tie] = company_edges(ctx, "7203.T")
+    assert (tie.state, tie.documents, tie.known_at[:10]) == (LINKED, 2, "2026-09-07")
+    with pytest.raises(InvalidQuery, match="already linked"):
+        dismiss_edge(ctx, "7203.T", tie.id)
+
+
+async def test_a_deleted_tie_is_remembered_so_a_later_document_never_links_it(ctx):
+    shown_to_research(ctx, "7203.T", news("Toyota and BorgWarner partner on axles", 7),
+                      news("Toyota and BorgWarner partner on axles again", 12))
+    await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    [tie] = company_edges(ctx, "7203.T")
+    dismiss_edge(ctx, "7203.T", tie.id)
+    assert company_edges(ctx, "7203.T") == []
+    shown_to_research(ctx, "7203.T", news("Toyota and BorgWarner form joint venture", 20))
+    run = await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    assert run.linked == 0 and "BWA" not in links_of(ctx, "7203.T") and company_edges(ctx, "7203.T") == []
+
+
+async def test_a_tie_whose_link_the_user_deleted_on_the_map_is_no_longer_shown(ctx):
+    toyota_news(ctx)
+    await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    denso = next(x for x in company_links(ctx, "7203.T") if x.symbol == "6902.T")
+    delete_link(ctx, "7203.T", denso.id)
+    assert "6902.T" not in {e.other for e in company_edges(ctx, "7203.T")}
+
+
+async def test_an_older_document_dates_a_users_link_back_but_keeps_it_theirs(ctx):
+    add_link(ctx, "7203.T", "6902.T", "supplier")
+    toyota_news(ctx)
+    await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    assert links_of(ctx, "7203.T")["6902.T"] == (("supplier",), ("user",), ("2026-09-03T09:00:00+00:00",))
+
+
+async def test_a_cancel_while_waiting_for_model_work_never_loads_laya_and_keeps_the_documents_unread(ctx, monkeypatch):
+    toyota_news(ctx)
+    monkeypatch.setattr("oracle.services.edges_service.load_scorer", lambda c: pytest.fail("Laya was loaded"))
+    monkeypatch.setattr("oracle.services.edges_service.wait", lambda s: None)
+    asked: list[int] = []
+
+    def busy():
+        asked.append(1)
+        return "Research AAPL"
+
+    run = await find_edges(ctx, ["7203.T"], filings=False, busy=busy, stop=lambda: len(asked) >= 2)
+    assert run.stopped and run.documents == 0 and company_edges(ctx, "7203.T") == []
+    again = await find_edges(ctx, ["7203.T"], typer=FakeLaya(), filings=False)
+    assert again.documents == 6
