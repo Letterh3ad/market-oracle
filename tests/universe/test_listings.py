@@ -58,7 +58,8 @@ def test_a_new_line_never_joins_by_a_placeholder_name_or_isin():
 @pytest.mark.parametrize("name, product", [
     ("Leverage Shares -1x Microsoft ETC", True), ("Microsoft 2x ETP", True), ("UBS AG ETRACS Alerian ETN", True),
     ("Amazon 3X Long", True), ("Microsoft Corporation", False), ("Etcetera Holdings", False),
-    ("3M Company", False), ("Xiaomi Corporation", False),
+    ("3M Company", False), ("Xiaomi Corporation", False), ("10x Genomics, Inc.", False),
+    ("Etn. Fr. Colruyt NV", False), ("UBS ETRACS Silver Shares Covered Call ETNs", True),
 ])
 def test_exchange_products_are_told_by_name(name, product):
     assert is_exchange_product(name) is product

@@ -71,13 +71,15 @@ def normalise_name(name: str) -> str:
     return " ".join(re.sub(r"[^\w\s]", "", name.casefold()).split())
 
 
-# Exchange-traded notes and leveraged trackers FinanceDatabase types as equities.
-_PRODUCT = re.compile(r"\b(?:etc|etp|etn|etracs|leverage shares|\d+x)\b")
+# Exchange-traded notes and leveraged trackers FinanceDatabase types as equities. Markers match
+# in capitals only, and a multiple only beside long/short, so "Etn. Fr. Colruyt" and "10x
+# Genomics" stay companies.
+_PRODUCT = re.compile(r"\b(?:ETCs?|ETPs?|ETNs?|ETRACS)\b|(?i:\bleverage shares\b|\b\d+x (?:long|short)\b)")
 
 
 def is_exchange_product(name: str) -> bool:
     """An ETC, ETP, ETN or leveraged tracker by its name ("Leverage Shares -1x Microsoft ETC")."""
-    return _PRODUCT.search(normalise_name(name)) is not None
+    return _PRODUCT.search(name) is not None
 
 
 # Sao Paulo ends a BDR's name in "DRN", sometimes glued on ("ECOPETROL SADRN").
