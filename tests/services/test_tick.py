@@ -50,11 +50,11 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step", "ai_step"]
+        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step", "ai_step", "industry"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
-    assert run.stages[-2].summary == "0 buy, 0 sell, 1 skip, 0 no change"
+    assert next(s for s in run.stages if s.name == "step").summary == "0 buy, 0 sell, 1 skip, 0 no change"
 
 
 async def test_the_regime_stage_names_the_mood_it_traded_in_and_says_when_it_is_off(ctx, monkeypatch):

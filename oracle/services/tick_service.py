@@ -1,5 +1,5 @@
 """The daily routine as one run: prices, FX, fills, analysis, the regime lines' steps, discovery,
-AI research, strategy step, AI step. Each stage runs even when an earlier one failed, since each works from
+AI research, strategy step, AI step, then industry research (Laya). Each stage runs even when an earlier one failed, since each works from
 whatever is stored. The midday pass reuses the discovery and research stages, with the auto
 questions answered again between them."""
 
@@ -20,6 +20,7 @@ from oracle.services.discovery_chat_service import TYPICAL_ANSWER_MIN, answer_au
 from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, DiscoveryRun, discover, discovered
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
+from oracle.services.industry_research_service import live_model_work, research_industry
 from oracle.services.jobs_service import single_flight
 from oracle.services.paper_service import CORE_SAT, REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, frozen, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
@@ -210,6 +211,20 @@ async def _ai_step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
     return f"{_decided(ctx, 'ai', decisions)} {UNVALIDATED_TAG}", None
 
 
+async def _industry(ctx: AppContext, say: Say) -> tuple[str, str | None]:
+    """Last, so it never delays a step; its own budget caps it, and whatever broke here is the stage's."""
+    laya = ctx.config.laya
+    if not laya.enabled:
+        return "Laya is off: no industry research", None
+    if not laya.industry_daily:
+        return "industry research is off in Settings ([laya] industry_daily): nothing read", None
+    try:
+        run = await research_industry(ctx, busy=lambda: live_model_work(ctx), on_progress=say)
+    except JobAlreadyRunning:
+        return "a Research industry job is running: nothing more this tick", None
+    return run.summary, run.failures[0] if run.failures else run.stopped
+
+
 def _line_step(account: str) -> StageRun:
     """A regime line's stage. A failed tilt is the stage's error: the line still traded, on the rules weights."""
     async def stage(ctx: AppContext, _: Say) -> tuple[str, str | None]:
@@ -261,7 +276,8 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
                                "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
                                "regime_v2_step": _line_step(REGIME_V2), "core_sat_step": _line_step(CORE_SAT),
-                               "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
+                               "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step,
+                               "industry": _industry}
 OFF = "AI account off"
 
 

@@ -11,7 +11,7 @@ def test_each_migrations_number_is_its_place_in_the_list():
 
     names = [m.__name__.rsplit(".", 1)[1] for m in migrations.MIGRATIONS]
     assert [n[:5] for n in names] == [f"m{i:04d}" for i in range(1, len(names) + 1)]
-    assert names[45:47] == ["m0046_history_backfill", "m0047_link_candidates"]
+    assert names[45:48] == ["m0046_history_backfill", "m0047_link_candidates", "m0048_industry_research"]
 
 
 def _tables(conn) -> set[str]:

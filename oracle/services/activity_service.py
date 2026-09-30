@@ -31,6 +31,7 @@ from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
 from oracle.services.edges_service import find_edges, find_list_edges
 from oracle.services.history_service import backfill_history
+from oracle.services.industry_research_service import BUTTON_FRESH_H, research_industry
 from oracle.services.laya_service import score_company
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
@@ -50,7 +51,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
-           "submit_edges", "submit_fill", "submit_history", "submit_laya", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -607,6 +608,31 @@ def submit_edges(ctx: AppContext, runner: JobRunner, symbol: str | None, watchli
                          progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
+INDUSTRY_DAILY = "daily"
+"""An industry job's subject for the tick's daily set, beside a symbol's."""
+
+
+def submit_industry(ctx: AppContext, runner: JobRunner, symbol: str | None = None) -> Job:
+    """Research industry: search the company's (or the daily set's) and its map companies' new
+    headlines and score them with Laya per related pair, updating its daily features. It waits
+    while research, a tick, a question or discovery runs, and a Cancel stops it between searches
+    or batches, keeping what was done."""
+    if not ctx.config.laya.enabled:
+        raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
+    listing = resolve_symbol(ctx, symbol).symbol if symbol else None
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return await research_industry(c, [listing] if listing else None, fresh_h=BUTTON_FRESH_H,
+                                       stop=stopped.is_set, busy=lambda: _model_work(runner), on_progress=stage.append)
+
+    label = f"Research industry {listing}" if listing else "Research industry (held, watched and main list)"
+    return runner.submit("industry", label, work, subject=listing or INDUSTRY_DAILY,
+                         link=f"#company/{listing}" if listing else "#activity",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
     """Ask `profile`'s model, or each unprobed model a replay runs on, the dated questions and keep
     their measured cutoffs; an unknown profile is refused now."""
@@ -771,6 +797,10 @@ def _retry_edges(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_edges(ctx, runner, subject)
 
 
+def _retry_industry(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_industry(ctx, runner, None if job.subject == INDUSTRY_DAILY else job.subject)
+
+
 def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_cutoff_probe(ctx, runner, job.profile)
 
@@ -780,7 +810,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history,
-    "laya": _retry_laya, "edges": _retry_edges,
+    "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry,
 }
 
 
