@@ -22,6 +22,7 @@ from oracle.broker.rules import BUY_LABELS, SELL_LABELS, Lean
 from oracle.market.bars import Bar
 
 from . import methods, playbook
+from .fit import Presets, Window, fit_presets
 from .methods import FACTOR_MAX_AGE, HOLD_SCORE, Listing
 from .mood import Composite, step_returns
 from .playbook import HORIZON, RECORD, Day
@@ -86,7 +87,7 @@ called once per trading day in order, capped to [1 - tilt_cap, 1 + tilt_cap]."""
 
 class RegimeBook:
     def __init__(self, history: Mapping[str, Sequence], inputs: RegimeInputs, settings: RegimeSettings,
-                 tilt: Tilt | None, source: str) -> None:
+                 tilt: Tilt | None, source: str, refits: Collection[date] = ()) -> None:
         self._bars = {s: [_bar(r) for r in rows] for s, rows in history.items() if rows}
         self._inputs, self._settings, self._tilt, self._source = inputs, settings, tilt, source
         self._composite = Composite({s: step_returns(_base(rows)) for s, rows in history.items() if rows})
@@ -102,6 +103,11 @@ class RegimeBook:
         """method -> (pick day, forward excess) for its completed windows, the last RECORD days' only."""
         first = next((j for j, m in enumerate(self._composite.moods) if m is not None), None)
         self._first_pick = None if first is None else first - HORIZON - RECORD + 1
+        self._windows: list[Window] = []
+        self._refits = deque(sorted(refits))
+        self._presets: Presets = settings.weights
+        self.fits: list[tuple[date, Presets]] = []
+        """(day, presets fitted) at each refit reached so far (regime_wf), oldest first."""
 
     def state(self, day: date) -> RegimeState | None:
         j = self._composite.index(day)
@@ -156,6 +162,11 @@ class RegimeBook:
         lean = Lean(symbol, as_of, _label(score), self._probability(score), self._source)
         return Explained(lean, parts, score, scores, state)
 
+    def windows(self, until: date) -> list[Window]:
+        """Every health window completed by `until` whose pick day had a mood, oldest first."""
+        self.state(until)
+        return [w for w in self._windows if w.closed <= until]
+
     def lean_source(self) -> LeanSource:
         """Reads the book's own history up to the last bar given, so the replay's LOOKBACK
         window does not shorten the 200-day average or the year of ranks."""
@@ -197,13 +208,14 @@ class RegimeBook:
         return round(0.5 + 0.5 * abs(score), 6)
 
     def _next(self, j: int) -> RegimeState | None:
+        self._refit(self._composite.dates[j])
         picks = self._record(j)
         mood = self._composite.moods[j]
         if mood is None:
             self._smoothed = None
             return None
         s = self._settings
-        base = _normalised(s.weights[mood.mood])
+        base = _normalised(self._presets[mood.mood])
         warnings, good = playbook.firing(Day(mood, picks, self._inputs.sectors))
         health = {m: playbook.health([e for _, e in self._records[m]]) for m in METHODS}
         recorded = frozenset(m for m in METHODS if len(self._records[m]) >= playbook.MIN_RECORD)
@@ -217,6 +229,13 @@ class RegimeBook:
         if state.note is None:
             self._smoothed = dict(state.weights)
         return state
+
+    def _refit(self, day: date) -> None:
+        """Before the day's own window closes, so a refit reads only windows closed before it."""
+        while self._refits and self._refits[0] <= day:
+            self._refits.popleft()
+            self._presets = fit_presets(self._windows, self._settings.weights, day)
+            self.fits.append((day, self._presets))
 
     def _tilted(self, state: RegimeState) -> dict[str, float]:
         """The tilt capped, keeping only known methods' finite numbers. A tilt that raises is no
@@ -247,8 +266,12 @@ class RegimeBook:
         if self._first_pick is None or j < self._first_pick:
             return {}
         k = j - HORIZON
+        mood = self._composite.moods[k] if k >= 0 else None
         for m, symbols in self._picks.pop(k, {}).items():
-            self._records[m].append((k, self._composite.excess(symbols, k, HORIZON)))
+            excess = self._composite.excess(symbols, k, HORIZON)
+            self._records[m].append((k, excess))
+            if mood is not None:
+                self._windows.append(Window(self._composite.dates[k], self._composite.dates[j], mood.mood, m, excess))
         for record in self._records.values():
             while record and record[0][0] <= k - RECORD:
                 record.popleft()
@@ -262,12 +285,14 @@ class RegimeBook:
 
 
 def regime_book(history: Mapping[str, Sequence], *, settings: RegimeSettings, inputs: RegimeInputs | None = None,
-                tilt: Tilt | None = None, source: str = SOURCE) -> RegimeBook:
+                tilt: Tilt | None = None, source: str = SOURCE, refits: Collection[date] = ()) -> RegimeBook:
     """`history` is every listing's bars oldest first, plain or priced (a `bar` and its
     `rate`, as the replay takes them): priced ones put the composite in the base currency.
     `settings` come from `settings_from`, so the buy threshold is the account's. `tilt` is the
-    AI's daily multipliers (regime-ai); None for rules only."""
-    return RegimeBook(history, inputs or RegimeInputs(), settings, tilt, source)
+    AI's daily multipliers (regime-ai); None for rules only. At each of `refits` the moods'
+    presets are refitted from the book's own records (`fit_presets`, regime_wf) and held until
+    the next."""
+    return RegimeBook(history, inputs or RegimeInputs(), settings, tilt, source, refits)
 
 
 def sector_cap(leans: Mapping[str, Lean], held: Collection[str], sectors: Mapping[str, str],

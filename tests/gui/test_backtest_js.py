@@ -215,3 +215,51 @@ def test_a_backtest_already_running_is_followed_to_its_result():
     during, after = shown
     assert "A backtest is running" in during and "No backtest kept yet" in during
     assert "The main list, 2025-03-03 to 2026-09-22" in after
+
+
+WALKED = """
+const fig = (ret, excess) => ({ ret, max_fall: -0.1, sharpe: 1.25, per_fall: ret / 0.1, excess });
+const WALK = { months: 6, segments: [["2025-03-03", "2025-09-02"], ["2025-09-03", "2026-03-02"]],
+  lines: [
+    { name: "strategy", segments: [fig(0.05, -0.05), fig(0.02, 0.04)], overall: fig(0.071, -0.01), beat: 1 },
+    { name: "buy_and_hold", segments: [fig(0.1, 0), fig(-0.02, 0)], overall: fig(0.078, 0), beat: null },
+    { name: "regime_wf", segments: [fig(0.12, 0.02), fig(0.01, 0.03)], overall: fig(0.1312, 0.0532), beat: 2 }],
+  fits: [["2025-03-03", { calm_up: { trend: 0.2, momentum: 0.3 }, volatile_down: { trend: 0.4, momentum: 0.1 } }],
+    ["2025-09-03", { calm_up: { trend: 0.25, momentum: 0.35 }, volatile_down: { trend: 0.4, momentum: 0.1 } }]] };
+ANSWERS["GET /api/backtests/7"] = { ...RUN, lines: [...RUN.lines, { ...REGIME, name: "regime_wf", label: "Regime-wf" }],
+  walk_forward: WALK };
+"""
+
+
+def test_the_walk_forward_box_asks_for_it():
+    asked = run("""
+        section.start(); await settle();
+        labelled(node, "Walk-forward").checked = true;
+        asked.length = 0;
+        button(node, "Run backtest").fire("click"); await settle();
+        console.log(JSON.stringify(asked));
+    """)
+    assert asked[0] == ("POST /api/jobs/backtest?watchlist=main&start=2024-03-01&end=2026-09-22"
+                        "&slippage_bps=10&commission=0&walk_forward=true")
+
+
+def test_a_walk_forward_run_shows_each_segment_the_wins_and_the_fitted_weights():
+    text = run(WALKED + """
+        section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "Walk-forward: 2 segments of 6 months, each a fresh start" in text
+    assert "2025-03-03 to 2025-09-02" in text and "2025-09-03 to 2026-03-02" in text
+    assert "+12.00%" in text and "+2.00% over" in text and "2 of 2" in text and "1 of 2" in text
+    assert "Sharpe" in text and "1.25" in text and "Compounded / worst segment fall" in text
+    assert "re-buys equal amounts at each segment's start" in text and "not the whole run's buy and hold" in text
+    assert "Regime-wf weights fitted at each segment's start" in text
+    assert "calm_up" in text and "0.35" in text
+
+
+def test_a_run_without_a_walk_forward_shows_no_table():
+    text = run("""
+        section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "Walk-forward:" not in text

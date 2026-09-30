@@ -1,9 +1,9 @@
 // The Ledgers tab's Backtest section: the strategy's fixed rules replayed over stored prices,
 // run as a job, with the last few results kept to compare.
 import { api } from "./api.js";
-import { compareLines, table } from "./compare.js";
+import { compareLines, lineInfos, table } from "./compare.js";
 import { el } from "./dom.js";
-import { money, pct } from "./fmt.js";
+import { money, pct, tone } from "./fmt.js";
 import { repaint } from "./repaint.js";
 import { tip } from "./tip.js";
 import { busyButton, followJob, runJob } from "./ui.js";
@@ -22,7 +22,7 @@ function shiftYears(day, years) {
 const DEFAULT_YEARS = 5;
 
 // Runs kept before the momentum or regime lines have fewer lines, so each is found by name.
-const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_ai"];
+const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_wf", "regime_ai"];
 
 function runLabel(r) {
   const figures = RUN_LINES.map((name) => r.lines.find((l) => l.name === name)).filter((l) => l)
@@ -42,6 +42,52 @@ function trades(r) {
   "No trades: the rules never bought anything over these days.");
 }
 
+const ratio = (v) => (v == null ? "n/a" : v.toFixed(2));
+
+// Each line per segment, then over all of them, and regime_wf's weights at each segment's start.
+function walkForward(r) {
+  const wf = r.walk_forward;
+  const n = wf.segments.length;
+  const info = lineInfos(r.lines);
+  const name = (l) => info[l.name]?.label ?? l.name;
+  const cell = (f) => el("td", { class: "num" }, el("span", { class: tone(f.ret) }, pct(f.ret)),
+    f.excess == null ? null : el("div", { class: `small ${tone(f.excess)}` }, `${pct(f.excess)} over`));
+  const perSegment = table([["Line"], ...wf.segments.map(([a, b]) => [`${a} to ${b}`, null, 1])],
+    wf.lines.map((l) => el("tr", null, el("td", null, name(l)), ...l.segments.map(cell))), "No segments.");
+  const overall = table([["Line"], ["Beat buy and hold", null, 1], ["Compounded", null, 1], ["Over buy and hold", null, 1],
+    ["Worst segment fall", null, 1], ["Sharpe", null, 1], ["Compounded / worst segment fall", null, 1]],
+  wf.lines.map((l) => el("tr", null, el("td", null, name(l)),
+    el("td", { class: "num" }, l.beat == null ? "" : `${l.beat} of ${n}`),
+    el("td", { class: `num ${tone(l.overall.ret)}` }, pct(l.overall.ret)),
+    el("td", { class: `num ${tone(l.overall.excess)}` }, pct(l.overall.excess)),
+    el("td", { class: "num" }, `${(l.overall.max_fall * 100).toFixed(1)}%`),
+    el("td", { class: "num" }, ratio(l.overall.sharpe)), el("td", { class: "num" }, ratio(l.overall.per_fall)))),
+  "No lines.");
+  const fits = wf.fits.map(([day, presets]) => {
+    const methods = Object.keys(Object.values(presets)[0] ?? {});
+    return el("details", null, el("summary", null, `From ${day}`),
+      table([["Mood"], ...methods.map((m) => [m, null, 1])], Object.entries(presets).map(([mood, w]) =>
+        el("tr", null, el("td", null, mood), ...methods.map((m) => el("td", { class: "num" }, ratio(w[m]))))), ""));
+  });
+  return [
+    el("h3", null, `Walk-forward: ${n} segment${n === 1 ? "" : "s"} of ${wf.months} months, each a fresh start`),
+    el("p", { class: "dim small" }, "Every line starts again with the same cash and nothing held at each segment's "
+      + "start, so a good early stretch never carries a later one. Under each return, how far it was over buy and "
+      + "hold's in the same days. Buy and hold here re-buys equal amounts at each segment's start, so its "
+      + "compounded figure is not the whole run's buy and hold; each traded line starts every segment in cash and "
+      + "holds its cash floor too."),
+    perSegment,
+    el("h3", null, "Over all segments"),
+    el("p", { class: "dim small" }, "Segment returns compounded; Sharpe from every segment's daily equity at a zero "
+      + "rate, a year of 252 days; the worst segment's fall; return over that fall."),
+    overall,
+    el("h3", null, "Regime-wf weights fitted at each segment's start"),
+    el("p", { class: "dim small" }, "Each mood's method weights, fitted from the two years of pick windows closed "
+      + "before the segment began and held through it."),
+    ...fits,
+  ];
+}
+
 function backtestSection() {
   let started = false;
   let chart = null;
@@ -56,6 +102,7 @@ function backtestSection() {
   const commission = el("input", { type: "number", min: "0", step: "any", value: "0", style: "width: 80px",
     "aria-label": "Commission per trade" });
   const withAi = el("input", { type: "checkbox", "aria-label": "With the regime AI line" });
+  const walk = el("input", { type: "checkbox", "aria-label": "Walk-forward" });
   const currency = el("span");
   const span = el("div", { class: "dim small" });
   const kept = el("div", { class: "row" });
@@ -68,6 +115,7 @@ function backtestSection() {
     }
     const q = new URLSearchParams({ watchlist: list.value, start: from.value, end: to.value,
       slippage_bps: slippage.value || "0", commission: commission.value || "0" });
+    if (walk.checked) q.set("walk_forward", "true");
     if (withAi.checked) q.set("regime_ai", "true");
     say("", false);
     try {
@@ -155,6 +203,7 @@ function backtestSection() {
       el("p", { class: "dim small" }, `${n} listing${n === 1 ? "" : "s"}. Fills ${r.slippage_bps} basis points worse `
         + `than the opening price, plus ${money(r.commission)} ${base} per trade. Run ${String(r.ran_at).slice(0, 10)}.`),
       lines.node,
+      ...(r.walk_forward ? walkForward(r) : []),
       el("h3", null, "Read this before trusting the numbers"),
       el("ul", { class: "small" },
         el("li", null, "This is what the rules would have done on past prices, not a forecast: markets that "
@@ -212,6 +261,10 @@ function backtestSection() {
     el("div", { class: "row" }, "List ", list, " from ", from, " to ", to),
     el("div", { class: "row" }, tip("Slippage", "slippage"), slippage, " basis points, ",
       tip("commission", "commission"), commission, " ", currency, " per trade ", run),
+    el("div", { class: "row" }, el("label", { class: "small",
+      title: "Adds a few minutes: every line again over six-month segments, and the regime_wf line" }, walk,
+    " Walk-forward too: judge every line over back-to-back six-month segments, each a fresh start, and add "
+    + "regime-wf, the regime blend with its mood weights refitted at each segment's start")),
     el("div", { class: "row small" }, el("label", null, withAi, " Add the regime AI line: the regime line with the "
       + "live model tilt, asked for every day with no date in the prompt. One model call per day: hours on a local "
       + "model, so only when ticked. It waits while a tick, research, a question or discovery uses the model.")),

@@ -487,6 +487,8 @@ def _submit_answer(ctx: AppContext, runner: JobRunner, q: Question, profile: str
 
 BACKTEST_SEP = "|"
 """Between the parts of a backtest job's subject, which a retry rebuilds the request from."""
+WALK_FORWARD = "walk-forward"
+"""The last part of a walk-forward backtest's subject; a plain one's has no such part."""
 
 
 REGIME_AI_PART = "regime_ai"
@@ -495,17 +497,18 @@ in a number, so the two never join or mix up on retry."""
 
 
 def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: date, end: date,
-                    slippage_bps: float = 10.0, commission: float = 0.0, regime_ai: bool = False) -> Job:
+                    slippage_bps: float = 10.0, commission: float = 0.0, walk_forward: bool = False,
+                    regime_ai: bool = False) -> Job:
     """Replay the strategy's rules over a list's stored prices and keep the result; bad days
     or costs are refused now. The same request pressed twice joins the first. `regime_ai` adds
     the replayed model tilt line, a model call per day (hours on a local model): the job says
     how far it is, and a Cancel stops the asking at once (the rest replays in seconds)."""
-    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission)
+    name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission, walk_forward)
     stage: list[str] = []
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        b = run_backtest(c, name, start, end, slippage_bps, commission, regime_ai=regime_ai,
+        b = run_backtest(c, name, start, end, slippage_bps, commission, walk_forward, regime_ai=regime_ai,
                          progress=stage.append if regime_ai else None, stop=stopped.is_set,
                          busy=lambda: _model_work(runner))
         # The replay never yields, so a Cancel pressed during it lands here, before the result is kept.
@@ -514,6 +517,9 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
 
     parts = [name, start.isoformat(), end.isoformat(), repr(float(slippage_bps)), repr(float(commission))]
     label = f"Backtest {name}, {start.isoformat()} to {end.isoformat()}"
+    if walk_forward:
+        parts.append(WALK_FORWARD)
+        label += ", walk-forward"
     if regime_ai:
         parts.append(REGIME_AI_PART)
         label += ", with regime AI"
@@ -637,11 +643,11 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
     # From the right: the other parts never hold the separator, a list name might.
     subject = job.subject or ""
     ai = subject.endswith(BACKTEST_SEP + REGIME_AI_PART)
-    if ai:
-        subject = subject[:-len(BACKTEST_SEP + REGIME_AI_PART)]
-    name, start, end, slippage, commission = subject.rsplit(BACKTEST_SEP, 4)
+    subject = subject.removesuffix(BACKTEST_SEP + REGIME_AI_PART)
+    walk = subject.endswith(BACKTEST_SEP + WALK_FORWARD)
+    name, start, end, slippage, commission = subject.removesuffix(BACKTEST_SEP + WALK_FORWARD).rsplit(BACKTEST_SEP, 4)
     return submit_backtest(ctx, runner, name, date.fromisoformat(start), date.fromisoformat(end), float(slippage),
-                           float(commission), ai)
+                           float(commission), walk, ai)
 
 
 def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
