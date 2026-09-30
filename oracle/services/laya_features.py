@@ -37,6 +37,9 @@ class DailyFeature:
     """Sum over the day's articles of direction x its probability."""
     events: dict[str, int] = field(default_factory=dict)
     """Event type -> articles; types with none are left out."""
+    relevance: float = field(default=0.0, compare=False)
+    """Sum of the articles' relevance: 06 tests it as a feature of its own (never a filter). Not
+    stored in `laya_daily`."""
 
 
 def signed(s: ScoredArticle) -> float:
@@ -71,7 +74,8 @@ def daily_features(ctx: AppContext, symbol: str, start: date, end: date, *, mode
             events[s.event] = events.get(s.event, 0) + 1
         out.append(DailyFeature(listing, day, relation, len(scores), round(sum(signed(s) for s in scores), 6),
                                 {e: events[e] for e in EVENT_TYPES if e in events}
-                                | {e: n for e, n in events.items() if e not in EVENT_TYPES}))
+                                | {e: n for e, n in events.items() if e not in EVENT_TYPES},
+                                round(sum(s.relevant for s in scores), 6)))
     return out
 
 
