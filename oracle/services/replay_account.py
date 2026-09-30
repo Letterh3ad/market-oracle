@@ -91,10 +91,11 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
     rules, max_age, capital = strategy_rules(ctx), ctx.config.ai_account.max_verdict_age_days, NOTIONAL
     risk = {**asdict(ctx.config.risk), "account": capital}
 
+    # A verdict reads its day's news to 24:00 UTC, after most closes: it fills at the next close.
+    fills = {"slippage": 0.0, "commission": 0.0, "fill_at": "close", "venues": venues}
+
     def run(lean: LeanSource, cap=None) -> Replay:
-        # A verdict reads its day's news to 24:00 UTC, after most closes: it fills at the next close.
-        return replay(rows, start, end, rules=rules, risk=risk, slippage=0.0, commission=0.0, lean=lean,
-                      fill_at="close", venues=venues, cap=cap)
+        return replay(rows, start, end, rules=rules, risk=risk, lean=lean, cap=cap, **fills)
 
     def line(name: str, caption: str, r: Replay, label: str = "") -> Line:
         return Line(name, caption, _returns(r.equity, capital), max_fall(r.equity), len(r.trades),
@@ -115,7 +116,7 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
              _returns(held, capital), max_fall(held), entered, held_costs),
         *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
           for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]),
-        *(line(name, x.caption, run(x.book.lean_source(), x.book.cap), LINE_LABELS[name]) for name, x in regime.items()))
+        *(line(name, x.caption, x.run(rows, start, end, rules=rules, risk=risk, **fills), LINE_LABELS[name]) for name, x in regime.items()))
     notes = [
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "

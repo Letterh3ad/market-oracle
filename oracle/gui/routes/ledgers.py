@@ -11,13 +11,14 @@ from oracle.services.activity_service import JobRunner, queue_stale_research, st
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, CORE_SAT, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
 from oracle.services.settings_service import (
-    set_ai_account, set_ai_research, set_regime_account, set_regime_ai_account, set_regime_v2_account,
+    set_ai_account, set_ai_research, set_core_sat_account, set_regime_account, set_regime_ai_account,
+    set_regime_v2_account,
 )
 from oracle.services.tick_service import discovery_line
 
@@ -114,6 +115,24 @@ async def get_regime_v2(limit: int = Query(default=20, ge=1, le=200), ctx: AppCo
     return _card(ctx, limit, REGIME_V2)
 
 
+@router.post("/core-sat/step", status_code=202)
+async def step_core_sat(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue the core-sat account's step (the core's rebalance when due, the satellite's leans) on the tick queue."""
+    return shapes.job(submit_line_step(ctx, runner, CORE_SAT))
+
+
+@router.put("/core-sat")
+async def put_core_sat(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_core_sat_account(ctx, body.enabled)
+    return {"enabled": ctx.config.core_sat_account.enabled}
+
+
+@router.get("/core-sat")
+async def get_core_sat(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The regime card of the satellite's book, with each sleeve's cash and holdings and the core's next rebalance."""
+    return _card(ctx, limit, CORE_SAT)
+
+
 @router.put("/regime")
 async def put_regime(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
     set_regime_account(ctx, body.enabled)
@@ -202,6 +221,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
         "regime_account": asdict(ctx.config.regime_account),
         "regime_ai_account": asdict(ctx.config.regime_ai_account),
         "regime_v2_account": asdict(ctx.config.regime_v2_account),
+        "core_sat_account": asdict(ctx.config.core_sat_account),
         "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }

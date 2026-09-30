@@ -4,6 +4,7 @@ import { lineChart } from "../lib/chart.js";
 import { compareLines, table } from "../lib/compare.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
+import { historySection } from "../lib/history.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
 import { regimeCard } from "../lib/regime.js";
@@ -19,6 +20,7 @@ let loads = 0; // only the newest load paints
 let live = null; // this render's research buttons and their poll
 let backtest = null; // this render's Backtest section: one node kept across repaints, so its form keeps what was typed
 let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
+let history = null; // this render's History coverage card, kept the same way
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
 let resultBox = null;
@@ -63,10 +65,16 @@ function regimeRules(r) {
 }
 
 function regimeAiRules() {
-  return "The Regime blend on the same listings, under the same rules, with each method's weight multiplied once a " +
-    "day by a model (local by default) within the tilt cap. If the model fails, that day trades the rules weights. " +
-    "Its record against the Regime line's shows what the model adds. Its reading, switch and model are in the " +
-    "Regime-AI reading card below.";
+  return "Frozen: it no longer steps or records equity. It traded the Regime blend with each method's weight " +
+    "multiplied once a day by a model within the tilt cap; its record measured the tilt as noise, not an edge. Its " +
+    "history and last reading stay in the Regime-AI reading card below.";
+}
+
+function coreSatRules() {
+  return "Three quarters of the money in an equal-weight buy and hold of the main list's companies (never a fund or " +
+    "Tesla), bought at the next open with costs and set back to equal weight once a year; one quarter traded by the " +
+    "Regime blend under the strategy's rules within its own cash, so neither ever spends the other's. Its sleeves, " +
+    "reading and switch are in the Core-sat reading card below.";
 }
 
 function regimeV2Rules() {
@@ -184,7 +192,8 @@ function column(a, base, rules, ai, stale, discovery) {
     : a.name === "ai" ? tipText("AI", aiRules(rules, ai))
       : a.name === "regime" ? tipText("Regime", regimeRules(rules))
         : a.name === "regime-ai" ? tipText("Regime-AI", regimeAiRules())
-          : a.name === "regime-v2" ? tipText("Regime-v2", regimeV2Rules()) : tipText("Strategy", strategyRules(rules));
+          : a.name === "regime-v2" ? tipText("Regime-v2", regimeV2Rules())
+            : a.name === "core-sat" ? tipText("Core-sat", coreSatRules()) : tipText("Strategy", strategyRules(rules));
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
@@ -278,13 +287,13 @@ function jobs(base) {
   return el("div", null,
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
-      runLine("Regime step", "/api/ledgers/regime/step"), runLine("Regime-AI step", "/api/ledgers/regime-ai/step"),
-      runLine("Regime-v2 step", "/api/ledgers/regime-v2/step"),
+      runLine("Regime step", "/api/ledgers/regime/step"), runLine("Regime-v2 step", "/api/ledgers/regime-v2/step"),
+      runLine("Core-sat step", "/api/ledgers/core-sat/step"),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
         + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts; "
-        + "Regime step lets the regime account act on the regime blend, and Regime-AI step the regime-ai account on "
-        + "the blend with the day's model tilt (asked once a day), and Regime-v2 step the regime-v2 account on the "
-        + "blend without hold padding and with its rotation.")),
+        + "Regime step lets the regime account act on the regime blend, Regime-v2 step the regime-v2 account on the "
+        + "blend without hold padding and with its rotation, and Core-sat step the core-sat account (its core's "
+        + "yearly rebalance when due, its satellite on the blend). Regime-AI is frozen and no longer steps.")),
     out);
 }
 
@@ -295,11 +304,12 @@ function refresh() {
 
 async function load(mine) {
   const asked = ++loads;
-  let body, log, aiLog, stale, regime, regimeAi, regimeV2;
+  let body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat;
   try {
-    [body, log, aiLog, stale, regime, regimeAi, regimeV2] = await Promise.all([api("/api/ledgers"),
+    [body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat] = await Promise.all([api("/api/ledgers"),
       api("/api/ledgers/decisions"), api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale"),
-      api("/api/ledgers/regime"), api("/api/ledgers/regime-ai"), api("/api/ledgers/regime-v2")]);
+      api("/api/ledgers/regime"), api("/api/ledgers/regime-ai"), api("/api/ledgers/regime-v2"),
+      api("/api/ledgers/core-sat")]);
   } catch (err) {
     if (asked !== loads || !pane.contains(mine)) return;
     if (mine.dataset.painted) showError(`Could not reload the ledgers: ${err.message}`);
@@ -318,17 +328,20 @@ async function load(mine) {
     regimeCard(regime, base, refresh),
     regimeCard(regimeAi, base, refresh),
     regimeCard(regimeV2, base, refresh),
+    regimeCard(coreSat, base, refresh),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
       new Set(stale.due)),
     backtest.node,
+    history.node,
     replay.node,
   ], () => {
     drawCharts(body.accounts);
     const chart = compared.draw();
     if (chart) charts.push(chart);
     backtest.start();
+    history.start();
     replay.start();
   });
 }
@@ -341,6 +354,7 @@ function render(target) {
   live = researchLive();
   backtest = backtestSection();
   replay = replaySection();
+  history = historySection();
   clearInterval(timer);
   timer = live.start(root);
   return load(root);

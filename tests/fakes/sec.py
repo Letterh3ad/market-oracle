@@ -18,6 +18,8 @@ class FakeSec:
         self.filings: dict[int, list[tuple]] = {}
         """cik -> [(form, filing date "YYYY-MM-DD", accession "0000320193-26-000077", document, description,
         optionally items "2.02,9.01" and acceptanceDateTime "2026-07-30T16:30:12.000Z")]"""
+        self.older: dict[int, list[tuple[str, str, list[tuple]]]] = {}
+        """cik -> older submissions pages [(filingFrom, filingTo, rows shaped as `filings`)]"""
         self.documents: dict[str, str] = {}
         """archive URL -> HTML"""
         self.failures: dict[str, httpx.Response | Exception] = {}
@@ -32,14 +34,18 @@ class FakeSec:
         if path == "/files/company_tickers.json":
             return httpx.Response(200, json={str(i): {"cik_str": cik, "ticker": t, "title": name}
                                              for i, (t, (cik, name)) in enumerate(self.companies.items())})
+        if m := re.fullmatch(r"/submissions/CIK(\d{10})-submissions-(\d{3})\.json", path):
+            pages = self.older.get(int(m.group(1)), [])
+            n = int(m.group(2))
+            return httpx.Response(200, json=_columns(pages[n - 1][2])) if 0 < n <= len(pages) else httpx.Response(404)
         if m := re.fullmatch(r"/submissions/CIK(\d{10})\.json", path):
-            rows = self.filings.get(int(m.group(1)))
+            cik = int(m.group(1))
+            rows = self.filings.get(cik)
             if rows is None:
                 return httpx.Response(404)
-            names = ("form", "filingDate", "accessionNumber", "primaryDocument", "primaryDocDescription", "items",
-                     "acceptanceDateTime")
-            recent = {n: [r[i] if i < len(r) else "" for r in rows] for i, n in enumerate(names)}
-            return httpx.Response(200, json={"cik": m.group(1), "filings": {"recent": recent, "files": []}})
+            files = [{"name": f"CIK{cik:010d}-submissions-{i:03d}.json", "filingFrom": a, "filingTo": b}
+                     for i, (a, b, _) in enumerate(self.older.get(cik, []), 1)]
+            return httpx.Response(200, json={"cik": m.group(1), "filings": {"recent": _columns(rows), "files": files}})
         failure = self.failures.get(str(request.url))
         if isinstance(failure, Exception):
             raise failure
@@ -49,3 +55,9 @@ class FakeSec:
         if body is not None:
             return httpx.Response(200, text=body, headers={"Content-Type": "text/html"})
         return httpx.Response(404)
+
+
+def _columns(rows: list[tuple]) -> dict:
+    names = ("form", "filingDate", "accessionNumber", "primaryDocument", "primaryDocDescription", "items",
+             "acceptanceDateTime")
+    return {n: [r[i] if i < len(r) else "" for r in rows] for i, n in enumerate(names)}

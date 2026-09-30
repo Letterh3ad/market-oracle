@@ -8,7 +8,7 @@ from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, LINE_NAMES, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
     decision_log, equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
-from oracle.services.regime_service import OFF
+from oracle.services.regime_service import off_note
 from oracle.services.tick_service import run_line_step, tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
@@ -33,8 +33,9 @@ def register(parser: argparse.ArgumentParser) -> None:
     step = sub.add_parser("step", help="run an account's rules and queue its orders")
     step.add_argument("--account", choices=TRADERS, default="strategy",
                       help="strategy trades the leans, ai the research verdicts, regime the regime blend, "
-                           "regime-ai the blend with the day's model tilt, regime-v2 the blend without hold "
-                           "padding and with its rotation")
+                           "regime-ai the blend with the day's model tilt (frozen: steps nothing), regime-v2 the "
+                           "blend without hold padding and with its rotation, core-sat its equal-weight core's yearly "
+                           "rebalance and its satellite on the blend")
     step.set_defaults(handler=step_cmd)
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")
@@ -131,7 +132,7 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
 def _regime_step(ctx: AppContext, account: str) -> int:
     run = run_line_step(ctx, account).run
     if run is None:
-        print(OFF[account])
+        print(off_note(account))
         return 0
     if run.mood:
         flags = f" ({', '.join(run.flags)})" if run.flags else ""

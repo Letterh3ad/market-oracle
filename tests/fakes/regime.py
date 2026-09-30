@@ -80,3 +80,8 @@ def use_stub(monkeypatch, **kwargs) -> list[StubBook]:
 
     monkeypatch.setattr("oracle.services.regime_service.build_book", build)
     return built
+
+
+def thaw(monkeypatch) -> None:
+    """regime-ai as it stepped before it was frozen, for the tests of that code."""
+    monkeypatch.setattr("oracle.services.paper_service.FROZEN", frozenset())

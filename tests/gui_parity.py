@@ -126,12 +126,24 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # /api/ledgers/regime-ai), switch and model also in Settings ([regime_ai_account]). --account regime-v2 is
     # "Regime-v2 step" (POST /api/ledgers/regime-v2/step, a job); its log, rotation rule and switch are the
     # Regime-v2 reading card (GET and PUT /api/ledgers/regime-v2), switch and rotation also in Settings.
+    # --account core-sat is "Core-sat step" (POST /api/ledgers/core-sat/step, a job); its log, sleeves and switch
+    # are the Core-sat reading card (GET and PUT /api/ledgers/core-sat), switch also in Settings. regime-ai is
+    # frozen: its step decides nothing, its card has no switch.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",
     "paper history": "GET /api/ledgers",
     "paper history --account": OUTPUT_ONLY,
     # Ledgers tab, Backtest section; its kept results come from GET /api/backtests.
+    # Ledgers tab, History coverage card: "Backfill history" and its table.
+    "history backfill": "POST /api/jobs/history",
+    "history backfill --list": "POST /api/jobs/history",
+    "history coverage": "GET /api/history/coverage",
+    "history coverage --list": "GET /api/history/coverage",
+    # The card's "Searched as" column shows each name; clicking a company fills the Search name form.
+    "history name": "GET /api/history/coverage",
+    **{f"history name --{flag}": "PUT /api/history/names/{symbol}" for flag in ("query", "alias", "skip")},
+    "history name --clear": "DELETE /api/history/names/{symbol}",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},
