@@ -14,6 +14,7 @@ from oracle.services.backtest_service import (
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownWatchlist
 from oracle.services.paper_service import place_buy
+from oracle.services.regime_lines import core_members
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
@@ -224,7 +225,7 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     market(ctx, rising(400, "MKT", daily=0.002))
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2"]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat"]
     regime = r.lines[3]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
@@ -255,7 +256,28 @@ def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):
         ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)}, name)
         market(ctx, later[:400] + extra)
         runs.append(run_backtest(ctx, "tech", START, END))
-    assert runs[0] == runs[1] and runs[0].lines[3].trades >= 1
+    assert runs[0] == runs[1] and runs[0].lines[3].trades >= 1 and runs[0].lines[5].trades >= 2
+
+
+def test_the_core_sat_line_holds_the_companies_equally_and_trades_the_blend_in_its_own_quarter(make_ctx):
+    ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
+    universe = UniverseRepo(ctx.conn)
+    universe.add(Listing("TSLA", "Tesla, Inc.", "Equity", "United States", "NMS", currency="USD", company_key="tsla",
+                         is_primary=True))
+    universe.add(Listing("VUSA.L", "Vanguard S&P 500 UCITS ETF", "ETF", "United Kingdom", "LSE", currency="USD",
+                         company_key="vusa", is_primary=True))
+    BarRepo(ctx.conn).upsert(rising(400, "VUSA.L", daily=0.001), "2026-09-24T00:00:00Z")
+    watch(ctx, "VUSA.L", "tech")
+    assert core_members(ctx, ["UP", "SLOW", "TSLA", "VUSA.L"]) == ("SLOW", "UP")
+    market(ctx, rising(400, "MKT", daily=0.002))
+    r = run_backtest(ctx, "tech", START, END, commission=2.0)
+    line = next(x for x in r.lines if x.name == "core_sat")
+    assert line.label == "Core-sat" and line.points[0] == (START, 0.0)
+    assert line.caption.startswith("Core-sat: 75% in an equal-weight buy and hold of the 2 companies (funds and Tesla")
+    assert "set back to equal weight every year" in line.caption and "25% traded by the regime book" in line.caption
+    assert line.caption.endswith(r.lines[3].caption.removeprefix("Regime: "))
+    assert line.trades >= 2 and line.costs >= line.trades * 2.0
+    assert -0.02 < line.return_ < next(x for x in r.lines if x.name == "buy_and_hold").return_ + 0.05
 
 
 def test_the_regime_line_reads_value_and_quality_only_from_the_day_recorded(make_ctx):
@@ -281,7 +303,7 @@ KEPT = {"trend": 1.0, "reason": "kept"}
 def test_the_plain_backtest_never_asks_the_model(make_ctx, monkeypatch):
     model = TiltModel(KEPT)
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2"]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat"]
     assert model.asked == []
 
 
@@ -291,10 +313,10 @@ def test_the_regime_ai_line_asks_the_model_for_every_replayed_day_beside_regime(
     said = []
     r = run_backtest(ctx, "tech", START, END, commission=2.0, regime_ai=True, progress=said.append)
     plain = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_ai"]
-    ai = r.lines[5]
+    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "regime_ai"]
+    ai = r.lines[6]
     assert ai.label == "Regime AI" and "fake (fake tilt-1)" in ai.caption and "date left out" in ai.caption
-    assert r.lines[:5] == plain.lines, "the other lines are the plain backtest's"
+    assert r.lines[:6] == plain.lines, "the other lines are the plain backtest's"
     assert (ai.points, ai.trades) == (r.lines[3].points, r.lines[3].trades), "every tilt x1: it trades like regime"
     decided = [b.date for b in BARS if START <= b.date < END]
     note = next(n for n in r.notes if n.startswith("Regime AI:"))
@@ -322,7 +344,7 @@ async def test_a_regime_ai_backtest_job_shows_its_progress_keeps_its_line_and_re
     await r.wait(job.id)
     assert job.state == "done", job.error
     assert [x.name for x in job.result.backtest.lines][-1] == "regime_ai"
-    assert [x.name for x in plain.result.backtest.lines][-1] == "regime_v2"
+    assert [x.name for x in plain.result.backtest.lines][-1] == "core_sat"
     assert job.progress_fn().startswith("Regime AI tilt at ") and plain.progress_fn is None
     dropped = submit_backtest(ctx, r, "tech", START, END, 2.5, 0.75, regime_ai=True)
     r.cancel(dropped.id)
@@ -352,7 +374,7 @@ async def test_a_cancelled_regime_ai_job_stops_asking_the_model(make_ctx, monkey
 
 def test_the_regime_ai_caption_keeps_the_regime_lines_caveats(make_ctx, monkeypatch):
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, TiltModel(KEPT)), "tech", START, END, regime_ai=True)
-    regime, ai = r.lines[3].caption, r.lines[5].caption
+    regime, ai = r.lines[3].caption, r.lines[6].caption
     assert ai.startswith("Regime AI: ") and ai.endswith(regime.removeprefix("Regime: "))
     assert "Otherwise as the regime line: trend, 12-1 momentum" in ai and "survivors and later picks" in ai
 
@@ -421,7 +443,7 @@ def test_the_walk_forward_judges_every_line_per_six_month_segment_and_fits_regim
     wf = r.walk_forward
     assert wf.months == 6 and wf.segments == tuple(segments(WF_START, WF_END, 6)) and len(wf.segments) == 3
     names = [x.name for x in wf.lines]
-    assert names == [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2",
+    assert names == [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat",
                                                      "regime_wf"]
     assert all(len(x.segments) == 3 for x in wf.lines)
     held = wf.lines[1]
@@ -503,7 +525,7 @@ def test_with_the_walk_forward_the_regime_ai_line_is_judged_per_segment_from_its
     ctx = long_ctx(make_ctx)
     monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda c: (model, "fake (fake tilt-1)"))
     r = run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True, regime_ai=True)
-    names = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_wf", "regime_ai"]
+    names = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "regime_wf", "regime_ai"]
     assert [x.name for x in r.lines] == names and [x.name for x in r.walk_forward.lines] == names
     decided = sum(1 for b in LONG if WF_START <= b.date < WF_END)
     assert len(model.asked) == decided, "the segments reuse the whole run's tilts: no day is asked twice"

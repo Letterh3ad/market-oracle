@@ -6,9 +6,11 @@ replayed line itself, with a caption that names exactly the inputs it had."""
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 
+from oracle.broker.backtest import LeanSource, Replay, replay
+from oracle.broker.core_sat import CORE_SHARE, REBALANCE_YEARS, CoreSat, core_sat_replay
 from oracle.broker.regime import (DatedScores, RegimeBook, RegimeInputs, Rotation, Tilt, regime_book, settings_from,
                                   v2_settings)
 from oracle.broker.regime.fit import MIN_WINDOWS, TRAILING
@@ -21,8 +23,8 @@ from oracle.services.prices_service import ConvertedBar, histories_in_base
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["HISTORY_DAYS", "LINE_LABELS", "REGIME_AI_LINE", "REGIME_LINE", "REGIME_V2_LINE", "REGIME_WF_LINE",
-           "WF_CAPTION", "RegimeLine", "combined", "market_history", "regime_inputs", "regime_line", "regime_lines",
+__all__ = ["CORE_SAT_LINE", "CORE_SAT_SOURCE", "HISTORY_DAYS", "LINE_LABELS", "REGIME_AI_LINE", "REGIME_LINE", "REGIME_V2_LINE", "REGIME_WF_LINE",
+           "WF_CAPTION", "RegimeLine", "combined", "core_members", "market_history", "regime_inputs", "regime_line", "regime_lines",
            "v2_caption"]
 
 HISTORY_DAYS = 1100
@@ -32,10 +34,11 @@ older bars change nothing and only cost time."""
 FACTOR_ANALYSTS = ("value", "quality")
 MARKET_TYPE = "equity"
 REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE, REGIME_AI_LINE = "regime", "regime_v2", "regime_wf", "regime_ai"
-LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2", REGIME_WF_LINE: "Regime-wf",
-               REGIME_AI_LINE: "Regime AI"}
+CORE_SAT_LINE = "core_sat"
+LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2", CORE_SAT_LINE: "Core-sat",
+               REGIME_WF_LINE: "Regime-wf", REGIME_AI_LINE: "Regime AI"}
 """The replayed regime lines' names in a backtest or replay study, and their labels."""
-REGIME_V2_SOURCE, REGIME_WF_SOURCE = "regime-v2", "regime-wf"
+REGIME_V2_SOURCE, REGIME_WF_SOURCE, CORE_SAT_SOURCE = "regime-v2", "regime-wf", "core-sat"
 """The v2 and wf books' leans say which made them, so a rotation or buy reason names its line."""
 RANK_WAIT = timedelta(days=400)
 """About a year of bars and the next month-end: before it the 12-1 momentum rank does not exist."""
@@ -45,6 +48,30 @@ RANK_WAIT = timedelta(days=400)
 class RegimeLine:
     book: RegimeBook
     caption: str
+    members: tuple[str, ...] | None = None
+    """core_sat only: the core's listings; the book trades the satellite over them alone."""
+
+    def run(self, history: Mapping, start: date, end: date, *, rules: Rules, risk: Mapping[str, float],
+            **fills) -> Replay | CoreSat:
+        """The line replayed (`fills`: `backtest.replay`'s slippage, commission, fill_at, venues)."""
+        if self.members is None:
+            return replay(history, start, end, rules=rules, risk=risk, lean=self.book.lean_source(),
+                          cap=self.book.cap, **fills)
+        return core_sat_replay(history, start, end, rules=rules, risk=risk, members=self.members,
+                               lean=_only(self.book.lean_source(), self.members), cap=self.book.cap, **fills)
+
+
+def _only(lean: LeanSource, members: Collection[str]) -> LeanSource:
+    kept = frozenset(members)
+    return lambda symbol, bars: lean(symbol, bars) if symbol in kept else None
+
+
+def core_members(ctx: AppContext, symbols: Collection[str]) -> tuple[str, ...]:
+    """The listings a core-satellite line holds and trades: companies only, never a fund or a
+    never-listed company (Tesla)."""
+    universe = UniverseRepo(ctx.conn)
+    return tuple(sorted(s for s in symbols if (p := universe.profile(s)) is not None
+                        and p.type.lower() == MARKET_TYPE and not never_company(ctx, s, user=False)))
 
 
 def market_history(ctx: AppContext, start: date, end: date,
@@ -90,11 +117,14 @@ def regime_line(ctx: AppContext, start: date, end: date, rules: Rules, traded: C
 
 def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: Collection[str],
                  verdicts: Mapping[str, DatedScores] | None = None,
-                 refits: Collection[date] = (), tilt: Tilt | None = None) -> dict[str, RegimeLine]:
+                 refits: Collection[date] = (), tilt: Tilt | None = None,
+                 extra: Mapping[str, Mapping[str, DatedScores]] | None = None) -> dict[str, RegimeLine]:
     """Every replayed regime line by name (`LINE_LABELS`), each its own book over one read of the
     market and inputs, as `regime_line` builds them. With `refits` (a walk-forward's segment
     starts), also regime_wf: the regime book with its presets refitted at each. `tilt` adds the
-    regime_ai book: the regime line's settings with that (replayed model) tilt."""
+    regime_ai book: the regime line's settings with that (replayed model) tilt. core_sat is the
+    regime book as the satellite of an equal-weight core of the traded companies; `extra` adds
+    methods to its book alone (`RegimeInputs.extra`; their weights come from `[regime]`)."""
     market = market_history(ctx, start - timedelta(days=HISTORY_DAYS), end, traded)
     inputs = regime_inputs(ctx, market, end, verdicts)
     settings = settings_from(asdict(ctx.config.regime), max_positions=rules.max_positions,
@@ -104,7 +134,8 @@ def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: 
     caption = _caption(len(market), inputs, verdicts is not None and bool(verdicts), end, start < first + RANK_WAIT)
     lines = {REGIME_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=settings), caption),
              REGIME_V2_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=v2, source=REGIME_V2_SOURCE),
-                                        v2_caption(v2.rotation) + caption.removeprefix("Regime: "))}
+                                        v2_caption(v2.rotation) + caption.removeprefix("Regime: ")),
+             CORE_SAT_LINE: core_sat_line(ctx, market, inputs, settings, traded, extra, caption)}
     if refits:
         lines[REGIME_WF_LINE] = RegimeLine(
             regime_book(market, inputs=inputs, settings=settings, source=REGIME_WF_SOURCE, refits=refits),
@@ -112,6 +143,25 @@ def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: 
     if tilt is not None:
         lines[REGIME_AI_LINE] = RegimeLine(regime_book(market, inputs=inputs, settings=settings, tilt=tilt), caption)
     return lines
+
+
+def core_sat_line(ctx: AppContext, market: Mapping, inputs: RegimeInputs, settings, traded: Collection[str],
+                  extra: Mapping[str, Mapping[str, DatedScores]] | None, caption: str) -> RegimeLine:
+    members = core_members(ctx, traded)
+    book = regime_book(market, inputs=replace(inputs, extra=dict(extra or {})), settings=settings,
+                       source=CORE_SAT_SOURCE)
+    return RegimeLine(book, core_sat_caption(len(members), sorted(extra or {})) + caption.removeprefix("Regime: "),
+                      members)
+
+
+def core_sat_caption(members: int, extra: Collection[str] = ()) -> str:
+    more = f", plus {', '.join(extra)}" if extra else ""
+    return (f"Core-sat: {CORE_SHARE:.0%} in an equal-weight buy and hold of the {members} companies (funds and "
+            f"Tesla left out), bought at the next open with costs and set back to equal weight every "
+            f"{'year' if REBALANCE_YEARS == 1 else f'{REBALANCE_YEARS} years'} (trims sold first, then the laggards "
+            f"topped up from the core's own cash); {1 - CORE_SHARE:.0%} traded by the regime book{more} over the "
+            "same companies within its own cash, its sizes and cash floor a share of it alone. Fixed a priori, "
+            "never fitted to a backtest. The satellite otherwise as the regime line: ")
 
 
 WF_CAPTION = ("Regime-wf: the regime book with its mood weights refitted at the start of each walk-forward "

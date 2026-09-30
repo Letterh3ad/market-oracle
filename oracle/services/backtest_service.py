@@ -133,9 +133,13 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
 
     spans = segments(start, end, MONTHS) if walk_forward else []
 
+    fills = {"slippage": slippage_bps / BPS, "commission": commission}
+
     def run(lean=None, cap=None, first=start, last=end):
-        return replay(history, first, last, rules=rules, risk=asdict(ctx.config.risk), slippage=slippage_bps / BPS,
-                      commission=commission, lean=lean, cap=cap)
+        return replay(history, first, last, rules=rules, risk=asdict(ctx.config.risk), lean=lean, cap=cap, **fills)
+
+    def run_line(x, first=start, last=end):
+        return x.run(history, first, last, rules=rules, risk=asdict(ctx.config.risk), **fills)
 
     def traded(name: str, caption: str, x, label: str = "") -> Line:
         return Line(name, caption, tuple(returns_since(x.equity, start)), max_fall(x.equity), len(x.trades),
@@ -151,7 +155,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
         model, label = regime_tilt.tilt_model(ctx)
         tilt = regime_tilt.ReplayTilt(model, ctx.config.regime.tilt_cap, start, end, stop, progress, busy)
     blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans], tilt=tilt)
-    runs = {name: run(x.book.lean_source(), x.book.cap) for name, x in blends.items()}
+    runs = {name: run_line(x) for name, x in blends.items()}
     captions = {name: x.caption for name, x in blends.items()}
     if tilt:
         captions[REGIME_AI_LINE] = _ai_caption(label) + captions[REGIME_AI_LINE].removeprefix("Regime: ")
@@ -176,16 +180,20 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
     walked = None
     if spans:
-        sources = {"strategy": (None, None), "buy_and_hold": None, "momentum": (momentum_leans, None),
-                   **{n: (x.book.lean_source(), x.book.cap) for n, x in blends.items()}}
-        equities = {n: [_held(closes, a, b, capital) if source is None else run(*source, first=a, last=b).equity
-                        for a, b in spans] for n, source in sources.items()}
+        sources = {"strategy": lambda a, b: run(first=a, last=b), "buy_and_hold": lambda a, b: _held(closes, a, b, capital),
+                   "momentum": lambda a, b: run(momentum_leans, first=a, last=b),
+                   **{n: (lambda a, b, x=x: run_line(x, a, b)) for n, x in blends.items()}}
+        equities = {n: [_equity(source(a, b)) for a, b in spans] for n, source in sources.items()}
         fits = tuple((day, {m: dict(w) for m, w in presets.items()})
                      for day, presets in blends[REGIME_WF_LINE].book.fits)
         walked = WalkForward(MONTHS, tuple(spans), judge(equities, "buy_and_hold"), fits)
         notes.append(_walk_note(spans, end, capital, base))
     return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum, *regimes),
                     r.equity, r.trades, tuple(notes), walked)
+
+
+def _equity(x) -> list[tuple[date, float]]:
+    return x if isinstance(x, list) else list(x.equity)
 
 
 def _held(closes: dict[str, list[tuple[date, float | None]]], first: date, last: date,

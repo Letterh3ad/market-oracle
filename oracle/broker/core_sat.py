@@ -52,6 +52,14 @@ class CoreSat:
     def trades(self) -> tuple[Trade, ...]:
         return tuple(sorted(self.core.trades + self.satellite.trades, key=lambda t: (t.day, t.symbol, t.side)))
 
+    @property
+    def rejected(self) -> tuple[str, ...]:
+        return self.core.rejected + self.satellite.rejected
+
+    @property
+    def unfilled(self) -> tuple[str, ...]:
+        return tuple(sorted(set(self.core.unfilled) | set(self.satellite.unfilled)))
+
 
 def rebalance_days(days: Sequence[date]) -> list[date]:
     """The first of `days` (sorted market days) and the first on or after each yearly anniversary of it."""
