@@ -15,6 +15,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
 from oracle.services.edges_service import company_edges, confirm_edge, dismiss_edge
+from oracle.services.industry_research_service import industry_news
 from oracle.services.industry_service import Activity, IndustryMap, company_activity, industry_map
 from oracle.services.laya_service import MODEL_TAG, laya_scores
 from oracle.services.links_service import USER_RELATIONS, CompanyLink, add_link, company_links, delete_link
@@ -164,6 +165,24 @@ async def get_industry(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
                     "headlines": [shapes.headline(e) for e in now[r.symbol].headlines]},
         } for r in m.related],
     }
+
+
+@router.get("/{symbol}/industry-news")
+async def get_industry_news(symbol: str, days: int = Query(default=7, ge=0, le=365),
+                            ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The company's daily Laya features (today and `days` before) and each related company's latest
+    scored events with what they moved today; stored data only."""
+    def read():
+        with worker_context(ctx) as own:
+            return industry_news(own, symbol, days=days)
+
+    v = await asyncio.to_thread(read)
+    return {"enabled": ctx.config.laya.enabled, **asdict(v),
+            "own": _news(v.own), "related": [_news(c) for c in v.related]}
+
+
+def _news(c) -> dict:
+    return {**asdict(c), "events": [{**asdict(e), "link": shapes.web_link(e.url)} for e in c.events]}
 
 
 def _link(x: CompanyLink) -> dict:

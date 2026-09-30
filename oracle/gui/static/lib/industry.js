@@ -126,12 +126,65 @@ function tiesSection(symbol, body, changed) {
     el("tbody", null, ...body.edges.map((e) => tieRow(symbol, e, changed)))));
 }
 
-// Fills `box` once the map and the ties arrive, and again after each change; a late answer for a
-// box no longer on screen is dropped.
+const NEWS_TIP = "Each company's headlines of the last few days, read by Laya for this company: which way the news "
+  + "points for it and what kind of event it is. A feature is the day's sum of direction x its probability (up +, "
+  + "down -), counted by what the news is about: this company, a competitor, supplier, customer or the wider "
+  + "industry. It acts from the next session. Probabilities are uncalibrated; relevance is near chance, so no "
+  + "headline is left out for it.";
+const moved = (v) => el("span", { class: tone(v) }, `${v >= 0 ? "+" : ""}${v.toFixed(2)}`);
+
+function researchButton(symbol, enabled, changed) {
+  if (!enabled) return el("span", { class: "dim small" }, "Laya is off (Settings, [laya] enabled): no industry research.");
+  return busyButton("Research industry", async (onState) => {
+    try {
+      clearError();
+      await runJob(`/api/jobs/industry?symbol=${encodeURIComponent(symbol)}`, onState);
+    } catch (err) {
+      showError(err.message);
+    }
+    changed();
+  });
+}
+
+function eventLine(e) {
+  const link = safeUrl(e.link);
+  const title = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
+  return el("div", { class: "small" }, el("span", { class: "dim" }, `${e.known_at.slice(0, 10)} `), title,
+    el("span", { class: "dim" }, ` ${e.direction} ${pctOf(e.direction_prob)}, ${e.event.replace("_", " ")}`));
+}
+
+function newsRow(c) {
+  return el("tr", null, el("td", null, companyLink(c.symbol)), el("td", null, c.relation),
+    el("td", null, ...(c.day_articles ? [moved(c.day_score), el("span", { class: "dim small" }, ` (${c.day_articles})`)]
+      : [el("span", { class: "dim" }, "nothing today")])),
+    el("td", null, ...c.events.map(eventLine)));
+}
+
+// Today's features and each related company's latest scored events, with Research industry.
+function newsSection(symbol, body, changed) {
+  const head = el("div", { class: "row" }, researchButton(symbol, body.enabled, changed),
+    el("span", { class: "badge warn", title: NEWS_TIP }, "uncalibrated"),
+    el("span", { class: "dim small" }, ` last searched ${body.last_searched ? body.last_searched.slice(0, 16).replace("T", " ") : "never"}`));
+  const features = body.features.length
+    ? el("p", null, `Today (${body.day}): `, ...body.features.flatMap((f, i) => [i ? ", " : "", `${f.relation} `,
+      moved(f.score), el("span", { class: "dim small" }, ` (${f.articles})`)]))
+    : el("p", { class: "dim" }, `No scored news known today (${body.day}).`);
+  const rows = [body.own, ...body.related].filter((c) => c.events.length);
+  const table = rows.length ? el("table", { class: "results" },
+    el("thead", null, el("tr", null, el("th", null, "Company"), el("th", null, "News counts as"),
+      el("th", { title: NEWS_TIP }, "Moved today"), el("th", null, "Latest scored events"))),
+    el("tbody", null, ...rows.map(newsRow)))
+    : el("p", { class: "dim" }, "No scored industry news yet: Research industry searches this company's and its map's headlines.");
+  return el("div", null, head, features, table);
+}
+
+// Fills `box` once the map, the news and the ties arrive, and again after each change; a late answer
+// for a box no longer on screen is dropped.
 async function showIndustry(box, symbol) {
-  let body, ties;
+  let body, news, ties;
   try {
-    [body, ties] = await Promise.all([api(`/api/companies/${encodeURIComponent(symbol)}/industry`),
+    [body, news, ties] = await Promise.all([api(`/api/companies/${encodeURIComponent(symbol)}/industry`),
+      api(`/api/companies/${encodeURIComponent(symbol)}/industry-news`),
       api(`/api/companies/${encodeURIComponent(symbol)}/edges`)]);
   } catch (err) {
     if (box.isConnected) box.replaceChildren(el("p", { class: "dim" }, err.message));
@@ -139,9 +192,10 @@ async function showIndustry(box, symbol) {
   }
   const again = () => showIndustry(box, symbol);
   if (box.isConnected) {
-    repaint(box, [industryPanel(symbol, body, again), el("h4", null, "Suppliers and customers from filings and news"),
+    repaint(box, [industryPanel(symbol, body, again), el("h4", null, "Industry news (Laya)"),
+      newsSection(symbol, news, again), el("h4", null, "Suppliers and customers from filings and news"),
       tiesSection(symbol, ties, again)]);
   }
 }
 
-export { industryPanel, showIndustry, tiesSection };
+export { industryPanel, newsSection, showIndustry, tiesSection };
