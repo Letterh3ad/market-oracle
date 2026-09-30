@@ -166,10 +166,13 @@ class HorizonResult:
     positive: int
     counted: int
     baseline_ic: float | None = None
-    """The news-attention baseline's IC over the same counted days."""
+    """The news-attention baseline's IC over the same counted days, its sign fitted per segment on the
+    same purged trailing window as the combined score."""
     baseline_t: float | None = None
     beats_baseline: bool | None = None
     """Laya only counts as useful when its combined IC beats the baseline's (the bar is separate)."""
+    baseline_raw_ic: float | None = None
+    """The baseline as it is (more attention ranked higher), over the counted days."""
 
 
 @dataclass(frozen=True)
@@ -253,11 +256,12 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
         for f in names:
             if (ic := spearman([x[f] for x, _, _ in rows], ys)) is not None:
                 ics[f][t] = ic
-    out_segments, counted_ics = [], []
+    out_segments, counted_ics, counted_base = [], [], []
     for s, e in spans:
         train = [t for t in obs if s - timedelta(days=FIT_DAYS) <= t < s
                  and max(x[2] for x in obs[t]) + timedelta(days=PEER_SLACK_DAYS) < s]
         w = fit_weights({f: [ics[f][t] for t in train if t in ics[f]] for f in in_score})
+        sign = fit_weights({BASELINE: [ics[BASELINE][t] for t in train if t in ics[BASELINE]]})[BASELINE]
         seg = []
         if any(w.values()):
             for t in sorted(x for x in obs if s <= x <= e):
@@ -272,6 +276,7 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
                                        {f: round(v, 4) for f, v in w.items()}))
         if why is None:
             counted_ics += seg
+            counted_base += [(t, sign * ics[BASELINE].get(t, 0.0)) for t, _ in seg]
     counted = [x for x in out_segments if x.counted]
     features = []
     for f in names:
@@ -284,10 +289,12 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
     vals = [ic for _, ic in sorted(counted_ics)]
     ic, t = mean(vals), newey_west_t(vals, h)
     v = verdict(ic, t, [SegmentIC(x.start, x.end, x.ic, x.t, x.days, x.counted, x.why) for x in out_segments])
-    base = next(f for f in features if f.name == BASELINE)
-    beats = None if ic is None or base.ic is None else ic > base.ic
+    base = [x for _, x in sorted(counted_base)]
+    base_ic = mean(base)
+    beats = None if ic is None or base_ic is None else ic > base_ic
     return HorizonResult(h, lb, _r(ic), _r(t), len(vals), sum(len(x) for x in obs.values()), tuple(out_segments),
-                         tuple(features), v.label, v.passed, v.positive, v.counted, base.ic, base.t, beats)
+                         tuple(features), v.label, v.passed, v.positive, v.counted, _r(base_ic), _r(newey_west_t(base, h)), beats,
+                         next(f.ic for f in features if f.name == BASELINE))
 
 
 def _r(x: float | None) -> float | None:

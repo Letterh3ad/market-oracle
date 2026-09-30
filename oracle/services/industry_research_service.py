@@ -30,9 +30,11 @@ from oracle.services.history_names import SearchName
 from oracle.services.history_service import plain_company, search_for
 from oracle.services.http import open_client
 from oracle.services.industry_service import industry_map
-from oracle.services.jobs_service import job_statuses, single_flight
+from oracle.services.jobs_service import single_flight
 from oracle.services.laya_features import DailyFeature, known_day, signed, store_features, stored_features
-from oracle.services.laya_service import MODEL_TAG, ScoredArticle, SharedScorer, company_articles, laya_scores, primary
+from oracle.services.laya_service import (
+    MODEL_TAG, ScoredArticle, SharedScorer, company_articles, laya_scores, live_model_work, primary,
+)
 from oracle.services.watch_service import DEFAULT_LIST, watchlist_symbols
 from oracle.store.articles import ArticleRepo
 from oracle.store.db import to_utc_iso
@@ -66,8 +68,6 @@ KIND_RELATION = {"supplier": "supplier", "customer": "customer", "competitor": "
                  "partner": "industry", "other": "industry"}
 """A map relation (what the related company is to the target) -> the feature its news counts in."""
 _PRECEDENCE = ("supplier", "customer", "competitor", "industry")
-MODEL_WORK = ("research", "discovery_chat", "discovery")
-"""Locks of live model work the tick's stage gives way to (in any process)."""
 
 
 def relation_for_kinds(kinds: Sequence[str]) -> str:
@@ -147,12 +147,6 @@ def gpu_room(ctx: AppContext) -> bool:
         return False
     free = gpu_free_mb()
     return free is not None and free >= GPU_FREE_MB
-
-
-def live_model_work(ctx: AppContext) -> str | None:
-    """Live model work another job holds a lock for (research, a question, discovery), by name."""
-    return next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in MODEL_WORK and s.stale_reason is None),
-                None)
 
 
 async def research_industry(ctx: AppContext, symbols: Sequence[str] | None = None, *, max_requests: int | None = None,

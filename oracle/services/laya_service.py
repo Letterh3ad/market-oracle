@@ -10,19 +10,21 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from oracle.research.laya import MODEL_TAG, LayaInput, LayaModel, LayaUnavailable, Scorer
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
+from oracle.services.jobs_service import job_statuses
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
 from oracle.store.laya import LayaRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["BATCH", "MODEL_TAG", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S", "company_articles",
-           "laya_scores", "load_scorer", "primary", "score_articles", "score_company"]
+__all__ = ["BATCH", "MODEL_TAG", "MODEL_WORK", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S",
+           "company_articles", "laya_scores", "live_model_work", "load_scorer", "primary", "score_articles",
+           "score_company"]
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +72,16 @@ class ScoredArticle:
     event_prob: float
     model: str
     scored_at: str
+
+
+MODEL_WORK = ("research", "discovery_chat", "discovery")
+"""Job locks of live model work Laya gives way to: research, a question, discovery."""
+
+
+def live_model_work(ctx: AppContext, locks: Sequence[str] = MODEL_WORK) -> str | None:
+    """Live model work a job in any process holds one of `locks` for, by name; stale locks block
+    nothing."""
+    return next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in locks and s.stale_reason is None), None)
 
 
 def load_scorer(ctx: AppContext) -> Scorer:

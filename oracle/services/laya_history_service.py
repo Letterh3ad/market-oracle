@@ -19,23 +19,23 @@ from oracle.services.history_names import default_search
 from oracle.services.history_service import Company, company_history, history_companies, plain_company
 from oracle.services.industry_research_service import relation_for_kinds
 from oracle.services.industry_service import Related, industry_map
-from oracle.services.jobs_service import job_statuses, single_flight
-from oracle.services.laya_service import MODEL_TAG, SharedScorer
+from oracle.services.jobs_service import single_flight
+from oracle.services.laya_service import MODEL_TAG, MODEL_WORK, SharedScorer, live_model_work
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.db import to_utc_iso
 from oracle.store.laya import LayaRepo
 from oracle.store.meta import MetaRepo
 
 __all__ = ["GPU_MS", "LayaHistoryRun", "MapSubject", "PairGroup", "PairPlan", "history_pairs", "last_history_run",
-           "map_subjects", "model_work_anywhere", "plan_history", "score_history"]
+           "HISTORY_WAITS_FOR", "map_subjects", "plan_history", "score_history"]
 
 LAST_RUN = "laya_history_last_run"
 JOB = "laya_history"
 LEASE_S = 1800.0
 GPU_WAIT_S = 60.0
 """How often a run with no GPU room tries the GPU again."""
-MODEL_LOCKS = ("research", "discovery_chat", "discovery", "tick", "industry_research")
-"""Job locks of live model work (any process) a history run gives way to."""
+HISTORY_WAITS_FOR = (*MODEL_WORK, "tick", "industry_research")
+"""Job locks (any process) a history run gives way to: live model work, a tick, industry research."""
 GPU_MS = 19.0
 """Milliseconds a pair on the GPU (ticket 01's measure: 11 to 19), for an estimate before any run."""
 CPU_MS = 410.0
@@ -167,17 +167,15 @@ class _Cancelled(Exception):
     pass
 
 
-def model_work_anywhere(ctx: AppContext) -> str | None:
-    """Live model work any process holds a lock for (research, discovery, a tick, industry
-    research), by name: read from the job locks, so a CLI run sees the app's work and back."""
-    return next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in MODEL_LOCKS and s.stale_reason is None),
-                None)
+class _NoGpu(Exception):
+    pass
 
 
-def _gpu_loader(ctx: AppContext, allow_cpu: bool, stop: Callable[[], bool],
-                say: Callable[[str], None]) -> Callable[[], Scorer]:
+def _gpu_loader(ctx: AppContext, allow_cpu: bool, stop: Callable[[], bool], say: Callable[[str], None],
+                beat: Callable[[], None]) -> Callable[[], Scorer]:
     """A loader that never settles for the CPU unless allowed: a model that loads there is closed
-    and the GPU is tried again every GPU_WAIT_S, until it has room or `stop`."""
+    and the GPU is tried again every GPU_WAIT_S (the lock kept alive meanwhile), until it has room
+    or `stop`; with no CUDA GPU at all it stops, saying so."""
     cpu_ok = allow_cpu or ctx.config.laya.device == "cpu"
 
     def load() -> Scorer:
@@ -186,11 +184,15 @@ def _gpu_loader(ctx: AppContext, allow_cpu: bool, stop: Callable[[], bool],
             if cpu_ok or model.device != "cpu":
                 return model
             model.close()
+            why = getattr(model, "why", "") or ""
+            if "no CUDA" in why:
+                raise _NoGpu(f"{why.split(';')[0]}: allow the CPU to score there (about {CPU_MS:.0f} ms a pair)")
             say(f"waiting for GPU room: Laya loaded on the CPU (about {CPU_MS:.0f} ms a pair against {GPU_MS:.0f}); "
                 f"trying again every {GPU_WAIT_S:.0f} s (allow the CPU to score there)")
             for _ in range(int(GPU_WAIT_S / laya_service.YIELD_STEP_S)):
                 if stop():
                     raise _Cancelled
+                beat()
                 laya_service.wait(laya_service.YIELD_STEP_S)
 
     return load
@@ -211,11 +213,11 @@ def score_history(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Seque
     with single_flight(ctx, JOB, LEASE_S) as held:
         def waiting() -> str | None:
             held.check()
-            return (busy() if busy else None) or model_work_anywhere(ctx)
+            return (busy() if busy else None) or live_model_work(ctx, HISTORY_WAITS_FOR)
 
         say("planning the pairs")
         groups = history_pairs(ctx, watchlist, only=only, own_only=own_only)
-        shared = scorer if scorer is not None else SharedScorer(_gpu_loader(ctx, allow_cpu, halt, say))
+        shared = scorer if scorer is not None else SharedScorer(_gpu_loader(ctx, allow_cpu, halt, say, held.check))
         run = LayaHistoryRun(len({g.target for g in groups}), len(groups))
         began = time.monotonic()
         try:
@@ -238,6 +240,8 @@ def score_history(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Seque
                 run.groups_done += 1
         except _Cancelled:
             run.stopped = "cancelled"
+        except _NoGpu as exc:
+            run.stopped = str(exc)
         finally:
             if scorer is None and isinstance(shared, SharedScorer):
                 shared.close()

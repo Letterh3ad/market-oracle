@@ -19,11 +19,13 @@ from oracle.services.laya_features import known_day
 from oracle.services.errors import JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
 from oracle.services.laya_history_service import (
-    history_pairs, last_history_run, model_work_anywhere, plan_history, score_history,
+    HISTORY_WAITS_FOR, history_pairs, last_history_run, plan_history, score_history,
 )
+from oracle.services.jobs_service import job_statuses
+from oracle.services.laya_service import live_model_work
 from oracle.services.laya_service import SharedScorer, laya_scores
 from oracle.services.laya_test_service import (
-    HORIZONS, MAIN_RELATIONS, build_panel, horizon_result, keep_laya_test, laya_tests, run_laya_test,
+    HORIZONS, MAIN_RELATIONS, Panel, build_panel, horizon_result, keep_laya_test, laya_tests, run_laya_test,
 )
 from oracle.analysts.predictive import lookback
 from oracle.broker.walk_forward import segments
@@ -192,14 +194,40 @@ def test_a_cancel_while_waiting_for_gpu_room_stops_the_run(ctx, monkeypatch):
     assert run.stopped == "cancelled" and run.scored == 0
 
 
+def test_the_lock_stays_alive_through_a_long_wait_for_gpu_room(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    made = loads(monkeypatch, *["cpu"] * 5, "cuda")
+    fresh = []
+
+    def later(seconds):
+        ctx.clock.advance(600)
+        fresh.append(next(x for x in job_statuses(ctx) if x.job == "laya_history").stale_reason is None)
+
+    monkeypatch.setattr("oracle.services.laya_service.wait", later)
+    run = score_history(ctx)
+    assert run.scored == len(MAINS) and len(fresh) > 30 and all(fresh), "held past the 1800 s lease"
+    assert made[-1].device == "cuda"
+
+
+def test_with_no_cuda_gpu_at_all_it_stops_and_says_so_unless_the_cpu_is_allowed(ctx, monkeypatch):
+    backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
+    made = loads(monkeypatch, "cpu")
+    monkeypatch.setattr(FakeLaya, "why", "no CUDA GPU; on the CPU", raising=False)
+    run = score_history(ctx)
+    assert run.stopped.startswith("no CUDA GPU") and "allow the CPU" in run.stopped and run.scored == 0
+    assert len(made) == 1 and made[0].closed
+    assert score_history(ctx, allow_cpu=True).scored == len(MAINS)
+
+
 def test_one_history_run_at_a_time_across_processes_and_it_yields_to_model_work_anywhere(ctx):
     with single_flight(ctx, "laya_history", 60):
         with pytest.raises(JobAlreadyRunning):
             score_history(ctx, scorer=FakeLaya())
-    assert model_work_anywhere(ctx) is None
+    assert live_model_work(ctx, HISTORY_WAITS_FOR) is None
     for lock, name in (("tick", "tick"), ("industry_research", "industry research"), ("research", "research")):
         with single_flight(ctx, lock, 60):
-            assert model_work_anywhere(ctx) == name
+            assert live_model_work(ctx, HISTORY_WAITS_FOR) == name
+            assert live_model_work(ctx) == (name if lock == "research" else None), "industry's own set"
     assert "industry" in PREEMPTED_BY
 
 
@@ -292,6 +320,31 @@ def backfill_at(ctx, symbol, items):
     ids = ArticleRepo(ctx.conn).save([Article(f"https://n.test/{symbol}/{t}", t, "Wire", at) for t, at in items],
                                      "google_news", "x")
     HistoryRepo(ctx.conn).finish(Window(symbol, "google_news", FIRST, LAST, len(ids), len(ids), 0, 0), ids, "x")
+
+
+def test_a_score_that_is_only_attention_with_its_sign_flipped_never_beats_the_baseline():
+    """News names fall and Laya reads their news as down: own_mean is minus attention, ranked alike."""
+    rng = random.Random(5)
+    mains = [f"S{i}" for i in range(8)]
+    days = weekdays(FIRST, LAST)
+    daily, bars = {m: {} for m in mains}, {}
+    for m in mains:
+        price, rows, news = 100.0, [], set()
+        for d in days:
+            if d.weekday() == 0 and rng.random() < 0.5:  # at most one article in any 7-day window
+                news.add(d)
+                daily[m][d] = {"own": (1, -0.8, 0.2)}
+        for d in days:
+            opened = price
+            hit = any(d - timedelta(days=k) in news for k in range(7))
+            price = opened * (1 + (-0.004 if hit else 0.004) + rng.gauss(0, 0.01))
+            rows.append(Bar(m, d, opened, max(opened, price), min(opened, price), price, price, 1, "USD", "t"))
+        bars[m] = rows
+    panel = Panel(mains, daily, bars, {m: [] for m in mains})
+    r = horizon_result(panel, 5, 7, segments(date(2022, 9, 21), END), MAIN_RELATIONS, None)
+    assert r.baseline_raw_ic < 0, "news names fall: attention predicts backwards"
+    assert r.ic > 0 and r.segments[1].weights["own_mean"] > 0
+    assert r.baseline_ic == pytest.approx(r.ic) and r.beats_baseline is False, "same ranks, fitted the same way"
 
 
 def test_future_bars_and_articles_change_no_segment_that_ended_before_them(ctx):

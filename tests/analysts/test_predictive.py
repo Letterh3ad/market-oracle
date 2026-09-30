@@ -146,9 +146,31 @@ def test_a_date_only_stamp_is_midnight_pacific_or_utc(stamp, only):
     assert date_only(stamp) is only
 
 
-def test_a_date_only_stamp_is_known_a_day_later_and_a_timed_one_when_stamped():
-    assert known_moment("2023-07-03T07:00:00+00:00").isoformat() == "2023-07-04T07:00:00+00:00"
+def test_a_date_only_stamp_is_known_by_the_end_of_its_day_and_a_timed_one_when_stamped():
+    assert known_moment("2023-07-03T07:00:00+00:00").isoformat() == "2023-07-04T06:59:59.999999+00:00"
+    assert known_moment("2023-01-03T08:00:00+00:00").isoformat() == "2023-01-04T07:59:59.999999+00:00"
+    assert known_moment("2023-03-01T00:00:00+00:00").isoformat() == "2023-03-02T03:00:00+00:00", "EDGAR to 22:00 ET"
     assert known_moment("2023-07-03T13:45:00+00:00").isoformat() == "2023-07-03T13:45:00+00:00"
+
+
+@pytest.mark.parametrize("stamp", ["2026-07-15T07:00:00+00:00", "2026-01-14T08:00:00+00:00"])
+def test_a_google_stamp_reaches_london_and_xetra_the_next_day_and_tokyo_the_day_after(stamp):
+    day = date.fromisoformat(stamp[:10])
+    known = known_moment(stamp)
+    for europe in ("SAP.DE", "SHEL.L", "MC.PA"):
+        assert usable_day(europe, known) == day + timedelta(days=1), europe
+    assert usable_day("AAPL", known) == day + timedelta(days=1)
+    assert usable_day("7203.T", known) == day + timedelta(days=2)
+
+
+def test_an_exactly_timed_stamp_at_the_open_is_still_late():
+    assert usable_day("SAP.DE", known_moment("2026-07-16T07:00:00+00:00")) == date(2026, 7, 17)
+
+
+def test_opens_are_the_opening_auction_where_the_open_is_fixed():
+    assert session_open("0700.HK", date(2023, 7, 3)).isoformat() == "2023-07-03T01:20:00+00:00"
+    assert session_open("RELIANCE.NS", date(2023, 7, 3)).isoformat() == "2023-07-03T03:38:00+00:00"
+    assert session_open("600519.SS", date(2023, 7, 3)).isoformat() == "2023-07-03T01:25:00+00:00"
 
 
 def test_each_listing_opens_at_its_own_exchanges_local_time_in_utc():

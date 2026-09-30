@@ -213,10 +213,22 @@ def date_only(stamp: str) -> bool:
     return t.time() == time(0) or t.astimezone(PACIFIC).time() == time(0)
 
 
+SEC_LATE = timedelta(hours=27)
+"""EDGAR dates a filing made up to 22:00 ET with that day: 03:00 UTC the next day at the latest."""
+
+
 def known_moment(stamp: str) -> datetime:
-    """When an article was surely known: a date-only stamp at the end of its day (24 hours later)."""
+    """When an article was surely known, compared strictly with an open. A Google date-only stamp
+    (midnight US Pacific) is known by the next Pacific midnight, so it is usable at an open at
+    that moment: one microsecond before it. An SEC filing day (midnight UTC) is known at 03:00 UTC
+    the next day. An exactly-timed stamp is known when stamped."""
     t = _utc(stamp)
-    return t + timedelta(days=1) if date_only(stamp) else t
+    if t.time() == time(0):
+        return t + SEC_LATE
+    if date_only(stamp):
+        day = t.astimezone(PACIFIC).date() + timedelta(days=1)
+        return datetime.combine(day, time(0), PACIFIC).astimezone(timezone.utc) - timedelta(microseconds=1)
+    return t
 
 
 _OPENS = {
@@ -228,8 +240,8 @@ _OPENS = {
     "OL": ("Europe/Oslo", time(9)), "ST": ("Europe/Stockholm", time(9)), "HE": ("Europe/Helsinki", time(10)),
     "VI": ("Europe/Vienna", time(9)), "IR": ("Europe/Dublin", time(8)), "T": ("Asia/Tokyo", time(9)),
     "AX": ("Australia/Sydney", time(10)), "KS": ("Asia/Seoul", time(9)), "KQ": ("Asia/Seoul", time(9)),
-    "SI": ("Asia/Singapore", time(9)), "HK": ("Asia/Hong_Kong", time(9, 30)), "NS": ("Asia/Kolkata", time(9, 15)),
-    "BO": ("Asia/Kolkata", time(9, 15)), "SS": ("Asia/Shanghai", time(9, 30)), "SZ": ("Asia/Shanghai", time(9, 30)),
+    "SI": ("Asia/Singapore", time(9)), "HK": ("Asia/Hong_Kong", time(9, 20)), "NS": ("Asia/Kolkata", time(9, 8)),
+    "BO": ("Asia/Kolkata", time(9, 8)), "SS": ("Asia/Shanghai", time(9, 25)), "SZ": ("Asia/Shanghai", time(9, 25)),
     "TW": ("Asia/Taipei", time(9)), "JO": ("Africa/Johannesburg", time(9)),
 }
 EARLIEST = ("Pacific/Auckland", time(10))
