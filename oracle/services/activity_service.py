@@ -33,6 +33,7 @@ from oracle.services.edges_service import find_edges, find_list_edges
 from oracle.services.history_service import backfill_history
 from oracle.services.industry_research_service import BUTTON_FRESH_H, research_industry
 from oracle.services.laya_service import score_company
+from oracle.services.reader_service import score_reader, waits_anywhere
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
@@ -49,8 +50,8 @@ from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRo
 from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
-           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
+           "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
+           "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
            "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
@@ -580,6 +581,28 @@ def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
                          progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
+READER_SUBJECT = "reader"
+
+
+def submit_reader(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST) -> Job:
+    """The stronger reader over the history backfill of `watchlist` (hours): each headline read once
+    by the local model for its own company, pairs stored from that reading. It waits while model work
+    runs anywhere or a scheduled run is due within 30 minutes, and a Cancel stops it between
+    batches; what it read is kept, so a retry resumes."""
+    if not ctx.config.laya.enabled:
+        raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
+    name = watchlist_symbols(ctx, watchlist)[0]
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return score_reader(c, name, stop=stopped.is_set, busy=lambda: _reader_waits(c, runner), on_progress=stage.append)
+
+    return runner.submit("reader", f"Stronger reader ({ctx.config.laya.reader_model}) over {name}'s history", work,
+                         subject=f"{READER_SUBJECT}{BACKTEST_SEP}{name}", link="#ledgers",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
 EDGES_LIST = "list:"
 """A ties job's subject for a whole list, beside a symbol's."""
 
@@ -752,8 +775,17 @@ def _history_waits(ctx: AppContext, runner: JobRunner) -> str | None:
     """Live work running, or a scheduled tick or midday pass due within TICK_QUIET or due and not
     yet run: the backfill leaves Google News and Yahoo to it until it has run. Read on the job's
     own connection, so it is safe from the worker thread."""
-    if live := _live_work(runner, LIVE_WORK):
-        return live
+    return _live_work(runner, LIVE_WORK) or scheduled_run_near(ctx)
+
+
+def _reader_waits(ctx: AppContext, runner: JobRunner) -> str | None:
+    """Model work in this app or any process, or a scheduled run due within TICK_QUIET (or due and
+    not yet run): the stronger reader leaves Ollama to it."""
+    return _model_work(runner) or waits_anywhere(ctx)
+
+
+def scheduled_run_near(ctx: AppContext) -> str | None:
+    """A scheduled tick or midday pass due within TICK_QUIET, or due and not yet run, by name."""
     # Imported here: the schedule module imports this one.
     from oracle.services.schedule_service import last_due, next_due
 
@@ -790,6 +822,10 @@ def _retry_laya(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_laya(ctx, runner, job.subject)
 
 
+def _retry_reader(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_reader(ctx, runner, (job.subject or "").split(BACKTEST_SEP, 1)[-1])
+
+
 def _retry_edges(ctx: AppContext, runner: JobRunner, job) -> Job:
     subject = job.subject or ""
     if subject.startswith(EDGES_LIST):
@@ -810,7 +846,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history,
-    "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry,
+    "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
 }
 
 

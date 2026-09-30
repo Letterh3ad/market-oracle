@@ -1,0 +1,233 @@
+"""The stronger reader over the backfilled history (ticket 09): each article read once, for its own
+subject company, by a local Ollama model, stored in `laya_scores` under the reader's model tag.
+A (article, target) pair whose subject is another company (competitor, industry, ...) reuses the
+subject's reading under the pair's relation, so 06's aggregator and test read the reader exactly
+as they read Laya; the walk-forward fit gives each relation its sign.
+
+One long job: batched (one call reads `batch` headlines of any companies), cached by (article,
+subject, model) so a rerun asks only what is missing, one run across processes (lock), giving way
+to live model work and to a scheduled tick (the caller's `busy`), cancelled between batches."""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Callable, Sequence
+from dataclasses import asdict, dataclass
+
+from oracle.research.laya import LayaInput
+from oracle.research.reader import BATCH, OllamaReader, ReaderError, reader_tag
+from oracle.services import laya_service
+from oracle.services.context import AppContext
+from oracle.services.errors import InvalidQuery
+from oracle.services.history_service import company_history, history_companies
+from oracle.services.jobs_service import job_statuses, single_flight
+from oracle.services.watch_service import DEFAULT_LIST
+from oracle.store.db import to_utc_iso
+from oracle.store.laya import ArticleText, LayaRepo
+from oracle.store.meta import MetaRepo
+
+__all__ = ["BAKE_OFF_RATE", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
+           "plan_reader", "reader_groups", "score_reader", "waits_anywhere"]
+
+JOB = "reader"
+LEASE_S = 1800.0
+MODEL_LOCKS = ("research", "discovery_chat", "discovery", "tick", "industry_research")
+"""Job locks of live model work (any process) the reader gives way to."""
+LAST_RUN = "reader_last_run"
+BAKE_OFF_RATE = 16.6
+"""Headlines a second for qwen3:4b-instruct-2507-q8_0 in the bake-off (batch 25, the RTX 5060 shared
+with the live app): the estimate before any run of the configured model."""
+
+
+@dataclass(frozen=True)
+class PairGroup:
+    target: str
+    subject: str
+    relation: str
+    ids: tuple[int, ...]
+
+
+def reader_groups(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Sequence[str] | None = None) -> list[PairGroup]:
+    """The main list's own backfill, one group a company."""
+    mains = [c for c in history_companies(ctx, watchlist) if c.main]
+    if only:
+        wanted = {laya_service.primary(ctx, s).casefold() for s in only}
+        mains = [c for c in mains if c.symbol.casefold() in wanted]
+    return [PairGroup(m.symbol, m.symbol, "own", tuple(company_history(ctx, m.symbol))) for m in mains]
+
+
+def waits_anywhere(ctx: AppContext) -> str | None:
+    """Live model work any process holds a lock for, or a scheduled run due within 30 minutes (or
+    due and not yet run), by name: what the reader leaves Ollama to, from the app or the CLI."""
+    # Imported here: the activity module imports this one.
+    from oracle.services.activity_service import scheduled_run_near
+
+    held = next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in MODEL_LOCKS and s.stale_reason is None),
+                None)
+    return held or scheduled_run_near(ctx)
+
+
+def load_reader(ctx: AppContext, model: str | None = None) -> OllamaReader:
+    return OllamaReader(model or ctx.config.laya.reader_model, ctx.config.llm.base_url)
+
+
+@dataclass
+class ReaderRun:
+    model: str
+    groups: int = 0
+    subject_articles: int = 0
+    """Distinct (subject, article) readings the groups need."""
+    scored: int = 0
+    already: int = 0
+    unparsed: int = 0
+    """Left unscored after a retry: asked again next run."""
+    copied: int = 0
+    """Pairs stored from their subject's reading."""
+    seconds: float = 0.0
+    model_seconds: float = 0.0
+    """Spent waiting on the model only (no waits for live work)."""
+    stopped: str | None = None
+    finished_at: str | None = None
+
+    @property
+    def rate(self) -> float | None:
+        return round((self.scored + self.unparsed) / self.model_seconds, 2) if self.model_seconds else None
+
+    @property
+    def summary(self) -> str:
+        head = f"stopped early ({self.stopped})" if self.stopped else "finished"
+        rate = f", {self.rate} headlines a second" if self.rate else ""
+        return (f"{head}: {self.scored} of {self.subject_articles} headlines read by {self.model} "
+                f"({self.already} already, {self.unparsed} unanswered), {self.copied} pairs from their subject"
+                f"{rate}, {self.seconds:.0f} s")
+
+
+def last_reader_run(ctx: AppContext) -> ReaderRun | None:
+    raw = MetaRepo(ctx.conn).get(LAST_RUN)
+    return ReaderRun(**json.loads(raw)) if raw else None
+
+
+@dataclass(frozen=True)
+class _Work:
+    subject: str
+    label: str
+    article: ArticleText
+
+
+def _needed(ctx: AppContext, groups: Sequence[PairGroup], tag: str) -> tuple[int, list[_Work]]:
+    """Distinct (subject, article) readings, and those not yet stored, in group order."""
+    ids: dict[str, dict[int, None]] = {}
+    for g in groups:
+        ids.setdefault(laya_service.primary(ctx, g.subject), {}).update(dict.fromkeys(g.ids))
+    repo, todo = LayaRepo(ctx.conn), []
+    for subject, wanted in ids.items():
+        _, label = laya_service.named(ctx, subject)
+        todo += [_Work(subject, label, a) for a in repo.unscored(subject, tag, list(wanted))]
+    return sum(len(v) for v in ids.values()), todo
+
+
+@dataclass(frozen=True)
+class ReaderPlan:
+    model: str
+    groups: int
+    pairs: int
+    """(article, target) pairs the test reads."""
+    subject_articles: int
+    unscored: int
+    rate: float
+    basis: str
+    estimate_s: float
+
+
+def plan_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequence[PairGroup] | None = None,
+                model: str | None = None) -> ReaderPlan:
+    """How many headlines a run would read and how long it would take, reading only."""
+    groups = list(groups) if groups is not None else reader_groups(ctx, watchlist)
+    tag = reader_tag(model or ctx.config.laya.reader_model)
+    total, todo = _needed(ctx, groups, tag)
+    pairs = {(laya_service.primary(ctx, g.target), i) for g in groups for i in g.ids}
+    last = last_reader_run(ctx)
+    if last and last.model == tag and last.rate:
+        rate, basis = last.rate, f"measured by the last run ({last.finished_at})"
+    else:
+        rate, basis = BAKE_OFF_RATE, "the bake-off's rate for qwen3:4b-instruct-2507-q8_0"
+    return ReaderPlan(tag, len(groups), len(pairs), total, len(todo), rate, basis, round(len(todo) / rate, 1))
+
+
+def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequence[PairGroup] | None = None,
+                 reader=None, batch: int = BATCH, stop: Callable[[], bool] | None = None,
+                 busy: Callable[[], str | None] | None = None,
+                 on_progress: Callable[[str], None] | None = None) -> ReaderRun:
+    """Read every (subject, article) the groups need that the model has not read, then store each
+    pair from its subject's reading. A target's own articles are only ever its own reading, even
+    when a run stops before reaching them."""
+    if not ctx.config.laya.enabled:
+        raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
+    say = on_progress or (lambda _: None)
+    halt = stop or (lambda: False)
+    owned = reader is None
+    with single_flight(ctx, JOB, LEASE_S) as held:
+        say("planning the headlines")
+        groups = list(groups) if groups is not None else reader_groups(ctx, watchlist)
+        reader = reader or load_reader(ctx)
+        run = ReaderRun(reader.tag, len(groups))
+        repo, began, model_s = LayaRepo(ctx.conn), time.monotonic(), reader.stats.seconds
+        try:
+            run.subject_articles, todo = _needed(ctx, groups, reader.tag)
+            run.already = run.subject_articles - len(todo)
+            for i in range(0, len(todo), batch):
+                if halt():
+                    run.stopped = "cancelled"
+                    break
+                held.check()
+                if busy and (other := busy()):
+                    while other and not halt():
+                        say(f"{run.scored} of {len(todo)} read; waiting for {other}")
+                        laya_service.wait(laya_service.YIELD_STEP_S)
+                        other = busy()
+                    if other:
+                        run.stopped = "cancelled"
+                        break
+                part = todo[i:i + batch]
+                answers = reader.score([LayaInput(w.label, w.article.title) for w in part])
+                run.model_seconds = reader.stats.seconds - model_s
+                at = to_utc_iso(ctx.clock.utcnow())
+                by_subject: dict[str, list] = {}
+                for w, s in zip(part, answers):
+                    if s is None:
+                        run.unparsed += 1
+                    else:
+                        by_subject.setdefault(w.subject, []).append((w.article.id, s))
+                for subject, scored in by_subject.items():
+                    repo.save(subject, reader.tag, "own", scored, at)
+                    run.scored += len(scored)
+                say(f"{run.scored + run.unparsed} of {len(todo)} read ({run.unparsed} unanswered)")
+            run.copied = _copy_pairs(ctx, groups, reader.tag)
+        except ReaderError as exc:
+            raise InvalidQuery(str(exc)) from exc
+        finally:
+            if owned:
+                reader.close()
+            run.seconds = round(time.monotonic() - began, 1)
+            run.model_seconds = round(run.model_seconds, 2)
+            run.finished_at = to_utc_iso(ctx.clock.utcnow())
+            MetaRepo(ctx.conn).set(LAST_RUN, json.dumps(asdict(run)))
+    return run
+
+
+def _copy_pairs(ctx: AppContext, groups: Sequence[PairGroup], tag: str) -> int:
+    """Each pair whose subject is another company, from the subject's reading, never over the
+    target's own articles; an earlier group's relation wins, as in 06's history scoring."""
+    own: dict[str, set[int]] = {}
+    for g in groups:
+        if g.relation == "own":
+            own.setdefault(laya_service.primary(ctx, g.target), set()).update(g.ids)
+    repo, at, copied = LayaRepo(ctx.conn), to_utc_iso(ctx.clock.utcnow()), 0
+    for g in groups:
+        target, subject = laya_service.primary(ctx, g.target), laya_service.primary(ctx, g.subject)
+        if target == subject:
+            continue
+        ids = [i for i in dict.fromkeys(g.ids) if i not in own.get(target, set())]
+        copied += repo.copy(subject, target, tag, g.relation, ids, at)
+    return copied

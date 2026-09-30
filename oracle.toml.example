@@ -169,6 +169,7 @@ device = "auto"            # auto (the GPU when it has room beside Ollama, else 
 industry_daily = true      # each tick searches new headlines of held, watched and main-list companies and their industry maps, and scores them per related pair
 industry_requests = 400    # news searches one tick's industry research may make (0 to 5000; 0 scores stored news only)
 industry_minutes = 30      # minutes one tick's industry research may take, searches and scoring together (1 to 240)
+reader_model = "qwen3:4b-instruct-2507-q8_0"   # the stronger reader's Ollama model, reading the history once per headline for the predictive test
 
 # Discovery: finds companies related to the ones you watch (same industry, or named beside
 # them in the news), named in the news on your themes, or in news of market movers (big

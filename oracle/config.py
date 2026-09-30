@@ -218,6 +218,8 @@ class LayaConfig:
     """News searches one tick's industry research may make."""
     industry_minutes: int = 30
     """Minutes one tick's industry research may take, searches and scoring together."""
+    reader_model: str = "qwen3:4b-instruct-2507-q8_0"
+    """The stronger reader's Ollama model (ticket 09 bake-off), reading the history for 06's test."""
 
 
 @dataclass(frozen=True)
@@ -1006,6 +1008,8 @@ def _laya(raw: object) -> LayaConfig:
         raise ConfigError(f"laya.device must be one of {', '.join(LAYA_DEVICES)}, got {config.device!r}")
     if not isinstance(config.industry_daily, bool):
         raise ConfigError(f"laya.industry_daily must be true or false, got {config.industry_daily!r}")
+    if not isinstance(config.reader_model, str) or not config.reader_model.strip():
+        raise ConfigError(f"laya.reader_model must be an Ollama model name, got {config.reader_model!r}")
     for key, (low, high) in (("industry_requests", INDUSTRY_REQUESTS_RANGE), ("industry_minutes", INDUSTRY_MINUTES_RANGE)):
         if not _whole(getattr(config, key), low, high):
             raise ConfigError(f"laya.{key} must be a whole number from {low} to {high}, got {getattr(config, key)!r}")
