@@ -22,7 +22,7 @@ function shiftYears(day, years) {
 const DEFAULT_YEARS = 5;
 
 // Runs kept before the momentum or regime lines have fewer lines, so each is found by name.
-const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "regime_wf", "regime_ai"];
+const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "regime_wf", "regime_ai"];
 
 function runLabel(r) {
   const figures = RUN_LINES.map((name) => r.lines.find((l) => l.name === name)).filter((l) => l)
@@ -255,7 +255,8 @@ function backtestSection() {
       + "day as if it had been trading then, and sets that against simply buying the same companies and holding "
       + "them, against holding the ones with the strongest momentum, re-picked each month, and against the regime "
       + "lines: a blend of known methods weighted by the market's mood, and regime-v2, the same blend without the "
-      + "hold padding and with a rotation out of long-held, clearly weaker holdings (each caption names the inputs "
+      + "hold padding and with a rotation out of long-held, clearly weaker holdings, and core-sat: three quarters "
+      + "an equal-weight buy and hold rebalanced yearly, one quarter the regime blend (each caption names the inputs "
       + "it had). Fake "
       + "money: nothing in your accounts changes."),
     el("div", { class: "row" }, "List ", list, " from ", from, " to ", to),

@@ -14,7 +14,7 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -24,11 +24,11 @@ from oracle.services.errors import ConfigInUse, InvalidQuery
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account",
+    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account", "set_core_sat_account",
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
@@ -94,6 +94,13 @@ def set_regime_v2_account(ctx: AppContext, enabled: bool) -> Path:
     return path
 
 
+def set_core_sat_account(ctx: AppContext, enabled: bool) -> Path:
+    """Turn the core-sat paper account on or off; off, its step decides nothing."""
+    path = _save(ctx, "core_sat_account", {"enabled": enabled})
+    ctx.config = replace(ctx.config, core_sat_account=replace(ctx.config.core_sat_account, enabled=enabled))
+    return path
+
+
 def set_regime_ai_account(ctx: AppContext, enabled: bool | None = None, model: str | None = None) -> Path:
     """The regime-ai account's switch and the model profile that tilts it ("" the research
     slot's); None leaves a value as it is."""
@@ -150,6 +157,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
         return {**row, "set": setting.key in table, "env": env, "from_env": bool(os.environ.get(env))}
     if (setting.section, setting.key) in BLANK_OFF:
         row["blank_off"] = True
+    if (setting.section, setting.key) == ("laya", "device"):
+        row["choices"] = list(LAYA_DEVICES)
     if setting.section == f"models.{SLOTS_TABLE}":
         row["choices"] = [DEFAULT_PROFILE, *(n for n in raw.get("models", {}) if n not in (DEFAULT_PROFILE, SLOTS_TABLE))]
     if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):

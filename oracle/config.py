@@ -197,6 +197,23 @@ class RegimeV2AccountConfig:
 
 
 @dataclass(frozen=True)
+class CoreSatAccountConfig:
+    """The paper account that holds 75% in an equal-weight buy and hold of the main list and
+    trades 25% by the regime blend. On by default, so its record starts the day it ships."""
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class LayaConfig:
+    """Laya, the small model that scores headlines per company (`research.laya`)."""
+
+    enabled: bool = True
+    device: str = "auto"
+    """auto (the GPU when it has room beside Ollama, else the CPU), gpu or cpu."""
+
+
+@dataclass(frozen=True)
 class RegimeV2Config:
     """regime-v2's rotation (see `broker.regime.Rotation`); its weights are `[regime]`'s. Set a
     priori, not fitted to a backtest."""
@@ -492,6 +509,8 @@ class Config:
     regime: RegimeConfig = field(default_factory=RegimeConfig)
     regime_v2_account: RegimeV2AccountConfig = field(default_factory=RegimeV2AccountConfig)
     regime_v2: RegimeV2Config = field(default_factory=RegimeV2Config)
+    core_sat_account: CoreSatAccountConfig = field(default_factory=CoreSatAccountConfig)
+    laya: LayaConfig = field(default_factory=LayaConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -728,6 +747,12 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "regime_v2":
             values[name] = _regime_v2(value)
             continue
+        if name == "core_sat_account":
+            values[name] = _switch(value, CoreSatAccountConfig, name)
+            continue
+        if name == "laya":
+            values[name] = _laya(value)
+            continue
         if name == "discovery":
             values[name] = _discovery(value)
             continue
@@ -927,6 +952,17 @@ def _regime_v2_account(raw: object) -> RegimeV2AccountConfig:
     return config
 
 
+def _switch(raw: object, kind: type, name: str):
+    """A table holding only an `enabled` switch."""
+    if not isinstance(raw, dict):
+        raise ConfigError(f"{name} must be a [{name}] table")
+    _reject_unknown(raw, kind, f"[{name}]")
+    config = replace(kind(), **raw)
+    if not isinstance(config.enabled, bool):
+        raise ConfigError(f"{name}.enabled must be true or false, got {config.enabled!r}")
+    return config
+
+
 def _regime_v2(raw: object) -> RegimeV2Config:
     if not isinstance(raw, dict):
         raise ConfigError("regime_v2 must be a [regime_v2] table")
@@ -945,6 +981,21 @@ def _regime_v2(raw: object) -> RegimeV2Config:
         if not ok:
             raise ConfigError(f"regime_v2.{key} must be {wanted}, got {getattr(config, key)!r}")
     return replace(config, rotation_margin=float(margin))
+
+
+LAYA_DEVICES = ("auto", "gpu", "cpu")
+
+
+def _laya(raw: object) -> LayaConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("laya must be a [laya] table")
+    _reject_unknown(raw, LayaConfig, "[laya]")
+    config = replace(LayaConfig(), **raw)
+    if not isinstance(config.enabled, bool):
+        raise ConfigError(f"laya.enabled must be true or false, got {config.enabled!r}")
+    if config.device not in LAYA_DEVICES:
+        raise ConfigError(f"laya.device must be one of {', '.join(LAYA_DEVICES)}, got {config.device!r}")
+    return config
 
 
 def _discovery(raw: object) -> DiscoveryConfig:

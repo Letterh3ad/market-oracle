@@ -152,3 +152,13 @@ def test_a_dangling_slot_edited_in_by_hand_is_dropped_on_reload_and_the_rest_sti
     assert "models.slots.notes names no profile 'huge'" in caplog.text
     with pytest.raises(InvalidQuery, match="names no profile 'huge'"):
         set_setting(ctx, "models.slots", "verdict", "huge")
+
+
+def test_laya_is_switched_and_its_device_picked_in_settings_live(ctx):
+    device = row(ctx, "laya", "device")
+    assert (device["value"], device["choices"], device["live"]) == ("auto", ["auto", "gpu", "cpu"], True)
+    set_setting(ctx, "laya", "device", "cpu")
+    set_setting(ctx, "laya", "enabled", False)
+    assert (ctx.config.laya.device, ctx.config.laya.enabled) == ("cpu", False)
+    with pytest.raises(InvalidQuery, match="laya.device must be one of auto, gpu, cpu"):
+        set_setting(ctx, "laya", "device", "tpu")

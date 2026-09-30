@@ -252,3 +252,32 @@ def test_settings_come_from_the_flat_config_keys():
 def test_the_buy_threshold_is_always_given():
     with pytest.raises(TypeError):
         RegimeSettings()
+
+
+def test_an_extra_method_from_the_inputs_scores_weighs_and_keeps_its_own_record(history):
+    days = days_of(history)
+    first, day = days[0], days[-1]
+    laya = {"L003": [(first + timedelta(days=d), 0.8) for d in range(0, 700, 3)]}
+    weights = {m: {**PRESETS[m], "laya": 0.2} for m in PRESETS}
+    base = regime_book(history, settings=settings(), inputs=inputs(history))
+    book = regime_book(history, settings=settings(weights=weights),
+                       inputs=replace(inputs(history), extra={"laya": laya, "trend": {"L003": [(first, -1.0)]}}))
+    e = book.explain("L003", day)
+    assert e.scores["laya"] == 0.8 and e.parts["laya"] > 0
+    assert e.scores["trend"] == base.explain("L003", day).scores["trend"]
+    assert "laya" not in book.explain("L004", day).scores
+    state = book.state(day)
+    assert set(state.weights) == set(METHODS) | {"laya"} and sum(state.weights.values()) == pytest.approx(1)
+    assert "laya" in state.health
+    unweighted = regime_book(history, settings=settings(), inputs=replace(inputs(history), extra={"laya": laya}))
+    assert unweighted.explain("L003", day).parts.get("laya", 0.0) == 0.0
+    assert unweighted.explain("L003", day).score == pytest.approx(base.explain("L003", day).score)
+
+
+def test_an_extra_score_dated_after_the_day_is_never_read(history):
+    days = days_of(history)
+    weights = {m: {**PRESETS[m], "laya": 0.2} for m in PRESETS}
+    book = regime_book(history, settings=settings(weights=weights),
+                       inputs=replace(inputs(history), extra={"laya": {"L003": [(days[-39], 1.0)]}}))
+    assert "laya" not in book.explain("L003", days[-40]).scores
+    assert book.explain("L003", days[-39]).scores["laya"] == 1.0

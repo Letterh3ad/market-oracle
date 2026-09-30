@@ -9,11 +9,14 @@ import pytest
 from oracle.broker.regime import METHODS
 from oracle.services.regime_tilt import TILTED
 from oracle.research.llm import ModelError
-from oracle.services.paper_service import ACCOUNTS, TRADERS, account_view, decision_log, traded_by
-from oracle.services.regime_service import REGIME_AI_OFF, lag_warning, regime_card, regime_step
+from oracle.broker.orders import Action
+from oracle.services.paper_service import ACCOUNTS, TRADERS, account_view, decision_log, fill_pending, traded_by
+from oracle.store.paper import DecisionRepo, EquityRepo, LoggedDecision
+from oracle.store.regime import RegimeStateRepo
+from oracle.services.regime_service import FROZEN_NOTE, REGIME_AI_OFF, lag_warning, regime_card, regime_step
 from oracle.services.watch_service import watch
 from oracle.store.regime import TiltRepo
-from tests.fakes.regime import use_stub
+from tests.fakes.regime import thaw, use_stub
 from tests.fakes.tilt_model import TiltModel
 from tests.services.test_paper import clock, ctx, seed, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
@@ -21,6 +24,29 @@ from tests.services.test_paper_discovered import ai_trades, found
 PARTS = {"trend": 0.1, "momentum": 0.25, "hold": 0.05}
 ANSWER = {"momentum": 0.6, "trend": 1.4, "astrology": 2.0, "reason": "Momentum warned on a rebound."}
 DAY = date(2026, 9, 21)
+
+
+@pytest.fixture(autouse=True)
+def stepping(monkeypatch, request):
+    """These tests pin the code regime-ai stepped with before it was frozen; the freeze has its own."""
+    if "frozen" not in request.node.name:
+        thaw(monkeypatch)
+
+
+def test_frozen_it_steps_nothing_asks_no_model_records_no_equity_and_keeps_its_history(ctx, monkeypatch):
+    built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)})
+    watch(ctx, "AAPL")
+    assert ctx.config.regime_ai_account.enabled is True, "frozen whatever the switch says"
+    DecisionRepo(ctx.conn).log([LoggedDecision("regime-ai", DAY, "AAPL", Action.SKIP, None, "before the freeze", None)])
+    RegimeStateRepo(ctx.conn).save("regime-ai", DAY, {"mood": "calm_up"}, "2026-09-21T22:00:00Z")
+    model = TiltModel(ANSWER)
+    assert step(ctx, model) is None and built == [] and model.asked == []
+    fill_pending(ctx)
+    assert EquityRepo(ctx.conn).history("regime-ai") == [] and EquityRepo(ctx.conn).history("regime") != []
+    card = regime_card(ctx, account="regime-ai")
+    assert card.frozen and not card.enabled and card.note.startswith(FROZEN_NOTE.format("regime-ai"))
+    assert card.state == {"mood": "calm_up"} and [d.reason for d in card.decisions] == ["before the freeze"]
+    assert "regime-ai" in ACCOUNTS
 
 
 def step(ctx, model=None):

@@ -2,9 +2,9 @@ from datetime import date
 
 from oracle.analysts.signals import AnalystSignal
 from oracle.services import regime_tilt
-from oracle.services.regime_service import NO_MOOD, REGIME_AI_OFF, REGIME_OFF, REGIME_V2_OFF
+from oracle.services.regime_service import FROZEN_NOTE, NO_MOOD, REGIME_AI_OFF, REGIME_OFF, REGIME_V2_OFF
 from oracle.store.signals import SignalRepo
-from tests.fakes.regime import use_stub
+from tests.fakes.regime import thaw, use_stub
 from tests.fakes.tilt_model import TiltModel
 from tests.gui.jobs import run_job, wait_job
 
@@ -90,13 +90,15 @@ async def test_the_regime_routes_refuse_what_they_do_not_know(loaded):
 async def test_the_regime_ai_account_is_on_by_default_and_listed_with_its_model(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["regime_ai_account"] == {"enabled": True, "model": ""}
-    assert [a["name"] for a in body["accounts"]][-3:] == ["regime", "regime-ai", "regime-v2"]
+    assert [a["name"] for a in body["accounts"]][-4:] == ["regime", "regime-ai", "regime-v2", "core-sat"]
     card = (await loaded.get("/api/ledgers/regime-ai")).json()
-    assert (card["account"], card["enabled"], card["tilt"], card["model"], card["research_profile"]) == (
-        "regime-ai", True, None, "", "default")
+    assert (card["account"], card["enabled"], card["frozen"], card["tilt"], card["model"], card["research_profile"]) == (
+        "regime-ai", False, True, None, "", "default")
+    assert card["note"] == FROZEN_NOTE.format("regime-ai")
 
 
 async def test_a_regime_ai_step_is_a_job_that_tilts_once_and_the_card_shows_the_tilt(ctx, priced, monkeypatch):
+    thaw(monkeypatch)
     use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)})
     model = TiltModel({"momentum": 0.5, "trend": 1.2, "reason": "Rebound: momentum is risky."})
     monkeypatch.setattr(regime_tilt, "tilt_model", lambda c: (model, "fake"))
@@ -133,6 +135,7 @@ async def test_a_failed_step_job_is_retried_as_the_same_lines_step(ctx, loaded, 
 
 
 async def test_the_regime_ai_switch_and_model_are_set_on_the_card_and_in_settings(ctx, loaded, monkeypatch):
+    thaw(monkeypatch)
     built = use_stub(monkeypatch)
     put = await loaded.put("/api/ledgers/regime-ai", json={"enabled": False})
     assert put.json() == {"enabled": False, "model": ""} and ctx.config.regime_ai_account.enabled is False

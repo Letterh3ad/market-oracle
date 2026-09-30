@@ -48,8 +48,8 @@ def test_a_database_at_version_43_keeps_its_regime_readings_and_gains_tilts(tmp_
     conn = connect(tmp_path / "o.db")
     assert migrate(conn) == 43
     RegimeStateRepo(conn).save("regime", date(2026, 9, 28), {"mood": "calm_up"}, "2026-09-29T15:32:00Z")
-    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS)
-    assert migrate(conn) == len(migrations.MIGRATIONS)
+    monkeypatch.setattr("oracle.store.migrate.MIGRATIONS", migrations.MIGRATIONS[:44])
+    assert migrate(conn) == 44
     assert RegimeStateRepo(conn).latest("regime").state == {"mood": "calm_up"}
     assert TiltRepo(conn).all("regime-ai") == {}
     conn.close()

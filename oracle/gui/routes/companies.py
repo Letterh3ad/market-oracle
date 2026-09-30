@@ -15,6 +15,7 @@ from oracle.services.errors import InvalidQuery
 from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
 from oracle.services.industry_service import Activity, IndustryMap, company_activity, industry_map
+from oracle.services.laya_service import MODEL_TAG, laya_scores
 from oracle.services.links_service import USER_RELATIONS, CompanyLink, add_link, company_links, delete_link
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
@@ -99,6 +100,14 @@ async def get_events(symbol: str, refresh: bool = False, ctx: AppContext = Depen
 async def get_links(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     """Companies linked to this one in the news (or the same industry), strongest first."""
     return {"links": [_link(x) for x in company_links(ctx, symbol)]}
+
+
+@router.get("/{symbol}/laya")
+async def get_laya(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Laya's scores for the company's stored articles under the current model, newest known first;
+    its probabilities are uncalibrated."""
+    return {"model": MODEL_TAG, "enabled": ctx.config.laya.enabled, "uncalibrated": True,
+            "scores": [{**asdict(s), "link": shapes.web_link(s.url)} for s in laya_scores(ctx, symbol)]}
 
 
 @router.delete("/{symbol}/links/{link_id}")

@@ -93,11 +93,19 @@ class PaperRepo:
             "SELECT symbol FROM paper_fills WHERE (:a IS NULL OR account = :a) GROUP BY account, symbol "
             "HAVING SUM(CASE side WHEN 'buy' THEN shares ELSE -shares END) > 0", {"a": account})})
 
-    def fills(self, account: str) -> list[FillRow]:
-        """Oldest first."""
-        rows = self._conn.execute(f"SELECT {_FILL} FROM paper_fills WHERE account = ? ORDER BY date, order_id",
-                                  (account,))
+    def fills(self, account: str, source: str | None = None) -> list[FillRow]:
+        """Oldest first; with `source`, only the fills of orders placed by it (a sleeve of the account)."""
+        cols = ", ".join(f"f.{c}" for c in _FILL.split(", "))
+        rows = self._conn.execute(
+            f"SELECT {cols} FROM paper_fills f LEFT JOIN paper_orders o ON o.id = f.order_id WHERE f.account = :a "
+            "AND (:s IS NULL OR o.source = :s) ORDER BY f.date, f.order_id", {"a": account, "s": source})
         return [FillRow(*r[:3], Side(r[3]), date.fromisoformat(r[4]), *r[5:]) for r in rows]
+
+    def orders(self, account: str, source: str) -> list[Order]:
+        """Every order `source` placed on the account, whatever became of it, oldest first."""
+        rows = self._conn.execute(f"SELECT {_ORDER} FROM paper_orders WHERE account = ? AND source = ? ORDER BY id",
+                                  (account, source))
+        return [_order(r) for r in rows]
 
 
 def _order(r) -> Order:
