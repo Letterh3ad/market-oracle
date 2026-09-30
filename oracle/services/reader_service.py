@@ -20,8 +20,8 @@ from oracle.research.reader import BATCH, OllamaReader, ReaderError, reader_tag
 from oracle.services import laya_service
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
-from oracle.services.history_service import company_history, history_companies
-from oracle.services.jobs_service import job_statuses, single_flight
+from oracle.services.laya_history_service import HISTORY_WAITS_FOR, PairGroup, history_pairs
+from oracle.services.jobs_service import single_flight
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.db import to_utc_iso
 from oracle.store.laya import ArticleText, LayaRepo
@@ -32,8 +32,6 @@ __all__ = ["BAKE_OFF_RATES", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "las
 
 JOB = "reader"
 LEASE_S = 1800.0
-MODEL_LOCKS = ("research", "discovery_chat", "discovery", "tick", "industry_research")
-"""Job locks of live model work (any process) the reader gives way to."""
 LAST_RUN = "reader_last_run"
 BAKE_OFF_RATES = {"qwen3:4b-instruct-2507-q8_0": 16.6, "gemma4:12b": 3.79, "qwen2.5:32b": 1.02}
 """Headlines a second in the bake-off (batch 25, the RTX 5060 shared with the live app): the
@@ -41,37 +39,21 @@ estimate before any run of the configured model."""
 UNKNOWN_RATE = 1.0
 
 
-@dataclass(frozen=True)
-class PairGroup:
-    target: str
-    subject: str
-    relation: str
-    ids: tuple[int, ...]
-
-
 def reader_groups(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, own_only: bool = False,
                   only: Sequence[str] | None = None) -> list[PairGroup]:
-    """The main list's own backfill, one group a company, then (not `own_only`) its map companies'
-    backfill for it."""
-    if not own_only:
-        raise InvalidQuery("the map companies' pairs come with the Laya predictive test (ticket 06); "
-                           "read own news only for now")
-    mains = [c for c in history_companies(ctx, watchlist) if c.main]
-    if only:
-        wanted = {laya_service.primary(ctx, s).casefold() for s in only}
-        mains = [c for c in mains if c.symbol.casefold() in wanted]
-    return [PairGroup(m.symbol, m.symbol, "own", tuple(company_history(ctx, m.symbol))) for m in mains]
+    """The same (article, target) groups 06's history scoring plans: each main-list company's own
+    backfill, then (not `own_only`) its map companies' backfill for it."""
+    return history_pairs(ctx, watchlist, only=only, own_only=own_only)
 
 
 def waits_anywhere(ctx: AppContext) -> str | None:
-    """Live model work any process holds a lock for, or a scheduled run due within 30 minutes (or
-    due and not yet run), by name: what the reader leaves Ollama to, from the app or the CLI."""
+    """Live model work any process holds a lock for (what Laya's history scoring gives way to), or
+    a scheduled run due within 30 minutes (or due and not yet run), by name: what the reader leaves
+    Ollama to, from the app or the CLI."""
     # Imported here: the activity module imports this one.
     from oracle.services.activity_service import scheduled_run_near
 
-    held = next((s.job.replace("_", " ") for s in job_statuses(ctx) if s.job in MODEL_LOCKS and s.stale_reason is None),
-                None)
-    return held or scheduled_run_near(ctx)
+    return laya_service.live_model_work(ctx, HISTORY_WAITS_FOR) or scheduled_run_near(ctx)
 
 
 def load_reader(ctx: AppContext, model: str | None = None) -> OllamaReader:

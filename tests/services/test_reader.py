@@ -1,5 +1,4 @@
 from dataclasses import replace
-from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -158,13 +157,15 @@ async def test_the_activity_job_reads_the_list_history_and_a_retry_resumes(ctx, 
     assert scopes == [True, True, True], "a retry keeps the scope"
 
 
-def test_all_pairs_wait_for_ticket_06(ctx):
-    with pytest.raises(InvalidQuery, match="ticket 06"):
-        reader_service.reader_groups(ctx, "main")
+def test_the_groups_are_06s_history_pairs(ctx, monkeypatch):
+    asked = []
+    monkeypatch.setattr(reader_service, "history_pairs", lambda c, w, **kw: asked.append((w, kw)) or [])
+    reader_service.reader_groups(ctx, "main", own_only=True, only=["AAPL"])
+    assert asked == [("main", {"only": ["AAPL"], "own_only": True})]
 
 
 async def test_the_job_waits_for_model_work_anywhere_and_a_scheduled_tick(ctx, runner, monkeypatch):
-    monkeypatch.setattr(reader_service, "job_statuses", lambda c: [])
+    monkeypatch.setattr(laya_service, "live_model_work", lambda c, locks: None)
     ctx.clock.advance(5 * 24 * 3600)  # a Monday: ticks run on weekdays
     assert _reader_waits(ctx, runner) is None
     at = (ctx.clock.utcnow() + timedelta(minutes=25)).astimezone().strftime("%H:%M")
@@ -172,7 +173,7 @@ async def test_the_job_waits_for_model_work_anywhere_and_a_scheduled_tick(ctx, r
                          automation=AutomationConfig(enabled=True))
     assert "scheduled tick" in _reader_waits(ctx, runner)
     ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=False))
-    monkeypatch.setattr(reader_service, "job_statuses", lambda c: [SimpleNamespace(job="research", stale_reason=None)])
+    monkeypatch.setattr(laya_service, "live_model_work", lambda c, locks: "research" if "tick" in locks else None)
     assert _reader_waits(ctx, runner) == "research", "another process's research"
 
 
