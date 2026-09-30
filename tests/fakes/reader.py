@@ -12,6 +12,10 @@ class FakeReader(FakeLaya):
         super().__init__(reader_tag(model), "ollama")
         self.unparsed = set(unparsed)
         self.stats = ReaderStats()
+        self.released = 0
+
+    def release(self) -> None:
+        self.released += 1
 
     def score(self, items: list[LayaInput]) -> list[LayaScore | None]:
         out = [None if i.headline in self.unparsed else s for i, s in zip(items, super().score(items))]

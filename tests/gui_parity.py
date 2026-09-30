@@ -107,6 +107,8 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "reader run --list": "POST /api/jobs/reader",
     "reader plan": "GET /api/reader/plan",
     "reader plan --list": "GET /api/reader/plan",
+    "reader run --own-only": "POST /api/jobs/reader",  # the card's "Own news only" box
+    "reader plan --own-only": "GET /api/reader/plan",
     "laya score": "POST /api/jobs/laya",
     "laya show": "GET /api/companies/{symbol}/laya",
     # Company tab, Industry panel: "Find suppliers and customers" (this company or the main list),

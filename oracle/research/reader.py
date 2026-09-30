@@ -27,6 +27,9 @@ CODES = [NOT_ABOUT] + [f"{_LETTER[d]}{n}" for d in DIRECTIONS for n in range(len
 _DIRECTION = {v: k for k, v in _LETTER.items()}
 TIMEOUT_S = 900.0
 """A call on a model partly on the CPU (qwen2.5:32b) reads a batch in minutes."""
+KEEP_ALIVE = "30m"
+"""How long Ollama keeps the reader loaded between calls: a model partly on the CPU takes about a
+minute to load, so a long run keeps it; the job unloads it itself while live work runs."""
 
 SYSTEM = (
     "You label news headlines for a stock investor. Each numbered line gives a company and a headline. "
@@ -92,7 +95,7 @@ class OllamaReader:
     device = "ollama"
 
     def __init__(self, model: str, base_url: str, *, context: int = 8192, timeout_s: float = TIMEOUT_S,
-                 keep_alive: str | None = None, transport: httpx.BaseTransport | None = None) -> None:
+                 keep_alive: str | None = KEEP_ALIVE, transport: httpx.BaseTransport | None = None) -> None:
         self.model, self.tag = model, reader_tag(model)
         # Windows tries ::1 first for "localhost" and Ollama listens on IPv4: about 2 s a new connection.
         self._url = base_url.rstrip("/").replace("//localhost", "//127.0.0.1") + "/api/chat"
@@ -120,6 +123,9 @@ class OllamaReader:
         began = time.monotonic()
         try:
             response = self._http.post(self._url, json=payload)
+        except httpx.TimeoutException:
+            # A slow call (live work sharing Ollama) loses its batch, not a day-long run.
+            return [None] * len(items)
         except httpx.TransportError as exc:
             raise ReaderError(f"Ollama is not reachable at {self._url} ({exc}): start it with `ollama serve`") from exc
         finally:
@@ -137,5 +143,14 @@ class OllamaReader:
             return [None] * len(items)
         return [decode(c) for c in codes]
 
+    def release(self) -> None:
+        """Unload the model from Ollama now (a chat with no messages and keep_alive 0), so live
+        work gets its memory back; the next call loads it again. Best effort."""
+        try:
+            self._http.post(self._url, json={"model": self.model, "messages": [], "keep_alive": 0})
+        except httpx.HTTPError:
+            pass
+
     def close(self) -> None:
+        self.release()
         self._http.close()

@@ -23,11 +23,11 @@ async def reader_status(ctx: AppContext = Depends(get_ctx)) -> dict:
 
 
 @router.get("/plan")
-async def reader_plan(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_ctx)) -> dict:
+async def reader_plan(watchlist: str = DEFAULT_LIST, own_only: bool = False, ctx: AppContext = Depends(get_ctx)) -> dict:
     """Headlines a run would read and how long it would take; on a thread and connection of its own
     (it walks the list's backfill)."""
     def read() -> ReaderPlan:
         with worker_context(ctx) as own:
-            return plan_reader(own, watchlist)
+            return plan_reader(own, watchlist, own_only=own_only)
 
     return asdict(await asyncio.to_thread(read))

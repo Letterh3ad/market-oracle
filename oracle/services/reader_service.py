@@ -27,7 +27,7 @@ from oracle.store.db import to_utc_iso
 from oracle.store.laya import ArticleText, LayaRepo
 from oracle.store.meta import MetaRepo
 
-__all__ = ["BAKE_OFF_RATE", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
+__all__ = ["BAKE_OFF_RATES", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
            "plan_reader", "reader_groups", "score_reader", "waits_anywhere"]
 
 JOB = "reader"
@@ -35,9 +35,10 @@ LEASE_S = 1800.0
 MODEL_LOCKS = ("research", "discovery_chat", "discovery", "tick", "industry_research")
 """Job locks of live model work (any process) the reader gives way to."""
 LAST_RUN = "reader_last_run"
-BAKE_OFF_RATE = 16.6
-"""Headlines a second for qwen3:4b-instruct-2507-q8_0 in the bake-off (batch 25, the RTX 5060 shared
-with the live app): the estimate before any run of the configured model."""
+BAKE_OFF_RATES = {"qwen3:4b-instruct-2507-q8_0": 16.6, "gemma4:12b": 3.79, "qwen2.5:32b": 1.02}
+"""Headlines a second in the bake-off (batch 25, the RTX 5060 shared with the live app): the
+estimate before any run of the configured model."""
+UNKNOWN_RATE = 1.0
 
 
 @dataclass(frozen=True)
@@ -48,8 +49,13 @@ class PairGroup:
     ids: tuple[int, ...]
 
 
-def reader_groups(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Sequence[str] | None = None) -> list[PairGroup]:
-    """The main list's own backfill, one group a company."""
+def reader_groups(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, own_only: bool = False,
+                  only: Sequence[str] | None = None) -> list[PairGroup]:
+    """The main list's own backfill, one group a company, then (not `own_only`) its map companies'
+    backfill for it."""
+    if not own_only:
+        raise InvalidQuery("the map companies' pairs come with the Laya predictive test (ticket 06); "
+                           "read own news only for now")
     mains = [c for c in history_companies(ctx, watchlist) if c.main]
     if only:
         wanted = {laya_service.primary(ctx, s).casefold() for s in only}
@@ -140,28 +146,39 @@ class ReaderPlan:
     estimate_s: float
 
 
-def plan_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequence[PairGroup] | None = None,
-                model: str | None = None) -> ReaderPlan:
+def plan_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, own_only: bool = False,
+                groups: Sequence[PairGroup] | None = None, model: str | None = None) -> ReaderPlan:
     """How many headlines a run would read and how long it would take, reading only."""
-    groups = list(groups) if groups is not None else reader_groups(ctx, watchlist)
-    tag = reader_tag(model or ctx.config.laya.reader_model)
+    groups = list(groups) if groups is not None else reader_groups(ctx, watchlist, own_only=own_only)
+    name = model or ctx.config.laya.reader_model
+    tag = reader_tag(name)
     total, todo = _needed(ctx, groups, tag)
     pairs = {(laya_service.primary(ctx, g.target), i) for g in groups for i in g.ids}
     last = last_reader_run(ctx)
     if last and last.model == tag and last.rate:
         rate, basis = last.rate, f"measured by the last run ({last.finished_at})"
+    elif name in BAKE_OFF_RATES:
+        rate, basis = BAKE_OFF_RATES[name], f"the bake-off's rate for {name}"
     else:
-        rate, basis = BAKE_OFF_RATE, "the bake-off's rate for qwen3:4b-instruct-2507-q8_0"
+        rate, basis = UNKNOWN_RATE, f"a guess: {name} was not in the bake-off"
     return ReaderPlan(tag, len(groups), len(pairs), total, len(todo), rate, basis, round(len(todo) / rate, 1))
 
 
-def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequence[PairGroup] | None = None,
-                 reader=None, batch: int = BATCH, stop: Callable[[], bool] | None = None,
-                 busy: Callable[[], str | None] | None = None,
+def _eta(done: int, total: int, seconds: float) -> str:
+    if not done or not seconds:
+        return ""
+    rate = done / seconds
+    return f", {rate:.2f} a second, about {(total - done) / rate / 3600:.1f} h left"
+
+
+def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, own_only: bool = False,
+                 groups: Sequence[PairGroup] | None = None, reader=None, batch: int = BATCH,
+                 stop: Callable[[], bool] | None = None, busy: Callable[[], str | None] | None = None,
                  on_progress: Callable[[str], None] | None = None) -> ReaderRun:
     """Read every (subject, article) the groups need that the model has not read, then store each
     pair from its subject's reading. A target's own articles are only ever its own reading, even
-    when a run stops before reaching them."""
+    when a run stops before reaching them. While `busy` names live work the model is unloaded from
+    Ollama (its memory goes to the live model) and loaded again after."""
     if not ctx.config.laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
     say = on_progress or (lambda _: None)
@@ -169,7 +186,7 @@ def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequ
     owned = reader is None
     with single_flight(ctx, JOB, LEASE_S) as held:
         say("planning the headlines")
-        groups = list(groups) if groups is not None else reader_groups(ctx, watchlist)
+        groups = list(groups) if groups is not None else reader_groups(ctx, watchlist, own_only=own_only)
         reader = reader or load_reader(ctx)
         run = ReaderRun(reader.tag, len(groups))
         repo, began, model_s = LayaRepo(ctx.conn), time.monotonic(), reader.stats.seconds
@@ -182,6 +199,7 @@ def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequ
                     break
                 held.check()
                 if busy and (other := busy()):
+                    reader.release()
                     while other and not halt():
                         say(f"{run.scored} of {len(todo)} read; waiting for {other}")
                         laya_service.wait(laya_service.YIELD_STEP_S)
@@ -203,7 +221,9 @@ def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, groups: Sequ
                 for subject, scored in by_subject.items():
                     repo.save(subject, reader.tag, "own", scored, at)
                     run.scored += len(scored)
-                say(f"{run.scored + run.unparsed} of {len(todo)} read ({run.unparsed} unanswered)")
+                done = run.scored + run.unparsed
+                say(f"{done} of {len(todo)} read ({run.unparsed} unanswered)"
+                    + _eta(done, len(todo), run.model_seconds))
             run.copied = _copy_pairs(ctx, groups, reader.tag)
         except ReaderError as exc:
             raise InvalidQuery(str(exc)) from exc

@@ -39,8 +39,19 @@ def test_the_card_names_the_model_and_the_last_run_and_starts_or_estimates_a_run
         button(node, "Read history with the stronger reader").fire("click"); await settle();
         console.log(JSON.stringify([asked, node.textContent]));
     """)
-    assert asked == ["GET /api/reader/plan", "POST /api/jobs/reader"]
+    assert asked == ["GET /api/reader/plan?own_only=true", "POST /api/jobs/reader?own_only=true"]
     assert "Model: qwen3:4b-instruct-2507-q8_0" in text
     assert "Last run, 2026-09-30 23:00 UTC: stopped early (cancelled)" in text
     assert "60 of 100 headlines left to read (150 pairs), about 0.0 h at 16.6 a second" in text
     assert "The stronger reader is queued" in text and "Activity tab" in text
+
+
+def test_unticking_own_news_only_asks_for_every_pair():
+    asked = run("""
+        section.show(); await settle();
+        asked.length = 0;
+        labelled(node, "Own news only").checked = false;
+        button(node, "Read history with the stronger reader").fire("click"); await settle();
+        console.log(JSON.stringify(asked));
+    """)
+    assert asked == ["POST /api/jobs/reader"]

@@ -59,6 +59,16 @@ def test_unusable_codes_are_asked_once_more_alone_then_left_unscored():
     assert reader.score(ITEMS[:2]) == [None, None], "a count that does not match cannot be aligned"
 
 
+def test_the_model_is_kept_between_calls_and_released_on_request_and_close():
+    seen = []
+    reader = OllamaReader("m", "http://x", transport=transport([{"codes": ["x"]}, {}, {}], seen))
+    reader.score(ITEMS[:1])
+    assert seen[0]["keep_alive"] == "30m"
+    reader.release()
+    reader.close()
+    assert seen[1] == seen[2] == {"model": "m", "messages": [], "keep_alive": 0}
+
+
 def test_localhost_is_asked_on_ipv4():
     seen = []
 
@@ -67,6 +77,13 @@ def test_localhost_is_asked_on_ipv4():
         return httpx.Response(200, json={"message": {"content": '{"codes": ["x"]}'}})
     OllamaReader("m", "http://localhost:11434/", transport=httpx.MockTransport(handle)).score(ITEMS[:1])
     assert seen == ["http://127.0.0.1:11434/api/chat"]
+
+
+def test_a_call_that_times_out_leaves_its_batch_unscored():
+    def slow(request):
+        raise httpx.ReadTimeout("slow")
+    reader = OllamaReader("m", "http://x", transport=httpx.MockTransport(slow))
+    assert reader.score(ITEMS) == [None, None, None] and reader.stats.unparsed == 3 and reader.stats.calls == 2
 
 
 def test_a_missing_model_or_ollama_is_an_error():

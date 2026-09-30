@@ -158,8 +158,8 @@ async def history(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_c
 
 
 @router.post("/reader", status_code=202)
-async def reader(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_ctx),
+async def reader(watchlist: str = DEFAULT_LIST, own_only: bool = False, ctx: AppContext = Depends(get_ctx),
                  runner: JobRunner = Depends(get_runner)) -> dict:
     """The stronger reader over a list's history backfill (hours); it waits while model work runs or a
     scheduled tick is near, and resumes where it stopped."""
-    return shapes.job(submit_reader(ctx, runner, watchlist))
+    return shapes.job(submit_reader(ctx, runner, watchlist, own_only))

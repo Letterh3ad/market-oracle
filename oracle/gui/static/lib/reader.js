@@ -13,6 +13,9 @@ function readerSection() {
   const lastRun = el("p", { class: "small" });
   const planLine = el("p", { class: "small" });
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
+  const ownOnly = el("input", { type: "checkbox", "aria-label": "Own news only" });
+  ownOnly.checked = true;
+  const query = () => (ownOnly.checked ? "?own_only=true" : "");
 
   function running(job) {
     say(el("span", null, `The stronger reader is ${job.state}${job.progress ? `: ${job.progress}` : ""}. It takes hours, `
@@ -23,7 +26,7 @@ function readerSection() {
   const start = el("button", { type: "button", onclick: async () => {
     start.disabled = true;
     try {
-      running(await api("/api/jobs/reader", { method: "POST" }));
+      running(await api(`/api/jobs/reader${query()}`, { method: "POST" }));
     } catch (err) {
       say(err.message);
     } finally {
@@ -35,7 +38,7 @@ function readerSection() {
     plan.disabled = true;
     planLine.replaceChildren("Counting...");
     try {
-      const p = await api("/api/reader/plan");
+      const p = await api(`/api/reader/plan${query()}`);
       planLine.replaceChildren(`${p.unscored} of ${p.subject_articles} headlines left to read (${p.pairs} pairs), `
         + `about ${(p.estimate_s / 3600).toFixed(1)} h at ${p.rate} a second (${p.basis}).`);
     } catch (err) {
@@ -64,7 +67,8 @@ function readerSection() {
   const node = el("section", { class: "card" }, el("h3", null, "Stronger reader"),
     el("p", { class: "small" }, "Reads each backfilled headline once, for its own company, with a local chat model; "
       + "competitor and industry pairs reuse that reading. The predictive test then runs on its scores beside Laya's."),
-    model, el("div", { class: "row" }, start, plan), planLine, lastRun, note);
+    model, el("label", { class: "small" }, ownOnly, " Own news only (the main list's own headlines, no map companies)"),
+    el("div", { class: "row" }, start, plan), planLine, lastRun, note);
 
   return {
     node,

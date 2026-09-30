@@ -100,9 +100,12 @@ def test_it_waits_while_live_work_runs_and_says_so(ctx, pairs, monkeypatch):
     waits, lines = [], []
     monkeypatch.setattr(laya_service, "wait", waits.append)
     busy = iter(["the scheduled tick at 22:00 UTC", "the scheduled tick at 22:00 UTC", None])
-    run = score_reader(ctx, groups=pairs, reader=FakeReader(), busy=lambda: next(busy, None), on_progress=lines.append)
+    fake = FakeReader()
+    run = score_reader(ctx, groups=pairs, reader=fake, batch=2, busy=lambda: next(busy, None), on_progress=lines.append)
     assert run.scored == 5 and len(waits) == 2
+    assert fake.released == 1, "the model's memory goes to the live work while it waits"
     assert any("waiting for the scheduled tick at 22:00 UTC" in line for line in lines)
+    assert "2 of 5 read (0 unanswered), 100.00 a second, about 0.0 h left" in lines
 
 
 def test_cancel_while_waiting_stops_between_batches(ctx, pairs, monkeypatch):
@@ -121,7 +124,7 @@ def test_one_run_at_a_time_across_processes(ctx, pairs):
 def test_the_plan_counts_each_subjects_article_once_and_estimates_from_the_measured_rate(ctx, pairs):
     plan = plan_reader(ctx, groups=pairs, model="fake")
     assert (plan.subject_articles, plan.unscored, plan.pairs) == (5, 5, 6)
-    assert plan.rate == reader_service.BAKE_OFF_RATE and plan.estimate_s == pytest.approx(5 / plan.rate, abs=0.1)
+    assert plan.rate == reader_service.UNKNOWN_RATE and "not in the bake-off" in plan.basis and plan.estimate_s == pytest.approx(5 / plan.rate, abs=0.1)
     score_reader(ctx, groups=pairs, reader=FakeReader(unparsed={"Apple falls"}))
     assert plan_reader(ctx, groups=pairs).unscored == 5, "the configured model has read nothing"
     plan = plan_reader(ctx, groups=pairs, model="fake")
@@ -137,20 +140,27 @@ async def runner(ctx):
 
 async def test_the_activity_job_reads_the_list_history_and_a_retry_resumes(ctx, runner, pairs, monkeypatch):
     fake = FakeReader()
-    monkeypatch.setattr(reader_service, "reader_groups", lambda c, w: pairs)
+    scopes = []
+    monkeypatch.setattr(reader_service, "reader_groups", lambda c, w, own_only: scopes.append(own_only) or pairs)
     monkeypatch.setattr(reader_service, "load_reader", lambda c: fake)
     watch(ctx, "AAPL")
-    job = submit_reader(ctx, runner)
-    assert (job.kind, job.link) == ("reader", "#ledgers") and "qwen3:4b-instruct-2507-q8_0" in job.label
+    job = submit_reader(ctx, runner, own_only=True)
+    assert (job.kind, job.link) == ("reader", "#ledgers") and "qwen2.5:32b" in job.label and "own news" in job.label
     done = await runner.wait(job.id)
-    assert done.state == "done" and done.result.scored == 5 and fake.closed
-    again = await runner.wait(submit_reader(ctx, runner).id)
+    assert done.state == "done" and done.result.scored == 5 and fake.closed and scopes == [True]
+    again = await runner.wait(submit_reader(ctx, runner, own_only=True).id)
     assert again.state == "done" and again.result.already == 5 and again.result.scored == 0
     row_id = JobHistoryRepo(ctx.conn).add("reader", job.label, job.subject, job.link, "queued", NOW, 999_999_999)
     JobHistoryRepo(ctx.conn).update(row_id, "interrupted", "app closed", NOW, NOW)
     resumed = retry(ctx, runner, row_id)
     assert (resumed.kind, resumed.subject) == ("reader", job.subject)
     await runner.wait(resumed.id)
+    assert scopes == [True, True, True], "a retry keeps the scope"
+
+
+def test_all_pairs_wait_for_ticket_06(ctx):
+    with pytest.raises(InvalidQuery, match="ticket 06"):
+        reader_service.reader_groups(ctx, "main")
 
 
 async def test_the_job_waits_for_model_work_anywhere_and_a_scheduled_tick(ctx, runner, monkeypatch):

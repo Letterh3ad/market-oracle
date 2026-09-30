@@ -582,13 +582,16 @@ def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
 
 
 READER_SUBJECT = "reader"
+OWN_PART = "own"
+"""The last part of an own-news-only reader job's subject."""
 
 
-def submit_reader(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST) -> Job:
-    """The stronger reader over the history backfill of `watchlist` (hours): each headline read once
-    by the local model for its own company, pairs stored from that reading. It waits while model work
-    runs anywhere or a scheduled run is due within 30 minutes, and a Cancel stops it between
-    batches; what it read is kept, so a retry resumes."""
+def submit_reader(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST, own_only: bool = False) -> Job:
+    """The stronger reader over the history backfill of `watchlist` (hours; `own_only`: the list's own
+    news, not its map companies'): each headline read once by the local model for its own company,
+    pairs stored from that reading. It waits while model work runs anywhere or a scheduled run is due
+    within 30 minutes, and a Cancel stops it between batches; what it read is kept, so a retry
+    resumes."""
     if not ctx.config.laya.enabled:
         raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
     name = watchlist_symbols(ctx, watchlist)[0]
@@ -596,11 +599,14 @@ def submit_reader(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_L
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        return score_reader(c, name, stop=stopped.is_set, busy=lambda: _reader_waits(c, runner), on_progress=stage.append)
+        return score_reader(c, name, own_only=own_only, stop=stopped.is_set, busy=lambda: _reader_waits(c, runner),
+                            on_progress=stage.append)
 
-    return runner.submit("reader", f"Stronger reader ({ctx.config.laya.reader_model}) over {name}'s history", work,
-                         subject=f"{READER_SUBJECT}{BACKTEST_SEP}{name}", link="#ledgers",
-                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+    scope = "own news" if own_only else "history"
+    subject = BACKTEST_SEP.join((READER_SUBJECT, name, *((OWN_PART,) if own_only else ())))
+    return runner.submit("reader", f"Stronger reader ({ctx.config.laya.reader_model}) over {name}'s {scope}", work,
+                         subject=subject, link="#ledgers", progress=lambda: stage[-1] if stage else None,
+                         on_cancel=stopped.set)
 
 
 EDGES_LIST = "list:"
@@ -823,7 +829,9 @@ def _retry_laya(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 
 def _retry_reader(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_reader(ctx, runner, (job.subject or "").split(BACKTEST_SEP, 1)[-1])
+    subject = (job.subject or "").removeprefix(READER_SUBJECT + BACKTEST_SEP)
+    own = subject.endswith(BACKTEST_SEP + OWN_PART)
+    return submit_reader(ctx, runner, subject.removesuffix(BACKTEST_SEP + OWN_PART), own)
 
 
 def _retry_edges(ctx: AppContext, runner: JobRunner, job) -> Job:
