@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from oracle.broker.core_sat import REBALANCE
+from oracle.broker.core_sat import EXPIRED, REBALANCE
 from oracle.broker.orders import Action, Side, Status
 from oracle.services.core_sat_service import (
     BUY, CORE_SOURCE, REBALANCE as REBALANCE_PHASE, SAT_SOURCE, START, core_phase, next_rebalance, sleeves,
@@ -14,11 +14,12 @@ from oracle.services.core_sat_service import (
 from oracle.services.paper_service import (
     ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log, fill_pending, place_buy, traded_by,
 )
-from oracle.services.regime_service import CORE_SAT_OFF, build_book, regime_card, regime_step
+from oracle.services.regime_service import CORE_SAT_OFF, NOT_CORE, build_book, regime_card, regime_step
 from oracle.services.watch_service import watch
 from oracle.store.paper import Order, PaperRepo
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, yahoo  # noqa: F401
+from tests.services.test_paper_discovered import ai_trades, found
 from tests.services.test_regime_account import PARTS
 
 DAY = date(2026, 9, 21)
@@ -109,6 +110,35 @@ async def test_the_satellite_never_spends_core_cash_and_sells_only_its_own_share
     [sell] = [o for o in account_view(ctx, ACCOUNT).pending if o.side == Side.SELL]
     assert (sell.source, sell.shares) == (SAT_SOURCE, sat_aapl.shares)
     assert not [o for o in PaperRepo(ctx.conn).pending(ACCOUNT) if o.source == CORE_SOURCE]
+
+
+def test_the_satellite_trades_the_main_lists_companies_only_as_its_backtest_does(ctx, monkeypatch):
+    use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("strong buy", 0.95, PARTS)})
+    seed(ctx, "AAPL", "hold", size_share=0.5)
+    seed(ctx, "VOD.L", "hold", size_share=0.5)
+    watch(ctx, "AAPL")
+    ai_trades(ctx, True)
+    found(ctx, "VOD.L")
+    assert "VOD.L" in traded_by(ctx, ACCOUNT)
+    regime_step(ctx, ACCOUNT)
+    assert {o.symbol for o in account_view(ctx, ACCOUNT).pending} == {"AAPL"}
+    [skip] = [d for d in decision_log(ctx, ACCOUNT) if d.symbol == "VOD.L"]
+    assert skip.reason == NOT_CORE
+
+
+def test_a_core_order_waiting_past_its_limit_expires_and_the_core_buys_afresh(ctx, monkeypatch):
+    use_stub(monkeypatch)
+    watch(ctx, "AAPL")
+    regime_step(ctx, ACCOUNT)
+    [first] = PaperRepo(ctx.conn).orders(ACCOUNT, CORE_SOURCE)
+    ctx.clock.advance(3 * 86400)
+    regime_step(ctx, ACCOUNT)
+    assert len(PaperRepo(ctx.conn).orders(ACCOUNT, CORE_SOURCE)) == 1, "still within its limit: it waits"
+    ctx.clock.advance(6 * 86400)
+    regime_step(ctx, ACCOUNT)
+    old, new = PaperRepo(ctx.conn).orders(ACCOUNT, CORE_SOURCE)
+    assert (old.id, old.status, old.note) == (first.id, Status.REJECTED, EXPIRED)
+    assert (new.status, new.side, new.symbol) == (Status.PENDING, Side.BUY, "AAPL")
 
 
 def test_a_manual_or_other_account_order_is_no_sleeves(ctx):

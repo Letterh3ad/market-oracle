@@ -446,6 +446,8 @@ def test_the_walk_forward_judges_every_line_per_six_month_segment_and_fits_regim
     assert names == [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat",
                                                      "regime_wf"]
     assert all(len(x.segments) == 3 for x in wf.lines)
+    [note] = [n for n in r.notes if n.startswith("Walk-forward:")]
+    assert "core-sat's within its satellite's quarter" in note and "never the yearly rebalance" in note
     held = wf.lines[1]
     assert held.beat is None and all(s.excess == 0.0 for s in held.segments)
     assert all(x.beat == sum(1 for s in x.segments if s.excess > 0) for x in wf.lines if x.name != "buy_and_hold")

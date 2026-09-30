@@ -27,7 +27,11 @@ REBALANCE_YEARS = 1
 REBALANCE = "core rebalance"
 """How every core order's reason starts."""
 STALE = timedelta(days=7)
-"""A member whose last close is older than this on a rebalance day is left out of that one's targets."""
+"""A holding or member whose last close is older than this on a rebalance day is left out of it:
+not counted, trimmed, sold or bought (suspended, delisted or no longer fetched)."""
+EXPIRED = f"expired, no fill within {STALE.days} days"
+"""A core order still waiting this long is dropped, so a listing that stopped trading never blocks
+a later rebalance."""
 
 
 @dataclass(frozen=True)
@@ -108,6 +112,15 @@ def rebalance_buys(members: Collection[str], held: Mapping[str, tuple[int, float
             for s, v in wanted.items()]
 
 
+def expired(placed: date, day: date) -> bool:
+    return day - placed > STALE
+
+
+def whole_share_buys(orders: list[CoreOrder], prices: Mapping[str, float]) -> list[CoreOrder]:
+    """The buys worth at least one share at its last close: a smaller top-up could only be rejected."""
+    return [o for o in orders if o.side != Side.BUY or o.cash >= prices[o.symbol]]
+
+
 def _target(members: Collection[str], held: Mapping[str, tuple[int, float]], cash: float) -> float:
     equity = cash + sum(v for _, v in held.values())
     return equity / len(members) if members else 0.0
@@ -139,7 +152,10 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
         for placed, order in sorted(pending, key=lambda x: x[1].side != Side.SELL):
             p = today.get(order.symbol)
             if p is None or _price(p.bar, fill_at) is None or p.rate is None:
-                waiting.append((placed, order))
+                if expired(placed, day):
+                    rejected.append(f"{day.isoformat()} {order.symbol}: {EXPIRED}")
+                else:
+                    waiting.append((placed, order))
                 continue
             trade = _fill(order, p, _price(p.bar, fill_at), cash, held,
                           _charges(order.symbol, p, venues, slippage, commission))
@@ -158,17 +174,18 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
         equity.append((day, cash + sum(n * last[s][1] for s, n in held.items() if s in last)))
         if day == days[-1]:
             continue
-        priced = [s for s in members if s in last and day - last[s][0] <= STALE]
-        values = {s: (n, n * last[s][1]) for s, n in held.items() if s in last}
+        fresh = {s: close for s, (on, close) in last.items() if day - on <= STALE}
+        priced = [s for s in members if s in fresh]
+        values = {s: (n, n * fresh[s]) for s, n in held.items() if s in fresh}
         placed: list[CoreOrder] = []
         if day in due:
             placed = rebalance_sells(priced, values, cash)
             buying_next = bool(placed)
             if not placed:
-                placed = rebalance_buys(priced, values, cash)
+                placed = whole_share_buys(rebalance_buys(priced, values, cash), fresh)
         elif buying_next and not pending:
             buying_next = False
-            placed = rebalance_buys(priced, values, cash)
+            placed = whole_share_buys(rebalance_buys(priced, values, cash), fresh)
         for order in placed:
             pending.append((day, order))
             orders.append((day, Decision(order.symbol, Action.BUY if order.side == Side.BUY else Action.SELL,

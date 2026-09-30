@@ -10,7 +10,9 @@ from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import date
 
-from oracle.broker.core_sat import CORE_SHARE, STALE, CoreOrder, add_years, rebalance_buys, rebalance_sells
+from oracle.broker.core_sat import (
+    CORE_SHARE, EXPIRED, STALE, CoreOrder, add_years, expired, rebalance_buys, rebalance_sells, whole_share_buys,
+)
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.regime import RegimeInputs, RegimeSettings
 from oracle.broker.rules import Decision
@@ -43,11 +45,11 @@ def core_listings(ctx: AppContext) -> tuple[str, ...]:
         return ()
 
 
-def satellite_traded(ctx: AppContext, traded: Collection[str]) -> list[str]:
-    """What the satellite leans on: the account's traded companies (no funds, no Tesla), plus what
-    it holds, so a holding is never stranded."""
+def satellite_traded(ctx: AppContext) -> list[str]:
+    """What the satellite leans on: the core's companies, as in the backtest (never a discovered
+    one, a fund or Tesla), plus what it holds, so a holding is never stranded."""
     held = {p.symbol for p in account_view(ctx, CORE_SAT, sleeves(ctx)[1]).positions}
-    return sorted(set(core_members(ctx, traded)) | held)
+    return sorted(set(core_listings(ctx)) | held)
 
 
 def satellite_inputs(inputs: RegimeInputs) -> RegimeInputs:
@@ -101,9 +103,11 @@ def core_step(ctx: AppContext, day: date, history: Mapping[str, list[ConvertedBa
     core = sleeves(ctx)[0]
     repo = PaperRepo(ctx.conn)
     today = ctx.clock.utcnow().date()
-    phase = core_phase(repo.orders(CORE_SAT, CORE_SOURCE), today)
+    phase = core_phase(_live_orders(repo, today), today)
     if phase is None:
         return []
+    # One stale rule with the replay: a listing without a close in STALE is not counted, trimmed,
+    # sold or bought at this step.
     closes = {s: rows[-1].close_base for s, rows in history.items()
               if rows and rows[-1].close_base and day - rows[-1].bar.date <= STALE}
     members = [s for s in core_listings(ctx) if s in closes]
@@ -111,7 +115,7 @@ def core_step(ctx: AppContext, day: date, history: Mapping[str, list[ConvertedBa
     values = {p.symbol: (p.shares, p.shares * closes[p.symbol]) for p in view.positions if p.symbol in closes}
     planned = rebalance_sells(members, values, view.cash) if phase == REBALANCE else []
     if not planned:
-        planned = [o for o in rebalance_buys(members, values, view.cash) if o.cash >= closes[o.symbol]]
+        planned = whole_share_buys(rebalance_buys(members, values, view.cash), closes)
     log, out = DecisionRepo(ctx.conn), []
     for o in planned:
         order = (place_buy(ctx, o.symbol, o.cash, CORE_SAT, source=CORE_SOURCE) if o.side == Side.BUY
@@ -122,6 +126,16 @@ def core_step(ctx: AppContext, day: date, history: Mapping[str, list[ConvertedBa
     return out
 
 
+def _live_orders(repo: PaperRepo, today: date) -> list[Order]:
+    """The core's orders, a pending one older than STALE dropped first (as the replay drops it): an
+    expired order counts as never placed, so it never blocks a rebalance nor ends the first buying."""
+    orders = repo.orders(CORE_SAT, CORE_SOURCE)
+    for o in orders:
+        if o.status == Status.PENDING and expired(o.placed_on, today):
+            repo.set_status(o.id, Status.REJECTED, EXPIRED)
+    return [o for o in repo.orders(CORE_SAT, CORE_SOURCE) if o.note != EXPIRED]
+
+
 def _decision(o: CoreOrder) -> Decision:
     return Decision(o.symbol, Action.BUY if o.side == Side.BUY else Action.SELL, o.cash, o.reason)
 
@@ -129,7 +143,7 @@ def _decision(o: CoreOrder) -> Decision:
 def core_card(ctx: AppContext) -> dict:
     """Each sleeve's cash, holdings and positions, and when the core next rebalances."""
     core, sat = sleeves(ctx)
-    orders = PaperRepo(ctx.conn).orders(CORE_SAT, CORE_SOURCE)
+    orders = [o for o in PaperRepo(ctx.conn).orders(CORE_SAT, CORE_SOURCE) if o.note != EXPIRED]
     out = {}
     for name, sleeve in (("core", core), ("satellite", sat)):
         view = account_view(ctx, CORE_SAT, sleeve)

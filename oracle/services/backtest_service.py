@@ -213,7 +213,9 @@ def _walk_note(spans: list[tuple[date, date]], end: date, capital: float, base: 
             "windows closed before it, so its first fits read less than two years when less is stored. Buy and "
             "hold here re-buys equal amounts at each segment's start, so its compounded figure is not the "
             "whole run's buy and hold; each traded line starts every segment in cash and holds its cash "
-            "floor too." + left)
+            "floor too, core-sat's within its satellite's quarter. Core-sat's core is set back to equal weight "
+            "once a year, longer than a segment, so its segment figures test its satellite and entry costs only, "
+            "never the yearly rebalance: that shows only in the whole run." + left)
 
 
 def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:

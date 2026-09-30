@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from oracle.broker.core_sat import (CORE_SHARE, REBALANCE, core_replay, core_sat_replay, rebalance_buys,
+from oracle.broker.core_sat import (CORE_SHARE, EXPIRED, REBALANCE, core_replay, core_sat_replay, rebalance_buys,
                                     rebalance_days, rebalance_sells)
 from oracle.broker.orders import Side
 from oracle.broker.rules import Lean
@@ -77,6 +77,21 @@ def test_core_rebalances_yearly_back_to_equal_weight():
     for t in sorted(r.trades, key=lambda t: (t.day, t.side != Side.SELL)):
         cash += t.cash
         assert cash >= -1e-6
+
+
+def test_a_stale_holding_is_left_alone_an_unfilled_order_expires_and_a_sub_share_top_up_is_never_placed():
+    h = market()
+    start = h["UP"][100].bar.date
+    h["GAP"] = priced(rising(300, "GAP", 0.001))  # stops long before the first yearly rebalance
+    h["LATE"] = priced(rising(101, "LATE", 0.001))  # its last bar is the first day: its buy never fills
+    h["BIG"] = [replace(p, bar=replace(p.bar, open=p.bar.open * 1e6, close=p.bar.close * 1e6))
+                for p in priced(rising(700, "BIG", 0.001))]
+    r = core(h, start)
+    assert "GAP" in {t.symbol for t in r.trades} and "GAP" not in {t.symbol for t in r.trades if t.side == Side.SELL}
+    assert any(f"LATE: {EXPIRED}" in n for n in r.rejected)
+    assert "LATE" not in r.unfilled
+    assert {d for d, o in r.orders if o.action.value == "sell"}, "the expired order never blocked a rebalance"
+    assert "BIG" not in {o.symbol for _, o in r.orders} and not any("whole share" in n for n in r.rejected)
 
 
 def test_a_listing_left_out_of_the_members_is_never_bought():

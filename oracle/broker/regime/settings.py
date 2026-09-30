@@ -82,7 +82,8 @@ class RegimeInputs:
     verdict_max_age: int = 7
     """Calendar days a verdict stays usable, the AI account's freshness rule."""
     extra: Mapping[str, Mapping[str, DatedScores]] = field(default_factory=dict)
-    """Extra methods by name (not one of METHODS): symbol -> dated scores in [-1, 1], each usable
+    """Extra methods by name (not one of METHODS): symbol -> dated scores in [-1, 1], oldest first
+    (they are searched by day, so an unsorted series reads the wrong score), each usable
     from its day for `extra_max_age` days. A method weighs by its name's weight in each mood of
     the settings, none by default (Laya joins the core-satellite this way)."""
     extra_max_age: int = 7

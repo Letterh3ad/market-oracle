@@ -392,6 +392,9 @@ def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, m
         return real(*args, **kwargs)
 
     monkeypatch.setattr(replay_score, "regime_lines", counted)
+    for s in SYMBOLS:  # companies, so core-sat's core holds them
+        UniverseRepo(ctx.conn).add(Listing(s, f"{s} Inc", "Equity", "United States", "NMS", currency="USD",
+                                           company_key=s.lower(), is_primary=True))
     make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
     s = replay_report(ctx)
     assert len(built) == 1
@@ -402,6 +405,11 @@ def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, m
         v2 = lines(account)["regime_v2"]
         assert v2.label == "Regime-v2" and v2.points[0] == (JUN, 0.0) and v2.caption.startswith("Regime-v2:")
         assert list(lines(account))[-3:] == ["regime", "regime_v2", "core_sat"]
+        core_sat = lines(account)["core_sat"]
+        assert core_sat.caption.startswith("Core-sat: 75% in an equal-weight buy and hold")
+        # Its core buys every member, so it trades more than the regime line alone and ends elsewhere.
+        assert core_sat.trades >= regime.trades + len(account.listings)
+        assert core_sat.points != regime.points
 
 
 def regime_of(tmp_path, name, calls):

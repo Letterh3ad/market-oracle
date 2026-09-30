@@ -61,6 +61,7 @@ LAG_WEEKDAYS = 2
 trading an old day's leans (gate 04 #3), so the card and the tick say so."""
 NO_MOOD = "no market mood yet: under a year of stored market history, so the regime line leans nothing"
 NO_SCORE = "no regime score: too little history for any price method"
+NOT_CORE = "not one of the main list's companies: core-sat's satellite trades only those, as its backtest does"
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
 COMPLETE_SHARE = 0.8
@@ -158,8 +159,9 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account)
     state = book.state(day) if day else None
     sleeve, core = (sleeves(ctx)[1], core_step(ctx, day, history) if day else []) if account == CORE_SAT else (None, [])
-    leaned = satellite_traded(ctx, traded) if sleeve else traded
+    leaned = satellite_traded(ctx) if sleeve else traded
     found, skips, why = _leans(ctx, book, state, day, leaned, history)
+    skips += [Decision(s, Action.SKIP, None, NOT_CORE) for s in traded if s not in leaned] if sleeve else []
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
     decisions = core + step_account(ctx, account, found, skips, {}, why, book.cap, sleeve)
     if day is not None:
