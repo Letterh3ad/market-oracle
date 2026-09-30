@@ -83,7 +83,7 @@ class Resolved:
     """The company's band, from its primary listing."""
 
 
-PEER_FIELDS = ("industry_group", "sector")
+PEER_FIELDS = ("industry", "industry_group", "sector")
 
 
 @dataclass(frozen=True)
@@ -227,7 +227,7 @@ class UniverseRepo:
 
     def peers(self, company_key: str, field: str, value: str, limit: int,
               corrections: Mapping[str, Correction] = {}) -> list[PeerRow]:
-        """Other active equity companies sharing `field` (sector or industry_group), by
+        """Other active equity companies sharing `field` (one of PEER_FIELDS), by
         primary listing: biggest market-cap band first, then the most widely listed. Each
         company's field is read through `corrections`."""
         if field not in PEER_FIELDS:
@@ -372,6 +372,10 @@ class UniverseRepo:
         return {r[0] for r in self._conn.execute(
             f"SELECT DISTINCT company_key FROM listings WHERE is_primary AND delisted = 0 "
             f"AND company_key IN ({', '.join('?' * len(keys)) or 'NULL'})", keys)}
+
+    def primary_symbol(self, company_key: str) -> str | None:
+        row = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ? AND is_primary", (company_key,))
+        return next((r[0] for r in row), None)
 
     def company_symbols(self, company_key: str) -> list[str]:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))

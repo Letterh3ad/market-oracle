@@ -22,6 +22,9 @@ oracle = "oracle.cli.main:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+# On a GPU, install torch from the PyTorch index first (an RTX 50 card needs a cu128 build):
+# pip install torch --index-url https://download.pytorch.org/whl/cu128
+laya = ["laya>=0.3.22,<0.4"]
 
 [tool.setuptools.packages.find]
 include = ["oracle*", "holiday_watch"]
@@ -33,5 +36,6 @@ include = ["oracle*", "holiday_watch"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-m 'not network'"
-markers = ["network: hits real third-party services; run with -m network"]
+addopts = "-m 'not network and not laya'"
+markers = ["network: hits real third-party services; run with -m network",
+           "laya: loads the real Laya model (GPU or CPU, a 1.3 GB download once); run with -m laya"]

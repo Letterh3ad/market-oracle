@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from oracle.research.news import Article
 from oracle.research.notes import Note
 from oracle.store.db import to_utc_iso, transaction
+from oracle.store.discoveries import DiscoveryEvidence
 
 # Unusable notes by one model after which it is not asked again.
 NOTE_ATTEMPTS = 2
@@ -31,9 +32,9 @@ class ArticleRepo:
         with transaction(self._conn):
             self._conn.executemany(
                 "INSERT OR IGNORE INTO articles (url, title, outlet, published_at, source, fetched_at, query, body, "
-                "site) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "site, snippet) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [(a.url, a.title, a.outlet, to_utc_iso(a.published) if a.published else None, source, fetched_at,
-                  query, a.body, a.site) for a in articles],
+                  query, a.body, a.site, a.summary) for a in articles],
             )
         return [self._conn.execute("SELECT id FROM articles WHERE url = ?", (a.url,)).fetchone()[0] for a in articles]
 
@@ -45,6 +46,20 @@ class ArticleRepo:
             f"SELECT id FROM articles WHERE source = 'sec_edgar' AND query COLLATE NOCASE IN ({','.join('?' * len(symbols))}) "
             "AND published_at >= ? ORDER BY published_at DESC", (*symbols, since))
         return [r[0] for r in rows]
+
+    def latest_about(self, symbols: list[str], limit: int) -> list[DiscoveryEvidence]:
+        """The newest articles research on any of `symbols` found by its own searches (not a
+        linked company's), and their stored filings; undated ones (mostly standing pages) last,
+        and never the stored-data summaries Market Oracle writes itself."""
+        marks = ",".join("?" * len(symbols))
+        rows = self._conn.execute(
+            "SELECT a.id, a.title, a.url, a.outlet, a.published_at FROM articles a WHERE a.source != 'oracle' AND ("
+            "a.id IN (SELECT e.article_id FROM research_evidence e JOIN research_runs r ON r.id = e.run_id "
+            f"WHERE r.symbol COLLATE NOCASE IN ({marks}) AND NOT EXISTS (SELECT 1 FROM research_queries q "
+            "WHERE q.run_id = e.run_id AND q.query = e.query COLLATE NOCASE AND q.via IS NOT NULL)) "
+            f"OR (a.source = 'sec_edgar' AND a.query COLLATE NOCASE IN ({marks}))) "
+            "ORDER BY a.published_at IS NULL, a.published_at DESC, a.id DESC LIMIT ?", (*symbols, *symbols, limit))
+        return [DiscoveryEvidence(*r) for r in rows]
 
     def reading(self, article_ids: list[int], model: str) -> dict[int, Reading]:
         rows = self._conn.execute(

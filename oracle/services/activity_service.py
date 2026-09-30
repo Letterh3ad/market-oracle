@@ -29,6 +29,7 @@ from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
+from oracle.services.laya_service import score_company
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
@@ -46,7 +47,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
-           "submit_fill", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_fill", "submit_laya", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -528,6 +529,23 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
                          on_cancel=stopped.set)
 
 
+def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
+    """Score the company's stored articles with Laya, those its model has not scored yet. It waits
+    while research, a tick, a question or discovery runs (their model shares the GPU), and a
+    Cancel stops it between batches, keeping what was scored."""
+    if not ctx.config.laya.enabled:
+        raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
+    listing = resolve_symbol(ctx, symbol).symbol
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return score_company(c, listing, stop=stopped.is_set, busy=lambda: _model_work(runner), on_progress=stage.append)
+
+    return runner.submit("laya", f"Laya {listing}", work, subject=listing, link=f"#company/{listing}",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
     """Ask `profile`'s model, or each unprobed model a replay runs on, the dated questions and keep
     their measured cutoffs; an unknown profile is refused now."""
@@ -650,6 +668,10 @@ def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
                            float(commission), walk, ai)
 
 
+def _retry_laya(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_laya(ctx, runner, job.subject)
+
+
 def _retry_probe(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_cutoff_probe(ctx, runner, job.profile)
 
@@ -658,6 +680,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
+    "laya": _retry_laya,
 }
 
 

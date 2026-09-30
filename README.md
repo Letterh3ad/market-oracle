@@ -9,6 +9,14 @@ py -3.12 -m venv .venv
 .venv/Scripts/python.exe -m pytest -q
 ```
 
+Laya headline scores (optional; the CUDA torch build first on an NVIDIA GPU):
+
+```bash
+.venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cu128
+.venv/Scripts/python.exe -m pip install -e ".[laya]"
+.venv/Scripts/python.exe -m pytest -q -m laya   # real model on the sanity set
+```
+
 Design decisions: `DECISIONS.md`. Planning notes are kept locally, outside the repo.
 
 ## Holiday watch

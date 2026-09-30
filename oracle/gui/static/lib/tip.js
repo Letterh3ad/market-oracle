@@ -94,11 +94,21 @@ const GLOSSARY = {
     "How much worse than the opening price each simulated order fills, in basis points (hundredths of a " +
     "percent): 10 means 0.1% worse, so a 100.00 share costs 100.10.",
   commission: "A flat fee per simulated trade, in your base currency. 0 means no fee.",
-  linked_companies:
-    "Companies the news ties to this one (a supplier, customer, competitor or partner), found by discovery, " +
-    "or of the same industry when discovery added one for that. Research on this company also searches the news " +
-    "on the two with the most headlines, and its evidence says which link found an article. Delete a wrong " +
-    "link: it is never recorded again.",
+  industry:
+    "The companies related to this one. Competitors: the same industry (its industry group when the industry " +
+    "has fewer than 5), plus the peers below, at most 15, biggest first; Tesla and funds never. Links: a " +
+    "supplier, customer, competitor or partner the news showed (found by discovery) or you added. Each says " +
+    "when it was first known; a same-industry one is known on any day. What each is doing now comes from " +
+    "stored data only: nothing is fetched when this opens. Research on this company also searches the news on " +
+    "the two links with the most headlines. Delete a wrong link: it is never recorded again.",
+  laya:
+    "Laya, a small local model, reads each stored headline about this company (from its research and SEC " +
+    "filings, headline and snippet only) and gives how likely it is about the company, which way it points and " +
+    "what kind of event it is. The percentages are uncalibrated: not yet fitted to how often it is right. On 110 " +
+    "hand-labelled headlines (the same ones its question wording was chosen on, so these flatter it): direction " +
+    "right 66% where always \"none\" gets 55%; event type 51% where always \"other\" gets 37%; about-it only " +
+    "38% where always \"yes\" gets 69% (rank AUC 0.57, near chance), so that column is not usable yet. Scoring " +
+    "waits while research or a tick runs.",
   peers:
     "Value, quality and growth compare the company with similar ones: same industry group, or the whole " +
     "sector when the group is small. More peers give a steadier comparison but take longer to fetch.",
