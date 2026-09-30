@@ -11,7 +11,7 @@ import threading
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from oracle.config import profile_tables
@@ -61,6 +61,10 @@ PAGE_SIZE = 20
 PREEMPTED_BY = ("research", "tick", "ask", "discover")
 """Kinds of work that need the model: a replay study or a regime-AI backtest gives way to them."""
 LIVE_WORK = (*PREEMPTED_BY, "prices")
+TICK_QUIET = timedelta(minutes=30)
+"""How long before a scheduled run the history backfill stops asking, so the run has the sources."""
+TICK_LATE = timedelta(minutes=15)
+"""How long after a scheduled run's time the backfill still waits for it to be submitted."""
 """Kinds of work the history backfill steps aside for: they read the same news and price sources."""
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
 """Finished states worth another try; `done` needs no retry."""
@@ -544,8 +548,12 @@ def submit_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        return await backfill_history(c, watchlist=name, stop=stopped.is_set, busy=lambda: _live_work(runner, LIVE_WORK),
-                                      on_progress=stage.append)
+        r = await backfill_history(c, watchlist=name, stop=stopped.is_set, busy=lambda: _history_waits(c, runner),
+                                   on_progress=stage.append)
+        # Ended early or with failures: failed in Activity, so it shows why and a Retry resumes it.
+        if (r.stopped and r.stopped != "cancelled") or r.failures:
+            raise ServiceError(r.summary)
+        return r
 
     return runner.submit("history", f"Backfill history ({name} and industry maps)", work,
                          subject=f"{HISTORY_SUBJECT}{BACKTEST_SEP}{name}", link="#ledgers",
@@ -665,6 +673,29 @@ def _live_work(runner: JobRunner, kinds: Sequence[str]) -> str | None:
         return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind in kinds), None)
     except RuntimeError:
         return None
+
+
+def _history_waits(ctx: AppContext, runner: JobRunner) -> str | None:
+    """Live work running, or a scheduled tick or midday pass due within TICK_QUIET or due and not
+    yet run: the backfill leaves Google News and Yahoo to it until it has run. Read on the job's
+    own connection, so it is safe from the worker thread."""
+    if live := _live_work(runner, LIVE_WORK):
+        return live
+    # Imported here: the schedule module imports this one.
+    from oracle.services.schedule_service import last_due, next_due
+
+    s = ctx.config.schedule
+    if not (s.enabled and ctx.config.automation.enabled):
+        return None
+    now = ctx.clock.utcnow()
+    for kind, hhmm in ((TICK, s.time), (MIDDAY, s.midday_time)):
+        if not hhmm:
+            continue
+        if (due := next_due(now, hhmm)) - now <= TICK_QUIET:
+            return f"the scheduled {KIND_LABELS[kind].lower()} at {due:%H:%M} UTC"
+        if now - (due := last_due(now, hhmm)) <= TICK_LATE and not ticked_since(ctx, due, kind):
+            return f"the scheduled {KIND_LABELS[kind].lower()} due at {due:%H:%M} UTC"
+    return None
 
 
 def _retry_history(ctx: AppContext, runner: JobRunner, job) -> Job:

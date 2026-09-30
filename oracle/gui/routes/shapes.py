@@ -12,7 +12,7 @@ from oracle.services.cutoff_service import CutoffProbe, ReplayCutoff
 from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
-from oracle.services.history_service import THIN, Coverage
+from oracle.services.history_service import NOISY, THIN, Coverage
 from oracle.services.paper_service import Line, Order
 from oracle.services.regime_service import OFF, LineStep
 from oracle.services.replay_service import StudyStatus
@@ -228,7 +228,10 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
 
 def coverage(c: Coverage) -> dict:
     """The history coverage table: one row per company, a cell per quarter."""
+    run = c.last_run
     return {"start": c.start, "quarters": list(c.quarters), "windows_done": c.windows_done,
-            "windows_left": c.windows_left, "caveat": c.caveat, "thin_below": THIN,
+            "windows_left": c.windows_left, "caveat": c.caveat, "thin_below": THIN, "noisy_below": NOISY,
+            "last_run": {**asdict(run), "summary": run.summary} if run else None,
             "rows": [{"symbol": r.symbol, "name": r.name, "main": r.main, "of": list(r.of), "first_bar": r.first_bar,
-                      "thin": list(r.thin), "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}
+                      "thin": list(r.thin), "noisy": list(r.noisy), "search": asdict(r.search),
+                      "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}

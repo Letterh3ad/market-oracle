@@ -2,17 +2,21 @@
 one's industry map, resumable and paced, and the coverage it reports."""
 
 from dataclasses import replace
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from oracle.config import AnalystsConfig, Config
 from oracle.market.bars import Bar
-from oracle.services.activity_service import JobRunner, retry, submit_history
+from oracle.config import AutomationConfig, ScheduleConfig
+from oracle.services.activity_service import JobRunner, _history_waits, retry, submit_history
 from oracle.services.context import open_context
+from oracle.services.history_names import default_search, mentions
 from oracle.services.history_service import (
-    GOOGLE_CAP, backfill_history, company_history, coverage, history_companies, news_query, news_windows, search_name,
+    GOOGLE_CAP, backfill_history, clear_search_name, company_history, coverage, history_companies, last_run,
+    news_query, news_windows, set_search_name,
 )
+from oracle.store.sources import SourceStateRepo
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
@@ -87,30 +91,53 @@ def test_news_windows_are_calendar_quarters_from_the_start_up_to_the_last_comple
     assert news_windows(START, date(2022, 9, 20)) == []
 
 
+def q(name, start, end):
+    return news_query(default_search(name), start, end)
+
+
 def test_the_news_query_names_the_company_and_the_window():
-    assert news_query("Honda Motor Co.", *Q4) == '"Honda Motor" after:2022-10-01 before:2023-01-01'
+    assert q("Honda Motor Co.", *Q4) == '"Honda Motor" after:2022-10-01 before:2023-01-01'
 
 
-@pytest.mark.parametrize("name, searched", [
-    ("Meta Platforms Inc Class A", "Meta Platforms"),
-    ("Space Exploration Technologies Corp. Class A Common Stock", "Space Exploration Technologies"),
-    ("Mitsubishi UFJ Financial Group, Inc. Sponsored ADR", "Mitsubishi UFJ Financial"),
-    ("The Procter & Gamble Company", "Procter & Gamble"),
-    ("Siemens Aktiengesellschaft", "Siemens"),
-    ("LVMH Moet Hennessy - Louis Vuitton, Societe Europeenne", "LVMH Moet Hennessy"),
-    ("BT Group", "BT Group"),
-    ("SAP SE", "SAP"),
-    ("BYD Co., Ltd.", "BYD"),
-    ("Eni S.p.A.", "Eni"),
+ONE_WORD = " (shares OR stock OR earnings)"
+
+
+@pytest.mark.parametrize("name, query", [
+    ("Meta Platforms Inc Class A", '"Meta Platforms"'),
+    ("Space Exploration Technologies Corp. Class A Common Stock", '"Space Exploration Technologies"'),
+    ("Mitsubishi UFJ Financial Group, Inc. Sponsored ADR", '"Mitsubishi UFJ Financial"'),
+    ("The Procter & Gamble Company", '"Procter & Gamble"'),
+    ("Eli Lilly and Company", '"Eli Lilly"'),
+    ("JPMorgan Chase & Co.", '"JPMorgan Chase"'),
+    ("Boeing Company (The)", '"Boeing"'),
+    ("Orange S.A.", '"Orange"' + ONE_WORD),
+    ("BP p.l.c.", '"BP"' + ONE_WORD),
+    ("3M Company", '"3M"' + ONE_WORD),
+    ("MAN SE", '"MAN"' + ONE_WORD),
+    ("Siemens Aktiengesellschaft", '"Siemens"'),
+    ("LVMH Moet Hennessy - Louis Vuitton, Societe Europeenne", '"LVMH Moet Hennessy"'),
+    ("BT Group", '"BT Group"'),
 ])
-def test_the_searched_name_is_the_one_headlines_use(name, searched):
-    assert search_name(name) == searched
+def test_the_default_search_is_the_name_headlines_use_and_one_word_gets_context(name, query):
+    assert default_search(name).query == query
+
+
+@pytest.mark.parametrize("code", ["SAMS.EL.0,5SP.GDRS144A/95", "SAMSUNG EL./25 GDRS NV PF", "SHINKO EL.IND.LTD",
+                                  "WESTINGH.AI.BR.T. DL-,01", "DAIKIN IND."])
+def test_a_listing_code_is_not_searched(code):
+    assert default_search(code).skip
+
+
+def test_a_headline_names_the_company_by_an_alias_and_a_short_capital_one_only_in_capitals():
+    aliases = ("MAN", "MAN Truck")
+    assert mentions("MAN Truck recalls buses", aliases) and mentions("Traton's MAN cuts jobs", aliases)
+    assert not mentions("Man Utd sign striker", aliases) and not mentions("Isle of Man court", aliases)
+    assert mentions("honda sells more", ("Honda",)) and not mentions("Hondas", ("Honda",))
 
 
 async def test_news_keeps_only_dated_articles_inside_the_window_asked_for_under_each_company(env):
     ctx, news, *_ = env
-    q = news_query("Honda Motor Co.", *Q4)
-    news.results[q] = [("https://n.test/in", "Honda sells more", "Wire", when(2022, 11, 2)),
+    news.results[q("Honda Motor Co.", *Q4)] = [("https://n.test/in", "Honda sells more", "Wire", when(2022, 11, 2)),
                        ("https://n.test/undated", "Honda undated", "Wire", None),
                        ("https://n.test/late", "Honda later", "Wire", when(2023, 1, 1)),
                        ("https://n.test/early", "Honda earlier", "Wire", when(2022, 9, 30))]
@@ -126,8 +153,8 @@ async def test_news_keeps_only_dated_articles_inside_the_window_asked_for_under_
 async def test_a_second_run_asks_for_nothing_already_done_and_stores_no_duplicate(env):
     ctx, news, *_ = env
     shared = ("https://n.test/both", "Honda and GM team up", "Wire", when(2022, 12, 1))
-    news.results[news_query("Honda Motor Co.", *Q4)] = [shared]
-    news.results[news_query("General Motors", *Q4)] = [shared]
+    news.results[q("Honda Motor Co.", *Q4)] = [shared]
+    news.results[q("General Motors", *Q4)] = [shared]
     first = await run(ctx, stages=("news",))
     asked = len(news.queries)
     assert asked == 6 and first.requests == 6, "three companies, two windows each"
@@ -139,12 +166,12 @@ async def test_a_second_run_asks_for_nothing_already_done_and_stores_no_duplicat
 
 async def test_a_full_quarter_is_asked_again_month_by_month(env):
     ctx, news, *_ = env
-    news.results[news_query("Honda Motor Co.", *Q4)] = [
+    news.results[q("Honda Motor Co.", *Q4)] = [
         (f"https://n.test/{i}", f"Honda {i}", "Wire", when(2022, 12, 1)) for i in range(GOOGLE_CAP)]
-    news.results[news_query("Honda Motor Co.", date(2022, 10, 1), date(2022, 11, 1))] = [
+    news.results[q("Honda Motor Co.", date(2022, 10, 1), date(2022, 11, 1))] = [
         ("https://n.test/oct", "Honda in October", "Wire", when(2022, 10, 5))]
     await run(ctx, stages=("news",), only=["HMC"])
-    assert news.queries == [news_query("Honda Motor Co.", *w) for w in (
+    assert news.queries == [q("Honda Motor Co.", *w) for w in (
         Q3, Q4, (date(2022, 10, 1), date(2022, 11, 1)), (date(2022, 11, 1), date(2022, 12, 1)),
         (date(2022, 12, 1), date(2023, 1, 1)))]
     assert len(company_history(ctx, "HMC")) == GOOGLE_CAP + 1
@@ -216,7 +243,7 @@ async def test_stop_ends_the_run_between_requests_and_busy_live_work_is_waited_o
 
 async def test_coverage_counts_articles_and_outlets_per_company_and_quarter_and_names_thin_ones(env):
     ctx, news, sec, *_ = env
-    news.results[news_query("Honda Motor Co.", *Q4)] = [
+    news.results[q("Honda Motor Co.", *Q4)] = [
         ("https://n.test/1", "Honda a", "Wire", when(2022, 11, 2)),
         ("https://n.test/2", "Honda b", "Paper", when(2022, 12, 2))]
     sec.filings[715153] = [("8-K", "2022-11-03", "0000715153-22-000009", "e.htm", "8-K")]
@@ -247,3 +274,94 @@ async def test_a_cancelled_backfill_is_retried_on_the_same_list(env):
     again = retry(ctx, runner, job.id)
     assert again.id != job.id and again.subject == job.subject == "history|main"
     await runner.wait(again.id)
+
+
+async def test_a_map_company_gets_one_search_a_quarter_and_a_full_first_month_is_not_asked_twice(env):
+    ctx, news, *_ = env
+    full = [(f"https://n.test/{i}", f"GM {i}", "Wire", when(2022, 12, 1)) for i in range(GOOGLE_CAP)]
+    news.results[q("General Motors", *Q4)] = full
+    news.results[q("Honda Motor Co.", *Q3)] = [
+        (f"https://n.test/s{i}", f"Honda {i}", "Wire", when(2022, 9, 5)) for i in range(GOOGLE_CAP)]
+    await run(ctx, stages=("news",), only=["HMC", "GM"])
+    assert news.queries.count(q("Honda Motor Co.", *Q3)) == 1, "the one-month window is its own month"
+    assert [x for x in news.queries if "General" in x] == [q("General Motors", *Q3), q("General Motors", *Q4)]
+
+
+async def test_a_search_name_set_by_the_user_is_used_and_asks_that_companys_news_again(env):
+    ctx, news, *_ = env
+    await run(ctx, stages=("news",), only=["GM"])
+    assert HistoryRepo(ctx.conn).done("google_news")
+    assert set_search_name(ctx, "GM", '"GM" (cars OR trucks)', ["GM"]) == ("GM", 2)
+    assert HistoryRepo(ctx.conn).done("google_news") == {}
+    news.queries.clear()
+    await run(ctx, stages=("news",), only=["GM"])
+    assert news.queries[0] == '"GM" (cars OR trucks) after:2022-09-01 before:2022-10-01'
+    row = next(r for r in coverage(ctx).rows if r.symbol == "GM")
+    assert row.search.source == "user" and row.search.aliases == ("GM",)
+    set_search_name(ctx, "GM", "", skip=True)
+    news.queries.clear()
+    await run(ctx, stages=("news",), only=["GM"])
+    assert news.queries == [] and next(r for r in coverage(ctx).rows if r.symbol == "GM").thin == ()
+    assert clear_search_name(ctx, "GM")[0] == "GM"
+    assert history_companies(ctx)[1].search.source == "default"
+
+
+async def test_coverage_shows_the_share_of_headlines_naming_the_company_and_calls_noise_noisy(env):
+    ctx, news, *_ = env
+    news.results[q("Honda Motor Co.", *Q4)] = [
+        *[(f"https://n.test/h{i}", f"Honda Motor sells {i}", "Wire", when(2022, 11, 2)) for i in range(2)],
+        *[(f"https://n.test/x{i}", f"Something else {i}", "Wire", when(2022, 11, 3)) for i in range(4)]]
+    await run(ctx, stages=("news",), only=["HMC"])
+    hmc = next(r for r in coverage(ctx).rows if r.symbol == "HMC")
+    assert hmc.cells["2022-Q4"].on_topic == 0.33 and hmc.noisy == ("2022-Q4",)
+
+
+async def test_receipts_warrants_preferreds_codes_and_second_lines_are_not_taken_as_companies(tmp_path):
+    rows = [*ROWS, car("HMCG.DE", "Honda Motor Co GDR", "Large Cap", exchange="GER"),
+            car("GM-WT", "General Motors Warrants", "Large Cap"),
+            car("GM-PA", "General Motors Preferred", "Large Cap"),
+            car("SHK.BE", "SHINKO EL.IND.LTD", "Large Cap", exchange="BER"),
+            car("GMX.DE", "General Motors", "Large Cap", exchange="GER", country="Germany")]
+    web = FakeWeb(FakeFinanceDatabase(rows), FakeYahoo())
+    with open_context(Config(db_path=tmp_path / "o.db", analysts=AnalystsConfig(peers=5)), None, FakeClock(NOW),
+                      web.transport) as ctx:
+        await refresh_universe(ctx)
+        watch(ctx, "HMC")
+        assert sorted(c.symbol for c in history_companies(ctx)) == ["7201.T", "GM", "HMC"]
+
+
+async def test_a_run_that_stops_early_fails_its_job_with_why_and_is_kept_for_the_card(env):
+    ctx, news, *_ = env
+    news.status = 429
+    runner = JobRunner(ctx)
+    job = await runner.wait(submit_history(ctx, runner).id)
+    assert job.state == "failed" and "stopped early (google_news refused" in job.error
+    assert last_run(ctx).stopped.startswith("google_news refused")
+    assert coverage(ctx).last_run.summary.startswith("stopped early")
+    news.status = 200
+    ctx.clock.advance(3600)
+    again = await runner.wait(retry(ctx, runner, job.id).id)
+    assert again.state == "done" and last_run(ctx).stopped is None
+
+
+async def test_a_price_lockout_is_waited_out_once_then_the_run_stops(env):
+    ctx, *_, yahoo, _ = env
+    yahoo.fail = {"GM": 429, "7201.T": 429}
+    r = await run(ctx, stages=("prices",))
+    assert r.stopped and r.stopped.startswith("prices refused")
+    assert any(s >= 5.0 for s in ctx.clock.sleeps), "waited for the breaker to close"
+
+
+def test_the_backfill_waits_ahead_of_a_scheduled_tick_and_until_it_has_run(env):
+    ctx, *_ = env
+    runner = JobRunner(ctx)
+    ctx.clock.advance(24 * 3600)  # a Monday: ticks run on weekdays
+    assert _history_waits(ctx, runner) is None
+    at = (ctx.clock.utcnow() + timedelta(minutes=20)).astimezone().strftime("%H:%M")
+    ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=True, time=at, midday_time=None),
+                         automation=AutomationConfig(enabled=True))
+    assert "scheduled tick" in _history_waits(ctx, runner)
+    ctx.clock.advance(25 * 60)
+    assert "scheduled tick due" in _history_waits(ctx, runner), "due, not yet run"
+    ctx.clock.advance(20 * 60)
+    assert _history_waits(ctx, runner) is None, "a tick left unrun this long no longer holds it"

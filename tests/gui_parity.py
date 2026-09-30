@@ -126,6 +126,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "history backfill --list": "POST /api/jobs/history",
     "history coverage": "GET /api/history/coverage",
     "history coverage --list": "GET /api/history/coverage",
+    # The card's "Searched as" column shows each name; clicking a company fills the Search name form.
+    "history name": "GET /api/history/coverage",
+    **{f"history name --{flag}": "PUT /api/history/names/{symbol}" for flag in ("query", "alias", "skip")},
+    "history name --clear": "DELETE /api/history/names/{symbol}",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},

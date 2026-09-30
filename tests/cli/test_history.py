@@ -34,7 +34,8 @@ def cli(tmp_path, capsys, monkeypatch):
 
 def test_backfill_then_coverage_prints_what_was_asked_and_what_is_stored(cli):
     code, out, _ = cli("history", "backfill")
-    assert code == 0 and "requests in" in out and "windows finished" in out
+    assert code == 1, "finished with a failure: no SEC contact"
+    assert "requests" in out and "windows" in out
     assert 'filings skipped: SEC needs [research] contact' in out
     assert cli.news.queries and all("after:" in q and "before:" in q for q in cli.news.queries)
     code, out, _ = cli("history", "coverage")
@@ -48,3 +49,14 @@ def test_backfill_then_coverage_prints_what_was_asked_and_what_is_stored(cli):
 def test_an_unknown_list_is_refused_plainly(cli):
     code, _, err = cli("history", "coverage", "--list", "nope")
     assert code != 0 and "nope" in err
+
+
+def test_a_search_name_is_shown_set_and_cleared(cli):
+    code, out, _ = cli("history", "name", "KO")
+    assert code == 0 and out.startswith("KO: ") and "(default)" in out
+    code, out, _ = cli("history", "name", "KO", "--query", "Coca-Cola", "--alias", "Coke")
+    assert code == 0 and "KO: saved" in out and '"Coca-Cola" (user); aliases Coke' in out
+    code, out, _ = cli("history", "name", "KO", "--clear")
+    assert code == 0 and "back to the default name" in out
+    code, _, err = cli("history", "name", "KO", "--clear")
+    assert code != 0 and "no search name of yours" in err
