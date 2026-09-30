@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends, Query
@@ -9,11 +10,11 @@ from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
 from oracle.services.analysis_service import figure_meaning
 from oracle.services.company_service import FIGURES, CompanyView, company_view
-from oracle.services.context import AppContext
+from oracle.services.context import AppContext, worker_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
-from oracle.services.industry_service import company_activity, industry_map
+from oracle.services.industry_service import Activity, IndustryMap, company_activity, industry_map
 from oracle.services.links_service import USER_RELATIONS, CompanyLink, add_link, company_links, delete_link
 from oracle.services.peers_service import choose_peers
 from oracle.services.prices_service import price_history_in_base
@@ -114,9 +115,14 @@ async def create_link(symbol: str, body: NewLink, ctx: AppContext = Depends(get_
 
 @router.get("/{symbol}/industry")
 async def get_industry(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """Related companies, how and since when, and what each is doing now; stored data only."""
-    m = industry_map(ctx, symbol)
-    now = company_activity(ctx, [r.symbol for r in m.related])
+    """Related companies, how and since when, and what each is doing now; stored data only (about
+    a second of reading, so on a thread and a connection of its own)."""
+    def read() -> tuple[IndustryMap, dict[str, Activity]]:
+        with worker_context(ctx) as own:
+            m = industry_map(own, symbol)
+            return m, company_activity(own, [r.symbol for r in m.related])
+
+    m, now = await asyncio.to_thread(read)
     return {
         "symbol": m.symbol, "name": m.name, "industry": m.industry, "industry_group": m.industry_group,
         "basis": m.basis, "note": m.note, "relations": list(USER_RELATIONS),

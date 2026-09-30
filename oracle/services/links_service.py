@@ -62,6 +62,8 @@ class CompanyLink:
     """The stored links it gathers; `id` is the strongest."""
     since: tuple[str, ...] = ()
     """When each of `relations` was first seen, in the same order."""
+    sources: tuple[str, ...] = ()
+    """What found each of `relations` (its earliest row), in the same order."""
 
     @property
     def why(self) -> str:
@@ -124,14 +126,15 @@ def company_links(ctx: AppContext, symbol: str, as_of: date | None = None) -> li
         evidence = {e.id: e for link in links for e in link.evidence
                     if before is None or (e.published_at is not None and e.published_at < before)}
         last = max(link.last_seen for link in links)
-        since: dict[str, str] = {}
+        since: dict[str, tuple[str, str]] = {}
         for link, relation in rows:
-            since[relation] = min(since.get(relation, link.first_seen), link.first_seen)
+            if relation not in since or link.first_seen < since[relation][0]:
+                since[relation] = (link.first_seen, link.source)
         out.append(CompanyLink(first.id, other, found.name if found else None, tuple(since), first.source,
                                min(link.first_seen for link in links),
                                min(last, as_of.isoformat()) if as_of else last,
                                tuple(sorted(evidence.values(), key=lambda e: e.id)), tuple(link.id for link in links),
-                               tuple(since.values())))
+                               tuple(s for s, _ in since.values()), tuple(src for _, src in since.values())))
     out.sort(key=lambda x: x.last_seen, reverse=True)
     return sorted(out, key=lambda x: len(x.evidence), reverse=True)
 

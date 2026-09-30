@@ -75,9 +75,8 @@ def article(ctx, title, published=datetime(2026, 9, 20, tzinfo=timezone.utc)):
 
 def test_competitors_are_the_same_industry_biggest_first_without_tesla_or_itself(ctx):
     m = industry_map(ctx, "7203.T")
-    competitors = [r for r in m.related if "competitor" in r.kinds]
-    assert [r.symbol for r in competitors][:5] == ["HMC", "GM", "F", "STLA", "NSANY"] or \
-        {r.symbol for r in competitors} >= {"HMC", "GM", "F", "STLA", "NSANY"}
+    assert symbols(m) == ["F", "GM", "HMC", "STLA", "6902.T", "NSANY"], "biggest band first, then by name"
+    assert all(r.kinds == ("competitor",) for r in m.related)
     assert "TSLA" not in symbols(m) and "7203.T" not in symbols(m) and "CARZ" not in symbols(m)
     honda = next(r for r in m.related if r.symbol == "HMC")
     [same] = [x for x in honda.relations if x.source == "industry"]
@@ -127,6 +126,20 @@ async def test_another_line_of_a_company_already_on_the_map_is_left_out(tmp_path
     finally:
         manager.__exit__(None, None, None)
     assert "HMC" in symbols(m) and "HMC-B" not in symbols(m) and "HMCX" in symbols(m)
+
+
+async def test_exchange_traded_products_typed_as_equity_are_never_competitors(tmp_path):
+    products = [car("TM3.L", "Leverage Shares 3x Toyota ETC", "Mega Cap"),
+                car("TMS.L", "Leverage Shares -1x Toyota ETC", "Mega Cap"),
+                car("TM2.L", "Toyota 2x ETP", "Mega Cap"),
+                car("AUTN", "UBS ETRACS Auto ETN", "Large Cap")]
+    manager, ctx, _ = await open_ctx(tmp_path, BASE + products)
+    try:
+        m = industry_map(ctx, "7203.T")
+    finally:
+        manager.__exit__(None, None, None)
+    assert not {p["symbol"] for p in products} & set(symbols(m))
+    assert symbols(m) == ["F", "GM", "HMC", "STLA", "6902.T", "NSANY"]
 
 
 def test_known_by_keeps_what_was_known_that_day(ctx):
@@ -186,6 +199,22 @@ def test_each_relation_keeps_its_own_first_seen(ctx, monkeypatch):
     assert apple.first_known == at.isoformat()
     on_day = relation_of(ctx, "7203.T", "AAPL", as_of=at.date())
     assert on_day.kinds == ("partner",)
+
+
+def test_each_relation_keeps_its_own_source(ctx):
+    record_links(ctx, [LinkFound("AAPL", "7203.T", "partner", (article(ctx, "Toyota and Apple talk"),))],
+                 "discovery")
+    add_link(ctx, "AAPL", "7203.T", "supplier")
+    toyota = relation_of(ctx, "AAPL", "7203.T")
+    assert {x.kind: x.source for x in toyota.relations} == {"partner": "discovery", "supplier": "user"}
+
+
+def test_adding_a_link_already_found_keeps_who_found_it(ctx):
+    record_links(ctx, [LinkFound("AAPL", "7203.T", "partner")], "discovery")
+    first = relation_of(ctx, "AAPL", "7203.T").first_known
+    add_link(ctx, "AAPL", "7203.T", "partner")
+    [x] = relation_of(ctx, "AAPL", "7203.T").relations
+    assert (x.source, x.first_known) == ("discovery", first)
 
 
 def test_a_fund_or_a_company_without_classification_has_links_only(ctx):

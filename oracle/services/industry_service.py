@@ -21,7 +21,7 @@ from oracle.store.articles import ArticleRepo
 from oracle.store.bars import BarRepo
 from oracle.store.discoveries import DiscoveryEvidence
 from oracle.store.universe import ListingProfile, PeerRow, UniverseRepo
-from oracle.universe.listings import MARKET_CAP_BANDS, normalise_name
+from oracle.universe.listings import MARKET_CAP_BANDS, is_exchange_product, normalise_name
 
 __all__ = ["CAP", "Activity", "IndustryMap", "Related", "Relation", "company_activity", "industry_map", "relation_of"]
 
@@ -120,8 +120,8 @@ def industry_map(ctx: AppContext, symbol: str, as_of: date | None = None) -> Ind
     for link in company_links(ctx, profile.symbol, as_of):
         found = universe.resolve(link.symbol)
         key = found.company_key if found else link.symbol.upper()
-        relations = tuple(Relation(r, relation_words(r), link.source, since)
-                          for r, since in zip(link.relations, link.since))
+        relations = tuple(Relation(r, relation_words(r), source, since)
+                          for r, since, source in zip(link.relations, link.since, link.sources))
         related[key] = Related(link.symbol, key, link.name, found.market_cap if found else None, relations,
                                link.id, link.evidence)
     rows, basis, note = _competitors(ctx, profile)
@@ -175,9 +175,11 @@ def _competitors(ctx: AppContext, profile: ListingProfile) -> tuple[list[tuple[P
         return [], None, f"{profile.symbol} is a fund: competitors are for companies"
     universe = UniverseRepo(ctx.conn)
 
+    def left_out(r: PeerRow) -> bool:
+        return is_exchange_product(r.name) or never_company(ctx, r.symbol, user=True) is not None
+
     def same(field: str, value: str) -> list[PeerRow]:
-        rows = universe.peers(profile.company_key, field, value, CAP * 2)
-        return [r for r in rows if not never_company(ctx, r.symbol, user=True)]
+        return [r for r in universe.peers(profile.company_key, field, value, CAP * 2) if not left_out(r)]
 
     found: dict[str, tuple[PeerRow, list[Relation]]] = {}
     basis = None
@@ -197,7 +199,7 @@ def _competitors(ctx: AppContext, profile: ListingProfile) -> tuple[list[tuple[P
         choice = None
     if choice is not None:
         for r in choice.rows:
-            if never_company(ctx, r.symbol, user=True):
+            if left_out(r):
                 continue
             found.setdefault(r.symbol, (r, []))[1].append(Relation("competitor", f"a peer ({choice.basis})", "peers", None))
         basis = basis or f"peers ({choice.basis})"

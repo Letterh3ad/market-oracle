@@ -43,14 +43,16 @@ class LinkRepo:
                                    [(link_id, a) for a in evidence])
 
     def add(self, symbol: str, other: str, relation: str, source: str, now: str) -> None:
-        """The user's link: a deleted row of the same link comes back, first seen now."""
+        """The user's link: a deleted row of the same link comes back, first seen now and as
+        theirs; a live one keeps who found it and when."""
         with transaction(self._conn):
             self._conn.execute(
                 "INSERT INTO company_links (symbol, other, relation, source, first_seen, last_seen) "
                 "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (symbol, other, relation) DO UPDATE SET "
-                "source = excluded.source, first_seen = CASE WHEN deleted_at IS NULL THEN first_seen ELSE ? END, "
-                "last_seen = ?, deleted_at = NULL",
-                (symbol, other, relation, source, now, now, now, now))
+                "source = CASE WHEN deleted_at IS NULL THEN source ELSE excluded.source END, "
+                "first_seen = CASE WHEN deleted_at IS NULL THEN first_seen ELSE excluded.first_seen END, "
+                "last_seen = excluded.last_seen, deleted_at = NULL",
+                (symbol, other, relation, source, now, now))
 
     def of(self, symbols: Collection[str], seen_before: str | None = None) -> list[StoredLink]:
         """Live links with any of `symbols` at either end, most evidence first, then newest.
