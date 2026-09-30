@@ -1,0 +1,1052 @@
+[
+ {
+  "symbol": "NVDA",
+  "company": "NVIDIA Corporation",
+  "headline": "Nvidia GeForce RTX 4080 Super Founders Edition Review",
+  "published_at": "2024-01-31T08:00:00+00:00",
+  "article_id": 76780,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "AstraZeneca's trial flop raises a bigger question: Is its pipeline premium becoming more vulnerable?",
+  "published_at": "2026-07-11T07:00:00+00:00",
+  "article_id": 50889,
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "MC.PA",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne",
+  "headline": "Hennessy and LeBron James unveil Hennessy V.S.O.P Limited Edition",
+  "published_at": "2025-10-23T07:00:00+00:00",
+  "article_id": 128879,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "LLY",
+  "company": "Eli Lilly and Company",
+  "headline": "European regulators endorse Lilly’s Alzheimer’s treatment for certain patients",
+  "published_at": "2025-07-25T07:00:00+00:00",
+  "article_id": 92042,
+  "relevant": true,
+  "direction": "up",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "AMT",
+  "company": "American Tower Corporation",
+  "headline": "Country profile: India",
+  "published_at": "2024-11-05T08:00:00+00:00",
+  "article_id": 108137,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "VZ",
+  "company": "Verizon Communications Inc.",
+  "headline": "Verizon and Skylo's alternative approach to direct-to-device messaging",
+  "published_at": "2024-09-05T07:00:00+00:00",
+  "article_id": 110565,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Caterpillar Boosts Share Buyback Plan, Raises Dividend",
+  "published_at": "2024-06-12T07:00:00+00:00",
+  "article_id": 102349,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "Amazon rainforests are rejuvenating their canopies by producing more photosynthetically efficient young leaves under climate change",
+  "published_at": "2026-03-09T07:00:00+00:00",
+  "article_id": 83851,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "HSBA.L",
+  "company": "HSBC Holdings Plc",
+  "headline": "Birmingham has second highest number of large companies outside London - HSBC UK",
+  "published_at": "2025-07-09T07:00:00+00:00",
+  "article_id": 121124,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "JPMorgan's Jason Hunter breaks down the technicals of the major indices",
+  "published_at": "2023-10-30T07:00:00+00:00",
+  "article_id": 37066,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "MC.PA",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne",
+  "headline": "Virgil Abloh’s successor has large shoes to fill at Louis Vuitton",
+  "published_at": "2022-10-22T07:00:00+00:00",
+  "article_id": 125867,
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "ALV.DE",
+  "company": "Allianz SE",
+  "headline": "Nearly £50m to be paid by Manchester fashion brand JD Williams to settle Allianz Insurance claim",
+  "published_at": "2023-01-09T08:00:00+00:00",
+  "article_id": 138372,
+  "relevant": true,
+  "direction": "up",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "SHEL.L",
+  "company": "Shell plc",
+  "headline": "Shell and NuScale to use nuclear power to make hydrogen",
+  "published_at": "2022-12-14T08:00:00+00:00",
+  "article_id": 113389,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "SAP.DE",
+  "company": "SAP SE",
+  "headline": "Diriyah Company Celebrates Completion of SAP Private Cloud Solutions Deployment",
+  "published_at": "2024-12-31T08:00:00+00:00",
+  "article_id": 68454,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NESN.SW",
+  "company": "Nestle S.A.",
+  "headline": "Nestlé considers selling supplement assets",
+  "published_at": "2025-07-25T07:00:00+00:00",
+  "article_id": 61325,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "ALV.DE",
+  "company": "Allianz SE",
+  "headline": "House View Q2 2026",
+  "published_at": "2026-03-30T07:00:00+00:00",
+  "article_id": 141516,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "XOM",
+  "company": "Exxon Mobil Corporation",
+  "headline": "Readers have their say on an ExxonMobil whistleblower’s case",
+  "published_at": "2025-06-27T07:00:00+00:00",
+  "article_id": 46235,
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "ULVR.L",
+  "company": "Unilever PLC",
+  "headline": "Unilever Share Price: What the Company’s Big Break-Up Means for Investors",
+  "published_at": "2026-05-07T07:00:00+00:00",
+  "article_id": 55193,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "Microsoft Azure AI Foundry Models and Microsoft Security Copilot achieve ISO/IEC 42001:2023 certification",
+  "published_at": "2025-07-17T07:00:00+00:00",
+  "article_id": 34486,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NVDA",
+  "company": "NVIDIA Corporation",
+  "headline": "The NVIDIA RTX 4090 is Amazing, and Photographers Should NOT Buy It",
+  "published_at": "2022-10-17T07:00:00+00:00",
+  "article_id": 75321,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "SIE.DE",
+  "company": "Siemens Aktiengesellschaft",
+  "headline": "Siemens Energy installs 21-MW offshore turbine prototype, reports say",
+  "published_at": "2025-04-16T07:00:00+00:00",
+  "article_id": 132938,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AAPL",
+  "company": "Apple Inc.",
+  "headline": "Apple unveils 15in MacBook Air, iOS 17 and revamped watchOS 10",
+  "published_at": "2023-06-05T07:00:00+00:00",
+  "article_id": 70965,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "NESN.SW",
+  "company": "Nestle S.A.",
+  "headline": "Nestle reveals its action items",
+  "published_at": "2024-11-22T08:00:00+00:00",
+  "article_id": 60503,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "VZ",
+  "company": "Verizon Communications Inc.",
+  "headline": "Verizon Fios Problems & How to Fix Them",
+  "published_at": "2024-03-20T07:00:00+00:00",
+  "article_id": 110207,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "LLY",
+  "company": "Eli Lilly and Company",
+  "headline": "Weight loss drug demand in US drives Ireland's exports",
+  "published_at": "2025-06-19T07:00:00+00:00",
+  "article_id": 91667,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "ALV.DE",
+  "company": "Allianz SE",
+  "headline": "CVW ASX: Allianz checks out Crescent’s ClearView; BofA at the wheel",
+  "published_at": "2024-04-15T07:00:00+00:00",
+  "article_id": 139581,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "GOOG",
+  "company": "Alphabet Inc.",
+  "headline": "We used Gemini to make a web app with stats from the I/O keynote.",
+  "published_at": "2025-05-27T07:00:00+00:00",
+  "article_id": 87755,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "Caá Porá Arquitectura creates teaching pavilion in the Amazon rainforest",
+  "published_at": "2026-08-26T07:00:00+00:00",
+  "article_id": 84502,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "All the Toyota cars affected by mass recall",
+  "published_at": "2025-10-08T07:00:00+00:00",
+  "article_id": 66403,
+  "relevant": true,
+  "direction": "down",
+  "event": "recall_safety"
+ },
+ {
+  "symbol": "AMZN",
+  "company": "Amazon.com, Inc.",
+  "headline": "Amazon supports development of free European biodiversity metric to accelerate nature protection",
+  "published_at": "2026-02-05T08:00:00+00:00",
+  "article_id": 83966,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "XOM",
+  "company": "Exxon Mobil Corporation",
+  "headline": "ExxonMobil seeks environmental approval for new offshore project in Guyana",
+  "published_at": "2026-05-25T07:00:00+00:00",
+  "article_id": 47324,
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "HSBA.L",
+  "company": "HSBC Holdings Plc",
+  "headline": "See inside 'more modern' Lincoln HSBC after 11-week renovations",
+  "published_at": "2024-02-19T08:00:00+00:00",
+  "article_id": 119489,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "Empowering Survivors: The “BORN A FIGHTER” Campaign Supports and Educates Neurofibromatosis (NF) Warriors, Celebrating the 7th Event on NF1 Awareness Day in Thailand",
+  "published_at": "2024-06-14T07:00:00+00:00",
+  "article_id": 48726,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "IBE.MC",
+  "company": "Iberdrola, S.A.",
+  "headline": "ScottishPower, HSM Offshore Energy Sign East Anglia Two Substation Contract",
+  "published_at": "2025-04-08T07:00:00+00:00",
+  "article_id": 142875,
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "0KWZ.L",
+  "company": "Rio Tinto plc",
+  "headline": "Rio Tinto and Vitol in talks to establish a joint venture to reduce freight costs",
+  "published_at": "2026-06-25T07:00:00+00:00",
+  "article_id": 125501,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "SHEL.L",
+  "company": "Shell plc",
+  "headline": "Deltic Energy in the spotlight thanks to North Sea’s best gas discovery for over a decade",
+  "published_at": "2023-02-08T08:00:00+00:00",
+  "article_id": 113610,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NESN.SW",
+  "company": "Nestle S.A.",
+  "headline": "Nestlé explores emerging technologies for animal-free dairy proteins",
+  "published_at": "2022-09-12T07:00:00+00:00",
+  "article_id": 57917,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "ULVR.L",
+  "company": "Unilever PLC",
+  "headline": "Nestle and Unilever grocery giants report contrasting fortunes in first three months of year",
+  "published_at": "2024-04-25T07:00:00+00:00",
+  "article_id": 52823,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "MC.PA",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne",
+  "headline": "Content creation startup Omi wins ‘most promising’ LVMH Innovation Award",
+  "published_at": "2025-06-12T07:00:00+00:00",
+  "article_id": 128503,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NXPI",
+  "company": "NXP Semiconductors NV",
+  "headline": "10-Q",
+  "published_at": "2025-07-24T00:00:00+00:00",
+  "article_id": 23043,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "ASML.AS",
+  "company": "ASML Holding N.V.",
+  "headline": "Watch ASML CEO: China Won’t Accept Being Cut Off From AI Chips",
+  "published_at": "2025-12-12T08:00:00+00:00",
+  "article_id": 57026,
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "ULVR.L",
+  "company": "Unilever PLC",
+  "headline": "Rohit Jawa takes charge as MD and CEO of Hindustan Unilever",
+  "published_at": "2023-06-27T07:00:00+00:00",
+  "article_id": 51864,
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "NVDA",
+  "company": "NVIDIA Corporation",
+  "headline": "Nvidia links with Wall Street firms for $500bn AI financing deal",
+  "published_at": "2026-08-11T07:00:00+00:00",
+  "article_id": 79621,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "TOYOTA GAZOO Racing to Exhibit at Tokyo Auto Salon 2025",
+  "published_at": "2024-12-26T08:00:00+00:00",
+  "article_id": 65317,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AAPL",
+  "company": "Apple Inc.",
+  "headline": "Five quick updates about that Apple reasoning paper that people can’t stop talking about",
+  "published_at": "2025-06-17T07:00:00+00:00",
+  "article_id": 73440,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "SAP.DE",
+  "company": "SAP SE",
+  "headline": "How SAP's AI and Cloud Strategy Is Reshaping Its Growth Outlook Now",
+  "published_at": "2026-07-28T07:00:00+00:00",
+  "article_id": 3229,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "PG",
+  "company": "The Procter & Gamble Company",
+  "headline": "Gillette to move manufacturing out of iconic South Boston building",
+  "published_at": "2023-10-24T07:00:00+00:00",
+  "article_id": 94039,
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "PG",
+  "company": "The Procter & Gamble Company",
+  "headline": "Procter & Gamble’s Stock Drops After Sales Miss Wall Street’s Projections",
+  "published_at": "2026-07-29T07:00:00+00:00",
+  "article_id": 96235,
+  "relevant": true,
+  "direction": "down",
+  "event": "earnings"
+ },
+ {
+  "symbol": "AAPL",
+  "company": "Apple Inc.",
+  "headline": "iPhone 15 Pro Max Review: The Action Button Defines Apple’s Most Accessible iPhone To Date",
+  "published_at": "2023-10-18T07:00:00+00:00",
+  "article_id": 71739,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "XOM",
+  "company": "Exxon Mobil Corporation",
+  "headline": "Business Roundtable Does a 180 on Stakeholder Capitalism in ExxonMobil Lawsuit",
+  "published_at": "2024-05-28T07:00:00+00:00",
+  "article_id": 45448,
+  "relevant": true,
+  "direction": "none",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "LULU",
+  "company": "Lululemon Athletica Inc.",
+  "headline": "8-K UPDATE TO LEADERSHIP TEAM",
+  "published_at": "2026-08-13T00:00:00+00:00",
+  "article_id": 27652,
+  "relevant": true,
+  "direction": "none",
+  "event": "management"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Caterpillar excavator 2",
+  "published_at": "2022-10-07T17:06:30+00:00",
+  "article_id": 101169,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AZN.L",
+  "company": "AstraZeneca PLC",
+  "headline": "AstraZeneca to invest further in China",
+  "published_at": "2025-10-27T07:00:00+00:00",
+  "article_id": 50199,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "SAP.DE",
+  "company": "SAP SE",
+  "headline": "The Software Behind Shoprite’s Incredible Success",
+  "published_at": "2023-11-13T08:00:00+00:00",
+  "article_id": 67895,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "5 Actions Investors Can Take Now",
+  "published_at": "2024-06-14T07:00:00+00:00",
+  "article_id": 37528,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "LLY",
+  "company": "Eli Lilly and Company",
+  "headline": "A Russian company has developed a generic version of Eli Lilly’s tirzepatide",
+  "published_at": "2024-05-13T07:00:00+00:00",
+  "article_id": 90713,
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "SHEL.L",
+  "company": "Shell plc",
+  "headline": "Knutsen welcomes eighth energy-efficient LNG carrier for charter with Shell",
+  "published_at": "2024-09-13T07:00:00+00:00",
+  "article_id": 115325,
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "PG",
+  "company": "The Procter & Gamble Company",
+  "headline": "Glossier taps Colin Walsh to replace Kyle Leahy as CEO",
+  "published_at": "2025-09-12T07:00:00+00:00",
+  "article_id": 95301,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "VZ",
+  "company": "Verizon Communications Inc.",
+  "headline": "Verizon Thinks It Can Solve Streaming’s Biggest Problem",
+  "published_at": "2024-01-24T08:00:00+00:00",
+  "article_id": 110074,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "NEE",
+  "company": "NextEra Energy, Inc.",
+  "headline": "Restarting Duane Arnold: Linn County weighs economic ripple of nuclear comeback",
+  "published_at": "2025-09-21T07:00:00+00:00",
+  "article_id": 105379,
+  "relevant": true,
+  "direction": "up",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "WMT",
+  "company": "Walmart Inc.",
+  "headline": "Walmart Rolls Out New Tools, Experience for Business Customers",
+  "published_at": "2023-01-22T08:00:00+00:00",
+  "article_id": 96822,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "WMT",
+  "company": "Walmart Inc.",
+  "headline": "Walmart, Mondelēz, Mars, Nestlé leave the US Plastics Pact",
+  "published_at": "2025-05-22T07:00:00+00:00",
+  "article_id": 60977,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "ASML.AS",
+  "company": "ASML Holding N.V.",
+  "headline": "Semiconductor stocks that aren't Nvidia",
+  "published_at": "2023-06-07T07:00:00+00:00",
+  "article_id": 55681,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "NEWS: HELP Majority Staff Releases Report Revealing Big Pharma’s Business Model",
+  "published_at": "2024-02-06T08:00:00+00:00",
+  "article_id": 41612,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NOVO-B.CO",
+  "company": "Novo Nordisk A/S",
+  "headline": "Novo Nordisk’s head start on GLP-1 pills forces investors to rethink Eli Lilly's dominance",
+  "published_at": "2026-05-04T07:00:00+00:00",
+  "article_id": 92994,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "HSBA.L",
+  "company": "HSBC Holdings Plc",
+  "headline": "LBS partners with HSBC to launch new Wealth Academy",
+  "published_at": "2025-10-21T07:00:00+00:00",
+  "article_id": 121344,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "NEE",
+  "company": "NextEra Energy, Inc.",
+  "headline": "NextEra Energy (NEE) Laps the Stock Market: Here's Why",
+  "published_at": "2026-07-14T07:00:00+00:00",
+  "article_id": 106177,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "NEE",
+  "company": "NextEra Energy, Inc.",
+  "headline": "NextEra Energy and Dominion Energy combine to form massive US power utility",
+  "published_at": "2026-05-19T07:00:00+00:00",
+  "article_id": 105882,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "7203.T",
+  "company": "Toyota Motor Corporation",
+  "headline": "WRC 2024 Rd.11 Day 2 | 2024 | PRESS RELEASE | WRC",
+  "published_at": "2024-09-28T07:00:00+00:00",
+  "article_id": 65033,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "ASML.AS",
+  "company": "ASML Holding N.V.",
+  "headline": "4 Reasons to Buy ASML Holding Stock Like There's No Tomorrow",
+  "published_at": "2025-06-14T07:00:00+00:00",
+  "article_id": 6335,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "GOOG",
+  "company": "Alphabet Inc.",
+  "headline": "Introducing Rivian Navigation with Google Maps",
+  "published_at": "2025-07-15T07:00:00+00:00",
+  "article_id": 87991,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "BT-A.L",
+  "company": "BT Group",
+  "headline": "Four Days Left Until BT Group plc (LON:BT.A) Trades Ex-Dividend",
+  "published_at": "2026-08-01T07:00:00+00:00",
+  "article_id": 30826,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "IBE.MC",
+  "company": "Iberdrola, S.A.",
+  "headline": "Watchdog probes ScottishPower owner’s £2.1 billion purchase of English energy firm",
+  "published_at": "2025-01-29T08:00:00+00:00",
+  "article_id": 142783,
+  "relevant": true,
+  "direction": "down",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "SIE.DE",
+  "company": "Siemens Aktiengesellschaft",
+  "headline": "Siemens' $10.6 billion Altair deal strengthens its industrial software offering",
+  "published_at": "2024-10-31T07:00:00+00:00",
+  "article_id": 132243,
+  "relevant": true,
+  "direction": "up",
+  "event": "mna"
+ },
+ {
+  "symbol": "NOVO-B.CO",
+  "company": "Novo Nordisk A/S",
+  "headline": "Novo Nordisk receives European Commission approval of Wegovy® pill as first oral GLP-1 for weight management in the EU; single, ready-to-use pen for higher dose 7.2 mg also approved",
+  "published_at": "2026-07-15T07:00:00+00:00",
+  "article_id": 137947,
+  "relevant": true,
+  "direction": "up",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "SIE.DE",
+  "company": "Siemens Aktiengesellschaft",
+  "headline": "Siemens Healthineers in Malaysia Welcomes Siow Ai Li as Managing Director",
+  "published_at": "2024-09-17T07:00:00+00:00",
+  "article_id": 132223,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "0KWZ.L",
+  "company": "Rio Tinto plc",
+  "headline": "Rio Tinto to take full control of controversial mine in Kakadu",
+  "published_at": "2024-11-20T08:00:00+00:00",
+  "article_id": 123871,
+  "relevant": true,
+  "direction": "none",
+  "event": "mna"
+ },
+ {
+  "symbol": "WMT",
+  "company": "Walmart Inc.",
+  "headline": "Walmart Beat Earnings and Raised Guidance. So Why Did the Stock Crash?",
+  "published_at": "2026-08-21T07:00:00+00:00",
+  "article_id": 2988,
+  "relevant": true,
+  "direction": "down",
+  "event": "earnings"
+ },
+ {
+  "symbol": "GOOG",
+  "company": "Alphabet Inc.",
+  "headline": "Advanced audio dialog and generation with Gemini 2.5",
+  "published_at": "2025-06-03T07:00:00+00:00",
+  "article_id": 87769,
+  "relevant": true,
+  "direction": "none",
+  "event": "launch"
+ },
+ {
+  "symbol": "NOVO-B.CO",
+  "company": "Novo Nordisk A/S",
+  "headline": "Better Weight Loss Stock: Novo Nordisk Vs. Amgen",
+  "published_at": "2026-03-08T08:00:00+00:00",
+  "article_id": 137637,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "Molslinjen develops an AI-powered dynamic pricing strategy with Azure Databricks.",
+  "published_at": "2024-09-16T07:00:00+00:00",
+  "article_id": 33408,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "UNP",
+  "company": "Union Pacific Corporation",
+  "headline": "10-Q FORM 10-Q",
+  "published_at": "2023-10-19T00:00:00+00:00",
+  "article_id": 29212,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "MSFT",
+  "company": "Microsoft Corporation",
+  "headline": "Coles Group and Microsoft sign five-year cloud and AI deal",
+  "published_at": "2024-11-26T08:00:00+00:00",
+  "article_id": 33638,
+  "relevant": true,
+  "direction": "up",
+  "event": "other"
+ },
+ {
+  "symbol": "0KWZ.L",
+  "company": "Rio Tinto plc",
+  "headline": "2025-12 - Sustainable future materials",
+  "published_at": "2025-12-08T08:00:00+00:00",
+  "article_id": 124975,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "LIN",
+  "company": "Linde plc",
+  "headline": "Linde Veefkind :: 2026/2027 - RB Leipzig - Player Profile & Stats",
+  "published_at": "2023-11-07T22:15:21+00:00",
+  "article_id": 106587,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "CAT",
+  "company": "Caterpillar Inc.",
+  "headline": "Caterpillar Raises Sales Outlook as Second-Quarter Revenue Tops $20 Billion",
+  "published_at": "2026-08-04T07:00:00+00:00",
+  "article_id": 104704,
+  "relevant": true,
+  "direction": "up",
+  "event": "guidance"
+ },
+ {
+  "symbol": "BAC",
+  "company": "Bank of America Corporation",
+  "headline": "10-K",
+  "published_at": "2026-02-25T00:00:00+00:00",
+  "article_id": 21094,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "JPM",
+  "company": "JPMorgan Chase & Co.",
+  "headline": "India Bars JPMorgan Unit for Alleged Market Manipulation",
+  "published_at": "2026-08-20T07:00:00+00:00",
+  "article_id": 40120,
+  "relevant": true,
+  "direction": "down",
+  "event": "legal_regulatory"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "Senate Report Exposes Big Pharma's Profiteering at Americans’ Expense",
+  "published_at": "2024-02-14T08:00:00+00:00",
+  "article_id": 41599,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "JNJ",
+  "company": "Johnson & Johnson",
+  "headline": "J&J enters US robotic surgery market after device gets marketing authorization",
+  "published_at": "2026-07-22T07:00:00+00:00",
+  "article_id": 44034,
+  "relevant": true,
+  "direction": "up",
+  "event": "launch"
+ },
+ {
+  "symbol": "IBE.MC",
+  "company": "Iberdrola, S.A.",
+  "headline": "Iberdrola installs first turbine of Vineyard Wind 1 offshore wind farm",
+  "published_at": "2023-10-19T07:00:00+00:00",
+  "article_id": 142427,
+  "relevant": true,
+  "direction": "none",
+  "event": "supply_production"
+ },
+ {
+  "symbol": "BT-A.L",
+  "company": "BT Group",
+  "headline": "McLean's 22nd Century Technologies buys Reston federal contractor, its fourth acquisition in two years",
+  "published_at": "2026-01-06T08:00:00+00:00",
+  "article_id": 30525,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "AMT",
+  "company": "American Tower Corporation",
+  "headline": "American Tower lifts FY outlook again after Q2 revenue rises 5%",
+  "published_at": "2026-07-28T07:00:00+00:00",
+  "article_id": 108497,
+  "relevant": true,
+  "direction": "up",
+  "event": "guidance"
+ },
+ {
+  "symbol": "AMT",
+  "company": "American Tower Corporation",
+  "headline": "Why I'm in No Hurry to Buy American Tower Stock",
+  "published_at": "2023-03-10T08:00:00+00:00",
+  "article_id": 107976,
+  "relevant": true,
+  "direction": "down",
+  "event": "other"
+ },
+ {
+  "symbol": "LULU",
+  "company": "Lululemon Athletica Inc.",
+  "headline": "8-K VOTING RESULTS",
+  "published_at": "2024-06-12T00:00:00+00:00",
+  "article_id": 27680,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "KMB",
+  "company": "Kimberly-Clark Corporation",
+  "headline": "8-K 8-K FORM",
+  "published_at": "2024-12-10T00:00:00+00:00",
+  "article_id": 22197,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "LIN",
+  "company": "Linde plc",
+  "headline": "IGTC: Rossi wins, van der Linde crowned Champion.",
+  "published_at": "2025-10-20T07:00:00+00:00",
+  "article_id": 107260,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "LIN",
+  "company": "Linde plc",
+  "headline": "Munro Climate Change Leaders Fund Reveals May 2026 Portfolio: Linde and CATL Top Holdings",
+  "published_at": "2026-06-30T07:00:00+00:00",
+  "article_id": 107769,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "UNP",
+  "company": "Union Pacific Corporation",
+  "headline": "10-K FORM 10-K",
+  "published_at": "2023-02-10T00:00:00+00:00",
+  "article_id": 29225,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ },
+ {
+  "symbol": "BT-A.L",
+  "company": "BT Group",
+  "headline": "Should I buy BT shares for their 4.3% dividend yield?",
+  "published_at": "2026-07-21T07:00:00+00:00",
+  "article_id": 30862,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "PLD",
+  "company": "Prologis, Inc.",
+  "headline": "8-K FORM 8-K",
+  "published_at": "2026-08-05T00:00:00+00:00",
+  "article_id": 26645,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "EXPD",
+  "company": "Expeditors International of Washington, Inc.",
+  "headline": "Expeditors tops quarterly estimates on strong customs brokerage demand",
+  "published_at": "2026-02-24T08:00:00+00:00",
+  "article_id": 113112,
+  "relevant": true,
+  "direction": "up",
+  "event": "earnings"
+ },
+ {
+  "symbol": "EXPD",
+  "company": "Expeditors International of Washington, Inc.",
+  "headline": "USA Cycling National Championships 2023 Results",
+  "published_at": "2023-06-25T07:00:00+00:00",
+  "article_id": 113026,
+  "relevant": false,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "CDE",
+  "company": "Coeur Mining, Inc.",
+  "headline": "8-K/A",
+  "published_at": "2026-02-20T00:00:00+00:00",
+  "article_id": 27245,
+  "relevant": true,
+  "direction": "none",
+  "event": "other"
+ },
+ {
+  "symbol": "KMB",
+  "company": "Kimberly-Clark Corporation",
+  "headline": "10-Q 10-Q FORM",
+  "published_at": "2023-07-25T00:00:00+00:00",
+  "article_id": 22213,
+  "relevant": true,
+  "direction": "none",
+  "event": "earnings"
+ }
+]
