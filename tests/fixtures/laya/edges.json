@@ -1,0 +1,1397 @@
+[
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "SBA Communications Corporation (SBAC)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "sba communications"
+  ],
+  "text": "We compete, both for new business and for the acquisition of assets, with other public tower companies, such as Crown Castle International Corp., SBA Communications Corporation, Vertical Bridge, Telesites S.A.B.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Franklin Resources, Inc. (BEN)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "franklin",
+   "franklin resources"
+  ],
+  "text": "Remanufacturing and Components Remanufacturing of our products is reported in our Power & Energy segment and is conducted primarily at the facilities in the following locations: Franklin, Indiana;",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "DXC Technology Co. (DXC)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "dxc technology"
+  ],
+  "text": "Johnson Fistel Investigates DXC Technology Company (DXC)",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Walmart Inc. (WMT)",
+  "other": "Rogers Corporation (ROG)",
+  "company_names": [
+   "walmart"
+  ],
+  "other_names": [
+   "rogers"
+  ],
+  "text": "Rogers, Arkansas March 13, 2026 50 Report of Independent Registered Public Accounting Firm To the Shareholders and the Board of Directors of Walmart Inc.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne (MC.PA)",
+  "other": "Moncler S.P.A. (MONC.MI)",
+  "company_names": [
+   "lvmh",
+   "lvmh moët hennessy louis vuitton societe europeenne"
+  ],
+  "other_names": [
+   "moncler"
+  ],
+  "text": "LVMH teams up with Moncler’s Remo Ruffini: Why it matters",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Expeditors International of Washington, Inc. (EXPD)",
+  "other": "Jones Lang LaSalle Incorporated (JLL)",
+  "company_names": [
+   "expeditors",
+   "expeditors international of washington"
+  ],
+  "other_names": [
+   "jones",
+   "jones lang lasalle"
+  ],
+  "text": "The graph below compares Expeditors International of Washington, Inc.'s cumulative 5-Year total shareholder return on common stock with the cumulative total returns of the S&P 500 index and the Dow Jones Transportation Average.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "Mitsubishi Heavy Industries Ltd. (7011.T)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "mitsubishi heavy industries"
+  ],
+  "text": "Nvidia Expands Partnerships with Toyota, Mitsubishi Heavy Industries to Strengthen Japan's AI Strategy Foundation",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Roche Holding AG (RO.SW)",
+  "other": "Eli Lilly and Company (LLY)",
+  "company_names": [
+   "roche",
+   "roche holding"
+  ],
+  "other_names": [
+   "eli lilly and",
+   "eli lilly and company"
+  ],
+  "text": "Why Roche Holding, Eli Lilly, and AstraZeneca Stocks Dropped Today",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "Dominion Energy, Inc. (D)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "dominion",
+   "dominion energy"
+  ],
+  "text": "1 to the Third Amended and Restated Multicurrency Revolving Credit Agreement, dated as of June 29, 2023, among the Company and certain of its subsidiaries as borrowers, Toronto Dominion (Texas) LLC, as administrative agent, and a majority of lenders under the Third Amended and Restated Multicurrency Revolving Credit Agreement, dated as of December 8, 2021 10-Q 001-14195 July 27, 2023 10.2 10.35 Notice of Benchmark Replacement and Amendment No.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "Ford Motor Company (F)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "ford",
+   "ford motor",
+   "ford motor company"
+  ],
+  "text": "2025 Q4 Truck Sales: Ford, GM Battle, Toyota Tacoma Sets Record",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "Cellnex Telecom S.A. (CLN-D.MC)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "cellnex",
+   "cellnex telecom"
+  ],
+  "text": "and Cellnex Telecom, S.A., wireless carrier tower consortia and private tower companies, private equity sponsored firms, carrier-affiliated tower companies, independent wireless carriers, tower owners, broadcasters and owners of non-communications sites, including rooftops, utility towers, water towers and other alternative structures.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Apple Inc. (AAPL)",
+  "other": "QUALCOMM Incorporated (QCOM)",
+  "company_names": [
+   "apple"
+  ],
+  "other_names": [
+   "qualcomm"
+  ],
+  "text": "Qualcomm deepens ties with major Apple rival",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Sony Group Corporation (6758.T)",
+  "other": "Tencent Holding Ltd. (0700.HK)",
+  "company_names": [
+   "sony",
+   "sony group"
+  ],
+  "other_names": [
+   "tencent",
+   "tencent holding"
+  ],
+  "text": "Sony, Tencent Lead 2025 Revenue Charts Among Top Gaming Companies | Outlook Respawn",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Corning Inc (GLW)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "corning"
+  ],
+  "text": "(2019-2021), Chief Human Resources Officer, Corning Inc.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "Walmart Inc. (WMT)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "walmart"
+  ],
+  "text": "JPMorgan Chase and Walmart Introduce Embedded Finance for Marketplace Sellers",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Aggreko Plc (AGK.L)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "aggreko"
+  ],
+  "text": "An additional set of competitors, including Aggreko plc, Generac Holdings Inc., Discovery Energy, LLC (Rehlko, formerly Kohler Energy), Baker Hughes Co., and others, are primarily packagers who source engines and/or other components from domestic and international suppliers and market products regionally and internationally through a variety of distribution channels.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Microsoft Corporation (MSFT)",
+  "other": "Alphabet Inc. (GOOG)",
+  "company_names": [
+   "microsoft"
+  ],
+  "other_names": [
+   "alphabet"
+  ],
+  "text": "Amazon, Alphabet, and Microsoft All Delivered Soaring Cloud Growth Thanks to AI. Here's the 1 I'd Buy Right Now",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Verizon Communications Inc. (VZ)",
+  "other": "AT&T Inc. (T)",
+  "company_names": [
+   "verizon",
+   "verizon communications"
+  ],
+  "other_names": [
+   "att"
+  ],
+  "text": "Starlink Mobile Is Coming for AT&T and Verizon: SpaceX Has Spectrum, Still Needs Towers",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "Ford Motor Company (F)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "ford",
+   "ford motor",
+   "ford motor company"
+  ],
+  "text": "Ford Bronco vs. Jeep Wrangler vs. Toyota 4Runner Q2 Sales: There’s a New Winner",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "BROOKFIELD ASSET MANAGEMENT INC (BAM-PFD.TO)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "brookfield asset management"
+  ],
+  "text": "and ATC Telecom Infrastructure Private Limited (“ATC TIPL”), which held our operations in India, entered into an agreement with Data Infrastructure Trust (“DIT”), an infrastructure investment trust sponsored by an affiliate of Brookfield Asset Management, pursuant to which DIT agreed to acquire a 100% ownership interest in ATC TIPL (the “ATC TIPL Transaction”).",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Darling Ingredients Inc. (DAR)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "darling",
+   "darling ingredients"
+  ],
+  "text": "Analyst Says Machinery Maker Caterpillar Isn't AI Darling",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "ASML Holding N.V. (ASML.AS)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "asml",
+   "asml holding"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Why ASML, Applied Materials, and Lam Research Are Soaring on Nvidia's Deal With Intel",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Baker Hughes Company Class A (BKR)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "baker",
+   "baker hughes company class a"
+  ],
+  "text": "An additional set of competitors, including Aggreko plc, Generac Holdings Inc., Discovery Energy, LLC (Rehlko, formerly Kohler Energy), Baker Hughes Co., and others, are primarily packagers who source engines and/or other components from domestic and international suppliers and market products regionally and internationally through a variety of distribution channels.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "LVMH Moët Hennessy - Louis Vuitton, Societe Europeenne (MC.PA)",
+  "other": "ICON Public Limited Company (ICLR)",
+  "company_names": [
+   "lvmh",
+   "lvmh moët hennessy louis vuitton societe europeenne"
+  ],
+  "other_names": [
+   "icon",
+   "icon public limited",
+   "icon public limited company"
+  ],
+  "text": "The Battle Between Hermès and LVMH: A Luxury War for Control of an Independent Icon",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "ASML Holding N.V. (ASML.AS)",
+  "other": "PayPal Holdings, Inc. (PYPL)",
+  "company_names": [
+   "asml",
+   "asml holding"
+  ],
+  "other_names": [
+   "paypal",
+   "paypal holdings"
+  ],
+  "text": "Corning, ASML, SK Hynix, PayPal, UPS, Dell, and More Stocks That Explain Today’s Market",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "JPMorgan Chase & Co. (JPM)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "text": "TD Securities (USA) LLC, as Syndication Agent, Bank of America, N.A., Barclays Bank PLC, Citibank, N.A, JPMorgan Chase Bank, N.A., Morgan Stanley MUFG Loan Partners, LLC and Royal Bank of Canada as Co-Documentation Agents, Mizuho Bank, Ltd., TD Securities (USA) LLC, Barclays Bank PLC, BofA Securities, Inc., Citibank, N.A., JPMorgan Chase Bank, N.A., Morgan Stanley MUFG Loan Partners, LLC and RBC Capital Markets as Joint Lead Arrangers and Joint Bookrunners, and the several other lenders that are parties thereto 10-K 001-14195 February 25, 2022 10.31 10.41 Amendment No.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Imerys S.A. (NK.PA)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "imerys"
+  ],
+  "text": "In February 2019, the Company’s talc supplier, Imerys Talc America, Inc., and two of its affiliates, Imerys Talc Vermont, Inc.",
+  "label": "supplier"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Nvidia Expands Toyota AI Partnership for Smart Cities, Factories",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Expeditors International of Washington, Inc. (EXPD)",
+  "other": "Starbucks Corporation (SBUX)",
+  "company_names": [
+   "expeditors",
+   "expeditors international of washington"
+  ],
+  "other_names": [
+   "starbucks"
+  ],
+  "text": "Hawkins joined Expeditors as Senior Vice President and Chief Information Officer in September 2024, having previously served as Senior Vice President of Customer & Retail Technology for Starbucks Corporation since 2023.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Wistron Corporation (3231.TW)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "wistron"
+  ],
+  "text": "We engage with independent subcontractors and contract manufacturers such as Hon Hai Precision Industry Co., Ltd., Wistron Corporation, and Fabrinet to perform assembly, testing and packaging of our final products.",
+  "label": "supplier"
+ },
+ {
+  "kind": "news",
+  "company": "Rio Tinto plc (0KWZ.L)",
+  "other": "Vale S.A. (VALE3.SA)",
+  "company_names": [
+   "rio tinto"
+  ],
+  "other_names": [
+   "vale"
+  ],
+  "text": "Vale vs. Rio Tinto: Which Mining Stock is the Smarter Buy?",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "BHP Group (BHP.AX)",
+  "other": "ASX Limited (ASX.AX)",
+  "company_names": [
+   "bhp",
+   "bhp group"
+  ],
+  "other_names": [
+   "asx"
+  ],
+  "text": "Northern Star vs BHP: Which ASX share is better for passive income?",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Advanced Micro Devices, Inc. (AMD)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "advanced micro devices"
+  ],
+  "text": "Our current competitors include: • suppliers and licensors of hardware and software for discrete and integrated GPUs, custom chips and other accelerated computing solutions, including solutions offered for AI, such as Advanced Micro Devices, Inc., or AMD, Huawei Technologies Co.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Intel Corporation (INTC)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "intel"
+  ],
+  "text": "Ltd., or Huawei, and Intel Corporation, or Intel;",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "Malaysia Smelting Corp. Bhd. (5916.KL)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "malaysia",
+   "malaysia smelting corp bhd"
+  ],
+  "text": "JPMorgan’s $330M payout to Malaysia explained: inside the 1MDB settlement",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Nvidia Expands Partnerships with Toyota, Mitsubishi Heavy Industries to Strengthen Japan's AI Strategy Foundation",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Broadcom Inc. (AVGO)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "broadcom"
+  ],
+  "text": "• suppliers of hardware and software for SoC products that are used in servers or embedded into automobiles, autonomous machines, and gaming devices, such as Ambarella, Inc., AMD, Broadcom, Intel, Qualcomm Incorporated, Renesas Electronics Corporation, and Samsung, or companies with internal teams designing SoC products for their own products and services, such as Tesla, Inc.;",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Verizon Communications Inc. (VZ)",
+  "other": "Prudential plc (PRU.L)",
+  "company_names": [
+   "verizon",
+   "verizon communications"
+  ],
+  "other_names": [
+   "prudential"
+  ],
+  "text": "Prudential and RGA each irrevocably guarantee and assume the sole obligation to make future payments to the Transferred Participants as provided under their respective group annuity contracts, with direct payments beginning July 1, 2024.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Amazon.com, Inc. (AMZN)",
+  "other": "George Weston Limited (WN-PA.TO)",
+  "company_names": [
+   "amazoncom"
+  ],
+  "other_names": [
+   "george",
+   "george weston"
+  ],
+  "text": "George Soros Significantly Increases Stake in Amazon.com Inc",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "CNH Industrial N.V. (CNHI.VI)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "cnh industrial"
+  ],
+  "text": "Examples of global competitors include CASE (part of CNH Industrial N.V.), Deere Construction & Forestry (part of Deere & Company), Doosan Bobcat (Part of Doosan Group), Hitachi Construction Machinery Co., Ltd., Hyundai Construction Equipment Co., Ltd., Hyundai Doosan Infracore Co., Ltd.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Alphabet Inc. (GOOG)",
+  "other": "BNP Paribas (BNP.PA)",
+  "company_names": [
+   "alphabet"
+  ],
+  "other_names": [
+   "bnp paribas"
+  ],
+  "text": "Alphabet's Google Cloud, BNP Paribas Enter Partnership on AI Capabilities",
+  "label": "partner"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "The Goldman Sachs Group, Inc. (GS)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "goldman",
+   "goldman sachs",
+   "goldman sachs group"
+  ],
+  "text": "Exclusive | JPMorgan in Talks With Apple to Take Over Credit Card From Goldman",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "Berkshire Hathaway Inc. (BRK-A)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "berkshire",
+   "berkshire hathaway"
+  ],
+  "text": "Berkshire Hathaway's Todd Combs, investment lieutenant to Buffett and Geico CEO, is leaving for JPMorgan",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "Volkswagen AG (VOW.DE)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "volkswagen"
+  ],
+  "text": "2026 Volkswagen Taigun to Toyota Ebella: New car launches in April",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Alkem Laboratories Limited (ALKEM.NS)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "alkem laboratories"
+  ],
+  "text": "and Alkem Laboratories Ltd.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Rio Tinto plc (0KWZ.L)",
+  "other": "BHP Group (BHP.AX)",
+  "company_names": [
+   "rio tinto"
+  ],
+  "other_names": [
+   "bhp",
+   "bhp group"
+  ],
+  "text": "Rio Tinto and BHP explore collaboration to mine up to 200 million tonnes of Pilbara iron ore",
+  "label": "partner"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "Daimler Truck Holding AG (DTG.DE)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "daimler truck",
+   "daimler truck holding"
+  ],
+  "text": "Toyota Moves to Join Volvo Group, Daimler Truck in Fuel Cell Joint Venture cellcentric",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Teva Pharmaceutical Industries Limited (TEVA.TA)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "teva",
+   "teva pharmaceutical industries"
+  ],
+  "text": "Teva Pharmaceuticals USA, Inc.;",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Roche Holding AG (RO.SW)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "roche",
+   "roche holding"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Roche Vs. Eli Lilly: Nvidia Deals, Obesity Battles Stoke Rivalry (I'd Buy Both) (RHHBY)",
+  "label": "partner"
+ },
+ {
+  "kind": "news",
+  "company": "Rio Tinto plc (0KWZ.L)",
+  "other": "FORTESCUE LTD. (FMG.AX)",
+  "company_names": [
+   "rio tinto"
+  ],
+  "other_names": [
+   "fortescue"
+  ],
+  "text": "Did Fortescue, Rio Tinto or BHP shares perform better this year?",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Apple Inc. (AAPL)",
+  "other": "Meta Platforms Inc Class A (META)",
+  "company_names": [
+   "apple"
+  ],
+  "other_names": [
+   "meta",
+   "meta platforms inc class a",
+   "wisdomtree",
+   "wisdomtree industrial metals enhanced"
+  ],
+  "text": "Apple & OV Intensive New Product Launch: Unveiling \"AI OS Meta Week\" | Which Brand Boasts the Strongest Market Competitiveness?",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "The Goldman Sachs Group, Inc. (GS)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "goldman",
+   "goldman sachs",
+   "goldman sachs group"
+  ],
+  "text": "JPMorgan and Goldman See US Earnings Broadening Beyond Big Tech",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "Bentley Systems, Incorporated Class B (BSY)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "bentley",
+   "bentley systems incorporated class b"
+  ],
+  "text": "Smith earned his M.B.A from Suffolk University, a Certificate of Accountancy from Bentley University and a Bachelor of Science in Finance from Merrimack College.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "RTX Corporation (RTX)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "rtx"
+  ],
+  "text": "The Graphics segment includes GeForce GPUs for gaming and PCs, and Quadro/NVIDIA RTX GPUs for enterprise workstation graphics.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Australia and New Zealand Banking Group Limited (ANZPD.AX)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "australia and new zealand banking",
+   "australia and new zealand banking group"
+  ],
+  "text": "Cat Financial’s competitors include Wells Fargo Equipment Finance Inc., Banc of America Leasing & Capital LLC, BNP Paribas Leasing Solutions Limited, Australia and New Zealand Banking Group Limited, Société Générale S.A.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Power Finance Corporation Limited (PFC.NS)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "power finance"
+  ],
+  "text": "• Power — Finance receivables originated worldwide related to large power customers of Caterpillar electrical power generation, gas compression and co-generation systems and non-Caterpillar equipment that is powered by these systems.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Fabrinet (FN)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "fabrinet"
+  ],
+  "text": "We engage with independent subcontractors and contract manufacturers such as Hon Hai Precision Industry Co., Ltd., Wistron Corporation, and Fabrinet to perform assembly, testing and packaging of our final products.",
+  "label": "supplier"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Wells Fargo & Company (WFC)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "wells fargo",
+   "wells fargo company"
+  ],
+  "text": "Cat Financial’s competitors include Wells Fargo Equipment Finance Inc., Banc of America Leasing & Capital LLC, BNP Paribas Leasing Solutions Limited, Australia and New Zealand Banking Group Limited, Société Générale S.A.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Booz Allen Hamilton Holding Corporation Class A (BAH)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "booz",
+   "booz allen hamilton holding corporation class a"
+  ],
+  "text": "Puri previously held marketing, management consulting, and product development positions at Hewlett-Packard, an information technology company, Booz Allen Hamilton Inc., a management and technology consulting company, and Texas Instruments Incorporated.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "SK hynix Inc. (000660.KS)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "sk hynix"
+  ],
+  "text": "We purchase memory from SK Hynix Inc., Micron Technology, Inc., and Samsung.",
+  "label": "supplier"
+ },
+ {
+  "kind": "news",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Honeywell International Inc. (HON)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "honeywell international"
+  ],
+  "text": "Caterpillar vs. Honeywell International: Which Industrials Stock Is a Better Buy in 2026?",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "The Score: Caterpillar, Nvidia, Meta and More Stocks That Defined the Week",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "JPMorgan Chase & Co. (JPM)",
+  "other": "Avenue Supermarts Limited (DMART.NS)",
+  "company_names": [
+   "jpmorgan",
+   "jpmorgan chase"
+  ],
+  "other_names": [
+   "avenue",
+   "avenue supermarts"
+  ],
+  "text": "JPMorgan opens towering $3 billion headquarters on Park Avenue",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Expeditors International of Washington, Inc. (EXPD)",
+  "other": "FMC Corporation (FMC)",
+  "company_names": [
+   "expeditors",
+   "expeditors international of washington"
+  ],
+  "other_names": [
+   "fmc"
+  ],
+  "text": "The FMC has established specific qualifications for shipping agents, including certain surety bonding requirements.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Kenvue Inc. Common Stock (KVUE)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "kenvue",
+   "kenvue inc common stock"
+  ],
+  "text": "(2) The fiscal year 2024 includes the loss of $0.4 billion on the completion of the debt for equity exchange of the retained stake in Kenvue.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "NextEra Energy, Inc. (NEE)",
+  "other": "Commonwealth Bank of Australia (CBA.AX)",
+  "company_names": [
+   "nextera",
+   "nextera energy"
+  ],
+  "other_names": [
+   "commonwealth",
+   "commonwealth bank of australia"
+  ],
+  "text": "NextEra Energy and Dominion Energy announce transformational Virginia benefits package that puts customers first and positions the Commonwealth as a global energy leader",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Verizon Communications Inc. (VZ)",
+  "other": "Evolution AB (EVON.MX)",
+  "company_names": [
+   "verizon",
+   "verizon communications"
+  ],
+  "other_names": [
+   "evolution"
+  ],
+  "text": "We also provide fixed wireless access (FWA) broadband through our fifth-generation (5G) or fourth-generation (4G) Long-Term Evolution (LTE) networks as an alternative to traditional landline internet access.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "XCMG Construction Machinery Co., Ltd. (000425.SZ)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "xcmg construction machinery"
+  ],
+  "text": "As an example of regional and local competitors, our competitors in China also include Guangxi LiuGong Machinery Co., Ltd., Longking Holdings Ltd., Sany Heavy Industry Co, XCMG Construction Machinery Co., Ltd., Shandong Lingong Construction Machinery Co., Ltd.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Siemens Energy AG (ENR.DE)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "siemens energy"
+  ],
+  "text": "Principal global competitors include Cummins Inc., Deutz AG, Rolls-Royce Power Systems AG and Siemens Energy AG.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Sony Group Corporation (6758.T)",
+  "other": "Cisco Systems, Inc. (CSCO)",
+  "company_names": [
+   "sony",
+   "sony group"
+  ],
+  "other_names": [
+   "cisco",
+   "cisco systems"
+  ],
+  "text": "What to Expect in Markets This Week: Earnings From Disney, CoreWeave, Sony and Cisco; Veterans Day Holiday",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Nvidia expands Toyota AI partnership for smart cities and factories",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Principal Financial Group, Inc. (PFG)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "principal financial",
+   "principal financial group"
+  ],
+  "text": "Disclosure controls and procedures include, without limitation, controls and procedures designed to ensure that information required to be disclosed by the Company in the reports that it files or submits under the Exchange Act is accumulated and communicated to the Company’s management, including its principal executive and principal financial officers, or persons performing similar functions, as appropriate to allow timely decisions regarding required disclosure.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Alphabet Inc. (GOOG)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "alphabet"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Magnificent no more: As Nvidia stock soars, here's why investors have been fleeing Alphabet and Meta",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "Webster Financial Corporation (WBS)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "webster",
+   "webster financial"
+  ],
+  "text": "In October 2019, Innovative Health, LLC filed a complaint against Biosense Webster, Inc.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Walmart Inc. (WMT)",
+  "other": "Fortis Inc. (FTS)",
+  "company_names": [
+   "walmart"
+  ],
+  "other_names": [
+   "fortis"
+  ],
+  "text": "dated as of May 9, 2018 is incorporated herein by reference to Exhibit 10.1 to the Quarterly Report on Form 10-Q of the Company for the fiscal quarter ended July 31, 2018 filed on September 6, 2018 (portions of this exhibit have been omitted and filed separately with the SEC pursuant to a request for confidential treatment.) 10.16 Counterpart Form of Share Purchase Agreement by and a mong Wal-Mart International Holdings, Inc., the shareholders of Flipkart Private Limited identified on Schedule I thereto, Fortis Advisors LLC and Walmart Inc.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Microsoft Corporation (MSFT)",
+  "other": "IREN Limited (IREN)",
+  "company_names": [
+   "microsoft"
+  ],
+  "other_names": [
+   "iren"
+  ],
+  "text": "IREN Advances Microsoft AI Cloud Deal with Horizon 1",
+  "label": "supplier"
+ },
+ {
+  "kind": "news",
+  "company": "Toyota Motor Corporation (7203.T)",
+  "other": "NVIDIA Corporation (NVDA)",
+  "company_names": [
+   "toyota",
+   "toyota motor"
+  ],
+  "other_names": [
+   "nvidia"
+  ],
+  "text": "Toyota Nvidia Partnership 2026: Factories, Not Self-Driving",
+  "label": "partner"
+ },
+ {
+  "kind": "news",
+  "company": "ASML Holding N.V. (ASML.AS)",
+  "other": "Apple Inc. (AAPL)",
+  "company_names": [
+   "asml",
+   "asml holding"
+  ],
+  "other_names": [
+   "apple"
+  ],
+  "text": "Uncover the Technological and Business Secrets of Mistral AI: From Apple's Acquisition Rumors to ASML's $1.3 Billion Investment as Major Shareholder",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Voestalpine AG (VOE.VI)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "voestalpine"
+  ],
+  "text": "In rail-related businesses, our global competitors include Wabtec Corp, Greenbrier Companies, Inc., Voestalpine AG, Vossloh AG, Alstom SA, and Siemens Mobility A/S.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Johnson & Johnson (JNJ)",
+  "other": "AbbVie Inc. (ABBV)",
+  "company_names": [
+   "johnson",
+   "johnson johnson"
+  ],
+  "other_names": [
+   "abbvie"
+  ],
+  "text": "AbbVie vs. Johnson & Johnson: Which Healthcare Stock Is a Better Buy in 2026?",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "EchoStar Corporation (SATS)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "echostar"
+  ],
+  "text": "For example, during the second half of 2025, Echostar Corporation, parent company to DISH, announced agreements to sell a material amount of spectrum licenses, and subsequently began to abandon and decommission deployment of portions of its 5G VoNR and broadband network.",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "ASML Holding N.V. (ASML.AS)",
+  "other": "Evoke plc (EIHDF)",
+  "company_names": [
+   "asml",
+   "asml holding"
+  ],
+  "other_names": [
+   "evoke"
+  ],
+  "text": "Trending tickers: ASML, Pop Mart International, Evoke, Boohoo and Halfords",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "HSBC Holdings Plc (HSBA.L)",
+  "other": "Lloyds Banking Group plc (LLOY.L)",
+  "company_names": [
+   "hsbc",
+   "hsbc holdings"
+  ],
+  "other_names": [
+   "lloyds",
+   "lloyds banking",
+   "lloyds banking group"
+  ],
+  "text": "Barclays, HSBC, Lloyds and NatWest have made investors rich, but were the latest results any good?",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Verizon Communications Inc. (VZ)",
+  "other": "Renewable Energy Group, Inc. (RBE1.F)",
+  "company_names": [
+   "verizon",
+   "verizon communications"
+  ],
+  "other_names": [
+   "renewable energy",
+   "renewable energy group"
+  ],
+  "text": "Other Future Obligations As of December 31, 2025, Verizon had 29 renewable energy purchase agreements with third parties for a total of approximately 3.9 gigawatts of anticipated renewable energy capacity across multiple states.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "MTN Group Limited (MTN.JO)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "mtn",
+   "mtn group"
+  ],
+  "text": "and MTN Group Limited (“MTN”) accounted for an aggregate of 81% of Africa & APAC property segment revenue.",
+  "label": "customer"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Cisco Systems, Inc. (CSCO)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "cisco",
+   "cisco systems"
+  ],
+  "text": "and • networking products consisting of switches, network adapters (including DPUs), and cable solutions (including optical modules) include such as AMD, Arista Networks, Broadcom, Cisco Systems, Inc., Hewlett Packard Enterprise Company, Huawei, Intel, Lumentum Holdings Inc., and Marvell Technology, Inc, as well as internal teams of system vendors and large cloud services companies.",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Apple Inc. (AAPL)",
+  "other": "Tesla, Inc. (TSLA)",
+  "company_names": [
+   "apple"
+  ],
+  "other_names": [
+   "tesla"
+  ],
+  "text": "Aave Just Turned Tokenized Apple, Nvidia and Tesla Stocks Into USDC Loan Collateral",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "HSBC Holdings Plc (HSBA.L)",
+  "other": "Li Auto Inc. (LI)",
+  "company_names": [
+   "hsbc",
+   "hsbc holdings"
+  ],
+  "other_names": [
+   "li auto"
+  ],
+  "text": "HSBC cuts Li Auto target on competition risks and weak profit outlook; shares fall",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "Mizuho Financial Group, Inc. (8411.T)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "mizuho",
+   "mizuho financial",
+   "mizuho financial group"
+  ],
+  "text": "2 to the Fourth Amended and Restated Revolving Credit Agreement, dated as of January 28, 2025, among the Company and certain of its subsidiaries as borrowers, Toronto Dominion (Texas) LLC, as administrative agent, and a majority of lenders under the Fourth Amended and Restated Revolving Credit Agreement, dated as of December 8, 2021, as further amended 10-K 001-14195 February 25, 2025 10.39 10.40 Second Amended and Restated Term Loan Agreement, dated as of December 8, 2021, among the Company, as Borrower, Mizuho Bank, Ltd., as Administrative Agent;",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "NVIDIA Corporation (NVDA)",
+  "other": "Lockheed Martin Corporation (LMT)",
+  "company_names": [
+   "nvidia"
+  ],
+  "other_names": [
+   "lockheed",
+   "lockheed martin"
+  ],
+  "text": "Prior to attending law school, he worked as an engineer at Lockheed Missiles and Space Company, an aerospace company.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Expeditors International of Washington, Inc. (EXPD)",
+  "other": "Plaza S.A. (MALLPLAZA.SN)",
+  "company_names": [
+   "expeditors",
+   "expeditors international of washington"
+  ],
+  "other_names": [
+   "plaza"
+  ],
+  "text": "SE Sterling Plaza 2 , 3rd Floor, Bellevue , Washington 98006 (Address of principal executive offices) (Zip Code) ( 206 ) 674-3400 (Registrant’s telephone number, including area code) Securities registered pursuant to Section 12(b) of the Act: Title of each class Trading Symbol(s) Name of each exchange on which registered Common Stock, par value $.01 per share EXPD New York Stock Exchange Securities registered pursuant to Section 12(g) of the Act: None Indicate by check mark if the registrant is a well-known seasoned issuer, as defined in Rule 405 of the Securities Act.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "AT&T Inc. (T)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "att"
+  ],
+  "text": "For example, we are currently engaged in a legal dispute (the “Arbitration”) with one of our customers in Mexico, AT&T Comunicaciones Digitales, S.",
+  "label": "customer"
+ },
+ {
+  "kind": "news",
+  "company": "Allianz SE (ALV.DE)",
+  "other": "Sanlam Limited (SLM.JO)",
+  "company_names": [
+   "allianz"
+  ],
+  "other_names": [
+   "sanlam"
+  ],
+  "text": "Sanlam Allianz Announces Leadership Changes As John Simba Exits After 24 Years",
+  "label": "partner"
+ },
+ {
+  "kind": "news",
+  "company": "AstraZeneca PLC (AZN.L)",
+  "other": "GSK plc (GSK.L)",
+  "company_names": [
+   "astrazeneca"
+  ],
+  "other_names": [
+   "gsk"
+  ],
+  "text": "Sino Biopharma Accelerates Global Growth With GSK, AstraZeneca Partnerships",
+  "label": "none"
+ },
+ {
+  "kind": "news",
+  "company": "Roche Holding AG (RO.SW)",
+  "other": "AbbVie Inc. (ABBV)",
+  "company_names": [
+   "roche",
+   "roche holding"
+  ],
+  "other_names": [
+   "abbvie"
+  ],
+  "text": "FDA Approval Gives BeOne Medicines a New Challenger to AbbVie, Roche Cancer Drug",
+  "label": "partner"
+ },
+ {
+  "kind": "filing",
+  "company": "Walmart Inc. (WMT)",
+  "other": "Nasdaq, Inc. (NDAQ)",
+  "company_names": [
+   "walmart"
+  ],
+  "other_names": [
+   "nasdaq"
+  ],
+  "text": "Our common stock trades on the Nasdaq Global Select Market under the symbol \"WMT.\" The Development of Our Company The businesses conducted by our founders began in 1945 when Sam M.",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "American Tower Corporation (AMT)",
+  "other": "Vodafone Group PLC (VODI.DU)",
+  "company_names": [
+   "american tower"
+  ],
+  "other_names": [
+   "vodafone",
+   "vodafone group"
+  ],
+  "text": "In the third quarter of 2022, one of our largest customers in India, Vodafone Idea Limited (“VIL”), communicated that it would make partial payments of its contractual amounts owed to us (the “VIL Shortfall”).",
+  "label": "none"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Epiroc AB (publ) (EPI-A.ST)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "epiroc",
+   "epiroc ab publ"
+  ],
+  "text": "Our global surface competitors include Deere Construction & Forestry (part of Deere & Company), Epiroc AB, Hitachi Construction Machinery Co., Ltd., Komatsu Ltd., Liebherr-International AG, Sandvik AB, and Volvo Construction Equipment.",
+  "label": "competitor"
+ },
+ {
+  "kind": "filing",
+  "company": "Caterpillar Inc. (CAT)",
+  "other": "Kobe Steel, Ltd. (5406.T)",
+  "company_names": [
+   "caterpillar"
+  ],
+  "other_names": [
+   "kobe steel"
+  ],
+  "text": "Bamford Excavators Ltd., Kobelco Construction Machinery (part of Kobe Steel, Ltd), Komatsu Ltd., Kubota Farm & Industrial Machinery (part of Kubota Corporation), Sany Heavy Industry Co., Ltd., and Volvo Construction Equipment (part of the Volvo Group).",
+  "label": "competitor"
+ },
+ {
+  "kind": "news",
+  "company": "Microsoft Corporation (MSFT)",
+  "other": "Alphabet Inc. (GOOG)",
+  "company_names": [
+   "microsoft"
+  ],
+  "other_names": [
+   "alphabet"
+  ],
+  "text": "Big tech Q3 earnings: Amazon, Alphabet, Netflix, Meta, Apple, and Microsoft",
+  "label": "none"
+ }
+]

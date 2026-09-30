@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_fill, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_edges, submit_fill, submit_laya, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
@@ -47,6 +47,14 @@ async def research(symbol: str, as_of: date | None = None, model: str | None = N
 async def laya(symbol: str, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
     """Score the company's stored articles Laya has not scored yet; it waits while model work runs."""
     return shapes.job(submit_laya(ctx, runner, symbol))
+
+
+@router.post("/edges", status_code=202)
+async def edges(symbol: str | None = None, watchlist: str | None = None, ctx: AppContext = Depends(get_ctx),
+                runner: JobRunner = Depends(get_runner)) -> dict:
+    """Read the company's (or the list's) headlines and US 10-Ks not yet read for supplier, customer,
+    competitor and partner ties; it waits while model work runs."""
+    return shapes.job(submit_edges(ctx, runner, symbol, watchlist))
 
 
 @router.post("/tick", status_code=202)

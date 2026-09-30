@@ -14,6 +14,7 @@ from oracle.services.context import AppContext, worker_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.events_service import HORIZONS, earnings_study
 from oracle.services.fx_service import credits
+from oracle.services.edges_service import company_edges, confirm_edge, dismiss_edge
 from oracle.services.industry_service import Activity, IndustryMap, company_activity, industry_map
 from oracle.services.laya_service import MODEL_TAG, laya_scores
 from oracle.services.links_service import USER_RELATIONS, CompanyLink, add_link, company_links, delete_link
@@ -108,6 +109,26 @@ async def get_laya(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     its probabilities are uncalibrated."""
     return {"model": MODEL_TAG, "enabled": ctx.config.laya.enabled, "uncalibrated": True,
             "scores": [{**asdict(s), "link": shapes.web_link(s.url)} for s in laya_scores(ctx, symbol)]}
+
+
+@router.get("/{symbol}/edges")
+async def get_edges(symbol: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Ties read from the company's headlines and 10-Ks, linked or waiting for the user, newest
+    document first; Laya's probabilities are uncalibrated."""
+    return {"enabled": ctx.config.laya.enabled, "uncalibrated": True,
+            "edges": [{**asdict(e), "link": shapes.web_link(e.url)} for e in company_edges(ctx, symbol)]}
+
+
+@router.post("/{symbol}/edges/{edge_id}/confirm")
+async def confirm_tie(symbol: str, edge_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The user's yes: the tie becomes a link, first seen on its document's date."""
+    return {"confirmed": asdict(confirm_edge(ctx, symbol, edge_id))}
+
+
+@router.delete("/{symbol}/edges/{edge_id}")
+async def delete_tie(symbol: str, edge_id: int, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The user's no: an unconfirmed tie is dropped."""
+    return {"deleted": asdict(dismiss_edge(ctx, symbol, edge_id))}
 
 
 @router.delete("/{symbol}/links/{link_id}")

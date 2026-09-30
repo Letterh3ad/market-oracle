@@ -155,7 +155,7 @@ def _tick_queue(result) -> dict | None:
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "universe": asdict, "fx": _fx, "merges": asdict,
             "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
             "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes,
-            "laya": asdict}
+            "laya": asdict, "edges": asdict}
 
 
 def _result(j: Job) -> dict | None:
