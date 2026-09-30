@@ -121,6 +121,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "paper history": "GET /api/ledgers",
     "paper history --account": OUTPUT_ONLY,
     # Ledgers tab, Backtest section; its kept results come from GET /api/backtests.
+    # Ledgers tab, History coverage card: "Backfill history" and its table.
+    "history backfill": "POST /api/jobs/history",
+    "history backfill --list": "POST /api/jobs/history",
+    "history coverage": "GET /api/history/coverage",
+    "history coverage --list": "GET /api/history/coverage",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},

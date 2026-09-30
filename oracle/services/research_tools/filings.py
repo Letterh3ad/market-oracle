@@ -45,7 +45,7 @@ class Filings:
             filings = await self._lookup(ticker)
         except NoFilings as exc:
             return str(exc)
-        return self._shelf.show([_article(f) for f in filings], "sec_edgar", ticker)
+        return self._shelf.show([filing_article(f) for f in filings], "sec_edgar", ticker)
 
     async def to_read(self, day: date) -> dict[int, str]:
         """The listing's filings worth reading by `day`, kept as the run's evidence: id -> form,
@@ -54,7 +54,7 @@ class Filings:
             filings = edgar.worth_reading(await self._lookup(self._listing.upper()), day)
         except ToolError:
             return {}
-        ids = self._shelf.keep([_article(f) for f in filings], "sec_edgar", self._listing.upper())
+        ids = self._shelf.keep([filing_article(f) for f in filings], "sec_edgar", self._listing.upper())
         return dict(zip(ids, (f.form for f in filings)))
 
     async def _lookup(self, ticker: str) -> list[edgar.Filing]:
@@ -82,6 +82,16 @@ async def submissions(client: RateLimitedClient, tickers: SecTickerRepo, clock: 
     return cik, await _json(client, edgar.submissions_url(cik), headers)
 
 
+async def filings_since(client: RateLimitedClient, contact: str | None, body: object, cik: int,
+                        since: date) -> list[edgar.Filing]:
+    """Key filings in the submissions `body` and in its older pages reaching back to `since`."""
+    headers = {"User-Agent": edgar.user_agent(need_contact(contact))}
+    found = edgar.parse_filings(body, cik)
+    for url in edgar.older_pages(body, since):
+        found += edgar.parse_filing_columns(await _json(client, url, headers), cik)
+    return found
+
+
 async def _json(client: RateLimitedClient, url: str, headers: dict) -> object:
     resp = await fetch(client, "sec_edgar", "SEC", url, headers=headers)
     try:
@@ -102,5 +112,5 @@ async def press_exhibit(client: RateLimitedClient, contact: str | None, document
     return edgar.find_exhibit(resp.text, index)
 
 
-def _article(f: edgar.Filing) -> Article:
+def filing_article(f: edgar.Filing) -> Article:
     return Article(f.url, f.title, "SEC", datetime.combine(f.filed, time(), timezone.utc))

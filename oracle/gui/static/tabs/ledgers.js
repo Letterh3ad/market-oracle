@@ -4,6 +4,7 @@ import { lineChart } from "../lib/chart.js";
 import { compareLines, table } from "../lib/compare.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
+import { historySection } from "../lib/history.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
 import { regimeCard } from "../lib/regime.js";
@@ -19,6 +20,7 @@ let loads = 0; // only the newest load paints
 let live = null; // this render's research buttons and their poll
 let backtest = null; // this render's Backtest section: one node kept across repaints, so its form keeps what was typed
 let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
+let history = null; // this render's History coverage card, kept the same way
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
 let resultBox = null;
@@ -323,12 +325,14 @@ async function load(mine) {
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",
       new Set(stale.due)),
     backtest.node,
+    history.node,
     replay.node,
   ], () => {
     drawCharts(body.accounts);
     const chart = compared.draw();
     if (chart) charts.push(chart);
     backtest.start();
+    history.start();
     replay.start();
   });
 }
@@ -341,6 +345,7 @@ function render(target) {
   live = researchLive();
   backtest = backtestSection();
   replay = replaySection();
+  history = historySection();
   clearInterval(timer);
   timer = live.start(root);
   return load(root);

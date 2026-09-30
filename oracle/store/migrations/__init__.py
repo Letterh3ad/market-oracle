@@ -65,6 +65,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0042_universe_backfill,
     m0043_regime_account,
     m0044_regime_tilts,
+    m0046_history_backfill,
 )
 
 MIGRATIONS = [
@@ -112,4 +113,5 @@ MIGRATIONS = [
     m0042_universe_backfill,
     m0043_regime_account,
     m0044_regime_tilts,
+    m0046_history_backfill,
 ]

@@ -12,6 +12,7 @@ from oracle.services.cutoff_service import CutoffProbe, ReplayCutoff
 from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
+from oracle.services.history_service import THIN, Coverage
 from oracle.services.paper_service import Line, Order
 from oracle.services.regime_service import OFF, LineStep
 from oracle.services.replay_service import StudyStatus
@@ -154,7 +155,8 @@ def _tick_queue(result) -> dict | None:
 # A backtest's is its summary: the page fetches the whole run, which Activity never needs.
 _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "universe": asdict, "fx": _fx, "merges": asdict,
             "discover": asdict, "backtest": backtest_summary, "ask": answer, "replay": StudyStatus.to_json,
-            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes}
+            "replay_prices": lambda outcomes: {"listings": [asdict(o) for o in outcomes]}, "probe": _probes,
+            "history": asdict}
 
 
 def _result(j: Job) -> dict | None:
@@ -222,3 +224,11 @@ def research_run(run: ResearchRun | None, failed: ResearchRun | None = None) -> 
                      for e in run.evidence],
         "steps": [asdict(s) for s in run.steps],
     }}
+
+
+def coverage(c: Coverage) -> dict:
+    """The history coverage table: one row per company, a cell per quarter."""
+    return {"start": c.start, "quarters": list(c.quarters), "windows_done": c.windows_done,
+            "windows_left": c.windows_left, "caveat": c.caveat, "thin_below": THIN,
+            "rows": [{"symbol": r.symbol, "name": r.name, "main": r.main, "of": list(r.of), "first_bar": r.first_bar,
+                      "thin": list(r.thin), "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}

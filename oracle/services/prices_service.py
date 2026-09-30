@@ -26,7 +26,7 @@ from oracle.store.watchlists import WatchlistRepo
 
 __all__ = [
     "Bar", "ConvertedBar", "ListingHealth", "ListingOutcome", "PriceUpdate", "SourceInfo", "WatchedUpdate",
-    "benchmark_history_in_base", "day_change", "held_or_watched", "held_unwatched", "histories_in_base",
+    "backfill_listing", "benchmark_history_in_base", "day_change", "held_or_watched", "held_unwatched", "histories_in_base",
     "listing_health", "price_history",
     "price_history_in_base", "price_sources", "update_listing", "update_listings", "update_watched",
 ]
@@ -107,6 +107,11 @@ async def update_listing(ctx: AppContext, symbol: str, since: date | None = None
     replacing what is stored, so the window's closes share one split and dividend basis."""
     async with open_client(ctx) as client:
         return await _update(ctx, client, symbol, since)
+
+
+async def backfill_listing(ctx: AppContext, client: RateLimitedClient, symbol: str, since: date) -> PriceUpdate:
+    """`update_listing` from `since` over a caller's client, for work that prices many listings."""
+    return await _update(ctx, client, symbol, since)
 
 
 async def update_listings(ctx: AppContext, symbols: Sequence[str], since: date) -> list[ListingOutcome]:

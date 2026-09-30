@@ -29,6 +29,7 @@ from oracle.services.discovery_service import discover
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning, ServiceError, UnknownJob
 from oracle.services.job_executor import Executor, InlineExecutor, Work
 from oracle.services.fx_service import check_sources, update_fx
+from oracle.services.history_service import backfill_history
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
@@ -40,13 +41,14 @@ from oracle.services.tick_service import (
     FILL, KIND_LABELS, MIDDAY, RUNS, TICK, last_tick, record_skipped, run_line_step, ticked_since,
 )
 from oracle.services.universe_service import proposed_merges, refresh_universe, resolve_symbol
+from oracle.services.watch_service import DEFAULT_LIST, watchlist_symbols
 from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRow
 from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
-           "submit_fill", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_fill", "submit_history", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -58,6 +60,8 @@ PAGE_SIZE = 20
 
 PREEMPTED_BY = ("research", "tick", "ask", "discover")
 """Kinds of work that need the model: a replay study or a regime-AI backtest gives way to them."""
+LIVE_WORK = (*PREEMPTED_BY, "prices")
+"""Kinds of work the history backfill steps aside for: they read the same news and price sources."""
 RETRYABLE_STATES = ("cancelled", "interrupted", "failed")
 """Finished states worth another try; `done` needs no retry."""
 MISSED_LATE = "missed: started too late"
@@ -528,6 +532,26 @@ def submit_backtest(ctx: AppContext, runner: JobRunner, watchlist: str, start: d
                          on_cancel=stopped.set)
 
 
+HISTORY_SUBJECT = "history"
+
+
+def submit_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST) -> Job:
+    """The history backfill of `watchlist` and its industry maps as one long job (hours): its
+    progress is the company and window it is on, it waits while live work runs, and a Cancel
+    stops it between requests; what it finished is kept, so a retry resumes."""
+    name = watchlist_symbols(ctx, watchlist)[0]
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return await backfill_history(c, watchlist=name, stop=stopped.is_set, busy=lambda: _live_work(runner, LIVE_WORK),
+                                      on_progress=stage.append)
+
+    return runner.submit("history", f"Backfill history ({name} and industry maps)", work,
+                         subject=f"{HISTORY_SUBJECT}{BACKTEST_SEP}{name}", link="#ledgers",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
 def submit_cutoff_probe(ctx: AppContext, runner: JobRunner, profile: str | None = None) -> Job:
     """Ask `profile`'s model, or each unprobed model a replay runs on, the dated questions and keep
     their measured cutoffs; an unknown profile is refused now."""
@@ -630,13 +654,21 @@ def _retry_fx(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 def _model_work(runner: JobRunner) -> str | None:
     """The label of running work that needs the model, which a regime-AI backtest waits for, as
-    the replay study does. Read from the replay's worker thread, so a queue changing under the
-    read is taken as nothing found; the next look catches it."""
+    the replay study does."""
+    return _live_work(runner, PREEMPTED_BY)
+
+
+def _live_work(runner: JobRunner, kinds: Sequence[str]) -> str | None:
+    """The label of running work of `kinds`. Read from a worker thread, so a queue changing under
+    the read is taken as nothing found; the next look catches it."""
     try:
-        return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind in PREEMPTED_BY),
-                    None)
+        return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind in kinds), None)
     except RuntimeError:
         return None
+
+
+def _retry_history(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_history(ctx, runner, (job.subject or "").split(BACKTEST_SEP, 1)[-1])
 
 
 def _retry_backtest(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -658,6 +690,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
+    "history": _retry_history,
 }
 
 
