@@ -42,6 +42,9 @@ class LinkFound:
     other: str
     relation: str
     evidence: tuple[int, ...] = ()
+    seen: str | None = None
+    """When the evidence was known (a document's date, UTC ISO), so the link is first seen then;
+    None for now."""
 
 
 @dataclass(frozen=True)
@@ -96,7 +99,7 @@ def record_links(ctx: AppContext, found: Iterable[LinkFound], source: str) -> in
             continue
         if repo.deleted(_listings(universe, a), _listings(universe, b)):
             continue
-        repo.record(a.symbol, b.symbol, f.relation, source, f.evidence, now)
+        repo.record(a.symbol, b.symbol, f.relation, source, f.evidence, f.seen or now)
         kept += 1
     return kept
 

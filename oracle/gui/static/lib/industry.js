@@ -2,11 +2,11 @@
 // the peers, links from the news or added by you), how and since when, what it is doing now
 // from stored data, Delete on a link and an Add link form.
 import { api } from "./api.js";
-import { el, showError, clearError, companyLink } from "./dom.js";
+import { el, showError, clearError, companyLink, safeUrl } from "./dom.js";
 import { pct, tone } from "./fmt.js";
 import { headlines } from "./links.js";
 import { repaint } from "./repaint.js";
-import { sendJson } from "./ui.js";
+import { busyButton, runJob, sendJson } from "./ui.js";
 
 function relationLine(x) {
   const when = x.first_known ? `first known ${x.first_known.slice(0, 10)}` : "static field";
@@ -67,17 +67,81 @@ function industryPanel(symbol, body, changed) {
   return el("div", null, caption, table, addForm(symbol, body.relations, changed));
 }
 
-// Fills `box` once the map arrives, and again after each change; a late answer for a box no
-// longer on screen is dropped.
+const TIE_TIP = "Read from the company's stored headlines and US 10-Ks. A keyword rule and Laya each say what "
+  + "the other company is; a tie is linked only where both agree and the sentence is no list of companies. On 100 "
+  + "hand-labelled ties Laya alone did worse than always saying \"no tie\"; linked ties were right 13 times in 19, "
+  + "mostly competitors and partners: for suppliers and customers only 3 in 5, and it finds perhaps a fifth of the "
+  + "real ties. Ties only the rule names wait here for you; a deleted tie is never linked again.";
+const pctOf = (p) => `${Math.round(p * 100)}%`;
+
+function findButtons(symbol, enabled, changed) {
+  if (!enabled) return el("span", { class: "dim small" }, "Laya is off (Settings, [laya] enabled): ties are not read.");
+  const run = (query, label) => busyButton(label, async (onState) => {
+    try {
+      clearError();
+      await runJob(`/api/jobs/edges?${query}`, onState);
+    } catch (err) {
+      showError(err.message);
+    }
+    changed();
+  });
+  return el("div", { class: "row" }, run(`symbol=${encodeURIComponent(symbol)}`, "Find suppliers and customers"),
+    run("watchlist=main", "Find for the main list"));
+}
+
+function tieRow(symbol, e, changed) {
+  const act = (label, method, path, title) => el("button", { type: "button", class: "small-btn", title, onclick: async () => {
+    try {
+      clearError();
+      await api(path, { method });
+      changed();
+    } catch (err) { showError(err.message); }
+  } }, label);
+  const link = safeUrl(e.link);
+  const source = link ? el("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, e.title) : e.title;
+  const pending = e.state === "unconfirmed";
+  return el("tr", null,
+    el("td", null, companyLink(e.other), el("div", { class: "dim small" }, e.other_name ?? "")),
+    el("td", null, `a ${e.relation}`, el("div", { class: "dim small" }, pending ? "unconfirmed" : e.state)),
+    el("td", null, `"${e.evidence}"`, el("div", { class: "dim small" }, `${e.known_at.slice(0, 10)} `, source,
+      e.documents > 1 ? ` (and ${e.documents - 1} later document${e.documents > 2 ? "s" : ""})` : "")),
+    el("td", { class: "dim small" }, `rule ${e.rule}, Laya ${e.choice} ${pctOf(e.prob)}`),
+    el("td", null,
+      pending ? act("Confirm", "POST", `/api/companies/${encodeURIComponent(symbol)}/edges/${e.id}/confirm`,
+        "Right: keep it as a link, dated by its document") : null,
+      pending ? act("Delete", "DELETE", `/api/companies/${encodeURIComponent(symbol)}/edges/${e.id}`, "Wrong: drop it")
+        : null));
+}
+
+// The ties read from documents: linked ones with their evidence, unconfirmed ones with Confirm and Delete.
+function tiesSection(symbol, body, changed) {
+  const head = el("div", { class: "row" }, findButtons(symbol, body.enabled, changed),
+    el("span", { class: "badge warn", title: TIE_TIP }, "uncalibrated"));
+  if (!body.edges.length) {
+    return el("div", null, head, el("p", { class: "dim" }, "No ties read yet from headlines or 10-Ks."));
+  }
+  return el("div", null, head, el("table", { class: "results" },
+    el("thead", null, el("tr", null, el("th", null, "Company"), el("th", null, "Is"),
+      el("th", { title: TIE_TIP }, "Evidence"), el("th", null, "Typed by"), el("th", null, ""))),
+    el("tbody", null, ...body.edges.map((e) => tieRow(symbol, e, changed)))));
+}
+
+// Fills `box` once the map and the ties arrive, and again after each change; a late answer for a
+// box no longer on screen is dropped.
 async function showIndustry(box, symbol) {
-  let body;
+  let body, ties;
   try {
-    body = await api(`/api/companies/${encodeURIComponent(symbol)}/industry`);
+    [body, ties] = await Promise.all([api(`/api/companies/${encodeURIComponent(symbol)}/industry`),
+      api(`/api/companies/${encodeURIComponent(symbol)}/edges`)]);
   } catch (err) {
     if (box.isConnected) box.replaceChildren(el("p", { class: "dim" }, err.message));
     return;
   }
-  if (box.isConnected) repaint(box, [industryPanel(symbol, body, () => showIndustry(box, symbol))]);
+  const again = () => showIndustry(box, symbol);
+  if (box.isConnected) {
+    repaint(box, [industryPanel(symbol, body, again), el("h4", null, "Suppliers and customers from filings and news"),
+      tiesSection(symbol, ties, again)]);
+  }
 }
 
-export { industryPanel, showIndustry };
+export { industryPanel, showIndustry, tiesSection };

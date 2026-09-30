@@ -97,11 +97,54 @@ def test_add_link_posts_the_symbol_and_relation_then_reloads():
 def test_opening_the_panel_asks_only_for_the_stored_map():
     out = run("industry.js", f"""
         ANSWERS["/api/companies/7203.T/industry"] = {json.dumps(MAP)};
+        ANSWERS["/api/companies/7203.T/edges"] = {json.dumps({"enabled": True, "edges": [TIE]})};
         const box = Object.assign(new Node("div"), {{ style: {{}}, offsetHeight: 0 }});
         await m.showIndustry(box, "7203.T");
-        console.log(JSON.stringify({{ asked, filled: box.textContent.includes("DENSO Corporation") }}));
+        console.log(JSON.stringify({{ asked, filled: box.textContent.includes("DENSO Corporation"),
+                                      ties: box.textContent.includes("BorgWarner orders parts") }}));
     """)
-    assert out == {"asked": ["GET /api/companies/7203.T/industry"], "filled": True}
+    assert out == {"asked": ["GET /api/companies/7203.T/industry", "GET /api/companies/7203.T/edges"],
+                   "filled": True, "ties": True}
+
+
+TIE = {"id": 4, "symbol": "7203.T", "other": "BWA", "other_name": "BorgWarner Inc.", "kind": "news",
+       "relation": "customer", "rule": "customer", "choice": "none", "prob": 0.61, "model": "laya", "state": "unconfirmed",
+       "evidence": "BorgWarner orders parts from Toyota", "known_at": "2026-09-07T09:00:00+00:00",
+       "title": "BorgWarner orders parts from Toyota", "url": "https://news.test/4", "link": "https://news.test/4"}
+LINKED = {**TIE, "id": 5, "other": "6902.T", "other_name": "DENSO Corporation", "relation": "supplier", "kind": "filing", "documents": 3,
+          "rule": "supplier", "choice": "supplier", "prob": 0.9, "state": "linked", "title": "10-K",
+          "evidence": "We rely on DENSO for sensors.", "link": "javascript:alert(1)"}
+
+
+def test_ties_show_evidence_and_only_unconfirmed_ones_can_be_confirmed_or_deleted():
+    out = run("industry.js", f"""
+        ANSWERS["/api/companies/7203.T/edges/4/confirm"] = {{}};
+        ANSWERS["/api/jobs/edges"] = {{ id: 9, state: "done", result: {{}} }};
+        let changes = 0;
+        const box = m.tiesSection("7203.T", {json.dumps({"enabled": True, "edges": [TIE, LINKED]})}, () => changes++);
+        const buttons = box.all((n) => n.tag === "button").map((b) => b.textContent);
+        const links = box.all((n) => n.tag === "a").map((a) => a.attrs.href);
+        button(box, "Confirm").fire("click");
+        await settle(10);
+        button(box, "Find for the main list").fire("click");
+        await settle(10);
+        console.log(JSON.stringify({{ asked, changes, buttons, links, text: box.textContent }}));
+    """)
+    assert out["buttons"] == ["Find suppliers and customers", "Find for the main list", "Confirm", "Delete"]
+    assert out["asked"] == ["POST /api/companies/7203.T/edges/4/confirm", "POST /api/jobs/edges?watchlist=main"]
+    assert out["changes"] == 2
+    text = out["text"]
+    assert 'a customerunconfirmed"BorgWarner orders parts from Toyota"2026-09-07' in text
+    assert "rule customer, Laya none 61%" in text and '"We rely on DENSO for sensors."' in text
+    assert "(and 2 later documents)" in text and "later document" not in text.split("We rely")[0]
+    assert "uncalibrated" in text
+    assert "javascript:alert(1)" not in out["links"]
+
+
+def test_laya_off_offers_no_find_button():
+    out = run("industry.js", 'console.log(JSON.stringify(m.tiesSection("7203.T", { enabled: false, edges: [] }, '
+              '() => {}).textContent));')
+    assert "Laya is off" in out and "Find suppliers" not in out and "No ties read yet" in out
 
 
 def test_evidence_found_by_a_links_search_says_which_link():

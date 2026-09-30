@@ -104,6 +104,13 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # [laya] in Settings.
     "laya score": "POST /api/jobs/laya",
     "laya show": "GET /api/companies/{symbol}/laya",
+    # Company tab, Industry panel: "Find suppliers and customers" (this company or the main list),
+    # the ties list and each unconfirmed tie's Confirm and Delete.
+    "edges find": "POST /api/jobs/edges",
+    "edges find --list": "POST /api/jobs/edges",
+    "edges show": "GET /api/companies/{symbol}/edges",
+    "edges confirm": "POST /api/companies/{symbol}/edges/{edge_id}/confirm",
+    "edges delete": "DELETE /api/companies/{symbol}/edges/{edge_id}",
     "paper buy": "POST /api/ledgers/manual/buy",
     "paper sell": "POST /api/ledgers/manual/sell",
     "paper sell --shares": "POST /api/ledgers/manual/sell",

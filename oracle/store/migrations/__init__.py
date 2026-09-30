@@ -67,6 +67,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0044_regime_tilts,
     m0045_laya_scores,
     m0046_history_backfill,
+    m0047_link_candidates,
 )
 
 MIGRATIONS = [
@@ -116,4 +117,5 @@ MIGRATIONS = [
     m0044_regime_tilts,
     m0045_laya_scores,
     m0046_history_backfill,
+    m0047_link_candidates,
 ]
