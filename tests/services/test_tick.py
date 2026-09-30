@@ -50,7 +50,7 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "discover", "research", "step", "ai_step"]
+        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step", "ai_step"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
@@ -75,9 +75,10 @@ async def test_the_regime_ai_stage_shows_its_tilt_a_failed_tilt_as_its_error_and
     from dataclasses import replace
 
     from oracle.services import regime_tilt
-    from tests.fakes.regime import use_stub
+    from tests.fakes.regime import thaw, use_stub
     from tests.fakes.tilt_model import TiltModel
 
+    thaw(monkeypatch)
     use_stub(monkeypatch)
     model = TiltModel({"momentum": 0.6, "trend": 1.0, "reason": "rebound"})
     monkeypatch.setattr(regime_tilt, "tilt_model", lambda c: (model, "fake"))
@@ -89,11 +90,21 @@ async def test_the_regime_ai_stage_shows_its_tilt_a_failed_tilt_as_its_error_and
     assert (stage.state, stage.summary) == ("ok", "regime-ai account off: nothing decided")
 
 
+async def test_the_frozen_regime_ai_stage_decides_nothing_and_says_so(ctx, monkeypatch):
+    from tests.fakes.regime import use_stub
+
+    built = use_stub(monkeypatch)
+    stage = next(s for s in (await run_tick(ctx)).stages if s.name == "regime_ai_step")
+    assert (stage.state, stage.summary) == ("ok", "regime-ai account frozen: nothing decided")
+    assert [b.account for b in built] == ["regime", "regime-v2", "core-sat"]
+
+
 async def test_a_failed_tilt_is_the_regime_ai_stages_error_and_a_lagging_day_a_warning(ctx, monkeypatch):
     from oracle.services import regime_tilt
-    from tests.fakes.regime import use_stub
+    from tests.fakes.regime import thaw, use_stub
     from tests.fakes.tilt_model import TiltModel
 
+    thaw(monkeypatch)
     use_stub(monkeypatch)
     model = TiltModel(error=RuntimeError("Ollama is not reachable"))
     monkeypatch.setattr(regime_tilt, "tilt_model", lambda c: (model, "fake"))
@@ -110,7 +121,7 @@ async def test_a_failing_regime_step_leaves_every_other_stage_running(ctx, monke
     monkeypatch.setattr("oracle.services.tick_service.regime_step", boom)
     run = await run_tick(ctx)
     states = _states(run)
-    assert states.pop("regime_step") == states.pop("regime_ai_step") == states.pop("regime_v2_step") == "failed"
+    assert {states.pop(s) for s in ("regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step")} == {"failed"}
     assert set(states.values()) == {"ok"}
     assert [s.name for s in run.stages] == list(STAGES)
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"], "the strategy step still ran"
@@ -123,7 +134,7 @@ async def test_prices_come_before_the_fill_that_needs_them(ctx, yahoo):
     yahoo.series["GBPUSD=X"].bars += [bar("2026-09-21", 1.25), bar("2026-09-22", 1.25)]
     ctx.clock.advance(86400 + 3600)
     run = await run_tick(ctx)
-    assert "1 filled" in next(s.summary for s in run.stages if s.name == "fill")
+    assert "2 filled" in next(s.summary for s in run.stages if s.name == "fill"), "the manual buy and core-sat's core"
     assert account_view(ctx, "manual").positions
 
 

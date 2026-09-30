@@ -13,7 +13,7 @@ from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
 from oracle.services.paper_service import Line, Order
-from oracle.services.regime_service import OFF, LineStep
+from oracle.services.regime_service import LineStep, off_note
 from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
@@ -139,7 +139,7 @@ def line_step(s: LineStep) -> dict:
     """A regime line's step: what it read and decided, its tilt and any lag warning."""
     run = s.run
     if run is None:
-        return {"account": s.account, "off": OFF[s.account], "day": None, "mood": None, "flags": [], "decisions": [],
+        return {"account": s.account, "off": off_note(s.account), "day": None, "mood": None, "flags": [], "decisions": [],
                 "tilt": None, "lag": None}
     return {"account": s.account, "off": None, "day": run.day, "mood": run.mood, "flags": list(run.flags),
             "decisions": [asdict(d) for d in run.decisions], "tilt": run.tilt and asdict(run.tilt), "lag": run.lag}

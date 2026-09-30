@@ -2,8 +2,10 @@
 listings and the whole stored market, for the mood) and trades its leans under the strategy's
 rules, logging each decision with what its lean was made of and saving the day's reading for
 the Ledgers card. `regime` trades the rules weights; `regime-ai` the same book with the daily
-model tilt (`regime_tilt`), so the two records measure what the model adds; `regime-v2` the book
-with no hold padding and a rotation out of stale holdings (`broker.regime.v2_settings`)."""
+model tilt (`regime_tilt`), so the two records measure what the model adds (frozen since the
+core-sat line: it no longer steps); `regime-v2` the book with no hold padding and a rotation out
+of stale holdings (`broker.regime.v2_settings`); `core-sat` the regime book as the satellite of an
+equal-weight core (`core_sat_service`), each sleeve in its own cash."""
 
 from __future__ import annotations
 
@@ -20,12 +22,16 @@ from oracle.broker.regime import (
 from oracle.broker.rules import Decision, Lean
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
+from oracle.services.core_sat_service import (
+    core_card, core_step, satellite_inputs, satellite_settings, satellite_traded, sleeves,
+)
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
-    GONE, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, step_account, traded_by, verdict_history,
+    CORE_SAT, GONE, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, frozen, step_account, traded_by,
+    verdict_history,
 )
 from oracle.services.prices_service import ConvertedBar
-from oracle.services.regime_lines import HISTORY_DAYS, market_history, regime_inputs
+from oracle.services.regime_lines import CORE_SAT_SOURCE, HISTORY_DAYS, market_history, regime_inputs
 from oracle.services.regime_tilt import DailyTilt
 from oracle.services.watch_service import discovered_only
 from oracle.store.db import to_utc_iso
@@ -33,24 +39,29 @@ from oracle.store.paper import DecisionRepo, LoggedDecision
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["OFF", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
+__all__ = ["CORE_SAT_OFF", "FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
            "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
               "([regime_account] enabled)")
 REGIME_AI_OFF = ("the regime-ai account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
                  "([regime_ai_account] enabled)")
+FROZEN_NOTE = ("the {} account is frozen: it no longer steps or records equity, and its history and holdings stay "
+               "as they were (its model tilt measured as noise, not an edge)")
 REGIME_V2_OFF = ("the regime-v2 account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
                  "([regime_v2_account] enabled)")
-OFF = {REGIME: REGIME_OFF, REGIME_AI: REGIME_AI_OFF, REGIME_V2: REGIME_V2_OFF}
+CORE_SAT_OFF = ("the core-sat account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
+                "([core_sat_account] enabled)")
+OFF = {REGIME: REGIME_OFF, REGIME_AI: REGIME_AI_OFF, REGIME_V2: REGIME_V2_OFF, CORE_SAT: CORE_SAT_OFF}
 DISCOVERED_OFF = discovered_off("the regime account")
 DISCOVERED = {REGIME: DISCOVERED_OFF, REGIME_AI: discovered_off("the regime-ai account"),
-              REGIME_V2: discovered_off("the regime-v2 account")}
+              REGIME_V2: discovered_off("the regime-v2 account"), CORE_SAT: discovered_off("the core-sat account")}
 LAG_WEEKDAYS = 2
 """A step day more weekdays than this behind yesterday means a source has stopped: the step keeps
 trading an old day's leans (gate 04 #3), so the card and the tick say so."""
 NO_MOOD = "no market mood yet: under a year of stored market history, so the regime line leans nothing"
 NO_SCORE = "no regime score: too little history for any price method"
+NOT_CORE = "not one of the main list's companies: core-sat's satellite trades only those, as its backtest does"
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
 COMPLETE_SHARE = 0.8
@@ -106,6 +117,15 @@ class RegimeCard:
     """regime-v2: its rotation settings (min_hold, margin, most)."""
     rotated_last_step: int | None = None
     """regime-v2: rotation sales on its most recent decision day, whatever `decisions`' limit is."""
+    frozen: bool = False
+    """The account no longer steps (regime-ai); its card and history stay."""
+    sleeves: dict | None = None
+    """core-sat: each sleeve's cash, holdings and positions, and the core's next rebalance."""
+
+
+def off_note(account: str) -> str:
+    """Why the account decided nothing: frozen, or switched off."""
+    return FROZEN_NOTE.format(account) if frozen(account) else OFF[account]
 
 
 def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs,
@@ -117,6 +137,9 @@ def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], input
     if account == REGIME_V2:
         return regime_book(history, inputs=inputs, settings=v2_settings(settings, asdict(ctx.config.regime_v2)),
                            tilt=tilt, source=REGIME_V2)
+    if account == CORE_SAT:
+        return regime_book(history, inputs=satellite_inputs(inputs), settings=satellite_settings(settings),
+                           source=CORE_SAT_SOURCE)
     return regime_book(history, inputs=inputs, settings=settings, tilt=tilt)
 
 
@@ -135,9 +158,12 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
     book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account)
     state = book.state(day) if day else None
-    found, skips, why = _leans(ctx, book, state, day, traded, history)
+    sleeve, core = (sleeves(ctx)[1], core_step(ctx, day, history) if day else []) if account == CORE_SAT else (None, [])
+    leaned = satellite_traded(ctx) if sleeve else traded
+    found, skips, why = _leans(ctx, book, state, day, leaned, history)
+    skips += [Decision(s, Action.SKIP, None, NOT_CORE) for s in traded if s not in leaned] if sleeve else []
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
-    decisions = step_account(ctx, account, found, skips, {}, why, book.cap)
+    decisions = core + step_account(ctx, account, found, skips, {}, why, book.cap, sleeve)
     if day is not None:
         reading = ({**_plain(state), "unscored": _unscored(state, why), "signs": _signs(state)} if state
                    else {"mood": None, "note": NO_MOOD})
@@ -253,15 +279,20 @@ def regime_card(ctx: AppContext, limit: int = 20, account: str = REGIME) -> Regi
     enabled = account_on(ctx, account)
     stored = RegimeStateRepo(ctx.conn).latest(account)
     decisions = tuple(DecisionRepo(ctx.conn).recent(account, limit))
-    if not enabled:
-        note = OFF[account]
+    if frozen(account) and stored is not None:
+        note = f"{off_note(account)}. Its last reading, on {stored.day.isoformat()}, is below"
+    elif not enabled:
+        note = off_note(account)
     elif stored is None:
         note = f"no reading yet: it is read at each tick's {account} step, or press {LINE_NAMES[account]} step"
     else:
         note = stored.state.get("note")
     card = RegimeCard(account, enabled, note, stored.day if stored else None, stored.at if stored else None,
                       stored.state if stored else None, decisions,
-                      lag_warning(stored.day, date.fromisoformat(stored.at[:10])) if stored else None)
+                      lag_warning(stored.day, date.fromisoformat(stored.at[:10])) if stored and enabled else None,
+                      frozen=frozen(account))
+    if account == CORE_SAT:
+        return dataclasses.replace(card, sleeves=core_card(ctx))
     if account == REGIME_V2:
         rotated = DecisionRepo(ctx.conn).count_on_last_day(account, ROTATION)
         return dataclasses.replace(card, rotation=asdict(rotation_from(asdict(ctx.config.regime_v2))),

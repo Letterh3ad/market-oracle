@@ -130,7 +130,7 @@ def test_the_tick_summary_counts_the_steps_rotations(ctx):
 
 def test_a_holding_is_dated_from_its_first_fill_since_it_was_last_flat():
     class Fills:
-        def fills(self, account):
+        def fills(self, account, source=None):
             rows = [("A", "buy", 5, 1), ("A", "buy", 5, 3), ("B", "buy", 5, 4), ("A", "sell", 10, 6),
                     ("A", "buy", 2, 8), ("B", "sell", 2, 9)]
             return [FillRow(1, account, s, Side(side), date(2026, 9, d), n, 1.0, "GBP", 1.0, 0.0, 0.0, 0.0, 0.0, 0.0)

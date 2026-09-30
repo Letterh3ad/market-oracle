@@ -2,7 +2,9 @@
 // method's preset and final weight with its warnings, good signs and health, and the recent
 // decisions with what each lean was made of. The regime-ai line's card adds the day's model
 // tilt beside the rules weights, its reason or why there was none, and the model it runs on; the
-// regime-v2 line's says how it rotates out of stale holdings.
+// regime-v2 line's says how it rotates out of stale holdings; the core-sat line's shows its two
+// sleeves (the equal-weight core and the regime satellite) and the core's next rebalance. A frozen
+// line (regime-ai) keeps its card and history but has no switch.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, showError, clearError, companyLink } from "./dom.js";
@@ -30,6 +32,9 @@ const LINES = {
     about: "Rules only, with two changes: a method without a score for a listing hands its weight to the price "
       + "methods (trend, momentum, reversion, low volatility), not to the steady buy-and-hold score, and it rotates "
       + "out of long-held, clearly weaker holdings. Compare its record with the Regime line's to see what they add." },
+  "core-sat": { name: "Core-sat", path: "/api/ledgers/core-sat", step: "Core-sat step",
+    about: "Here the blend runs only the satellite, a quarter of the money in its own cash; the other three "
+      + "quarters are an equal-weight buy and hold of the main list's companies, set back to equal weight once a year." },
 };
 
 const share = (v) => (v == null ? "" : `${Math.round(v * 100)}%`);
@@ -168,16 +173,33 @@ function rotation(r) {
     + "a step. The freed slot is bought by the usual rules once the sale's cash is back.");
 }
 
+// core-sat's two sleeves: each one's cash and holdings, and when the core next rebalances.
+function sleeves(s, base) {
+  if (!s) return null;
+  const row = (label, x) => el("tr", null, el("td", null, label), el("td", { class: "num" }, money(x.capital, 0)),
+    el("td", { class: "num" }, money(x.cash, 0)), el("td", { class: "num" }, money(x.holdings, 0)),
+    el("td", { class: "num" }, String(x.positions)), el("td", { class: "num" }, String(x.pending)));
+  const next = s.core.next_rebalance
+    ? `The core next sets itself back to equal weight on or after ${s.core.next_rebalance} (trims first, then the laggards once they fill).`
+    : "The core buys its equal shares at the next step.";
+  return el("div", null,
+    table([["Sleeve"], [`Start (${base})`, null, 1], ["Cash", null, 1], ["Holdings", null, 1], ["Positions", null, 1],
+      ["Waiting", null, 1]], [row(`Core (${s.core.listings} companies)`, s.core), row("Satellite", s.satellite)]),
+    el("p", { class: "dim small" }, next));
+}
+
 // `done` repaints the tab after the switch or the model changes.
 function regimeCard(card, base, done) {
   const line = lineOf(card);
   const ai = card.account === "regime-ai";
   return el("div", { class: "card" },
-    el("h2", null, `${line.name} reading`), lineSwitch(card, done), ai ? " " : null, ai ? modelChoice(card, done) : null,
+    el("h2", null, `${line.name} reading`), card.frozen ? el("span", { class: "badge" }, "frozen")
+      : lineSwitch(card, done), ai && !card.frozen ? " " : null, ai && !card.frozen ? modelChoice(card, done) : null,
     el("p", { class: "dim small" }, "The account blends well-studied methods, weighting each by the market's "
       + "mood, its known warning and good signs, and its own recent record (health), then trades the blend under the "
       + `strategy's rules. ${line.about}`),
     rotation(card.rotation),
+    sleeves(card.sleeves, base),
     card.note ? el("p", { class: "small warn-text" }, card.note) : null,
     card.lag ? el("p", { class: "small warn-text" }, `Warning: ${card.lag}.`) : null,
     ...reading(card),

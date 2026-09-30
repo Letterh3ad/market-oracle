@@ -24,11 +24,11 @@ from oracle.services.errors import ConfigInUse, InvalidQuery
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account",
+    "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account", "set_core_sat_account",
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "laya", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
@@ -91,6 +91,13 @@ def set_regime_v2_account(ctx: AppContext, enabled: bool) -> Path:
     """Turn the regime-v2 paper account on or off; off, its step decides nothing."""
     path = _save(ctx, "regime_v2_account", {"enabled": enabled})
     ctx.config = replace(ctx.config, regime_v2_account=replace(ctx.config.regime_v2_account, enabled=enabled))
+    return path
+
+
+def set_core_sat_account(ctx: AppContext, enabled: bool) -> Path:
+    """Turn the core-sat paper account on or off; off, its step decides nothing."""
+    path = _save(ctx, "core_sat_account", {"enabled": enabled})
+    ctx.config = replace(ctx.config, core_sat_account=replace(ctx.config.core_sat_account, enabled=enabled))
     return path
 
 

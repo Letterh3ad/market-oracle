@@ -145,6 +145,11 @@ def test_the_regime_ai_step_prints_its_tilt_and_reason_and_off_says_so(run, monk
     from tests.fakes.regime import use_stub
     from tests.fakes.tilt_model import TiltModel
 
+    from tests.fakes.regime import thaw
+
+    _, out, _ = run("paper", "step", "--account", "regime-ai")
+    assert out.startswith("the regime-ai account is frozen")
+    thaw(monkeypatch)
     use_stub(monkeypatch, leans={"VOD.L": ("hold", 0.5, {"trend": 0.1})})
     model = TiltModel({"momentum": 0.7, "reason": "Rebound risk."})
     monkeypatch.setattr(regime_tilt, "tilt_model", lambda ctx: (model, "fake"))

@@ -158,7 +158,7 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
     body = json.loads(capsys.readouterr().out)
     assert body["verdicts"] == 3 and body["horizons"][0]["horizon"] == "1m" and body["limits"]
     assert [line["name"] for line in body["account"]["lines"]] == [
-        "ai", "all_buy", "buy_and_hold", "momentum", "regime", "regime_v2"]
+        "ai", "all_buy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat"]
 
 
 def test_report_prints_the_account_against_buy_and_hold(cfg, capsys, tmp_path, no_fetch):

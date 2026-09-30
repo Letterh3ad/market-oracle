@@ -133,6 +133,19 @@ def test_the_report_gives_regime_v2s_mood_and_its_last_steps_rotations(tmp_path)
     assert "Regime-v2: the regime-v2 account is off" in build_report(w)
 
 
+def test_the_report_gives_core_sats_mood_and_its_sleeves(tmp_path):
+    w = seeded(tmp_path)
+    w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
+    w.http.routes[f"{APP}/api/ledgers/core-sat"] = {
+        "day": "2026-09-29", "note": None, "state": {"mood": "calm_up", "flags": []}, "decisions": [],
+        "sleeves": {"core": {"cash": 1200.0, "holdings": 748800.0, "next_rebalance": "2027-09-30"},
+                    "satellite": {"cash": 60000.0, "holdings": 190000.0}}}
+    text = build_report(w)
+    assert "Core-sat mood on 2026-09-29: calm_up" in text
+    assert ("Core-sat sleeves: core cash 1,200 + holdings 748,800 GBP; satellite cash 60,000 + holdings 190,000 GBP; "
+            "core rebalances on or after 2027-09-30") in text
+
+
 def test_write_report_puts_claudes_summary_on_top(tmp_path):
     system = FakeSystem(result=Ran(0, "All running. Nothing to act on."))
     w = seeded(tmp_path, system=system)

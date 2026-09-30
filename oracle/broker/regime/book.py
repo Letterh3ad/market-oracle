@@ -90,6 +90,7 @@ class RegimeBook:
                  tilt: Tilt | None, source: str, refits: Collection[date] = ()) -> None:
         self._bars = {s: [_bar(r) for r in rows] for s, rows in history.items() if rows}
         self._inputs, self._settings, self._tilt, self._source = inputs, settings, tilt, source
+        self._methods = methods_of(inputs)
         self._composite = Composite({s: step_returns(_base(rows)) for s, rows in history.items() if rows})
         self._listings: dict[str, Listing] = {
             s: methods.with_reactions(methods.listing(s, bars), inputs.earnings.get(s, ()), self._composite.return_on)
@@ -99,7 +100,7 @@ class RegimeBook:
         self._smoothed: dict[str, float] | None = None
         self._scored: dict[int, dict[str, dict[str, float]]] = {}
         self._picks: dict[int, dict[str, tuple[str, ...]]] = {}
-        self._records: dict[str, deque[tuple[int, float]]] = {m: deque() for m in METHODS}
+        self._records: dict[str, deque[tuple[int, float]]] = {m: deque() for m in self._methods}
         """method -> (pick day, forward excess) for its completed windows, the last RECORD days' only."""
         first = next((j for j, m in enumerate(self._composite.moods) if m is not None), None)
         self._first_pick = None if first is None else first - HORIZON - RECORD + 1
@@ -127,12 +128,15 @@ class RegimeBook:
             return {}
         ranked = self._ranked(rank_day(x.dates[i])).get(symbol)
         verdict_age = timedelta(days=self._inputs.verdict_max_age)
+        extra_age = timedelta(days=self._inputs.extra_max_age)
         found = {
             "trend": methods.trend(x, i), "momentum": methods.momentum(ranked),
             "reversion": methods.reversion(x, i), "low_vol": methods.low_vol(ranked),
             "quality_value": methods.dated(self._inputs.factors.get(symbol, ()), x.dates[i], FACTOR_MAX_AGE),
             "earnings_drift": methods.earnings_drift(x, i), "hold": HOLD_SCORE,
-            "ai_verdict": methods.dated(self._inputs.verdicts.get(symbol, ()), x.dates[i], verdict_age)}
+            "ai_verdict": methods.dated(self._inputs.verdicts.get(symbol, ()), x.dates[i], verdict_age),
+            **{m: methods.dated(by.get(symbol, ()), x.dates[i], extra_age) for m, by in self._inputs.extra.items()
+               if m not in METHODS}}
         out = {m: v for m, v in found.items() if v is not None}
         return out if out.keys() & PRICE_METHODS else {}
 
@@ -215,17 +219,17 @@ class RegimeBook:
             self._smoothed = None
             return None
         s = self._settings
-        base = _normalised(self._presets[mood.mood])
+        base = _normalised(self._presets[mood.mood], self._methods)
         warnings, good = playbook.firing(Day(mood, picks, self._inputs.sectors))
-        health = {m: playbook.health([e for _, e in self._records[m]]) for m in METHODS}
-        recorded = frozenset(m for m in METHODS if len(self._records[m]) >= playbook.MIN_RECORD)
+        health = {m: playbook.health([e for _, e in self._records[m]]) for m in self._methods}
+        recorded = frozenset(m for m in self._methods if len(self._records[m]) >= playbook.MIN_RECORD)
         raw = {m: base[m] * _playbook_factor(len(warnings.get(m, ())), len(good.get(m, ())), s) * health[m]
-               for m in METHODS}
+               for m in self._methods}
         state = self._weighed(RegimeState(self._composite.dates[j], mood.mood, mood.flags, mood.readings, base,
                                           {}, warnings, good, health, {}, recorded=recorded), raw)
         if self._tilt is not None:
             tilt = self._tilted(state)
-            state = self._weighed(replace(state, tilt=tilt), {m: raw[m] * tilt.get(m, 1.0) for m in METHODS})
+            state = self._weighed(replace(state, tilt=tilt), {m: raw[m] * tilt.get(m, 1.0) for m in self._methods})
         if state.note is None:
             self._smoothed = dict(state.weights)
         return state
@@ -247,17 +251,17 @@ class RegimeBook:
             log.exception("regime tilt for %s failed: no tilt that day", state.day)
             return {}
         return {m: min(1 + cap, max(1 - cap, float(v))) for m, v in asked.items()
-                if m in METHODS and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
+                if m in self._methods and isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)}
 
     def _weighed(self, state: RegimeState, raw: Mapping[str, float]) -> RegimeState:
         """Renormalised and smoothed. With every raw weight 0 nothing leans that day and the
         smoothing carries on from the day before, rather than quietly falling back to the preset."""
         if sum(raw.values()) <= 0:
-            return replace(state, weights=dict.fromkeys(METHODS, 0.0), note=NO_WEIGHT)
-        today = _normalised(raw)
+            return replace(state, weights=dict.fromkeys(self._methods, 0.0), note=NO_WEIGHT)
+        today = _normalised(raw, self._methods)
         if self._smoothed is not None:
             a = 2 / (self._settings.span + 1)
-            today = {m: a * today[m] + (1 - a) * self._smoothed[m] for m in METHODS}
+            today = {m: a * today[m] + (1 - a) * self._smoothed[m] for m in self._methods}
         return replace(state, weights=today, note=None)
 
     def _record(self, j: int) -> dict[str, tuple[str, ...]]:
@@ -279,7 +283,7 @@ class RegimeBook:
         scored = {sym: found for sym in self._listings if (found := self.scores(sym, day))}
         self._scored[j] = scored
         self._scored.pop(j - SCORED_DAYS, None)
-        picks = {m: p for m in METHODS if (p := playbook.top_fifth({s: v[m] for s, v in scored.items() if m in v}))}
+        picks = {m: p for m in self._methods if (p := playbook.top_fifth({s: v[m] for s, v in scored.items() if m in v}))}
         self._picks[j] = picks
         return picks
 
@@ -347,9 +351,16 @@ def _playbook_factor(warnings: int, good: int, s: RegimeSettings) -> float:
     return min(s.playbook_cap, max(0.0, s.warning_factor ** warnings * s.good_factor ** good))
 
 
-def _normalised(weights: Mapping[str, float]) -> dict[str, float]:
-    total = sum(weights.get(m, 0.0) for m in METHODS)
-    return {m: weights.get(m, 0.0) / total if total > 0 else 0.0 for m in METHODS}
+def _normalised(weights: Mapping[str, float], names: Sequence[str]) -> dict[str, float]:
+    total = sum(weights.get(m, 0.0) for m in names)
+    return {m: weights.get(m, 0.0) / total if total > 0 else 0.0 for m in names}
+
+
+def methods_of(inputs: RegimeInputs) -> tuple[str, ...]:
+    """The built-in methods, then each extra one the inputs carry (Laya's, once it earns weight):
+    each scores from its dated inputs like `ai_verdict` and weighs by its `<mood>` weight in the
+    settings (0 when the preset has none), with its own health record."""
+    return METHODS + tuple(sorted(m for m in inputs.extra if m not in METHODS))
 
 
 def _bar(row) -> Bar:

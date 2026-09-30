@@ -21,7 +21,7 @@ from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, Di
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, strategy_step, traded_by
+from oracle.services.paper_service import CORE_SAT, REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, frozen, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
 from oracle.services.regime_service import LineStep, RegimeRun, regime_step
 from oracle.services.replay_score import update_study_prices
@@ -215,7 +215,7 @@ def _line_step(account: str) -> StageRun:
     async def stage(ctx: AppContext, _: Say) -> tuple[str, str | None]:
         run = regime_step(ctx, account)
         if run is None:
-            return f"{account} account off: nothing decided", None
+            return f"{account} account {'frozen' if frozen(account) else 'off'}: nothing decided", None
         if run.day is None:
             return "no prices stored: nothing decided", None
         return line_summary(ctx, run), (f"no tilt, rules weights traded: {run.tilt.error}"
@@ -260,7 +260,7 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
 # research stage, so a tick stopped part way through research has still stepped them.
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
                                "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
-                               "regime_v2_step": _line_step(REGIME_V2),
+                               "regime_v2_step": _line_step(REGIME_V2), "core_sat_step": _line_step(CORE_SAT),
                                "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step}
 OFF = "AI account off"
 

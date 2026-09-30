@@ -164,7 +164,7 @@ def test_the_status_score_carries_no_account_and_the_json_report_carries_returns
     assert score_study(ctx, ReplayRepo(ctx.conn).current()).account is None
     out = replay_report(ctx).to_json()["account"]
     assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
-                                                       "regime_v2"]
+                                                       "regime_v2", "core_sat"]
     assert out["lines"][0]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
     assert out["lines"][0]["points"][0] == ["2026-06-01", 0.0]
 
@@ -369,7 +369,7 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     large, small = s.by_size
     assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
     assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
-                                                           "regime_v2"]
+                                                           "regime_v2", "core_sat"]
     # BBB only rose, AAA fell after July: the smaller half did better.
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
     shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
@@ -392,6 +392,9 @@ def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, m
         return real(*args, **kwargs)
 
     monkeypatch.setattr(replay_score, "regime_lines", counted)
+    for s in SYMBOLS:  # companies, so core-sat's core holds them
+        UniverseRepo(ctx.conn).add(Listing(s, f"{s} Inc", "Equity", "United States", "NMS", currency="USD",
+                                           company_key=s.lower(), is_primary=True))
     make_study(ctx, all_buy(), bands={"BBB": "Small Cap"})
     s = replay_report(ctx)
     assert len(built) == 1
@@ -401,7 +404,12 @@ def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, m
         assert "the replay verdicts as its AI input, each from its as-of day for up to 7 days" in regime.caption
         v2 = lines(account)["regime_v2"]
         assert v2.label == "Regime-v2" and v2.points[0] == (JUN, 0.0) and v2.caption.startswith("Regime-v2:")
-        assert list(lines(account))[-2:] == ["regime", "regime_v2"]
+        assert list(lines(account))[-3:] == ["regime", "regime_v2", "core_sat"]
+        core_sat = lines(account)["core_sat"]
+        assert core_sat.caption.startswith("Core-sat: 75% in an equal-weight buy and hold")
+        # Its core buys every member, so it trades more than the regime line alone and ends elsewhere.
+        assert core_sat.trades >= regime.trades + len(account.listings)
+        assert core_sat.points != regime.points
 
 
 def regime_of(tmp_path, name, calls):

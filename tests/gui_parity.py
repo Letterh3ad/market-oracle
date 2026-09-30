@@ -119,6 +119,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # /api/ledgers/regime-ai), switch and model also in Settings ([regime_ai_account]). --account regime-v2 is
     # "Regime-v2 step" (POST /api/ledgers/regime-v2/step, a job); its log, rotation rule and switch are the
     # Regime-v2 reading card (GET and PUT /api/ledgers/regime-v2), switch and rotation also in Settings.
+    # --account core-sat is "Core-sat step" (POST /api/ledgers/core-sat/step, a job); its log, sleeves and switch
+    # are the Core-sat reading card (GET and PUT /api/ledgers/core-sat), switch also in Settings. regime-ai is
+    # frozen: its step decides nothing, its card has no switch.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",
