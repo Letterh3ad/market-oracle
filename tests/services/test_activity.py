@@ -128,6 +128,26 @@ async def test_cancelling_a_running_job_ends_it_and_the_next_one_starts(runner):
     assert ja.state == "cancelled" and jb.state == "running" and "end a" not in log
 
 
+async def test_a_running_job_is_told_the_moment_it_is_cancelled_or_the_server_stops(ctx):
+    runner, told = JobRunner(ctx), []
+    queued_told = []
+    job = runner.submit("backtest", "A", Gate("a", []), on_cancel=lambda: told.append("a"))
+    later = runner.submit("backtest", "B", Gate("b", []), on_cancel=lambda: queued_told.append("b"))
+    await settle()
+    runner.cancel(job.id)
+    assert told == ["a"], "before the task sees its cancel"
+    await settle()
+    stopping = JobRunner(ctx)
+    other = stopping.submit("research", "C", Gate("c", []), on_cancel=lambda: told.append("c"))
+    await settle()
+    await stopping.stop()
+    assert told == ["a", "c"] and other.state == "interrupted"
+    runner.cancel(later.id)
+    await settle()
+    assert queued_told == ["b"] and later.state == "cancelled"
+    await runner.stop()
+
+
 async def test_a_finished_job_cannot_be_cancelled(runner):
     from oracle.services.errors import InvalidQuery
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import textwrap
+import time
 
 from oracle.cli.common import iso_day, print_lines
 from oracle.services.backtest_service import Figures, WalkForward, run_backtest
@@ -29,11 +31,15 @@ def register(parser: argparse.ArgumentParser) -> None:
                         help="also judge every line over back-to-back six-month segments, each a fresh start, "
                              "against buy and hold, and add the regime_wf line (mood weights refitted at each "
                              "segment's start from the two years before)")
+    parser.add_argument("--regime-ai", action="store_true",
+                        help="also replay the regime-ai line: the model's daily tilt asked for every day (no date in "
+                             "the prompt, same guards), one model call per day, so hours on a local model")
     parser.set_defaults(handler=run)
 
 
 def run(ctx: AppContext, args: argparse.Namespace) -> int:
-    r = run_backtest(ctx, args.list, args.start, args.end, args.slippage_bps, args.commission, args.walk_forward)
+    r = run_backtest(ctx, args.list, args.start, args.end, args.slippage_bps, args.commission, args.walk_forward,
+                     regime_ai=args.regime_ai, progress=_every(PROGRESS_S) if args.regime_ai else None)
     base = ctx.config.base_currency
     n = len(r.listings)
     print(f"Backtest of the {r.watchlist} list ({n} listing{'' if n == 1 else 's'}), "
@@ -57,6 +63,18 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     return 0
 
 
+PROGRESS_S = 30.0
+"""How often a regime-ai replay says where it is: often enough to see it move, not a line a day."""
+
+
+def _every(seconds: float):
+    last = [-seconds]
+
+    def say(text: str) -> None:
+        if time.monotonic() - last[0] >= seconds:
+            last[0] = time.monotonic()
+            print(text, file=sys.stderr, flush=True)
+    return say
 def print_walk_forward(wf: WalkForward) -> None:
     head = f"{'line':<14}{'return':>9}{'largest fall':>14}{'over b&h':>10}{'Sharpe':>8}{'ret/fall':>10}"
     print("Walk-forward by segment (each a fresh start; over b&h is the return over buy and hold's in the same days)")

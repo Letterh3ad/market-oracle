@@ -1,11 +1,16 @@
 """A backtest: the strategy's fixed rules replayed over a watchlist's stored history, in
 memory, against an equal-weight buy-and-hold, the momentum baseline and the regime lines. It only reads: the paper
-accounts, leans, signals and decision log never change. AI verdicts are never backtested."""
+accounts, leans, signals and decision log never change. AI verdicts are never backtested.
+
+On request it adds the regime_ai line: the regime book with the live regime-ai tilt asked of
+the model for every replayed day (date-blind prompt, same guards). That takes a model call per
+day, hours on a local model, so the plain backtest never pays for it."""
 
 from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 
@@ -18,11 +23,13 @@ from oracle.broker.momentum import momentum_lean
 from oracle.broker.orders import Side
 from oracle.broker.regime import ROTATION
 from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segments
+from oracle.services import regime_tilt
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
-from oracle.services.regime_lines import LINE_LABELS, REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE, regime_lines
+from oracle.services.regime_lines import (LINE_LABELS, REGIME_AI_LINE, REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE,
+                                          regime_lines)
 from oracle.services.watch_service import watchlist_symbols
 from oracle.store.backtests import BacktestRepo
 from oracle.store.bars import BarRepo
@@ -58,7 +65,7 @@ class Backtest:
     """The list's listings with prices in the range; the rest are named in the notes."""
     lines: tuple[Line, ...]
     """The strategy, buy and hold, the momentum baseline, then the regime lines (runs kept before
-    any of them have fewer), each as its return since the first day."""
+    any of them have fewer), and the regime_ai line when asked for, each as its return since the first day."""
     equity: tuple[tuple[date, float], ...]
     """The strategy's cash plus positions at each day's close, base currency."""
     trades: tuple[Trade, ...]
@@ -96,11 +103,16 @@ def check_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slip
 
 
 def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippage_bps: float = 10.0,
-                 commission: float = 0.0, walk_forward: bool = False) -> Backtest:
+                 commission: float = 0.0, walk_forward: bool = False, *, regime_ai: bool = False,
+                 progress: Callable[[str], None] | None = None, stop: Callable[[], bool] | None = None,
+                 busy: Callable[[], str | None] | None = None) -> Backtest:
     """Replay the strategy's rules day by day from `start` to `end` over the list's stored
     bars, each day seeing only bars up to its own close. With `walk_forward`, also every line
     over back-to-back segments, each from a fresh start, and the regime_wf line refitted at
-    each segment's start."""
+    each segment's start. `regime_ai` adds the replayed model tilt line, telling `progress`
+    where it is; once `stop` says so it asks the model no more, and while `busy` names other
+    model work it waits before each call. With both, regime_ai is judged per segment too, from
+    the tilts its whole run already asked (its book keeps each day's state), so no call twice."""
     name = check_backtest(ctx, watchlist, start, end, slippage_bps, commission, walk_forward)
     symbols = watchlist_symbols(ctx, name)[1]
     history, gone, no_prices = {}, [], []
@@ -134,9 +146,16 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     strategy = traded("strategy", "Strategy: the fixed rules on technicals-only leans.", r)
     m = run(momentum_leans)
     momentum = traded("momentum", momentum_caption(rules), m, "Momentum")
-    blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans])
+    tilt, label = None, ""
+    if regime_ai:
+        model, label = regime_tilt.tilt_model(ctx)
+        tilt = regime_tilt.ReplayTilt(model, ctx.config.regime.tilt_cap, start, end, stop, progress, busy)
+    blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans], tilt=tilt)
     runs = {name: run(x.book.lean_source(), x.book.cap) for name, x in blends.items()}
-    regimes = tuple(traded(name, blends[name].caption, x, LINE_LABELS[name]) for name, x in runs.items())
+    captions = {name: x.caption for name, x in blends.items()}
+    if tilt:
+        captions[REGIME_AI_LINE] = _ai_caption(label) + captions[REGIME_AI_LINE].removeprefix("Regime: ")
+    regimes = tuple(traded(name, captions[name], x, LINE_LABELS[name]) for name, x in runs.items())
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
@@ -149,6 +168,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
               ] if no_prices else []
     notes += [f"Left out of buy and hold, no {base} exchange rate from {start.isoformat()} on: {', '.join(no_rate)}."
               ] if no_rate else []
+    notes += [tilt.stats.summary()] if tilt else []
     for x, could, still in ((r, "Could", "Still"), (m, "Momentum could", "Momentum still"),
                             *((runs[n], f"{LINE_LABELS[n]} could", f"{LINE_LABELS[n]} still") for n in runs)):
         notes += [f"{could} not fill: {note}." for note in x.rejected]
@@ -192,6 +212,14 @@ def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:
     rotated = sum(1 for t in v2 if t.reason.startswith(ROTATION))
     return (f"Regime-v2 rotated {rotated} holding{'' if rotated == 1 else 's'} out for a stronger buy, in "
             f"{len(v2)} trades against the regime line's {len(v1)}.")
+
+
+def _ai_caption(label: str) -> str:
+    return (f"Regime AI: the regime line with the live regime-ai tilt, the model ({label}) asked for every replayed "
+            "day with the date left out of the prompt, under the same validation, evidence and direction guards; a "
+            "failed day keeps the rules weights. Date-blind is not hindsight-free: a model trained on these years "
+            "may still recognise a market from its readings, so read a win over the regime line with care. "
+            "Otherwise as the regime line: ")
 
 
 @dataclass(frozen=True)

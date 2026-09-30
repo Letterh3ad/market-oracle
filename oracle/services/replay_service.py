@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import date, datetime, timedelta
 
 from oracle.jobs import pid_alive
-from oracle.services.activity_service import Job, JobRunner, submit_research
+from oracle.services.activity_service import PREEMPTED_BY, Job, JobRunner, submit_research
 from oracle.services.context import AppContext
 from oracle.services.cutoff_service import (
     ReplayCutoff, check_replay_from, month_back, pin_stages, pinned_cutoff, pinned_cutoff_by, pins, replay_cutoff,
@@ -99,8 +99,6 @@ MAX_BACKOFFS = 4
 LONG_BACKOFF = timedelta(hours=2)
 HARD_CAP = timedelta(minutes=45)
 """The least a replay may run before it is stopped as hung: the cap is 3 times the longest recent one."""
-PREEMPTED_BY = ("research", "tick", "ask", "discover")
-"""Kinds of other work a running replay gives way to: they need the model."""
 TOP_FAILURES = 3
 POLL_S = 10.0
 

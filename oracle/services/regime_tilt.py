@@ -1,16 +1,23 @@
 """The regime-ai line's daily tilt. Once per step day a model (local by default) reads the day's
 regime state and multiplies each method's rules weight within the cap. Each day's answer, or
 why there was none, is stored: a restart or a second step that day reuses it, and every later
-book replays the tilts actually applied instead of asking the model about the past."""
+book replays the tilts actually applied instead of asking the model about the past.
+
+The prompt carries no date, so a replay (`ReplayTilt`, the backtest's regime_ai line) can ask
+the same model about past days: it sees only the mood, readings, signs and health, nothing to
+recall the future from, in the very prompt the live line gets."""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import time
-from collections.abc import Mapping
+from collections import Counter
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from datetime import date
 
 import httpx
@@ -22,13 +29,13 @@ from oracle.services.models_service import resolve_model, slot_profile
 from oracle.store.db import to_utc_iso
 from oracle.store.regime import StoredTilt, TiltRepo
 
-__all__ = ["MAX_REASON", "RETRY_AFTER_S", "SYSTEM", "TILTED", "BadTilt", "DailyTilt", "grounded", "tilt_messages",
-           "tilt_model", "tilt_schema", "validated"]
+__all__ = ["GIVE_UP_AFTER", "MAX_REASON", "RETRY_AFTER_S", "SYSTEM", "TILTED", "BadTilt", "DailyTilt", "ReplayStats",
+           "ReplayTilt", "Stopped", "YIELD_STEP_S", "grounded", "tilt_messages", "tilt_model", "tilt_schema", "validated"]
 
 log = logging.getLogger(__name__)
 
 MAX_REASON = 300
-"""Characters of the model's reason kept: the card shows one or two sentences."""
+"""Characters of the stored reason, guard notes included: the card shows one or two sentences."""
 TILTED = tuple(m for m in METHODS if m != "ai_verdict")
 """The methods the model may tilt. Not the research verdicts: they come from the research model,
 by default the same one, and a model boosting its own output measures nothing (gate 05 #1)."""
@@ -36,6 +43,11 @@ RETRY_AFTER_S = 45.0
 """Wait before the one retry of a call that got no answer at all (a timeout or no connection)."""
 wait = time.sleep
 """How the retry waits; tests replace it, so none of them sleeps."""
+YIELD_STEP_S = 5.0
+"""How often a replay waiting for other model work looks again (and at its stop flag)."""
+GIVE_UP_AFTER = 3
+"""Days in a row a replay's model gives no answer at all before it stops asking: with Ollama
+down, every later day would otherwise cost a retry wait for nothing."""
 
 # Every word the model reads is here, so the prompt is changed in one place.
 SYSTEM = (
@@ -65,11 +77,12 @@ class BadTilt(ValueError):
 
 
 def tilt_messages(state: RegimeState, cap: float) -> list[dict]:
-    """The day's state as a short prompt; the same state always gives the same text."""
+    """The day's state as a short prompt; the same state always gives the same text. No date:
+    a replayed day must not let the model recall what came next."""
     flags = ", ".join(f"{f} ({FLAGS.get(f, f)})" for f in sorted(state.flags)) or "none"
     readings = ", ".join(f"{k} {v:.3f} ({READINGS.get(k, k)})" for k, v in sorted(state.readings.items())
                          if isinstance(v, (int, float)))
-    lines = [f"Day: {state.day.isoformat()}", f"Mood: {state.mood} ({MOODS.get(state.mood, state.mood)})",
+    lines = [f"Mood: {state.mood} ({MOODS.get(state.mood, state.mood)})",
              f"Flags: {flags}", f"Readings: {readings}", HEALTH, "Methods:"]
     lines += [_method(state, m) for m in TILTED]
     return [{"role": "system", "content": SYSTEM.format(low=_num(1 - cap), high=_num(1 + cap))},
@@ -147,9 +160,23 @@ def grounded(tilt: Mapping[str, float], state: RegimeState) -> tuple[dict[str, f
     return kept, sorted(bare), sorted(against)
 
 
-def _short(text: str) -> str:
+def _short(text: str, limit: int = MAX_REASON) -> str:
     text = " ".join(text.split())
-    return text if len(text) <= MAX_REASON else text[:MAX_REASON - 3].rstrip() + "..."
+    return text if len(text) <= limit else text[:max(0, limit - 3)].rstrip() + "..."
+
+
+def _settled(reply: object, state: RegimeState, cap: float) -> tuple[dict[str, float], str, list[str], list[str]]:
+    """The reply validated and grounded against the day's evidence, with the reason saying which
+    moves were kept at x1 and why. The model's own words are cut to leave room for those notes,
+    so the whole reason stays within MAX_REASON (gate 05 N1)."""
+    tilt, reason = validated(reply, cap)
+    tilt, bare, against = grounded(tilt, state)
+    notes = ""
+    if bare:
+        notes += f" (kept at x1, no sign or record behind a move: {', '.join(bare)})"
+    if against:
+        notes += f" (kept at x1, a move against its evidence: {', '.join(against)})"
+    return tilt, _short(reason, MAX_REASON - len(notes)) + notes, bare, against
 
 
 def tilt_model(ctx: AppContext) -> tuple[ChatModel, str]:
@@ -188,12 +215,8 @@ class DailyTilt:
                 model, label = self._model, f"{self._model.name} {self._model.model}"
             else:
                 model, label = tilt_model(self._ctx)
-            tilt, reason = validated(_asked(model, tilt_messages(state, self._cap), tilt_schema()), self._cap)
-            tilt, bare, against = grounded(tilt, state)
-            if bare:
-                reason += f" (kept at x1, no sign or record behind a move: {', '.join(bare)})"
-            if against:
-                reason += f" (kept at x1, a move against its evidence: {', '.join(against)})"
+            reply = _asked(model, tilt_messages(state, self._cap), tilt_schema())
+            tilt, reason, _, _ = _settled(reply, state, self._cap)
             error = None
         except Exception as exc:
             tilt, reason, error = {}, None, str(exc) or type(exc).__name__
@@ -202,14 +225,158 @@ class DailyTilt:
                           to_utc_iso(self._ctx.clock.utcnow()))
 
 
-def _asked(model: ChatModel, messages: list[dict], schema: dict) -> object:
-    """The reply, asking once more after RETRY_AFTER_S when the first call got no answer at all.
+@dataclass
+class ReplayStats:
+    """What a replayed tilt did, for the evidence read: model calls against answers reused,
+    days with no tilt and why, and how each method's kept moves and guard resets fell."""
+    days: int = 0
+    calls: int = 0
+    cached: int = 0
+    failed: int = 0
+    skipped: int = 0
+    """Days not asked: the run was stopped, or the model stopped answering (GIVE_UP_AFTER)."""
+    moved: int = 0
+    """Days with at least one kept move."""
+    reset: int = 0
+    """Days where a guard reset at least one move to x1."""
+    up: Counter = field(default_factory=Counter)
+    down: Counter = field(default_factory=Counter)
+    bare: Counter = field(default_factory=Counter)
+    against: Counter = field(default_factory=Counter)
+    errors: Counter = field(default_factory=Counter)
+    gave_up: str | None = None
+
+    def summary(self) -> str:
+        def per(counts: Counter) -> str:
+            return ", ".join(f"{m} {n}" for m, n in sorted(counts.items())) or "none"
+
+        said = (f"Regime AI: {_count(self.days, 'day')} replayed with the model's tilt: "
+                f"{_count(self.calls, 'model call')}, {self.cached} answered from the run's cache (same prompt), "
+                f"{self.failed} with no tilt after a failure, {self.skipped} not asked. "
+                f"{_count(self.moved, 'day')} with a kept move (raised: {per(self.up)}; cut: {per(self.down)}). "
+                f"{_count(self.reset, 'day')} with a move reset to x1 (no sign or record: {per(self.bare)}; "
+                f"against its evidence: {per(self.against)}).")
+        if self.errors:
+            said += " Failures: " + "; ".join(f"{e} ({n})" for e, n in self.errors.most_common(3)) + "."
+        if self.gave_up:
+            said += f" Stopped asking after {GIVE_UP_AFTER} days in a row without an answer: {self.gave_up}."
+        return said
+
+
+def _count(n: int, noun: str) -> str:
+    return f"{n} {noun}{'' if n == 1 else 's'}"
+
+
+class ReplayTilt:
+    """The regime-ai tilt asked for every past day from `start` to `end`, for a backtest: the
+    live prompt (no date), validation, evidence and direction guards; a failure is no tilt that
+    day. Answers are kept by exact prompt text for the run, so identical states (temperature 0)
+    cost one call. Nothing is stored: a backtest only reads. Days before `start` get no tilt,
+    so the replayed smoothing starts from the rules weights. `stop` ends the asking early (a
+    cancelled job), skipping a pending retry too: the rest of the days replay on the rules
+    weights in seconds. `busy` names other work that needs the model (a tick, research): the
+    replay waits before each call while it runs, as the replay study does, so hours of replay
+    never slow the live line's work (gate 06 #1)."""
+
+    def __init__(self, model: ChatModel, cap: float, start: date, end: date,
+                 stop: Callable[[], bool] | None = None, on_progress: Callable[[str], None] | None = None,
+                 busy: Callable[[], str | None] | None = None) -> None:
+        self._model, self._cap, self._start, self._end = model, cap, start, end
+        self._stop, self._on_progress, self._busy = stop, on_progress, busy
+        self._answers: dict[str, object] = {}
+        self._silent = 0
+        self.stats = ReplayStats()
+
+    def __call__(self, state: RegimeState) -> dict[str, float]:
+        if not self._start <= state.day <= self._end:
+            return {}
+        self.stats.days += 1
+        try:
+            return self._tilt(state)
+        finally:
+            if self._on_progress:
+                self._on_progress(self._progress(state.day))
+
+    def _tilt(self, state: RegimeState) -> dict[str, float]:
+        s = self.stats
+        if s.gave_up or self._stopped():
+            s.skipped += 1
+            return {}
+        messages = tilt_messages(state, self._cap)
+        key = json.dumps(messages, sort_keys=True)
+        if key in self._answers:
+            s.cached += 1
+        else:
+            self._yield(state.day)
+            if self._stopped():
+                s.skipped += 1
+                return {}
+            s.calls += 1
+            try:
+                self._answers[key] = _asked(self._model, messages, tilt_schema(), self._stopped)
+                self._silent = 0
+            except Stopped:
+                s.skipped += 1
+                return {}
+            except Exception as exc:
+                return self._failed(state, exc)
+        try:
+            tilt, _, bare, against = _settled(self._answers[key], state, self._cap)
+        except Exception as exc:
+            return self._failed(state, exc)
+        moved = {m: v for m, v in tilt.items() if v != 1.0}
+        s.up.update(m for m, v in moved.items() if v > 1)
+        s.down.update(m for m, v in moved.items() if v < 1)
+        s.bare.update(bare)
+        s.against.update(against)
+        s.moved += bool(moved)
+        s.reset += bool(bare or against)
+        return tilt
+
+    def _stopped(self) -> bool:
+        return bool(self._stop and self._stop())
+
+    def _yield(self, day: date) -> None:
+        while self._busy and not self._stopped() and (other := self._busy()):
+            if self._on_progress:
+                self._on_progress(f"{self._progress(day)}; waiting for {other} to finish")
+            wait(YIELD_STEP_S)
+
+    def _failed(self, state: RegimeState, exc: Exception) -> dict[str, float]:
+        error = str(exc) or type(exc).__name__
+        self.stats.failed += 1
+        self.stats.errors[error[:120]] += 1
+        log.warning("regime-ai replay tilt for %s: no tilt that day: %s", state.day, error)
+        if _transient(exc) or (exc.__cause__ is not None and _transient(exc.__cause__)):
+            self._silent += 1
+            if self._silent >= GIVE_UP_AFTER:
+                self.stats.gave_up = error[:120]
+        else:
+            self._silent = 0
+        return {}
+
+    def _progress(self, day: date) -> str:
+        s = self.stats
+        return (f"Regime AI tilt at {day.isoformat()} ({self._start.isoformat()} to {self._end.isoformat()}): "
+                f"{_count(s.calls, 'model call')}, {s.cached} from cache, {s.failed} failed")
+
+
+class Stopped(Exception):
+    """The asker was stopped before a retry: nothing more is asked."""
+
+
+def _asked(model: ChatModel, messages: list[dict], schema: dict,
+           stopped: Callable[[], bool] | None = None) -> object:
+    """The reply, asking once more after RETRY_AFTER_S when the first call got no answer at all,
+    unless `stopped` says so by then (a Cancel must not sit through the wait and a second call).
     A bad answer is never asked again: that would let the line pick among the model's answers."""
     try:
         return _answer(model, messages, schema)
     except Exception as exc:
         if not _transient(exc):
             raise
+        if stopped and stopped():
+            raise Stopped from exc
         log.warning("regime-ai tilt: %s; asking once more in %.0f s", exc, RETRY_AFTER_S)
         wait(RETRY_AFTER_S)
         try:

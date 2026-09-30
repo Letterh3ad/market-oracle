@@ -120,7 +120,7 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Ledgers tab, Backtest section; its kept results come from GET /api/backtests.
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
-        "backtest --commission", "backtest --walk-forward")},
+        "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},
     # Ledgers tab, Replay study card.
     "replay create": "POST /api/replay",
     "replay create --from": "POST /api/replay",
