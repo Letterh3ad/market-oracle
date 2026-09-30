@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery, UnknownLink
+from oracle.services.errors import InvalidQuery, NeverListed, UnknownLink
 from oracle.services.never_list import never_company
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.db import to_utc_iso
@@ -19,14 +19,16 @@ from oracle.store.links import LinkRepo, StoredLink
 from oracle.store.universe import Resolved, UniverseRepo
 
 __all__ = [
-    "RELATIONS", "SOURCE_CHAT", "SOURCE_DISCOVERY", "CompanyLink", "LinkFound", "company_links", "delete_link", "record_links",
-    "research_links",
+    "RELATIONS", "SOURCE_CHAT", "SOURCE_DISCOVERY", "SOURCE_USER", "USER_RELATIONS", "CompanyLink", "LinkFound", "add_link",
+    "company_links", "delete_link", "record_links", "relation_words", "research_links",
 ]
 
 SOURCE_DISCOVERY = "discovery"
 SOURCE_CHAT = "chat"
+SOURCE_USER = "user"
 # What the other company is to the one it was found from; "other" is named beside it.
 RELATIONS = ("supplier", "customer", "competitor", "partner", "other", "peer")
+USER_RELATIONS = ("supplier", "customer", "competitor", "partner")
 _INVERSE = {"supplier": "customer", "customer": "supplier"}
 _WORDS = {"supplier": "a supplier", "customer": "a customer", "competitor": "a competitor", "partner": "a partner",
           "other": "named beside it in the news", "peer": "in the same industry"}
@@ -58,14 +60,20 @@ class CompanyLink:
     evidence: tuple[DiscoveryEvidence, ...]
     ids: tuple[int, ...] = ()
     """The stored links it gathers; `id` is the strongest."""
+    since: tuple[str, ...] = ()
+    """When each of `relations` was first seen, in the same order."""
 
     @property
     def why(self) -> str:
-        return " and ".join(_WORDS[r] for r in self.relations)
+        return " and ".join(map(relation_words, self.relations))
 
     @property
     def label(self) -> str:
         return f"{self.name or self.symbol} ({self.symbol}), {self.why}"
+
+
+def relation_words(relation: str) -> str:
+    return _WORDS[relation]
 
 
 def record_links(ctx: AppContext, found: Iterable[LinkFound], source: str) -> int:
@@ -116,11 +124,14 @@ def company_links(ctx: AppContext, symbol: str, as_of: date | None = None) -> li
         evidence = {e.id: e for link in links for e in link.evidence
                     if before is None or (e.published_at is not None and e.published_at < before)}
         last = max(link.last_seen for link in links)
-        out.append(CompanyLink(first.id, other, found.name if found else None,
-                               tuple(dict.fromkeys(r for _, r in rows)), first.source,
+        since: dict[str, str] = {}
+        for link, relation in rows:
+            since[relation] = min(since.get(relation, link.first_seen), link.first_seen)
+        out.append(CompanyLink(first.id, other, found.name if found else None, tuple(since), first.source,
                                min(link.first_seen for link in links),
                                min(last, as_of.isoformat()) if as_of else last,
-                               tuple(sorted(evidence.values(), key=lambda e: e.id)), tuple(link.id for link in links)))
+                               tuple(sorted(evidence.values(), key=lambda e: e.id)), tuple(link.id for link in links),
+                               tuple(since.values())))
     out.sort(key=lambda x: x.last_seen, reverse=True)
     return sorted(out, key=lambda x: len(x.evidence), reverse=True)
 
@@ -128,6 +139,22 @@ def company_links(ctx: AppContext, symbol: str, as_of: date | None = None) -> li
 def research_links(ctx: AppContext, symbol: str, limit: int, as_of: date | None = None) -> list[CompanyLink]:
     """The strongest `limit` linked companies with evidence."""
     return [x for x in company_links(ctx, symbol, as_of) if x.evidence][:limit]
+
+
+def add_link(ctx: AppContext, symbol: str, other: str, relation: str) -> CompanyLink:
+    """The user's own link: `other` is `relation` of `symbol`. It is kept even where the user
+    deleted that very link before; a delete of any other relation between the two stands."""
+    if relation not in USER_RELATIONS:
+        raise InvalidQuery(f"unknown link {relation!r}; one of {', '.join(USER_RELATIONS)}")
+    a, b = resolve_symbol(ctx, symbol), resolve_symbol(ctx, other)
+    if a.company_key == b.company_key:
+        raise InvalidQuery(f"{b.symbol} is {a.symbol} itself")
+    for x in (a, b):
+        if company := never_company(ctx, x.symbol, user=True):
+            raise NeverListed(f"{company} is on your never list: it is never linked")
+    LinkRepo(ctx.conn).add(a.symbol, b.symbol, relation, SOURCE_USER, to_utc_iso(ctx.clock.utcnow()))
+    theirs = _listings(UniverseRepo(ctx.conn), b)
+    return next(x for x in company_links(ctx, a.symbol) if x.symbol.upper() in theirs)
 
 
 def delete_link(ctx: AppContext, symbol: str, link_id: int) -> CompanyLink:

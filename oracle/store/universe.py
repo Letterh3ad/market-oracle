@@ -83,7 +83,7 @@ class Resolved:
     """The company's band, from its primary listing."""
 
 
-PEER_FIELDS = ("industry_group", "sector")
+PEER_FIELDS = ("industry", "industry_group", "sector")
 
 
 @dataclass(frozen=True)
@@ -227,7 +227,7 @@ class UniverseRepo:
 
     def peers(self, company_key: str, field: str, value: str, limit: int,
               corrections: Mapping[str, Correction] = {}) -> list[PeerRow]:
-        """Other active equity companies sharing `field` (sector or industry_group), by
+        """Other active equity companies sharing `field` (one of PEER_FIELDS), by
         primary listing: biggest market-cap band first, then the most widely listed. Each
         company's field is read through `corrections`."""
         if field not in PEER_FIELDS:
