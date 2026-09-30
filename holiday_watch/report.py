@@ -41,7 +41,8 @@ def build_report(w: Watch) -> str:
     ledgers = _get(w, "/api/ledgers") if status else None
     out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None,
                   _get(w, "/api/ledgers/regime-ai") if ledgers else None,
-                  _get(w, "/api/ledgers/regime-v2") if ledgers else None)
+                  _get(w, "/api/ledgers/regime-v2") if ledgers else None,
+                  _get(w, "/api/ledgers/core-sat") if ledgers else None)
     out += ["", "## Replay study", ""]
     study = (_get(w, "/api/replay") or {}).get("study") if status else None
     if not study:
@@ -61,9 +62,9 @@ def build_report(w: Watch) -> str:
 
 
 def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = None,
-           regime_v2: dict | None = None) -> list[str]:
+           regime_v2: dict | None = None, core_sat: dict | None = None) -> list[str]:
     """Every paper account the app lists, then the regime lines' last mood reading, the regime-ai
-    tilt, regime-v2's rotations and any lag warning."""
+    tilt, regime-v2's rotations, core-sat's sleeves and any lag warning."""
     if not ledgers:
         return ["No ledgers (or the app is down)."]
     base = ledgers.get("base_currency")
@@ -76,7 +77,20 @@ def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = N
         out += _tilt(regime_ai)
     if regime_v2:
         out += _mood("Regime-v2", regime_v2) + _rotations(regime_v2)
+    if core_sat:
+        out += _mood("Core-sat", core_sat) + _sleeves(core_sat, base)
     return out
+
+
+def _sleeves(card: dict, base: str | None) -> list[str]:
+    """core-sat's core and satellite: each one's cash and holdings, and the core's next rebalance."""
+    s = card.get("sleeves") or {}
+    parts = [f"{name} cash {x.get('cash', 0):,.0f} + holdings {x.get('holdings', 0):,.0f} {base}"
+             for name, x in (("core", s.get("core")), ("satellite", s.get("satellite"))) if x]
+    if not parts:
+        return []
+    nxt = (s.get("core") or {}).get("next_rebalance")
+    return [f"Core-sat sleeves: {'; '.join(parts)}" + (f"; core rebalances on or after {nxt}" if nxt else "")]
 
 
 def _mood(name: str, card: dict) -> list[str]:

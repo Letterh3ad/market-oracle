@@ -12,7 +12,8 @@ from tests.gui.jobs import run_job
 async def test_every_account_starts_level_side_by_side(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["base_currency"] == "GBP"
-    assert [a["name"] for a in body["accounts"]] == ["strategy", "ai", "manual", "regime", "regime-ai", "regime-v2"]
+    assert [a["name"] for a in body["accounts"]] == ["strategy", "ai", "manual", "regime", "regime-ai", "regime-v2",
+                                                       "core-sat"]
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
         assert (a["positions"], a["pending"], a["sells"], a["history"]) == ([], [], [], [])
@@ -104,7 +105,7 @@ async def test_the_comparison_waits_for_the_ai_account_history(loaded):
     assert compare["start"] is None and "no history yet" in compare["notes"][0]
     assert [(line["name"], line["points"], line["return"]) for line in compare["lines"]] == [
         ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("regime", [], None), ("regime-ai", [], None),
-        ("regime-v2", [], None), ("buy_and_hold", [], None),
+        ("regime-v2", [], None), ("core-sat", [], None), ("buy_and_hold", [], None),
         ("VWRL.L", [], None), ("VUSA.L", [], None)]
     assert [line["label"] for line in compare["lines"][-2:]] == ["World (VWRL.L)", "S&P 500 (VUSA.L)"]
 

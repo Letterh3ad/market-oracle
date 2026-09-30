@@ -31,7 +31,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "DISCOVERED_OFF", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
+    "ACCOUNTS", "AI_OFF", "CORE_SAT", "DISCOVERED_OFF", "FROZEN", "Sleeve", "frozen", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
@@ -43,10 +43,13 @@ __all__ = [
 REGIME = "regime"
 REGIME_AI = "regime-ai"
 REGIME_V2 = "regime-v2"
-REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2)
-"""The accounts that trade the regime blend: rules only, with the daily model tilt, and v2 (no
-hold padding, rotation)."""
-LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2"}
+CORE_SAT = "core-sat"
+REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2, CORE_SAT)
+"""The accounts that trade the regime blend: rules only, with the daily model tilt (frozen), v2 (no
+hold padding, rotation), and core-sat's satellite beside its equal-weight core."""
+FROZEN = frozenset({REGIME_AI})
+"""Accounts that no longer step and record no equity; their history stays (spec decision 9)."""
+LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2", CORE_SAT: "Core-sat"}
 """Each regime line's name on buttons, jobs and printed steps."""
 ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
 TRADERS = ("strategy", "ai", *REGIME_LINES)
@@ -66,6 +69,14 @@ def discovered_off(account: str) -> str:
 
 DISCOVERED_OFF = discovered_off("the AI account")
 NEVER_BUY = "on the never list: never bought"
+
+
+@dataclass(frozen=True)
+class Sleeve:
+    """A part of an account with its own cash, traded apart: the orders it places carry `source`,
+    and its cash is `capital` plus its own fills' cash (core-sat's core and satellite)."""
+    source: str
+    capital: float
 
 
 @dataclass(frozen=True)
@@ -236,21 +247,23 @@ def traded_by(ctx: AppContext, account: str) -> list[str]:
 
 def step_account(ctx: AppContext, account: str, found: dict[str, Lean], unusable: list[Decision],
           reports: dict[str, int], explanations: dict[str, dict] | None = None,
-          cap: LeanCap | None = None) -> list[Decision]:
+          cap: LeanCap | None = None, sleeve: Sleeve | None = None) -> list[Decision]:
     """Decide over `found` with the strategy's rules, queue the orders on `account` and log
     every decision; `reports` maps a listing to the research run behind its decision, and
     `explanations` to what its lean was made of. `cap` limits the leans given every holding,
     with the day its position was first filled, and every pending buy (the regime book's sector
-    cap and regime-v2's rotation), as the replay gives them."""
+    cap and regime-v2's rotation), as the replay gives them. With `sleeve`, the rules see that
+    sleeve alone: its cash, holdings and pending orders; its orders carry its source and a sell
+    sells only its shares."""
     explanations = explanations or {}
-    view = account_view(ctx, account)
+    view = account_view(ctx, account, sleeve)
     holdings = {p.symbol: p for p in view.positions}
     barred = _never_bought(ctx, [s for s in found if s not in holdings])
     found = {s: lean for s, lean in found.items() if s not in barred}
     unusable = unusable + [Decision(s, Action.SKIP, None, NEVER_BUY) for s in barred]
-    orders = PaperRepo(ctx.conn).pending(account)
+    orders = sleeve_orders(PaperRepo(ctx.conn).pending(account), sleeve)
     if cap is not None:
-        since = held_since(PaperRepo(ctx.conn), account)
+        since = held_since(PaperRepo(ctx.conn), account, sleeve.source if sleeve else None)
         found = cap(found, {**{o.symbol: None for o in orders if o.side == Side.BUY},
                             **{s: since.get(s) for s in holdings}})
     sizes = {s: size for s in found if (size := _risk_size(ctx, s)) is not None}
@@ -260,13 +273,13 @@ def step_account(ctx: AppContext, account: str, found: dict[str, Lean], unusable
     # One decision per listing: a sell or a pending order says more than a lean problem.
     covered = {o.symbol for o in orders} | {d.symbol for d in decided if d.action == Action.SELL}
     decisions = [d for d in unusable if d.symbol not in covered] + decided
-    today, log = ctx.clock.utcnow().date(), DecisionRepo(ctx.conn)
+    today, log, source = ctx.clock.utcnow().date(), DecisionRepo(ctx.conn), sleeve.source if sleeve else account
     for d in decisions:
         order = None
         if d.action == Action.BUY:
-            order = place_buy(ctx, d.symbol, d.cash, account, source=account)
+            order = place_buy(ctx, d.symbol, d.cash, account, source=source)
         elif d.action == Action.SELL:
-            order = place_sell(ctx, d.symbol, None, account, source=account)
+            order = place_sell(ctx, d.symbol, holdings[d.symbol].shares if sleeve else None, account, source=source)
         # Logged as each order is placed, so one failing never leaves an order unexplained.
         log.log([LoggedDecision(account, today, d.symbol, d.action, d.cash, d.reason, order.id if order else None,
                                 reports.get(d.symbol), d.needs_research, explanations.get(d.symbol))])
@@ -415,6 +428,8 @@ CAPTIONS = {
     REGIME_AI: "Regime-AI: the same blend with its weights tilted once a day by a local model, under the same rules.",
     REGIME_V2: ("Regime-v2: the same blend with no hold padding and a rotation out of long-held, clearly weaker "
                 "holdings, under the same rules."),
+    CORE_SAT: ("Core-sat: 75% in an equal-weight buy and hold of the main list, set back to equal weight yearly; "
+               "25% traded by the regime blend within its own cash."),
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
 BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
@@ -493,8 +508,13 @@ def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date 
                 sum(_cost(f) for f in fills))
 
 
+def sleeve_orders(orders: list[Order], sleeve: Sleeve | None) -> list[Order]:
+    return orders if sleeve is None else [o for o in orders if o.source == sleeve.source]
+
+
 def _record_equity(ctx: AppContext) -> None:
-    """The AI and regime line accounts only while on, so each record starts the day it was first turned on."""
+    """The AI and regime line accounts only while on, so each record starts the day it was first
+    turned on; a frozen account's record ends the day it froze."""
     today = ctx.clock.utcnow().date()
     for account in ACCOUNTS:
         if not account_on(ctx, account):
@@ -503,8 +523,15 @@ def _record_equity(ctx: AppContext) -> None:
         EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
 
 
+def frozen(account: str) -> bool:
+    return account in FROZEN
+
+
 def account_on(ctx: AppContext, account: str) -> bool:
-    """Whether the account acts: the AI and regime line accounts have Settings switches."""
+    """Whether the account acts: the AI and regime line accounts have Settings switches; a frozen
+    one never acts."""
+    if frozen(account):
+        return False
     if account == "ai":
         return ctx.config.ai_account.enabled
     if account == REGIME:
@@ -513,6 +540,8 @@ def account_on(ctx: AppContext, account: str) -> bool:
         return ctx.config.regime_ai_account.enabled
     if account == REGIME_V2:
         return ctx.config.regime_v2_account.enabled
+    if account == CORE_SAT:
+        return ctx.config.core_sat_account.enabled
     return True
 
 
@@ -522,12 +551,15 @@ def pending_orders(ctx: AppContext) -> list[Order]:
     return [o for a in ACCOUNTS for o in repo.pending(a)]
 
 
-def account_view(ctx: AppContext, account: str) -> AccountView:
+def account_view(ctx: AppContext, account: str, sleeve: Sleeve | None = None) -> AccountView:
+    """The whole account, or with `sleeve` that part of it alone."""
     repo = PaperRepo(ctx.conn)
-    held, realised = _replay(repo, account)
+    source = sleeve.source if sleeve else None
+    held, realised = _replay(repo, account, source)
     positions, sources = _positions(ctx, held)
     sources |= _fill_rate_sources(ctx, repo, account)
-    return AccountView(account, _cash(ctx, repo, account), tuple(positions), tuple(repo.pending(account)),
+    cash = sleeve.capital + sum(f.cash for f in repo.fills(account, source)) if sleeve else _cash(ctx, repo, account)
+    return AccountView(account, cash, tuple(positions), tuple(sleeve_orders(repo.pending(account), sleeve)),
                        realised, tuple(sorted(sources)))
 
 
@@ -616,17 +648,17 @@ def _held_shares(repo: PaperRepo, account: str, symbol: str) -> int:
     return _replay(repo, account)[0].get(symbol, [0, 0.0])[0]
 
 
-def _replay(repo: PaperRepo, account: str) -> tuple[dict[str, list], float]:
-    """({symbol: [shares, cost]}, realised) from the account's fills, at average cost."""
-    held, done = _replay_sells(repo, account)
+def _replay(repo: PaperRepo, account: str, source: str | None = None) -> tuple[dict[str, list], float]:
+    """({symbol: [shares, cost]}, realised) from the account's fills (a sleeve's with `source`), at average cost."""
+    held, done = _replay_sells(repo, account, source)
     return held, sum(s.realised for s in done)
 
 
-def held_since(repo: PaperRepo, account: str) -> dict[str, date]:
-    """Each held listing's first fill since it was last flat."""
+def held_since(repo: PaperRepo, account: str, source: str | None = None) -> dict[str, date]:
+    """Each held listing's first fill since it was last flat (in a sleeve with `source`)."""
     shares: dict[str, int] = {}
     out: dict[str, date] = {}
-    for f in repo.fills(account):
+    for f in repo.fills(account, source):
         before = shares.get(f.symbol, 0)
         shares[f.symbol] = before + (f.shares if f.side == Side.BUY else -f.shares)
         if before <= 0 < shares[f.symbol]:
@@ -636,10 +668,10 @@ def held_since(repo: PaperRepo, account: str) -> dict[str, date]:
     return out
 
 
-def _replay_sells(repo: PaperRepo, account: str) -> tuple[dict[str, list], list[Sell]]:
+def _replay_sells(repo: PaperRepo, account: str, source: str | None = None) -> tuple[dict[str, list], list[Sell]]:
     held: dict[str, list] = {}
     done = []
-    for f in repo.fills(account):
+    for f in repo.fills(account, source):
         shares, cost = held.get(f.symbol, [0, 0.0])
         if f.side == Side.BUY:
             held[f.symbol] = [shares + f.shares, cost - f.cash]

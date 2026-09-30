@@ -159,3 +159,31 @@ def test_the_ledgers_tab_module_loads():
     """
     out = subprocess.run([NODE, "--input-type=module", "-e", script], capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
+
+
+CORE_SAT_CARD = {**CARD, "account": "core-sat", "sleeves": {
+    "core": {"capital": 750000.0, "cash": 1200.0, "holdings": 748800.0, "positions": 50, "pending": 0, "listings": 50,
+             "next_rebalance": "2027-09-30", "phase": None},
+    "satellite": {"capital": 250000.0, "cash": 60000.0, "holdings": 190000.0, "positions": 8, "pending": 1}}}
+
+
+def test_the_core_sat_card_shows_both_sleeves_the_next_rebalance_and_saves_its_own_switch():
+    text, puts = run("""
+        const box = labelled(node, "Core-sat account on");
+        box.checked = false; box.fire("change"); await settle();
+        console.log(JSON.stringify([node.textContent, asked]));
+    """, CORE_SAT_CARD)
+    for piece in ("Core-sat reading", "Core (50 companies)", "Satellite", "on or after 2027-09-30",
+                  "equal-weight buy and hold of the main list", "Core-sat decisions"):
+        assert piece in text, piece
+    assert puts == ["PUT /api/ledgers/core-sat"]
+
+
+def test_a_frozen_card_keeps_its_reading_but_has_no_switch_or_model_pick():
+    card = {**AI_CARD, "enabled": False, "frozen": True, "note": "the regime-ai account is frozen: it no longer steps"}
+    text, found = run("""
+        console.log(JSON.stringify([node.textContent, labelled(node, "Regime-AI account on") != null
+          || labelled(node, "Regime-AI tilt model") != null]));
+    """, card)
+    assert "frozen" in text and "Mood on 2026-09-28" in text and "Regime-AI decisions" in text
+    assert found is False

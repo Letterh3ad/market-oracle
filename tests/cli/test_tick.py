@@ -38,7 +38,7 @@ def test_a_tick_prints_each_stage_and_is_read_back_by_last(run):
     assert run("tick", "--last")[1].startswith("no tick has run yet")
     code, out, _ = run("tick")
     assert code == 0 and "(manual): ok" in out
-    assert [line.split()[0] for line in out.splitlines()[1:]] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "discover", "research", "step",
+    assert [line.split()[0] for line in out.splitlines()[1:]] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step",
         "ai_step"]
     assert run("tick", "--last")[1] == out
 
