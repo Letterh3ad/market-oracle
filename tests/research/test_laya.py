@@ -1,8 +1,24 @@
 import pytest
 
 from oracle.research.laya import (
-    EVENT_TYPES, GPU_FREE_MB, LayaInput, LayaModel, LayaUnavailable, LayaScore, parse, pick_device, questions, smi_free_mb, state,
+    EVENT_TYPES, GPU_FREE_MB, EdgeInput, LayaInput, LayaModel, LayaUnavailable, LayaScore, edge_questions, edge_state,
+    parse, parse_edge, pick_device, questions, smi_free_mb, state,
 )
+from oracle.research.edges import EDGE_CHOICES
+
+
+def test_an_edge_is_asked_as_one_choice_naming_both_companies():
+    q = edge_questions("Apple Inc. (AAPL)", "Hon Hai (2317.TW)")
+    assert list(q) == ["relation"] and q["relation"]["type"] == "choice"
+    assert list(q["relation"]["criteria"]) == list(EDGE_CHOICES)
+    assert "Hon Hai (2317.TW)" in q["relation"]["instructions"] and "Apple Inc. (AAPL)" in q["relation"]["instructions"]
+    item = EdgeInput("Apple Inc. (AAPL)", "Hon Hai (2317.TW)", "We rely on Hon Hai.", "filing")
+    assert edge_state(item) == ("Company: Apple Inc. (AAPL)\nOther company: Hon Hai (2317.TW)\n"
+                                "From its annual report (10-K): We rely on Hon Hai.")
+    result = {"answers": {"relation": {"type": "choice", "choice": "supplier",
+                                       "probabilities": {"supplier": 0.5, "none": 0.3, "customer": 0.2}}}}
+    typed = parse_edge(result)
+    assert (typed.choice, typed.prob) == ("supplier", 0.5) and typed.probs["none"] == 0.3
 
 
 def test_the_ten_event_types_are_the_specs_fixed_set():

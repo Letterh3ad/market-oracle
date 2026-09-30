@@ -45,6 +45,61 @@ def questions(company: str) -> dict:
     }
 
 
+_EDGE_WORDS = {
+    "supplier": "{other} supplies {company}: it makes parts, materials or services {company} buys",
+    "customer": "{other} is a customer of {company}: it buys from {company}",
+    "competitor": "{other} competes with {company} for the same customers",
+    "partner": "{other} works with {company} in a partnership, alliance or joint venture",
+    "none": "the text shows no business tie between them",
+}
+_EDGE_FROM = {"filing": "From its annual report (10-K)", "news": "Headline"}
+
+
+@dataclass(frozen=True)
+class EdgeInput:
+    """A candidate tie: the company, the other company it names (both as "Name (SYMBOL)") and the
+    text naming both, a 10-K sentence ("filing") or a headline ("news")."""
+
+    company: str
+    other: str
+    text: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class EdgeType:
+    choice: str
+    """What the other company is to the company (edges.EDGE_CHOICES)."""
+    prob: float
+    """The choice's probability, uncalibrated."""
+    probs: dict[str, float]
+
+
+def edge_questions(company: str, other: str) -> dict:
+    return {"relation": {"type": "choice", "instructions": f"What is {other} to {company}, as this text shows it?",
+                         "criteria": {k: v.format(company=company, other=other) for k, v in _EDGE_WORDS.items()}}}
+
+
+def edge_state(item: EdgeInput) -> str:
+    return f"Company: {item.company}\nOther company: {item.other}\n{_EDGE_FROM[item.kind]}: {item.text}"
+
+
+def parse_edge(result: dict) -> EdgeType:
+    a = result["answers"]["relation"]
+    probs = {k: float(v) for k, v in a["probabilities"].items()}
+    return EdgeType(a["choice"], probs.get(a["choice"], 0.0), probs)
+
+
+class EdgeTyper(Protocol):
+    tag: str
+    device: str
+
+    def type_edges(self, items: list[EdgeInput]) -> list[EdgeType]:
+        """One type per item, in order."""
+
+    def close(self) -> None: ...
+
+
 GPU_FREE_MB = 3000
 """Free GPU memory `auto` needs before it loads there. Measured 2026-09-30 on the RTX 5060: loading
 took about 2.5 GB and scoring 110 headlines 3.2 GB. Ollama's 4B research model holds 5.1 GB of the
@@ -158,6 +213,16 @@ class LayaModel:
             results = self._agent.predict_batch([state(items[n]) for n in at], questions(company),
                                                 batch_size=self._batch)
             out.update({n: parse(r) for n, r in zip(at, results)})
+        return [out[n] for n in range(len(items))]
+
+    def type_edges(self, items: list[EdgeInput]) -> list[EdgeType]:
+        """The question names both companies, so each pair's items share a forward pass."""
+        out: dict[int, EdgeType] = {}
+        for pair in dict.fromkeys((i.company, i.other) for i in items):
+            at = [n for n, i in enumerate(items) if (i.company, i.other) == pair]
+            results = self._agent.predict_batch([edge_state(items[n]) for n in at], edge_questions(*pair),
+                                                batch_size=self._batch)
+            out.update({n: parse_edge(r) for n, r in zip(at, results)})
         return [out[n] for n in range(len(items))]
 
     def close(self) -> None:
