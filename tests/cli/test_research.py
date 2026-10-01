@@ -121,10 +121,14 @@ def test_the_planned_searches_are_shown_first(run, ollama):
             "Apple iPhone demand") in out
 
 
-def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, monkeypatch):
+def test_text_the_console_cannot_encode_is_replaced_not_a_crash(run, ollama, monkeypatch, caplog):
     import io
+    import logging
     import sys
 
+    # Under --log-cli-level each INFO record makes pytest suspend and resume its capture, which puts
+    # its own stream back as sys.stdout and drops (and so closes) the console stand-in below.
+    caplog.set_level(logging.WARNING)
     ollama.suggestions = ["トヨタ 株価"]
     ollama.contents = [step("final", "Done.")]
     raw = io.BytesIO()
