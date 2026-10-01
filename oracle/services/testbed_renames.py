@@ -355,7 +355,8 @@ class Renames:
             runs = sum(d in series for d in near) >= 0.8 * len(near)
             ok &= runs
             said_ += f", {'runs' if runs else 'does not run'} across {c.day}"
-            late = self.bars.since(c.old, c.day + REUSED_AFTER)
+            # Bars SEC just proved another company's are dropped after this check, so they say nothing here.
+            late = [] if c.old in self.run.dropped else self.bars.since(c.old, c.day + REUSED_AFTER)
             if late:
                 ok = False
                 said_ += f"; Yahoo still lists {c.old} on {late[0].date}"

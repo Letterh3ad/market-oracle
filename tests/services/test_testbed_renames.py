@@ -176,6 +176,16 @@ async def test_sec_says_a_former_tickers_bars_are_another_companys_and_they_are_
     assert run.reused >= 1
 
 
+async def test_a_ticker_whose_bars_sec_proved_another_companys_can_still_be_a_rename(env):
+    ctx, _, sec, _ = env
+    reports(sec, CIKS["DDD"], [("2012-06-01", "SUN"), ("2012-10-01", "DDD")])
+    await build_testbed(ctx)
+    sun = aliases(ctx)[("SUN", "DDD")]
+    assert sun.accepted, sun.evidence
+    with open_testbed(ctx) as tb:
+        assert tb.bars("SUN", date(2010, 1, 4), date(2010, 1, 4))[0].symbol == "SUN"
+
+
 async def test_sec_overrides_a_late_first_trade_day_for_a_former_member_that_is_the_same_company(env):
     ctx, *_ = env
     await build_testbed(ctx)
