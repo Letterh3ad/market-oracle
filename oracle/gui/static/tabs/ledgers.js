@@ -5,6 +5,7 @@ import { compareLines, table } from "../lib/compare.js";
 import { el, showError, clearError, companyLink } from "../lib/dom.js";
 import { money, pct, signed, tone } from "../lib/fmt.js";
 import { historySection } from "../lib/history.js";
+import { readerSection } from "../lib/reader.js";
 import { layaTestSection } from "../lib/laya_test.js";
 import { researchLive } from "../lib/ledger_research.js";
 import { repaint } from "../lib/repaint.js";
@@ -22,6 +23,7 @@ let live = null; // this render's research buttons and their poll
 let backtest = null; // this render's Backtest section: one node kept across repaints, so its form keeps what was typed
 let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
 let history = null; // this render's History coverage card, kept the same way
+let reader = null; // this render's Stronger reader card
 let layaTest = null; // this render's Laya predictive test card, kept the same way
 let timer = null;
 let lastResult = []; // lines from the last button press, shown once on the reload it triggers
@@ -348,6 +350,7 @@ async function load(mine) {
     backtest.node,
     layaTest.node,
     history.node,
+    reader.node,
     replay.node,
   ], () => {
     drawCharts(body.accounts);
@@ -356,6 +359,7 @@ async function load(mine) {
     backtest.start();
     layaTest.start();
     history.start();
+    reader.show();
     replay.start();
   });
 }
@@ -369,6 +373,7 @@ function render(target) {
   backtest = backtestSection();
   replay = replaySection();
   history = historySection();
+  reader = readerSection();
   layaTest = layaTestSection();
   clearInterval(timer);
   timer = live.start(root);

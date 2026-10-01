@@ -102,6 +102,13 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "industry": "GET /api/companies/{symbol}/industry",
     # Company tab, Laya section: "Score with Laya" and the scored headlines. On/off and device are
     # [laya] in Settings.
+    # Ledgers tab, Stronger reader card: "Read history with the stronger reader" and "Count headlines and estimate".
+    "reader run": "POST /api/jobs/reader",
+    "reader run --list": "POST /api/jobs/reader",
+    "reader plan": "GET /api/reader/plan",
+    "reader plan --list": "GET /api/reader/plan",
+    "reader run --all": "POST /api/jobs/reader",  # the card's "Own news only" box unticked
+    "reader plan --all": "GET /api/reader/plan",
     "laya score": "POST /api/jobs/laya",
     "laya show": "GET /api/companies/{symbol}/laya",
     # Ledgers tab, Backtest, "Laya predictive test" card: its buttons and table.
@@ -114,6 +121,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "laya test": "POST /api/jobs/laya-test",
     "laya test --list": "POST /api/jobs/laya-test",
     "laya test --sensitivity": "POST /api/jobs/laya-test",
+    # The test card's "Scores of" model choice and "Own news only" box.
+    "laya test --model": "POST /api/jobs/laya-test",
+    "laya test --own-only": "POST /api/jobs/laya-test",
     "laya test --show": "GET /api/laya/tests",
     # Company tab, Industry panel: "Find suppliers and customers" (this company or the main list),
     # the ties list and each unconfirmed tie's Confirm and Delete.

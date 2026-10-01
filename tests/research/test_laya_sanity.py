@@ -33,6 +33,19 @@ def test_the_sanity_set_is_about_a_hundred_labelled_real_headlines():
     assert 0.2 < sum(r["relevant"] for r in SANITY) / len(SANITY) < 0.9, "both kinds are there"
 
 
+HELDOUT = json.loads((Path(__file__).parents[1] / "fixtures" / "laya" / "heldout.json").read_text(encoding="utf-8"))
+
+
+def test_the_held_out_set_is_fresh_labelled_backfill_headlines():
+    """Ticket 09's deciding set: labelled and committed before any model read it."""
+    assert 100 <= len(HELDOUT) <= 120
+    assert not {r["headline"] for r in HELDOUT} & {r["headline"] for r in SANITY}
+    for row in HELDOUT:
+        assert row["headline"] and row["company"] and row["article_id"]
+        assert isinstance(row["relevant"], bool) and row["direction"] in DIRECTIONS and row["event"] in EVENT_TYPES
+        assert row["relevant"] or (row["direction"], row["event"]) == ("none", "other")
+
+
 @pytest.mark.laya
 def test_laya_on_the_sanity_set(capsys):
     """Opt in with -m laya: loads the real checkpoint (downloaded once, about 1.3 GB)."""

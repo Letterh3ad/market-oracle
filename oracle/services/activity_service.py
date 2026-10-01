@@ -34,7 +34,8 @@ from oracle.services.history_service import backfill_history
 from oracle.services.industry_research_service import BUTTON_FRESH_H, research_industry
 from oracle.services.laya_history_service import score_history
 from oracle.services.laya_service import MODEL_TAG, score_company
-from oracle.services.laya_test_service import MAIN, SENSITIVITY, keep_laya_test, run_laya_test
+from oracle.services.laya_test_service import MAIN, OWN, SENSITIVITY, check_test_model, keep_laya_test, run_laya_test
+from oracle.services.reader_service import score_reader, waits_anywhere
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
@@ -51,8 +52,8 @@ from oracle.store.job_history import INTERRUPTED, NOT_RUN, JobHistoryRepo, JobRo
 from oracle.store.replay import FAILED, PENDING, ReplayRepo
 
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
-           "queue_stale_research", "retry", "retry_all", "retryable", "stale_research_jobs", "submit_analyse", "submit_ask",
-           "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_replay_prices",
+           "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
+           "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
            "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
@@ -601,7 +602,7 @@ def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEF
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        r = score_history(c, name, allow_cpu=allow_cpu, stop=stopped.is_set, busy=lambda: _model_work(runner),
+        r = score_history(c, name, allow_cpu=allow_cpu, stop=stopped.is_set, busy=lambda: _laya_history_waits(runner),
                           on_progress=stage.append)
         if r.stopped and r.stopped != "cancelled":
             raise ServiceError(r.summary)
@@ -614,20 +615,52 @@ def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEF
 
 
 def submit_laya_test(ctx: AppContext, runner: JobRunner, sensitivity: bool = False, watchlist: str = DEFAULT_LIST,
-                     model: str = MODEL_TAG) -> Job:
-    """Run the pre-registered Laya predictive test (or its sensitivity run) over the scored
-    history, keeping the result for the Backtest page. Reads only."""
+                     model: str = MODEL_TAG, own_only: bool = False) -> Job:
+    """Run the pre-registered predictive test (or its sensitivity or own-news-only run) over
+    `model`'s scored history, keeping the result for the Backtest page. Reads only."""
+    if sensitivity and own_only:
+        raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     name = watchlist_symbols(ctx, watchlist)[0]
-    run = SENSITIVITY if sensitivity else MAIN
+    check_test_model(ctx, model)
+    run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
     stage: list[str] = []
 
     async def work(c: AppContext):
-        return keep_laya_test(c, run_laya_test(c, name, sensitivity=sensitivity, model=model,
+        return keep_laya_test(c, run_laya_test(c, name, sensitivity=sensitivity, own_only=own_only, model=model,
                                                on_progress=stage.append))
 
-    return runner.submit("laya_test", f"Laya predictive test ({run}, {name})", work,
+    who = "" if model == MODEL_TAG else f", {model}"
+    return runner.submit("laya_test", f"Laya predictive test ({run}, {name}{who})", work,
                          subject=BACKTEST_SEP.join((run, name, model)), link="#ledgers",
                          progress=lambda: stage[-1] if stage else None)
+
+
+READER_SUBJECT = "reader"
+OWN_PART = "own"
+"""The last part of an own-news-only reader job's subject."""
+
+
+def submit_reader(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_LIST, own_only: bool = False) -> Job:
+    """The stronger reader over the history backfill of `watchlist` (hours; `own_only`: the list's own
+    news, not its map companies'): each headline read once by the local model for its own company,
+    pairs stored from that reading. It waits while model work runs anywhere or a scheduled run is due
+    within 30 minutes, and a Cancel stops it between batches; what it read is kept, so a retry
+    resumes."""
+    if not ctx.config.laya.enabled:
+        raise InvalidQuery("Laya is off; turn it on in Settings ([laya] enabled)")
+    name = watchlist_symbols(ctx, watchlist)[0]
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return score_reader(c, name, own_only=own_only, stop=stopped.is_set, busy=lambda: _reader_waits(c, runner),
+                            on_progress=stage.append)
+
+    scope = "own news" if own_only else "history"
+    subject = BACKTEST_SEP.join((READER_SUBJECT, name, *((OWN_PART,) if own_only else ())))
+    return runner.submit("reader", f"Stronger reader ({ctx.config.laya.reader_model}) over {name}'s {scope}", work,
+                         subject=subject, link="#ledgers", progress=lambda: stage[-1] if stage else None,
+                         on_cancel=stopped.set)
 
 
 EDGES_LIST = "list:"
@@ -803,8 +836,29 @@ def _history_waits(ctx: AppContext, runner: JobRunner) -> str | None:
     """Live work running, or a scheduled tick or midday pass due within TICK_QUIET or due and not
     yet run: the backfill leaves Google News and Yahoo to it until it has run. Read on the job's
     own connection, so it is safe from the worker thread."""
-    if live := _live_work(runner, LIVE_WORK):
+    return _live_work(runner, LIVE_WORK) or scheduled_run_near(ctx)
+
+
+def _reader_waits(ctx: AppContext, runner: JobRunner) -> str | None:
+    """Model work in this app or any process, or a scheduled run due within TICK_QUIET (or due and
+    not yet run): the stronger reader leaves Ollama to it."""
+    return _laya_history_waits(runner) or waits_anywhere(ctx)
+
+
+def _laya_history_waits(runner: JobRunner) -> str | None:
+    """In-app work Laya's history scoring and the stronger reader give way to: model work, and a
+    regime-AI backtest (it asks Ollama's model every replayed day)."""
+    if live := _model_work(runner):
         return live
+    try:
+        return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind == "backtest"
+                     and (j.subject or "").endswith(BACKTEST_SEP + REGIME_AI_PART)), None)
+    except RuntimeError:
+        return None
+
+
+def scheduled_run_near(ctx: AppContext) -> str | None:
+    """A scheduled tick or midday pass due within TICK_QUIET, or due and not yet run, by name."""
     # Imported here: the schedule module imports this one.
     from oracle.services.schedule_service import last_due, next_due
 
@@ -820,6 +874,12 @@ def _history_waits(ctx: AppContext, runner: JobRunner) -> str | None:
         if now - (due := last_due(now, hhmm)) <= TICK_LATE and not ticked_since(ctx, due, kind):
             return f"the scheduled {KIND_LABELS[kind].lower()} due at {due:%H:%M} UTC"
     return None
+
+
+def _retry_reader(ctx: AppContext, runner: JobRunner, job) -> Job:
+    subject = (job.subject or "").removeprefix(READER_SUBJECT + BACKTEST_SEP)
+    own = subject.endswith(BACKTEST_SEP + OWN_PART)
+    return submit_reader(ctx, runner, subject.removesuffix(BACKTEST_SEP + OWN_PART), own)
 
 
 def _retry_history(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -849,7 +909,7 @@ def _retry_laya_history(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 def _retry_laya_test(ctx: AppContext, runner: JobRunner, job) -> Job:
     run, name, model = (job.subject or "").split(BACKTEST_SEP, 2)
-    return submit_laya_test(ctx, runner, run == SENSITIVITY, name, model)
+    return submit_laya_test(ctx, runner, run == SENSITIVITY, name, model, run == OWN)
 
 
 def _retry_edges(ctx: AppContext, runner: JobRunner, job) -> Job:
@@ -872,7 +932,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history,
-    "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry,
+    "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,
 }
 

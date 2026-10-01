@@ -4,8 +4,8 @@ import argparse
 
 from oracle.services.context import AppContext
 from oracle.services.laya_history_service import plan_history, score_history
-from oracle.services.laya_service import laya_scores, score_company
-from oracle.services.laya_test_service import LayaTest, keep_laya_test, laya_tests, run_laya_test
+from oracle.services.laya_service import MODEL_TAG, laya_scores, score_company
+from oracle.services.laya_test_service import LayaTest, check_test_model, keep_laya_test, laya_tests, run_laya_test
 from oracle.services.watch_service import DEFAULT_LIST
 
 UNCALIBRATED = "probabilities are uncalibrated"
@@ -31,6 +31,9 @@ def register(parser: argparse.ArgumentParser) -> None:
     test = sub.add_parser("test", help="the pre-registered predictive test over the scored history")
     test.add_argument("--list", default=DEFAULT_LIST)
     test.add_argument("--sensitivity", action="store_true", help="links as known today, 03's supplier and customer links in")
+    test.add_argument("--own-only", action="store_true", help="each company's own news only: the own feature alone")
+    test.add_argument("--model", default=MODEL_TAG,
+                      help=f"whose scores: {MODEL_TAG} (Laya, default) or a stronger reader's tag, like ollama:qwen2.5:32b")
     test.add_argument("--show", action="store_true", help="print the kept results, running nothing")
     test.set_defaults(handler=test_cmd)
 
@@ -78,7 +81,8 @@ def test_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         for t in kept:
             print(format_test(t))
         return 0
-    t = keep_laya_test(ctx, run_laya_test(ctx, args.list, sensitivity=args.sensitivity,
+    t = keep_laya_test(ctx, run_laya_test(ctx, args.list, sensitivity=args.sensitivity, own_only=args.own_only,
+                                          model=check_test_model(ctx, args.model),
                                           on_progress=lambda line: print(line, flush=True)))
     print(format_test(t))
     return 0
@@ -88,20 +92,30 @@ def _num(x: float | None, fmt: str = "+.4f") -> str:
     return "n/a" if x is None else format(x, fmt)
 
 
+def coverage_line(c: dict | None) -> str | None:
+    if not c:
+        return None
+    gap = c["needed"] - c["scored"]
+    return (f"own pairs scored by this model: {c['scored']} of {c['needed']}"
+            + (f"; {gap} not scored, so it is not like for like with a model that scored them all" if gap else ""))
+
+
 def format_test(t: LayaTest) -> str:
     lines = [f"Laya predictive test, {t.label}: {t.verdict}",
              f"model {t.model}; {t.start.isoformat()} to {t.end.isoformat()}; {t.companies} companies; pairs counted "
              + ", ".join(f"{r} {n}" for r, n in t.articles.items()),
              f"t-stat: {t.t_method}"]
+    if line := coverage_line(t.own_coverage):
+        lines.append(line)
     for h in t.horizons:
         beats = {True: "beats", False: "does not beat", None: "cannot be set against"}
         lines += ["", f"{h.horizon}-day excess return (features over {h.lookback} days): {h.verdict}: IC {_num(h.ic)}, "
                       f"t {_num(h.t, '.2f')}, {h.days} IC days, positive in {h.positive} of {h.counted} counted segments",
                   f"  news-attention baseline (own_attention, sign fitted): IC {_num(h.baseline_ic)}, "
-                  f"t {_num(h.baseline_t, '.2f')}; Laya {beats[h.beats_baseline]} it",
+                  f"t {_num(h.baseline_t, '.2f')}; the reading {beats[h.beats_baseline]} it",
                   f"  momentum baseline (own_momentum, sign fitted): IC {_num(h.momentum_ic)}, "
-                  f"t {_num(h.momentum_t, '.2f')}; Laya {beats[h.beats_momentum]} it",
-                  "  Laya counts as useful only if it beats both baselines; the pass bar above is separate.",
+                  f"t {_num(h.momentum_t, '.2f')}; the reading {beats[h.beats_momentum]} it",
+                  "  The reading counts as useful only if it beats both baselines; the pass bar above is separate.",
                   f"  {'segment':<24} {'IC':>8} {'t':>6} {'days':>5}  counted  weights (fitted on trailing data)"]
         for s in h.segments:
             w = " ".join(f"{k.removesuffix('_mean')}:{v:+.2f}" for k, v in s.weights.items() if v)

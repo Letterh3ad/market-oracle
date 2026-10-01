@@ -50,8 +50,8 @@ def test_the_card_shows_the_kept_table_verdict_segments_left_out_and_the_caveat(
     assert "no: no trailing fit" in text and "own_mean +0.70, own_relevance -0.30" in text
     assert "own_sum (secondary)" in text and "Last scoring run: finished: 51 groups." in text
     assert "Survivorship" in text
-    assert "News-attention baseline (own_attention, sign fitted): IC +0.0400, t +2.10; Laya does not beat it" in text
-    assert "Momentum baseline (own_momentum, sign fitted): IC +0.0100, t +0.40; Laya beats it" in text
+    assert "News-attention baseline (own_attention, sign fitted): IC +0.0400, t +2.10; the reading does not beat it" in text
+    assert "Momentum baseline (own_momentum, sign fitted): IC +0.0100, t +0.40; the reading beats it" in text
     assert "useful only if it beats both baselines" in text
 
 
@@ -77,3 +77,30 @@ def test_the_sensitivity_button_starts_that_run_and_the_estimate_reads_the_plan(
     """)
     assert asked[0] == "POST /api/jobs/laya-test?sensitivity=true" and "GET /api/laya/plan" in asked
     assert "sensitivity: FAIL" in text and "about 2.0 h at 12.5 ms a pair" in text
+
+
+def test_a_result_shows_how_many_own_pairs_its_model_scored():
+    text, red = run("""
+        ANSWERS["GET /api/laya/tests"].tests[0].own_coverage = { needed: 10, scored: 8 };
+        section.start(); await settle();
+        const red = node.all((n) => n.tag === "p" && n.className.includes("down")).map((n) => n.textContent);
+        console.log(JSON.stringify([node.textContent, red]));
+    """)
+    line = "Own pairs scored by this model: 8 of 10; 2 not scored, so it is not like for like"
+    assert line in text and any(r.startswith(line) for r in red)
+
+
+def test_the_test_runs_on_the_picked_models_scores_and_own_news_only():
+    asked, options = run("""
+        ANSWERS["GET /api/laya/tests"].models = ["laya-multilingual@e4e9ddf", "ollama:qwen2.5:32b"];
+        section.start(); await settle();
+        const pick = labelled(node, "Test model");
+        const options = pick.children.map((o) => o.textContent);
+        pick.value = "ollama:qwen2.5:32b";
+        labelled(node, "Own news only").checked = true;
+        asked.length = 0;
+        button(node, "Run the test").fire("click"); await settle();
+        console.log(JSON.stringify([asked.filter((a) => a.startsWith("POST")), options]));
+    """)
+    assert options == ["laya-multilingual@e4e9ddf", "ollama:qwen2.5:32b"]
+    assert asked == ["POST /api/jobs/laya-test?own_only=true&model=ollama%3Aqwen2.5%3A32b"]

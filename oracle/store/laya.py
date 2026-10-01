@@ -81,6 +81,20 @@ class LayaRepo:
                 [(i, symbol, model, relation, s.relevant, s.direction, json.dumps(s.direction_probs), s.event,
                   s.event_prob, at) for i, s in scored])
 
+    def copy(self, source: str, target: str, model: str, relation: str, article_ids: list[int], at: str) -> int:
+        """`source`'s scores of `article_ids` by `model` stored again for `target` as `relation`,
+        a pair already scored for `target` kept as it is; the rows added."""
+        added = 0
+        with transaction(self._conn):
+            for i in range(0, len(article_ids), 500):
+                part = article_ids[i:i + 500]
+                added += self._conn.execute(
+                    "INSERT OR IGNORE INTO laya_scores (article_id, symbol, model, relation, relevant, direction, "
+                    "direction_probs, event, event_prob, scored_at) SELECT article_id, ?, model, ?, relevant, direction, "
+                    f"direction_probs, event, event_prob, ? FROM laya_scores WHERE symbol = ? AND model = ? "
+                    f"AND article_id IN ({','.join('?' * len(part))})", (target, relation, at, source, model, *part)).rowcount
+        return added
+
     def scores(self, symbol: str, model: str) -> list[StoredScore]:
         rows = self._conn.execute(
             "SELECT a.id, a.title, a.url, a.outlet, a.published_at, a.fetched_at, s.relation, s.relevant, "

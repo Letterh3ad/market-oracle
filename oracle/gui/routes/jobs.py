@@ -12,9 +12,10 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
+    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
+from oracle.services.laya_service import MODEL_TAG
 from oracle.services.watch_service import DEFAULT_LIST
 
 router = APIRouter(prefix="/api/jobs")
@@ -159,10 +160,12 @@ async def laya_history(watchlist: str = DEFAULT_LIST, allow_cpu: bool = False, c
 
 
 @router.post("/laya-test", status_code=202)
-async def laya_test(watchlist: str = DEFAULT_LIST, sensitivity: bool = False, ctx: AppContext = Depends(get_ctx),
+async def laya_test(watchlist: str = DEFAULT_LIST, sensitivity: bool = False, own_only: bool = False,
+                    model: str = MODEL_TAG, ctx: AppContext = Depends(get_ctx),
                     runner: JobRunner = Depends(get_runner)) -> dict:
-    """The pre-registered Laya predictive test (or its sensitivity run) over the scored history."""
-    return shapes.job(submit_laya_test(ctx, runner, sensitivity, watchlist))
+    """The pre-registered predictive test (or its sensitivity or own-news-only run) over `model`'s scored
+    history (Laya's by default)."""
+    return shapes.job(submit_laya_test(ctx, runner, sensitivity, watchlist, model, own_only))
 
 
 @router.post("/history", status_code=202)
@@ -171,3 +174,11 @@ async def history(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_c
     """The history backfill of a list and its industry maps (hours); it waits while live work runs
     and resumes where it stopped."""
     return shapes.job(submit_history(ctx, runner, watchlist))
+
+
+@router.post("/reader", status_code=202)
+async def reader(watchlist: str = DEFAULT_LIST, own_only: bool = False, ctx: AppContext = Depends(get_ctx),
+                 runner: JobRunner = Depends(get_runner)) -> dict:
+    """The stronger reader over a list's history backfill (hours); it waits while model work runs or a
+    scheduled tick is near, and resumes where it stopped."""
+    return shapes.job(submit_reader(ctx, runner, watchlist, own_only))

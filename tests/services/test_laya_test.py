@@ -16,7 +16,7 @@ from oracle.research.news import Article
 from oracle.services.activity_service import PREEMPTED_BY, JobRunner, retry, submit_laya_history, submit_laya_test
 from oracle.services.context import open_context
 from oracle.services.laya_features import known_day
-from oracle.services.errors import JobAlreadyRunning
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
 from oracle.services.laya_history_service import (
     HISTORY_WAITS_FOR, history_pairs, last_history_run, plan_history, score_history,
@@ -406,6 +406,36 @@ def test_news_that_leads_the_price_passes_the_bar_and_the_result_is_kept(ctx):
     assert laya_tests(ctx) == [kept] and kept.id is not None and kept.horizons == t.horizons
 
 
+def test_the_stronger_readers_own_news_runs_the_own_feature_alone_beside_laya(ctx):
+    from oracle.services.reader_service import score_reader
+    from tests.fakes.reader import FakeReader
+
+    market(ctx, signal=True)
+    score_history(ctx, scorer=FakeLaya())
+    score_reader(ctx, own_only=True, reader=FakeReader("fake"))
+    reader = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END)
+    laya_own = run_laya_test(ctx, model=MODEL, own_only=True, end=END)
+    laya_main = run_laya_test(ctx, model=MODEL, end=END)
+    assert reader.own_coverage == laya_own.own_coverage and reader.own_coverage["needed"] == reader.own_coverage["scored"] > 0
+    assert "headlines only" in reader.caveat and "headlines only" not in laya_own.caveat
+    ctx.conn.execute("DELETE FROM laya_scores WHERE model = 'ollama:fake' AND article_id = "
+                     "(SELECT MIN(article_id) FROM laya_scores WHERE model = 'ollama:fake' AND relation = 'own')")
+    partial = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END)
+    assert partial.own_coverage["scored"] < partial.own_coverage["needed"] == reader.own_coverage["needed"]
+    for t in (reader, laya_own):
+        five = t.horizons[0]
+        assert t.run == "own" and "own news only" in t.label and set(t.articles) == {"own"}
+        assert set(five.segments[1].weights) == {"own_mean"}, "the own feature alone"
+        assert five.baseline_ic is not None and five.momentum_ic is not None, "the same baselines"
+        assert five.verdict == "PASS", "same bar, same synthetic signal"
+    assert reader.model == "ollama:fake" and reader.articles["own"] == laya_own.articles["own"]
+    with pytest.raises(InvalidQuery, match="sensitivity"):
+        run_laya_test(ctx, model=MODEL, own_only=True, sensitivity=True, end=END)
+    kept = [keep_laya_test(ctx, t) for t in (reader, laya_main, laya_own)]
+    assert [(t.run, t.model) for t in laya_tests(ctx)] == [("main", MODEL), ("own", MODEL), ("own", "ollama:fake")]
+    assert {t.id for t in laya_tests(ctx)} == {k.id for k in kept}
+
+
 def test_news_the_price_ignores_does_not_pass(ctx):
     market(ctx, signal=False)
     score_history(ctx, scorer=FakeLaya())
@@ -427,14 +457,18 @@ def test_a_thin_segment_is_named_and_left_out(ctx):
 async def test_jobs_score_and_test_and_retry_rebuilds_them(ctx, monkeypatch):
     backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
     monkeypatch.setattr("oracle.services.laya_service.load_scorer", lambda c: FakeLaya(MODEL, "cuda"))
+    monkeypatch.setattr("oracle.services.laya_test_service.testable_models", lambda c: [MODEL, "ollama:qwen2.5:32b"])
     runner = JobRunner(ctx)
+    with pytest.raises(InvalidQuery, match="no scores are kept under 'ollama:qwen2.5:3b'"):
+        submit_laya_test(ctx, runner, model="ollama:qwen2.5:3b")
     job = submit_laya_history(ctx, runner)
     done = await runner.wait(job.id)
     assert done.state == "done" and done.result.scored == len(MAINS)
     t = await runner.wait(submit_laya_test(ctx, runner, sensitivity=True, model=MODEL).id)
     assert t.state == "done" and t.result.run == "sensitivity" and laya_tests(ctx)[0].id == t.result.id
     for submit in (lambda: submit_laya_history(ctx, runner), lambda: submit_laya_history(ctx, runner, allow_cpu=True),
-                   lambda: submit_laya_test(ctx, runner, model=MODEL)):
+                   lambda: submit_laya_test(ctx, runner, model=MODEL),
+                   lambda: submit_laya_test(ctx, runner, model="ollama:qwen2.5:32b", own_only=True)):
         job = submit()
         runner.cancel(job.id)
         await runner.wait(job.id)

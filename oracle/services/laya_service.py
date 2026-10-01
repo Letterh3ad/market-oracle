@@ -23,7 +23,7 @@ from oracle.store.laya import LayaRepo
 from oracle.store.universe import UniverseRepo
 
 __all__ = ["BATCH", "MODEL_TAG", "MODEL_WORK", "RELATIONS", "ScoreRun", "ScoredArticle", "SharedScorer", "YIELD_STEP_S",
-           "company_articles", "laya_scores", "live_model_work", "load_scorer", "primary", "score_articles",
+           "company_articles", "laya_scores", "live_model_work", "load_scorer", "named", "primary", "score_articles",
            "score_company"]
 
 log = logging.getLogger(__name__)
@@ -142,6 +142,12 @@ def _company(ctx: AppContext, symbol: str) -> _Company:
 def primary(ctx: AppContext, symbol: str) -> str:
     """The company's primary listing, under which its scores are stored."""
     return _company(ctx, symbol).symbol
+
+
+def named(ctx: AppContext, symbol: str) -> tuple[str, str]:
+    """The company's primary listing and how a model is told it ("Name (SYMBOL)")."""
+    c = _company(ctx, symbol)
+    return c.symbol, c.label
 
 
 def company_articles(ctx: AppContext, symbol: str) -> list[int]:

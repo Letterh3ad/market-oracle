@@ -27,7 +27,7 @@ from oracle.store.laya import LayaRepo
 from oracle.store.meta import MetaRepo
 
 __all__ = ["GPU_MS", "LayaHistoryRun", "MapSubject", "PairGroup", "PairPlan", "history_pairs", "last_history_run",
-           "HISTORY_WAITS_FOR", "map_subjects", "plan_history", "score_history"]
+           "HISTORY_WAITS_FOR", "history_waits_anywhere", "map_subjects", "plan_history", "score_history"]
 
 LAST_RUN = "laya_history_last_run"
 JOB = "laya_history"
@@ -36,6 +36,15 @@ GPU_WAIT_S = 60.0
 """How often a run with no GPU room tries the GPU again."""
 HISTORY_WAITS_FOR = (*MODEL_WORK, "tick", "industry_research")
 """Job locks (any process) a history run gives way to: live model work, a tick, industry research."""
+
+
+def history_waits_anywhere(ctx: AppContext) -> str | None:
+    """What a history run gives way to in any process: HISTORY_WAITS_FOR. Never the stronger reader:
+    the reader gives way to this run (it unloads its model and waits while this lock is held), and
+    only one side may wait or the two would wait on each other for ever."""
+    return live_model_work(ctx, HISTORY_WAITS_FOR)
+
+
 GPU_MS = 19.0
 """Milliseconds a pair on the GPU (ticket 01's measure: 11 to 19), for an estimate before any run."""
 CPU_MS = 410.0
@@ -213,7 +222,7 @@ def score_history(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, only: Seque
     with single_flight(ctx, JOB, LEASE_S) as held:
         def waiting() -> str | None:
             held.check()
-            return (busy() if busy else None) or live_model_work(ctx, HISTORY_WAITS_FOR)
+            return (busy() if busy else None) or history_waits_anywhere(ctx)
 
         say("planning the pairs")
         groups = history_pairs(ctx, watchlist, only=only, own_only=own_only)

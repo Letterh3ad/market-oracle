@@ -29,28 +29,39 @@ from oracle.services.industry_research_service import KIND_RELATION, relation_fo
 from oracle.services.industry_service import Related
 from oracle.services.laya_features import daily_features
 from oracle.services.laya_history_service import MapSubject, map_subjects
+from oracle.research.reader import reader_tag
+from oracle.services import laya_service
 from oracle.services.laya_service import MODEL_TAG, ScoredArticle
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.industry_news import IndustryNewsRepo
+from oracle.store.laya import LayaRepo
 from oracle.store.laya_tests import LayaTestRepo
 
-__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "SENSITIVITY", "TEST_START", "FeatureIC", "HorizonResult",
-           "LayaTest", "MAIN_RELATIONS", "Obs", "Panel", "SegmentRow", "build_panel", "horizon_result",
-           "keep_laya_test", "latest_verdict", "laya_tests", "observations", "relation_for", "run_laya_test",
-           "trailing_fit"]
+__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "OWN", "SENSITIVITY", "TEST_START", "FeatureIC",
+           "HorizonResult", "LayaTest", "MAIN_RELATIONS", "Obs", "Panel", "SegmentRow", "build_panel",
+           "check_test_model", "horizon_result", "keep_laya_test", "latest_verdict", "laya_tests",
+           "observations", "own_coverage", "relation_for", "run_laya_test", "testable_models", "trailing_fit"]
 
 TEST_START = date(2022, 9, 21)
 HORIZONS = ((5, 7), (20, 28))
 """(trading days ahead, feature lookback in calendar days)."""
 FIT_DAYS = 730
-MAIN, SENSITIVITY = "main", "sensitivity"
+MAIN, SENSITIVITY, OWN = "main", "sensitivity", "own"
+RUNS = (MAIN, OWN, SENSITIVITY)
+OWN_RELATIONS = ("own",)
+"""The own-news-only run (ticket 09: the stronger reader read only own news): the own feature
+alone, under the same bar, beside the same baselines."""
 MAIN_RELATIONS = ("own", "competitor", "industry")
 SENSITIVITY_RELATIONS = ("own", "competitor", "supplier", "customer", "industry")
 MAIN_LINK_SOURCES = ("user", "discovery", "chat")
 """Links the main run counts; 03's `filing` and `laya` links wait for the sensitivity run."""
 INDUSTRY_SOURCES = ("industry", "industry_group")
+READER_PREFIX = "ollama:"
+READER_CAVEAT = (" The stronger reader scores a headline it judges not about the company as 0 (an implicit "
+                 "relevance filter Laya does not have) and reads headlines only (Laya read headline and snippet), so a "
+                 "gap between the two readers may come from those as well as from reading direction better.")
 BASELINE = "own_attention"
 """log(1 + own articles in the window): news attention alone, Laya's reading left out."""
 MOMENTUM = "own_momentum"
@@ -61,7 +72,8 @@ COVERAGE_SHARE = 0.5
 CAVEAT = ("Survivorship: today's main list and industry maps taken back in time. Laya's probabilities are "
           "uncalibrated; returns are in each listing's own currency.")
 RUN_LABELS = {MAIN: "main (links first known by the article's day; 03's links left out)",
-              SENSITIVITY: "sensitivity: links as known today, 03's supplier and customer links included"}
+              SENSITIVITY: "sensitivity: links as known today, 03's supplier and customer links included",
+              OWN: "own news only (the own feature alone; no map companies)"}
 
 
 def relation_for(own: set[int], about: dict[int, list[Related]], sensitivity: bool) -> Callable[[ScoredArticle], str | None]:
@@ -100,7 +112,8 @@ class Panel:
     """Relation -> scored pairs counted."""
 
 
-def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, start: date = TEST_START,
+def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, own_only: bool = False,
+                start: date = TEST_START,
                 end: date | None = None, model: str = MODEL_TAG, research: bool = False,
                 known_by: str | None = None, say: Callable[[str], None] = lambda _: None) -> Panel:
     """With `research`, each company's articles are its backfill plus what the daily industry
@@ -125,8 +138,9 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
         for s in subjects:
             for i in ids(s.symbol):
                 about.setdefault(i, []).append(s.related)
+        rel = relation_for(set(ids(m)), about, sensitivity)
         rows = daily_features(ctx, m, first, end, model=model, history=True,
-                              relation_for=relation_for(set(ids(m)), about, sensitivity),
+                              relation_for=(lambda s, rel=rel: "own" if rel(s) == "own" else None) if own_only else rel,
                               day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)), known_by=known_by)
         days: dict[date, dict[str, tuple[int, float, float]]] = {}
         for r in rows:
@@ -211,6 +225,9 @@ class LayaTest:
     t_method: str = "Newey-West (Bartlett) with h lags over the daily ICs (overlapping windows)"
     caveat: str = CAVEAT
     id: int | None = None
+    own_coverage: dict[str, int] | None = None
+    """{"needed": the main list's own backfill pairs, "scored": those `model` has a score for}: two
+    models' results compare like for like only with the same coverage."""
     watchlist: str = DEFAULT_LIST
     """The list it ran on: only the main list from TEST_START can give Laya weight."""
 
@@ -358,16 +375,20 @@ def _r(x: float | None) -> float | None:
 
 
 def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False,
-                  start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
+                  own_only: bool = False, start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
                   on_progress: Callable[[str], None] | None = None) -> LayaTest:
-    """The test as pre-registered, over the stored scores of `model`; reads only."""
+    """The test as pre-registered, over the stored scores of `model`; reads only. `own_only` counts
+    only each company's own news and scores the own feature alone (same bar, same baselines)."""
+    if sensitivity and own_only:
+        raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     say = on_progress or (lambda _: None)
     end = end or ctx.clock.utcnow().date()
     spans = segments(start, end)
     if not spans:
         raise InvalidQuery(f"{start.isoformat()} to {end.isoformat()} is shorter than half a segment")
-    relations = SENSITIVITY_RELATIONS if sensitivity else MAIN_RELATIONS
-    panel = build_panel(ctx, watchlist, sensitivity=sensitivity, start=start, end=end, model=model, say=say)
+    relations = OWN_RELATIONS if own_only else SENSITIVITY_RELATIONS if sensitivity else MAIN_RELATIONS
+    panel = build_panel(ctx, watchlist, sensitivity=sensitivity, own_only=own_only, start=start, end=end, model=model,
+                        say=say)
     say("coverage")
     cov = coverage(ctx, watchlist)
     results = []
@@ -376,9 +397,32 @@ def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity
         results.append(horizon_result(panel, h, lb, spans, relations, cov))
     labels = [r.verdict for r in results]
     overall = "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
-    run = SENSITIVITY if sensitivity else MAIN
+    run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
+    caveat = CAVEAT + (READER_CAVEAT if model.startswith(READER_PREFIX) else "")
     return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(results),
-                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()), watchlist=watchlist)
+                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()), caveat=caveat,
+                    own_coverage=own_coverage(ctx, panel.mains, model), watchlist=watchlist)
+
+
+def own_coverage(ctx: AppContext, mains: Sequence[str], model: str) -> dict[str, int]:
+    """The main list's own backfill pairs, and how many of them `model` has scored."""
+    repo, needed, missing = LayaRepo(ctx.conn), 0, 0
+    for m in mains:
+        ids = list(dict.fromkeys(company_history(ctx, m)))
+        needed += len(ids)
+        missing += repo.unscored_count(laya_service.primary(ctx, m), model, ids)
+    return {"needed": needed, "scored": needed - missing}
+
+
+def testable_models(ctx: AppContext) -> list[str]:
+    """The models a test may read: Laya's tag and the configured stronger reader's."""
+    return [MODEL_TAG, reader_tag(ctx.config.laya.reader_model)]
+
+
+def check_test_model(ctx: AppContext, model: str) -> str:
+    if model not in (known := testable_models(ctx)):
+        raise InvalidQuery(f"no scores are kept under {model!r}; the test reads {' or '.join(known)}")
+    return model
 
 
 def keep_laya_test(ctx: AppContext, test: LayaTest) -> LayaTest:
@@ -390,7 +434,8 @@ def keep_laya_test(ctx: AppContext, test: LayaTest) -> LayaTest:
 def laya_tests(ctx: AppContext) -> list[LayaTest]:
     """The latest kept result of each run (main first)."""
     rows = LayaTestRepo(ctx.conn).latest()
-    return sorted((_load(r.result, r.id) for r in rows), key=lambda t: t.run != MAIN)
+    return sorted((_load(r.result, r.id) for r in rows),
+                  key=lambda t: (RUNS.index(t.run) if t.run in RUNS else len(RUNS), t.model != MODEL_TAG, t.model))
 
 
 def latest_verdict(ctx: AppContext, model: str = MODEL_TAG, run: str = MAIN) -> LayaTest | None:
