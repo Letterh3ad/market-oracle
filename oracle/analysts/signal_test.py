@@ -17,7 +17,7 @@ from oracle.analysts.predictive import (
 )
 from oracle.market.bars import Bar
 
-__all__ = ["INSIDE", "MIN_SECTOR", "Panel", "SegmentRow", "Signal", "WindowResult", "daily_ics", "excess",
+__all__ = ["INSIDE", "unseen_text", "MIN_SECTOR", "Panel", "SegmentRow", "Signal", "WindowResult", "daily_ics", "excess",
            "overall", "power", "reversal_1m", "momentum_12_1", "window_result"]
 
 MIN_SECTOR = 3
@@ -212,6 +212,20 @@ class WindowResult:
     passed: bool
     positive: int
     counted: int
+
+    @property
+    def unseen(self) -> bool:
+        """A FAIL whose IC is above 0 but under what the window's own spread lets it see at t T_BAR."""
+        return (self.verdict == "FAIL" and self.ic is not None and self.observed_power is not None
+                and 0 < self.ic < self.observed_power)
+
+    @property
+    def verdict_text(self) -> str:
+        return unseen_text(self.observed_power) if self.unseen else self.verdict
+
+
+def unseen_text(needed: float) -> str:
+    return f"FAIL (could not see an IC this small: needed {needed:.4f})"
 
 
 def window_result(window: str, ics: Mapping[date, DayIC], spans: Sequence[tuple[date, date]], h: int,

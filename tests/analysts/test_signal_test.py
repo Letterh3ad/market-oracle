@@ -153,3 +153,16 @@ def test_overall_needs_every_horizon_to_pass():
     assert overall(["PASS", "FAIL"]) == "FAIL"
     assert overall(["PASS", "INCONCLUSIVE"]) == "INCONCLUSIVE"
     assert overall([]) == "INCONCLUSIVE"
+
+
+def test_a_fail_with_a_positive_ic_under_the_observed_power_says_it_could_not_see_it():
+    spans = [(date(2020, 1, 1), date(2020, 1, 31)), (date(2020, 2, 1), date(2020, 2, 29))]
+    noisy = {date(2020, 1, 1) + timedelta(k): (0.004 + (0.2 if k % 2 else -0.2), 100, date(2020, 1, 1) + timedelta(k))
+             for k in range(60)}
+    w = window_result("confirm", noisy, spans, 1, None)
+    assert w.verdict == "FAIL" and 0 < w.ic < w.observed_power
+    assert w.verdict_text == f"FAIL (could not see an IC this small: needed {w.observed_power:.4f})"
+    negative = {d: (-x, n, e) for d, (x, n, e) in noisy.items()}
+    assert window_result("confirm", negative, spans, 1, None).verdict_text == "FAIL", "a negative IC is a plain FAIL"
+    passing = window_result("confirm", ics_on(date(2020, 1, 1), 60, 0.05), spans, 1, None)
+    assert passing.verdict_text == "PASS"

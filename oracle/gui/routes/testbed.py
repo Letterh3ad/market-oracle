@@ -26,4 +26,5 @@ async def coverage(ctx: AppContext = Depends(get_ctx)) -> dict:
 @router.get("/signals")
 async def signals(ctx: AppContext = Depends(get_ctx)) -> dict:
     """The pre-registered signals and each one's newest result, on a thread (its own research connection)."""
-    return shapes.signal_list(SIGNALS.values(), await asyncio.to_thread(signal_tests, ctx))
+    full = await asyncio.to_thread(signal_tests, ctx)
+    return shapes.signal_list(SIGNALS.values(), full, await asyncio.to_thread(signal_tests, ctx, True))

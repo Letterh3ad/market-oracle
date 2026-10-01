@@ -601,24 +601,36 @@ def _retry_testbed(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_testbed(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
 
 
-def submit_signal_test(ctx: AppContext, runner: JobRunner, name: str) -> Job:
-    """The pre-registered signal test of `name` on the testbed, kept in the research database
-    (minutes). It reads only, waits while live work runs like the testbed build, and a Cancel
-    stops it between chunks of days, keeping nothing."""
+SIGNAL_TEST_WAITS = (*TESTBED_WAITS, "testbed")
+"""A test run during a build would read a half-filled testbed."""
+TRAIN_PART = "train"
+
+
+def submit_signal_test(ctx: AppContext, runner: JobRunner, name: str, train_only: bool = False) -> Job:
+    """The pre-registered signal test of `name` on the testbed (with `train_only`, 2010-2019 alone,
+    confirm never read), kept in the research database (minutes). It reads only, waits while live
+    work or a testbed build runs, and a Cancel stops it between chunks of days, keeping nothing."""
     check_signal(name)
     stage: list[str] = []
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        return await run_and_keep(c, name, stop=stopped.is_set, busy=lambda: _testbed_waits(c, runner),
-                                  on_progress=stage.append)
+        return await run_and_keep(c, name, train_only=train_only, stop=stopped.is_set,
+                                  busy=lambda: _signal_test_waits(c, runner), on_progress=stage.append)
 
-    return runner.submit("signal_test", f"Signal test: {name}", work, subject=name, link="#ledgers",
-                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+    label = f"Signal test: {name}" + (", train only" if train_only else "")
+    return runner.submit("signal_test", label, work, subject=name + (BACKTEST_SEP + TRAIN_PART if train_only else ""),
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _signal_test_waits(ctx: AppContext, runner: JobRunner) -> str | None:
+    return _live_work(runner, SIGNAL_TEST_WAITS) or scheduled_run_near(ctx)
 
 
 def _retry_signal_test(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_signal_test(ctx, runner, job.subject or "")
+    subject = job.subject or ""
+    train_only = subject.endswith(BACKTEST_SEP + TRAIN_PART)
+    return submit_signal_test(ctx, runner, subject.removesuffix(BACKTEST_SEP + TRAIN_PART), train_only)
 
 
 def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:

@@ -178,3 +178,41 @@ async def test_the_job_runs_and_keeps_the_test_and_a_cancelled_one_retries(ctx):
     assert signal_tests(ctx)["reversal_1m"].confirm[0].horizon == 5
     with pytest.raises(InvalidQuery):
         submit_signal_test(ctx, runner, "nope")
+
+
+async def test_a_train_only_run_reads_nothing_after_2019_and_is_kept_beside_the_full_result(ctx):
+    seed(ctx)
+    full = await run_and_keep(ctx, "future", registry=REGISTRY)
+    train = await run_and_keep(ctx, "future", registry=REGISTRY, train_only=True)
+    assert train.train_only and train.confirm == () and train.verdict == "TRAIN ONLY" and not train.passed
+    assert train.last_day == date(2019, 12, 31) and train.train[0].verdict == "PASS"
+    assert train.train[0].days == full.train[0].days, "the same train days as a full run"
+    kept, trains = signal_tests(ctx), signal_tests(ctx, train_only=True)
+    assert kept["future"].id == full.id and trains["future"].id == train.id
+
+
+async def test_a_signal_test_waits_for_a_testbed_build(ctx):
+    import asyncio
+
+    from oracle.services.activity_service import _signal_test_waits
+    runner, hold = JobRunner(ctx), asyncio.Event()
+
+    async def building(c):
+        await hold.wait()
+
+    job = runner.submit("testbed", "Build the signal testbed", building, subject="testbed")
+    await asyncio.sleep(0.05)
+    assert _signal_test_waits(ctx, runner) == "Build the signal testbed"
+    hold.set()
+    await runner.wait(job.id)
+    assert _signal_test_waits(ctx, runner) is None
+
+
+async def test_a_cancelled_train_only_job_retries_as_train_only(ctx):
+    seed(ctx)
+    runner = JobRunner(ctx)
+    job = submit_signal_test(ctx, runner, "reversal_1m", train_only=True)
+    runner.cancel(job.id)
+    again = await runner.wait(retry(ctx, runner, job.id).id)
+    assert again.state == "done", again.error
+    assert signal_tests(ctx, train_only=True)["reversal_1m"].train_only and "reversal_1m" not in signal_tests(ctx)

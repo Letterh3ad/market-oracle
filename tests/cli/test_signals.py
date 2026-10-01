@@ -37,3 +37,21 @@ def test_test_prints_both_windows_power_missing_share_and_the_verdict(tmp_path, 
     assert "confirm  2020-01-01 2021-12-31   5" in out and "0.0%     4+/4  PASS" in out
     assert "2010-01-01 to 2010-06-30  IC        -  t      -     0 days  0 IC days (needs 20)" in out
     assert "Verdict (confirm): PASS" in out and "survivorship" in out
+
+
+def test_train_only_is_passed_and_an_unseen_fail_says_what_was_needed(tmp_path, capsys, monkeypatch):
+    import dataclasses
+    result, seen = asyncio.run(kept(tmp_path)), {}
+    w = dataclasses.replace(result.confirm[0], ic=0.004, t=0.5, observed_power=0.016, verdict="FAIL", passed=False)
+    result = dataclasses.replace(result, confirm=(w,), verdict="FAIL", passed=False)
+
+    async def fake(ctx, name, **kw):
+        seen.update(kw)
+        return result
+
+    monkeypatch.setattr("oracle.cli.signals.run_and_keep", fake)
+    assert main(["--config", str(config(tmp_path)), "signals", "test", "momentum_12_1", "--train-only"]) == 0
+    out = capsys.readouterr().out
+    assert seen["train_only"] is True
+    assert "FAIL (could not see an IC this small: needed 0.0160)" in out
+    assert "Verdict (confirm): FAIL (could not see an IC this small: needed 0.0160)" in out

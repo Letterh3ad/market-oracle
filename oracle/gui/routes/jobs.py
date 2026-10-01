@@ -186,10 +186,11 @@ async def testbed(refresh: bool = False, ctx: AppContext = Depends(get_ctx),
 
 
 @router.post("/signal-test", status_code=202)
-async def signal_test(name: str, ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
-    """The pre-registered test of one signal on the testbed (minutes), kept in the research database;
-    it waits while live work runs."""
-    return shapes.job(submit_signal_test(ctx, runner, name))
+async def signal_test(name: str, train_only: bool = False, ctx: AppContext = Depends(get_ctx),
+                      runner: JobRunner = Depends(get_runner)) -> dict:
+    """The pre-registered test of one signal on the testbed (minutes; `train_only`: 2010-2019 alone),
+    kept in the research database; it waits while live work or a testbed build runs."""
+    return shapes.job(submit_signal_test(ctx, runner, name, train_only))
 
 
 @router.post("/reader", status_code=202)

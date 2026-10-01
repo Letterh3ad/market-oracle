@@ -40,7 +40,7 @@ const fixed = (x, digits = 4) => (x == null ? "-" : x.toFixed(digits));
 const pct = (x) => (x == null ? "-" : share(x));
 
 function windowCell(w) {
-  return `IC ${num(w.ic)}, t ${fixed(w.t, 2)}, ${w.positive}+ of ${w.counted} segments: ${w.verdict}`;
+  return `IC ${num(w.ic)}, t ${fixed(w.t, 2)}, ${w.positive}+ of ${w.counted} segments: ${w.verdict_text ?? w.verdict}`;
 }
 
 function segmentsTable(w) {
@@ -52,26 +52,27 @@ function segmentsTable(w) {
   return table(head, rows, "No segments.");
 }
 
-function signalsTable(signals, runButton) {
-  const head = [["Signal"], ["Horizon", null, 1], ["Power train / confirm", null, 1],
+function signalsTable(signals, buttons) {
+  const head = [["Signal"], ["Horizon", null, 1], ["Power train / confirm (observed)", null, 1],
     ["Missing train / confirm", null, 1], ["Train (reported only)"], ["Confirm"], ["Verdict"], [""]];
   const rows = signals.flatMap((s) => {
     const r = s.result;
     const label = el("td", null, el("span", { class: "mono" }, s.name), el("div", { class: "dim small" }, s.label));
     if (!r) {
       return [el("tr", null, label, el("td", { class: "num" }, s.horizons.join(", ")),
-        el("td", { class: "small", colspan: 5 }, "Not run yet."), el("td", null, runButton(s.name)))];
+        el("td", { class: "small", colspan: 5 }, "Not run yet."), el("td", null, ...buttons(s.name)))];
     }
     return r.confirm.map((c, k) => {
       const t = r.train[k];
       return el("tr", null, k ? el("td") : label,
         el("td", { class: "num" }, String(c.horizon)),
-        el("td", { class: "num" }, `${fixed(t.power)} / ${fixed(c.power)}`),
+        el("td", { class: "num" }, `${fixed(t.observed_power)} / ${fixed(c.observed_power)}`,
+          el("div", { class: "dim small" }, `formula ${fixed(t.power)} / ${fixed(c.power)}`)),
         el("td", { class: "num" }, `${pct(t.missing_share)} / ${pct(c.missing_share)}`),
         el("td", { class: "small" }, windowCell(t)),
         el("td", { class: "small" }, windowCell(c)),
-        el("td", { class: r.passed ? "up" : r.verdict === "FAIL" ? "down" : "dim" }, k ? "" : r.verdict),
-        el("td", null, k ? "" : runButton(s.name)));
+        el("td", { class: r.passed ? "up" : r.verdict === "FAIL" ? "down" : "dim" }, k ? "" : r.verdict_text ?? r.verdict),
+        el("td", null, ...(k ? [] : buttons(s.name))));
     });
   });
   return table(head, rows, "No signals are registered.");
@@ -87,9 +88,17 @@ function resultDetails(s) {
   ...windows.flatMap((w) => [
     el("p", { class: "small" }, `${w.window === "train" ? "Train" : "Confirm"} ${w.start} to ${w.end}, ${w.horizon}-day `
       + `horizon: ${w.days} IC days, ${fixed(w.names, 0)} names a day, ${fixed(w.effective_days, 0)} effective days; `
-      + `power ${fixed(w.power)} (observed ${fixed(w.observed_power)}); missing share ${pct(w.missing_share)}.`),
+      + `power ${fixed(w.observed_power)} (formula ${fixed(w.power)}); missing share ${pct(w.missing_share)}.`),
     segmentsTable(w)]),
   el("p", { class: "dim small" }, `Caveat: ${r.caveat}`));
+}
+
+const stamp = (at) => String(at).slice(0, 16).replace("T", " ");
+
+function trainOnlyLines(signals) {
+  return signals.filter((s) => s.train_result).flatMap((s) => s.train_result.train.map((w) => el("p", { class: "small" },
+    el("span", { class: "mono" }, s.name), `: Train only, ${stamp(s.train_result.run_at)} UTC: ${windowCell(w)} `
+      + `(power ${fixed(w.observed_power)}, missing share ${pct(w.missing_share)}; confirm not read).`)));
 }
 
 function signalTestsSection() {
@@ -121,19 +130,21 @@ function signalTestsSection() {
       .finally(() => { testing.delete(job.id); loadSignals(); });
   }
 
-  const runButton = (name) => {
+  const runButton = (name, trainOnly) => {
     const b = el("button", { type: "button", onclick: async () => {
       b.disabled = true;
       try {
-        followTest(await api(`/api/jobs/signal-test?name=${encodeURIComponent(name)}`, { method: "POST" }));
+        followTest(await api(`/api/jobs/signal-test?name=${encodeURIComponent(name)}${trainOnly ? "&train_only=true" : ""}`,
+          { method: "POST" }));
       } catch (err) {
         sayTest(err.message);
       } finally {
         b.disabled = false;
       }
-    } }, "Run test");
+    } }, trainOnly ? "Train only" : "Run test");
     return b;
   };
+  const buttons = (name) => [runButton(name, false), " ", runButton(name, true)];
 
   async function loadSignals() {
     let body;
@@ -143,7 +154,7 @@ function signalTestsSection() {
       sayTest(`Could not load the signal tests: ${err.message}`);
       return;
     }
-    signalsBody.replaceChildren(signalsTable(body.signals, runButton),
+    signalsBody.replaceChildren(signalsTable(body.signals, buttons), ...trainOnlyLines(body.signals),
       ...body.signals.filter((s) => s.result).map(resultDetails));
   }
 
@@ -229,8 +240,11 @@ function signalTestsSection() {
     el("h3", null, "Pre-registered signals"),
     el("p", { class: "dim small" }, "Each signal is chosen on 2010-2019 (train, reported only) and judged on 2020 to "
       + "today (confirm): PASS needs a confirm IC above 0, t above 2 and the IC positive in more than half the counted "
-      + "six-month segments. Power is the smallest IC the window could see at t 2; the missing share is its member-days "
-      + "without bars. Nothing here was tuned on results."),
+      + "six-month segments. Power is the smallest IC the window could see at t 2, from its daily ICs' own spread (the "
+      + "formula from names, days and horizon is beside it; it assumes names move independently and reads several "
+      + "times too low). A FAIL whose IC was above 0 but under that power says so. The missing share is the window's "
+      + "member-days without bars. Train only runs 2010-2019 alone, never reading the confirm. Nothing here was tuned "
+      + "on results."),
     signalNote, signalsBody);
   return { node, start: begin };
 }

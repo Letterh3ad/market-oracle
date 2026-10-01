@@ -12,7 +12,8 @@ from dataclasses import asdict, dataclass
 from datetime import date
 
 from oracle.analysts.signal_test import (
-    Panel, SegmentRow, Signal, WindowResult, daily_ics, momentum_12_1, overall, reversal_1m, window_result,
+    Panel, SegmentRow, Signal, WindowResult, daily_ics, momentum_12_1, overall, reversal_1m, unseen_text,
+    window_result,
 )
 from oracle.broker.walk_forward import segments
 from oracle.research.training_cutoffs import training_cutoff
@@ -26,6 +27,10 @@ __all__ = ["CAVEAT", "CONFIRM_START", "SIGNALS", "TRAIN_END", "SignalTest", "che
            "load_panel", "run_and_keep", "run_signal_test", "signal_tests"]
 
 TRAIN_END = date(2019, 12, 31)
+TRAIN_ONLY = "TRAIN ONLY"
+"""The verdict of a train-only run: it reads nothing after TRAIN_END, so it judges nothing."""
+TRAIN_KEY = ":train"
+"""Appended to a train-only result's stored signal name, so it never hides the full result."""
 CONFIRM_START = date(2020, 1, 1)
 CHUNK = 250
 """Decision days scored between two checks for a stop or live work."""
@@ -72,6 +77,16 @@ class SignalTest:
     run_at: str
     caveat: str = CAVEAT
     id: int | None = None
+    train_only: bool = False
+    """Bars to TRAIN_END only and no confirm (a rule still being chosen must not see it)."""
+
+    @property
+    def verdict_text(self) -> str:
+        """The verdict, saying so when every failed horizon's IC was above 0 but too small for its window to see."""
+        failed = [w for w in self.confirm if w.verdict == "FAIL"]
+        if self.verdict == "FAIL" and all(w.unseen for w in failed):
+            return unseen_text(max(w.observed_power for w in failed))
+        return self.verdict
 
 
 def load_panel(tb: Testbed, end: date | None = None, start: date = START,
@@ -110,11 +125,12 @@ class _Stopped(Exception):
 
 
 async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Signal] | None = None,
-                          end: date | None = None, stop: Callable[[], bool] | None = None,
+                          end: date | None = None, train_only: bool = False, stop: Callable[[], bool] | None = None,
                           busy: Callable[[], str | None] | None = None,
                           on_progress: Callable[[str], None] = lambda _: None) -> SignalTest | None:
     """The test of `name` as pre-registered, over the testbed to `end` (default today); reads only.
-    Between chunks of days it waits while `busy` names live work, and returns None when `stop`."""
+    Between chunks of days it waits while `busy` names live work, and returns None when `stop`.
+    `train_only` loads nothing after TRAIN_END and computes no confirm."""
     signal = check_signal(name, registry)
     say = on_progress
 
@@ -132,6 +148,8 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
         tb = Testbed(r)
         try:
             await turn("loading the testbed")
+            if train_only:
+                end = min(end or TRAIN_END, TRAIN_END)
             p = load_panel(tb, end, say=say)
             if not any(p.members):
                 raise InvalidQuery("the testbed has no members: build it first")
@@ -146,22 +164,24 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
                     await turn(f"{signal.name}, {h}-day horizon: {p.days[i]}")
                     ics.update(daily_ics(p, signal.score, h, i, i + CHUNK))
                 train.append(window_result("train", ics, train_spans, h, missing["train"], cutoff))
-                confirm.append(window_result("confirm", ics, confirm_spans, h, missing["confirm"], cutoff))
+                if not train_only:
+                    confirm.append(window_result("confirm", ics, confirm_spans, h, missing["confirm"], cutoff))
         except _Stopped:
             return None
         snap = tb.snapshot()
-    verdict = overall([w.verdict for w in confirm])
+    verdict = TRAIN_ONLY if train_only else overall([w.verdict for w in confirm])
     return SignalTest(signal.name, signal.label, signal.horizons, signal.model, cutoff, tuple(train), tuple(confirm),
                       overall([w.verdict for w in train]), verdict, verdict == "PASS", p.days[0], last,
                       len(set().union(*p.members)),
                       f"{snap.source} at {(snap.revision or 'unknown')[:7]}, last change {snap.last_day}" if snap else None,
-                      to_utc_iso(ctx.clock.utcnow()))
+                      to_utc_iso(ctx.clock.utcnow()), train_only=train_only)
 
 
 def keep_signal_test(ctx: AppContext, test: SignalTest) -> SignalTest:
     raw = json.dumps(asdict(test), default=str)
     with research_context(ctx) as r:
-        new_id = SignalTestRepo(r.conn).add(test.signal, test.verdict, raw, test.run_at)
+        key = test.signal + (TRAIN_KEY if test.train_only else "")
+        new_id = SignalTestRepo(r.conn).add(key, test.verdict, raw, test.run_at)
     return _load(raw, new_id)
 
 
@@ -171,10 +191,12 @@ async def run_and_keep(ctx: AppContext, name: str, **kw) -> SignalTest | None:
     return None if t is None else keep_signal_test(ctx, t)
 
 
-def signal_tests(ctx: AppContext) -> dict[str, SignalTest]:
-    """The newest kept result of each signal."""
+def signal_tests(ctx: AppContext, train_only: bool = False) -> dict[str, SignalTest]:
+    """The newest kept full result of each signal, or with `train_only` its newest train-only one."""
     with research_context(ctx) as r:
-        return {row.signal: _load(row.result, row.id) for row in SignalTestRepo(r.conn).latest()}
+        rows = SignalTestRepo(r.conn).latest()
+    return {row.signal.removesuffix(TRAIN_KEY): _load(row.result, row.id) for row in rows
+            if row.signal.endswith(TRAIN_KEY) == train_only}
 
 
 def _windows(rows: list[dict]) -> tuple[WindowResult, ...]:

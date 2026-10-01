@@ -162,7 +162,7 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
             "history": asdict, "laya": asdict, "edges": asdict, "reader": lambda r: {**asdict(r), "summary": r.summary},
             "industry": lambda r: {**asdict(r), "summary": r.summary},
             "laya_history": lambda r: {**asdict(r), "summary": r.summary, "ms_per_pair": r.ms_per_pair},
-            "laya_test": lambda r: laya_test(r), "signal_test": asdict}
+            "laya_test": lambda r: laya_test(r), "signal_test": lambda r: signal_test(r)}
 
 
 def laya_test(t: LayaTest) -> dict:
@@ -247,10 +247,19 @@ def coverage(c: Coverage) -> dict:
                       "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}
 
 
-def signal_list(signals, results: dict[str, SignalTest]) -> dict:
-    """The registry's signals, each with its newest kept result (None before a run)."""
+def signal_test(t: SignalTest) -> dict:
+    """A kept test with each verdict as the page shows it (a FAIL too small to see says so)."""
+    def windows(ws):
+        return [{**asdict(w), "verdict_text": w.verdict_text} for w in ws]
+    return {**asdict(t), "train": windows(t.train), "confirm": windows(t.confirm), "verdict_text": t.verdict_text}
+
+
+def signal_list(signals, results: dict[str, SignalTest], trains: dict[str, SignalTest]) -> dict:
+    """The registry's signals, each with its newest full and train-only results (None before a run)."""
     return {"signals": [{"name": s.name, "label": s.label, "horizons": list(s.horizons), "model": s.model,
-                         "result": asdict(results[s.name]) if s.name in results else None} for s in signals]}
+                         "result": signal_test(results[s.name]) if s.name in results else None,
+                         "train_result": signal_test(trains[s.name]) if s.name in trains else None}
+                        for s in signals]}
 
 
 def testbed_coverage(c: TestbedCoverage) -> dict:

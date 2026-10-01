@@ -26,3 +26,16 @@ async def test_a_test_is_queued_as_a_job_and_an_unknown_signal_is_refused(loaded
     assert again.json()["id"] == first.json()["id"]
     bad = await loaded.post("/api/jobs/signal-test?name=nope")
     assert bad.status_code == 400 and "no signal 'nope'" in bad.text
+
+
+async def test_a_train_only_test_is_its_own_job_and_shows_beside_the_full_result(loaded, ctx, monkeypatch):
+    first = await loaded.post("/api/jobs/signal-test?name=reversal_1m")
+    train = await loaded.post("/api/jobs/signal-test?name=reversal_1m&train_only=true")
+    assert train.status_code == 202 and train.json()["id"] != first.json()["id"]
+    assert train.json()["label"] == "Signal test: reversal_1m, train only"
+    seed(ctx)
+    keep_signal_test(ctx, await run_signal_test(ctx, "future", registry=REGISTRY, train_only=True))
+    monkeypatch.setattr("oracle.gui.routes.testbed.SIGNALS", REGISTRY)
+    future = next(s for s in (await loaded.get("/api/signals")).json()["signals"] if s["name"] == "future")
+    assert future["result"] is None and future["train_result"]["verdict_text"] == "TRAIN ONLY"
+    assert future["train_result"]["train"][0]["verdict_text"] == "PASS"
