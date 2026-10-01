@@ -50,7 +50,7 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step", "discover", "research", "step", "ai_step", "industry"]
+        "prices", "fx", "fill", "analyse", "index_step", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step", "discover", "research", "step", "ai_step", "industry"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
@@ -245,3 +245,17 @@ async def test_a_tick_stopped_part_way_still_leaves_a_record(ctx, monkeypatch):
     stored = last_tick(ctx)
     assert [s.name for s in stored.stages] == ["prices", "fx", "fill"]
     assert stored.outcome == "interrupted" and stored.note.startswith("interrupted")
+
+
+@pytest.mark.frozen_lines
+async def test_the_frozen_lines_stages_decide_nothing_and_the_index_stage_says_why_it_did_not_buy(ctx, monkeypatch):
+    from tests.fakes.regime import use_stub
+
+    built = use_stub(monkeypatch)
+    run = await run_tick(ctx)
+    summaries = {s.name: s.summary for s in run.stages}
+    assert summaries["step"] == "strategy account frozen: nothing decided"
+    assert summaries["regime_step"] == "regime account frozen: nothing decided"
+    assert summaries["regime_v2_step"] == "regime-v2 account frozen: nothing decided"
+    assert summaries["index_step"].startswith("skip ACWI") and _states(run)["index_step"] == "ok"
+    assert [b.account for b in built] == ["core-sat", "laya"]

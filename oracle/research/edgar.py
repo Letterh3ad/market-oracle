@@ -8,7 +8,8 @@ import html
 import re
 from bisect import bisect_right
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urljoin, urlsplit
 
 from oracle.research.notes import MAX_NOTE_TEXT
@@ -154,6 +155,18 @@ def parse_filing_columns(columns: object, cik: int) -> list[Filing]:
 
 EARNINGS_ITEM = "2.02"
 MARKET_OPEN = "09:30"
+NEW_YORK = ZoneInfo("America/New_York")
+_STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d")
+
+
+def new_york(accepted: object) -> str | None:
+    """SEC's acceptanceDateTime (real UTC, as its Z says: checked against filing index pages
+    2026-10-01) as YYYY-MM-DDTHH:MM in New York time; None when it is not a time."""
+    stamp = str(accepted or "")[:16]
+    if not _STAMP.fullmatch(stamp):
+        return None
+    utc = datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc)
+    return utc.astimezone(NEW_YORK).strftime("%Y-%m-%dT%H:%M")
 
 
 @dataclass(frozen=True)
@@ -168,22 +181,20 @@ class Release:
 
 def parse_earnings(body: object) -> list[Release]:
     """Earnings releases from the submissions' recent list, newest first, one per day (the
-    earliest filing that day times it). SEC's acceptanceDateTime is New York time despite its
-    Z suffix."""
+    earliest filing that day times it), dated and timed in New York."""
     recent = body.get("filings", {}).get("recent", {}) if isinstance(body, dict) else {}
     columns = [recent.get(k, []) for k in ("form", "filingDate", "items", "acceptanceDateTime")]
     found: dict[date, bool | None] = {}
     for form, filed, items, accepted in zip(*columns):
         if form != EVENT or EARNINGS_ITEM not in str(items or "").replace(" ", "").split(","):
             continue
-        stamp = str(accepted or "")
-        timed = re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d", stamp[:16]) is not None
+        stamp = new_york(accepted)
         try:
             # Filed after 17:30 takes the next business day's filingDate; acceptance keeps the real day.
-            day = date.fromisoformat(stamp[:10] if timed else filed)
+            day = date.fromisoformat(stamp[:10] if stamp else filed)
         except (TypeError, ValueError):
             continue
-        before = stamp[11:16] < MARKET_OPEN if timed else None
+        before = stamp[11:16] < MARKET_OPEN if stamp else None
         found[day] = before if found.get(day) is None else found[day] or bool(before)
     return [Release(day, before) for day, before in sorted(found.items(), reverse=True)]
 

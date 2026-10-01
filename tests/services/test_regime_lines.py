@@ -98,7 +98,7 @@ def test_bars_stored_for_an_untraded_listing_change_no_score_mood_flag_or_lean_l
         runs.append((replayed, regime_runs(ctx)))
     assert runs[0] == runs[1]
     replayed, live = runs[0]
-    assert replayed.lines[3].trades >= 1 and live["regime"][1] is not None and live["regime"][3]
+    assert replayed.lines[5].trades >= 1 and live["regime"][1] is not None and live["regime"][3]
 
 
 def test_earnings_days_come_from_stored_releases_up_to_the_last_day(make_ctx):

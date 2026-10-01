@@ -47,6 +47,30 @@ def test_aliases_lists_the_accepted_then_those_kept_for_review_and_verify_runs_t
     assert seen["verify"] is True and "1 renames accepted" in capsys.readouterr().out
 
 
+def test_fundamentals_passes_a_smoke_runs_bounds_and_status_prints_the_years(tmp_path, capsys, monkeypatch):
+    from oracle.services.xbrl_service import XbrlCoverage, XbrlRun, XbrlYear
+    seen = {}
+
+    async def fake(ctx, **kw):
+        seen.update(kw)
+        return XbrlRun(members=1, with_facts=1)
+
+    monkeypatch.setattr("oracle.cli.testbed.fetch_fundamentals", fake)
+    assert main(["--config", str(config(tmp_path)), "testbed", "fundamentals", "--only", "AAA", "--limit", "1"]) == 0
+    assert (seen["only"], seen["limit"], seen["refresh"]) == (["AAA"], 1, False)
+    assert "1 members" in capsys.readouterr().out
+    names = ("sue", "gross_profitability", "earnings_yield")
+    cover = XbrlCoverage((XbrlYear(2012, 500, 480, 470, dict(zip(names, (300, 400, 450))),
+                                   dict(zip(names, (900, 1500, 1700)))),), 600, 560, 550, ("OLD",), ("BANK",), None,
+                         "2026-10-01T10:00:00+00:00")
+    monkeypatch.setattr("oracle.cli.testbed.fundamentals_coverage", lambda ctx: cover)
+    assert main(["--config", str(config(tmp_path)), "testbed", "fundamentals-status"]) == 0
+    out = capsys.readouterr().out
+    assert "600 priced members, 560 with a CIK, 550 with facts" in out and "Last fetch: none yet" in out
+    assert "2012       500   480    470" in out and "300 members, 900 filings" in out
+    assert "No CIK in SEC's ticker map (1): OLD" in out and "No XBRL facts at SEC (1): BANK" in out
+
+
 def test_build_passes_a_smoke_runs_bounds_and_fails_on_a_stop(tmp_path, capsys, monkeypatch):
     seen = {}
 

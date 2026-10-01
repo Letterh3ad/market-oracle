@@ -5,11 +5,11 @@ import argparse
 from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, LINE_NAMES, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
-    decision_log, equity_history, fill_pending, place_buy, place_sell, strategy_step,
+    ACCOUNTS, AI_OFF, CORE_SAT, INDEX, LAYA, LINE_NAMES, REGIME_LINES, STRATEGY, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
+    decision_log, equity_history, fill_pending, frozen_note, place_buy, place_sell, strategy_step,
 )
 from oracle.services.regime_service import laya_card, off_note
-from oracle.services.tick_service import run_line_step, tilt_line
+from oracle.services.tick_service import run_index_step, run_line_step, tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
@@ -32,10 +32,10 @@ def register(parser: argparse.ArgumentParser) -> None:
     show.set_defaults(handler=show_cmd)
     step = sub.add_parser("step", help="run an account's rules and queue its orders")
     step.add_argument("--account", choices=TRADERS, default="strategy",
-                      help="strategy trades the leans, ai the research verdicts, regime the regime blend, "
-                           "regime-ai the blend with the day's model tilt (frozen: steps nothing), regime-v2 the "
-                           "blend without hold padding and with its rotation, core-sat its equal-weight core's yearly "
-                           "rebalance and its satellite on the blend, laya Laya's daily news score alone")
+                      help="index buys ACWI with all its cash once and holds it, ai trades the research "
+                           "verdicts, core-sat buys its equal-weight core once (never rebalanced; its satellite at "
+                           "weight 0 only sells), laya trades Laya's daily news score alone; strategy, regime, "
+                           "regime-ai and regime-v2 are frozen and step nothing")
     step.set_defaults(handler=step_cmd)
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")
@@ -119,9 +119,15 @@ def _compare(ctx: AppContext) -> int:
 def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.account in REGIME_LINES:
         return _regime_step(ctx, args.account)
-    decisions = strategy_step(ctx) if args.account == "strategy" else ai_step(ctx)
+    if args.account == INDEX:
+        decisions = run_index_step(ctx)
+        if not decisions:
+            print("index: nothing to do, it holds ACWI or its buy waits to fill")
+        _print_decisions(ctx, decisions)
+        return 0
+    decisions = strategy_step(ctx) if args.account == STRATEGY else ai_step(ctx)
     if decisions is None:
-        print(AI_OFF)
+        print(frozen_note(STRATEGY) if args.account == STRATEGY else AI_OFF)
         return 0
     if args.account == "ai":
         print(AI_HEADER)

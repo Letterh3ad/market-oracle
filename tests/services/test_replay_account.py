@@ -163,10 +163,10 @@ def test_the_status_score_carries_no_account_and_the_json_report_carries_returns
     make_study(ctx, all_buy())
     assert score_study(ctx, ReplayRepo(ctx.conn).current()).account is None
     out = replay_report(ctx).to_json()["account"]
-    assert [line["name"] for line in out["lines"]] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
+    assert [line["name"] for line in out["lines"]] == ["index", "spy", "ai", "all_buy", "buy_and_hold", "momentum", "regime",
                                                        "regime_v2", "core_sat"]
-    assert out["lines"][0]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
-    assert out["lines"][0]["points"][0] == ["2026-06-01", 0.0]
+    assert out["lines"][2]["return"] == pytest.approx(lines(replay_report(ctx).account)["ai"].return_)
+    assert out["lines"][2]["points"][0] == ["2026-06-01", 0.0]
 
 
 def test_a_baseline_account_runs_through_the_same_engine(ctx, monkeypatch):
@@ -236,7 +236,7 @@ def test_a_listing_with_older_bars_is_held_flat_after_its_last_close(ctx):
     assert account.listings == SYMBOLS and account.end == LAST and account.left_out == ()
     assert any("BBB" in n and "2026-09-10" in n and "held flat" in n and "refetched about monthly" in n
                for n in account.notes)
-    for line in account.lines:
+    for line in account.lines[2:]:  # ACWI and SPY have no stored bars here
         at_cut = dict(line.points)[cut]
         assert all(r == pytest.approx(at_cut) for d, r in line.points if d > cut), line.name
 
@@ -368,11 +368,11 @@ def test_the_account_is_drawn_for_each_size_as_well_as_overall(ctx):
     assert s.account.listings == SYMBOLS
     large, small = s.by_size
     assert (large.account.listings, small.account.listings) == (("AAA",), ("BBB",))
-    assert [line.name for line in small.account.lines] == ["ai", "all_buy", "buy_and_hold", "momentum", "regime",
+    assert [line.name for line in small.account.lines] == ["index", "spy", "ai", "all_buy", "buy_and_hold", "momentum", "regime",
                                                            "regime_v2", "core_sat"]
     # BBB only rose, AAA fell after July: the smaller half did better.
     assert lines(small.account)["buy_and_hold"].return_ > lines(large.account)["buy_and_hold"].return_
-    shaped = s.to_json()["by_size"][1]["account"]["lines"][0]
+    shaped = s.to_json()["by_size"][1]["account"]["lines"][2]
     assert shaped["return"] == lines(small.account)["ai"].return_
 
 
@@ -406,7 +406,7 @@ def test_the_regime_lines_are_drawn_in_every_size_band_from_one_book_each(ctx, m
         assert v2.label == "Regime-v2" and v2.points[0] == (JUN, 0.0) and v2.caption.startswith("Regime-v2:")
         assert list(lines(account))[-3:] == ["regime", "regime_v2", "core_sat"]
         core_sat = lines(account)["core_sat"]
-        assert core_sat.caption.startswith("Core-sat: 75% in an equal-weight buy and hold")
+        assert core_sat.caption.startswith("Core-sat: 100% in an equal-weight buy and hold")
         # Its core buys every member, so it trades more than the regime line alone and ends elsewhere.
         assert core_sat.trades >= regime.trades + len(account.listings)
         assert core_sat.points != regime.points
@@ -436,3 +436,14 @@ def test_a_later_verdict_never_changes_the_regime_line_before_its_day(tmp_path):
     b = regime_of(tmp_path, "b", {**all_buy(), ("AAA", AUG): ("sell", 0.9), ("BBB", AUG): ("sell", 0.9)})
     assert [p for p in a.points if p[0] <= AUG] == [p for p in b.points if p[0] <= AUG]
     assert a.points != b.points
+
+
+def test_acwi_and_spy_held_lead_the_account_and_a_missing_one_is_named(ctx):
+    store(ctx, "ACWI", path(lambda day: 0.001))
+    make_study(ctx, all_buy())
+    account = replay_report(ctx).account
+    index, spy = account.lines[:2]
+    assert (index.name, index.label, spy.name, spy.label) == ("index", "Index (ACWI)", "spy", "SPY")
+    assert index.return_ > 0 and (index.trades, index.costs) == (0, 0.0) and spy.points == ()
+    assert any(n.startswith("No stored SPY prices") for n in account.notes)
+    assert lines(account)["buy_and_hold"].label == "Buy and hold (today's list)"

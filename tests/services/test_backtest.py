@@ -65,7 +65,7 @@ def test_a_trending_list_is_bought_and_set_against_buy_and_hold(make_ctx):
     ctx = make_ctx({"UP": BARS})
     r = run_backtest(ctx, "TECH", START, END)
     assert r.watchlist == "tech" and r.listings == ("UP",)
-    strategy, held, momentum, *_ = r.lines
+    _, _, strategy, held, momentum, *_ = r.lines
     assert (strategy.name, held.name, momentum.name) == ("strategy", "buy_and_hold", "momentum")
     assert strategy.trades == len(r.trades) >= 1 and r.trades[0].symbol == "UP"
     assert strategy.points[0] == (START, 0.0) and held.points[0] == (START, 0.0)
@@ -79,7 +79,7 @@ def test_the_momentum_line_holds_the_leader_under_the_same_costs(make_ctx):
     # A year of history before the start, so the first month end ranks both.
     up, slow = rising(400), rising(400, "SLOW", daily=0.001)
     r = run_backtest(make_ctx({"UP": up, "SLOW": slow}), "tech", up[300].date, END, commission=2.0)
-    momentum = r.lines[2]
+    momentum = r.lines[4]
     assert momentum.label == "Momentum" and momentum.trades >= 2 and momentum.costs >= 2 * 2.0
     assert momentum.points[0] == (START, 0.0) and momentum.return_ > 0
     assert "Momentum trades under the strategy's rules" in " ".join(r.notes)
@@ -147,7 +147,7 @@ def test_a_listing_with_no_exchange_rate_is_never_traded_and_is_named(make_ctx):
     r = run_backtest(ctx, "tech", START, END)
     assert r.trades and all(t.symbol == "UP" for t in r.trades)
     assert any("LON" in n and "no USD exchange rate" in n for n in r.notes)
-    assert "of the 1 listing," in r.lines[1].caption
+    assert "of the 1 listing," in r.lines[3].caption
 
 
 def test_a_threshold_above_what_a_technicals_lean_can_reach_is_called_out(make_ctx):
@@ -226,8 +226,8 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     market(ctx, rising(400, "MKT", daily=0.002))
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya"]
-    regime = r.lines[3]
+    assert [x.name for x in r.lines] == ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya"]
+    regime = r.lines[5]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
     assert "stored market (3 listings: companies on a watchlist or held, Tesla and funds left out)" in regime.caption
@@ -240,7 +240,7 @@ def test_the_regime_v2_line_trades_its_own_book_and_says_what_it_changes(make_ct
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     market(ctx, rising(400, "MKT", daily=0.002))
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
-    v1, v2 = r.lines[3], r.lines[4]
+    v1, v2 = r.lines[5], r.lines[6]
     assert (v2.name, v2.label) == ("regime_v2", "Regime-v2") and v2.points[0] == (START, 0.0)
     assert v2.caption.startswith("Regime-v2: the regime book with two changes.")
     assert "20 trading days or more" in v2.caption and "0.25 or more under the best buy not held" in v2.caption
@@ -257,10 +257,10 @@ def test_the_regime_line_never_sees_market_bars_after_the_last_day(make_ctx):
         ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)}, name)
         market(ctx, later[:400] + extra)
         runs.append(run_backtest(ctx, "tech", START, END))
-    assert runs[0] == runs[1] and runs[0].lines[3].trades >= 1 and runs[0].lines[5].trades >= 2
+    assert runs[0] == runs[1] and runs[0].lines[5].trades >= 1 and runs[0].lines[7].trades >= 2
 
 
-def test_the_core_sat_line_holds_the_companies_equally_and_trades_the_blend_in_its_own_quarter(make_ctx):
+def test_the_core_sat_line_holds_the_companies_equally_never_rebalances_and_its_satellite_has_no_weight(make_ctx):
     ctx = make_ctx({"UP": BARS, "SLOW": rising(400, "SLOW", daily=0.001)})
     universe = UniverseRepo(ctx.conn)
     universe.add(Listing("TSLA", "Tesla, Inc.", "Equity", "United States", "NMS", currency="USD", company_key="tsla",
@@ -274,10 +274,10 @@ def test_the_core_sat_line_holds_the_companies_equally_and_trades_the_blend_in_i
     r = run_backtest(ctx, "tech", START, END, commission=2.0)
     line = next(x for x in r.lines if x.name == "core_sat")
     assert line.label == "Core-sat" and line.points[0] == (START, 0.0)
-    assert line.caption.startswith("Core-sat: 75% in an equal-weight buy and hold of the 2 companies (funds and Tesla")
-    assert "set back to equal weight every year" in line.caption and "25% traded by the regime book" in line.caption
-    assert line.caption.endswith(r.lines[3].caption.removeprefix("Regime: "))
-    assert line.trades >= 2 and line.costs >= line.trades * 2.0
+    assert line.caption.startswith("Core-sat: 100% in an equal-weight buy and hold of the 2 companies (funds and Tesla")
+    assert "never rebalanced" in line.caption and "satellite weight 0" in line.caption
+    assert line.caption.endswith(r.lines[5].caption.removeprefix("Regime: "))
+    assert line.trades == 2 and line.costs >= line.trades * 2.0
     assert -0.02 < line.return_ < next(x for x in r.lines if x.name == "buy_and_hold").return_ + 0.05
 
 
@@ -286,9 +286,9 @@ def test_the_regime_line_reads_value_and_quality_only_from_the_day_recorded(make
     as_of, computed = BARS[345].date, BARS[350].date
     SignalRepo(ctx.conn).save([AnalystSignal(a, "UP", as_of, 0.8, 0.7, "stored", ()) for a in ("value", "quality")],
                               f"{computed.isoformat()}T21:00:00Z")
-    caption = run_backtest(ctx, "tech", START, END).lines[3].caption
+    caption = run_backtest(ctx, "tech", START, END).lines[5].caption
     assert f"stored signals of 1 listing, each only from the day it was recorded (the first on {computed})" in caption
-    assert "no value or quality" in run_backtest(ctx, "tech", START, BARS[349].date).lines[3].caption
+    assert "no value or quality" in run_backtest(ctx, "tech", START, BARS[349].date).lines[5].caption
 
 
 def ai_ctx(make_ctx, monkeypatch, model):
@@ -304,7 +304,7 @@ KEPT = {"trend": 1.0, "reason": "kept"}
 def test_the_plain_backtest_never_asks_the_model(make_ctx, monkeypatch):
     model = TiltModel(KEPT)
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya"]
+    assert [x.name for x in r.lines] == ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya"]
     assert model.asked == []
 
 
@@ -314,11 +314,11 @@ def test_the_regime_ai_line_asks_the_model_for_every_replayed_day_beside_regime(
     said = []
     r = run_backtest(ctx, "tech", START, END, commission=2.0, regime_ai=True, progress=said.append)
     plain = run_backtest(ctx, "tech", START, END, commission=2.0)
-    assert [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya", "regime_ai"]
-    ai = r.lines[7]
+    assert [x.name for x in r.lines] == ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya", "regime_ai"]
+    ai = r.lines[9]
     assert ai.label == "Regime AI" and "fake (fake tilt-1)" in ai.caption and "date left out" in ai.caption
-    assert r.lines[:7] == plain.lines, "the other lines are the plain backtest's"
-    assert (ai.points, ai.trades) == (r.lines[3].points, r.lines[3].trades), "every tilt x1: it trades like regime"
+    assert r.lines[:9] == plain.lines, "the other lines are the plain backtest's"
+    assert (ai.points, ai.trades) == (r.lines[5].points, r.lines[5].trades), "every tilt x1: it trades like regime"
     decided = [b.date for b in BARS if START <= b.date < END]
     note = next(n for n in r.notes if n.startswith("Regime AI:"))
     assert f"{len(decided)} days replayed" in note, "the last day decides nothing, so it is not asked"
@@ -375,7 +375,7 @@ async def test_a_cancelled_regime_ai_job_stops_asking_the_model(make_ctx, monkey
 
 def test_the_regime_ai_caption_keeps_the_regime_lines_caveats(make_ctx, monkeypatch):
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, TiltModel(KEPT)), "tech", START, END, regime_ai=True)
-    regime, ai = r.lines[3].caption, r.lines[7].caption
+    regime, ai = r.lines[5].caption, r.lines[9].caption
     assert ai.startswith("Regime AI: ") and ai.endswith(regime.removeprefix("Regime: "))
     assert "Otherwise as the regime line: trend, 12-1 momentum" in ai and "survivors and later picks" in ai
 
@@ -428,7 +428,7 @@ async def test_retry_all_leaves_regime_ai_backtests_to_a_single_retry(make_ctx, 
 def test_a_stopped_regime_ai_replay_asks_no_more_and_still_finishes(make_ctx, monkeypatch):
     model = TiltModel(KEPT)
     r = run_backtest(ai_ctx(make_ctx, monkeypatch, model), "tech", START, END, regime_ai=True, stop=lambda: True)
-    assert model.asked == [] and r.lines[5].points and "0 model calls" in " ".join(r.notes)
+    assert model.asked == [] and r.lines[7].points and "0 model calls" in " ".join(r.notes)
 LONG = rising(700)
 WF_START, WF_END = LONG[300].date, LONG[-1].date
 
@@ -444,11 +444,11 @@ def test_the_walk_forward_judges_every_line_per_six_month_segment_and_fits_regim
     wf = r.walk_forward
     assert wf.months == 6 and wf.segments == tuple(segments(WF_START, WF_END, 6)) and len(wf.segments) == 3
     names = [x.name for x in wf.lines]
-    assert names == [x.name for x in r.lines] == ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya",
+    assert ["index", "spy", *names] == [x.name for x in r.lines] == ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya",
                                                      "regime_wf"]
     assert all(len(x.segments) == 3 for x in wf.lines)
     [note] = [n for n in r.notes if n.startswith("Walk-forward:")]
-    assert "core-sat's within its satellite's quarter" in note and "never the yearly rebalance" in note
+    assert "never rebalanced" in note and "satellite holds nothing" in note
     held = wf.lines[1]
     assert held.beat is None and all(s.excess == 0.0 for s in held.segments)
     assert all(x.beat == sum(1 for s in x.segments if s.excess > 0) for x in wf.lines if x.name != "buy_and_hold")
@@ -529,7 +529,7 @@ def test_with_the_walk_forward_the_regime_ai_line_is_judged_per_segment_from_its
     monkeypatch.setattr("oracle.services.regime_tilt.tilt_model", lambda c: (model, "fake (fake tilt-1)"))
     r = run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True, regime_ai=True)
     names = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya", "regime_wf", "regime_ai"]
-    assert [x.name for x in r.lines] == names and [x.name for x in r.walk_forward.lines] == names
+    assert [x.name for x in r.lines] == ["index", "spy", *names] and [x.name for x in r.walk_forward.lines] == names
     decided = sum(1 for b in LONG if WF_START <= b.date < WF_END)
     assert len(model.asked) == decided, "the segments reuse the whole run's tilts: no day is asked twice"
     lines = {x.name: x for x in r.walk_forward.lines}
@@ -558,3 +558,44 @@ async def test_a_walk_forward_regime_ai_job_keeps_both_on_retry_and_stays_out_of
         assert retry(ctx, r, ai.id).subject == ai.subject
     finally:
         await r.stop()
+
+
+def index_bars(ctx, daily=0.0005):
+    universe = UniverseRepo(ctx.conn)
+    for symbol in ("ACWI", "SPY"):
+        universe.add(Listing(symbol, f"{symbol} ETF", "ETF", "United States", "NGM", currency="USD",
+                             company_key=symbol.lower(), is_primary=True))
+        BarRepo(ctx.conn).upsert(rising(len(BARS), symbol, daily=daily), "2026-09-24T00:00:00Z")
+
+
+def test_acwi_and_spy_held_lead_the_table_and_buy_and_hold_says_it_is_todays_list(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    index_bars(ctx)
+    r = run_backtest(ctx, "tech", START, END)
+    index, spy, *_ = r.lines
+    assert [(x.name, x.label) for x in (index, spy)] == [("index", "Index (ACWI)"), ("spy", "SPY")]
+    assert index.points[0] == (START, 0.0) and 0 < index.return_ and (index.trades, index.costs) == (0, 0.0)
+    assert index.caption.startswith("Index (ACWI): all the capital in ACWI")
+    held = next(x for x in r.lines if x.name == "buy_and_hold")
+    assert held.label == "Buy and hold (today's list)" and "survivorship" in held.caption
+    assert not any("No stored" in n for n in r.notes)
+    assert "ACWI" not in r.listings, "a benchmark is never one of the list's traded listings"
+
+
+def test_without_index_prices_the_lines_are_empty_and_a_note_says_so(make_ctx):
+    r = run_backtest(make_ctx({"UP": BARS}), "tech", START, END)
+    assert [(x.name, x.points) for x in r.lines[:2]] == [("index", ()), ("spy", ())]
+    assert any(n.startswith("No stored ACWI prices") for n in r.notes)
+
+
+def test_the_walk_forward_judges_acwi_and_spy_per_segment_first(make_ctx):
+    ctx = long_ctx(make_ctx)
+    universe = UniverseRepo(ctx.conn)
+    for symbol in ("ACWI", "SPY"):
+        universe.add(Listing(symbol, f"{symbol} ETF", "ETF", "United States", "NGM", currency="USD",
+                             company_key=symbol.lower(), is_primary=True))
+        BarRepo(ctx.conn).upsert(rising(len(LONG), symbol, daily=0.0005), "2026-09-24T00:00:00Z")
+    r = run_backtest(ctx, "tech", WF_START, WF_END, walk_forward=True)
+    names = [x.name for x in r.walk_forward.lines]
+    assert names[:3] == ["index", "spy", "strategy"] and len(r.walk_forward.lines[0].segments) == 3
+    assert r.walk_forward.lines[0].beat is not None

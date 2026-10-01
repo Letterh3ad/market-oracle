@@ -87,6 +87,7 @@ class Testbed:
         self._repo, self._bars = TestbedRepo(ctx.conn), BarRepo(ctx.conn)
         self._today = ctx.clock.utcnow().date()
         self._aliases = {a.old: a for a in self._repo.aliases(accepted=True)}
+        self._same_company = json.loads(MetaRepo(ctx.conn).get(SAME_COMPANY) or "[]")
 
     def members_on(self, day: date) -> frozenset[str]:
         """The index's members on `day`, as the snapshot lists them; empty before its first row."""
@@ -112,6 +113,12 @@ class Testbed:
             if mapped:
                 out[old] = _merged(old, out.get(old, []), mapped)
         return out
+
+    def duplicates(self) -> list[tuple[tuple[str, str], str]]:
+        """Pairs that are one company ((earlier listing, later listing), why): the known ones, then those the
+        rename and identity check found (one SEC filer, or one series after renames, DISCA and DISCK). A
+        cross-section keeps one of a pair on a day both are members."""
+        return _pairs(self._repo.spans(), self._same_company)
 
     def aliases(self) -> list[Alias]:
         """Accepted renames: old ticker -> the last live one."""
@@ -210,7 +217,7 @@ async def build_testbed(ctx: AppContext, *, refresh: bool = False, only: Sequenc
                         await b.yahoo_sectors(scope)
                         if verify or (only is None and limit is None and not b.narrowed
                                       and MetaRepo(r.conn).get(RENAMES_RUN) is None):
-                            await b.renames()
+                            await b.renames(asked=verify)
                 except _Stopped:
                     pass
         except Exception as exc:
@@ -361,11 +368,13 @@ class _Build:
         self.run.reused += reused
         self._note(t, why)
 
-    async def renames(self) -> None:
+    async def renames(self, asked: bool = False) -> None:
         """Renames and reused tickers by SEC and Yahoo (testbed_renames). Needs the SEC contact."""
         contact = self.r.config.research.contact
         if not contact:
             self.run.renames = 'renames not checked: SEC needs a contact ([research] contact = "Name email")'
+            if asked:
+                self.run.failures.append(self.run.renames)
             return
         await self._turn("checking renames and reused tickers with SEC and Yahoo")
         headers = {"User-Agent": edgar.user_agent(contact)}
@@ -409,6 +418,8 @@ class _Build:
         spans: dict[str, list[Span]] = {}
         for s in self.repo.spans():
             spans.setdefault(s.ticker, []).append(s)
+        for t in found.delisted:
+            self._note(t, f"{NOT_ON_YAHOO} (delisted: SEC has no filer with {t} today)")
         for t in found.dropped:
             self.repo.drop_bars(t)
             self._note(t, f"{REUSED}: {members[t].identity_note}")
@@ -664,13 +675,22 @@ KNOWN_DUPLICATES = (
 )
 
 
-def _duplicates(spans: list[Span], calendar: list[date], found: list) -> tuple[Duplicate, ...]:
-    """The known pairs, then those the rename and identity check found (one SEC filer)."""
-    out = []
+def _pairs(spans: list[Span], found: list) -> list[tuple[tuple[str, str], str]]:
+    """The known pairs, then the found ones (a, b, why), each as (earlier listing, later listing)."""
+    first: dict[str, date] = {}
+    for s in spans:
+        first[s.ticker] = min(first.get(s.ticker, s.start), s.start)
     pairs = list(KNOWN_DUPLICATES)
     known = {frozenset(p) for p, _ in pairs}
-    pairs += [((a, b), why) for a, b, why in found if frozenset((a, b)) not in known]
-    for (a, b), why in pairs:
+    for a, b, why in found:
+        if frozenset((a, b)) not in known:
+            pairs.append((tuple(sorted((a, b), key=lambda t: (first.get(t, date.max), t))), why))
+    return pairs
+
+
+def _duplicates(spans: list[Span], calendar: list[date], found: list) -> tuple[Duplicate, ...]:
+    out = []
+    for (a, b), why in _pairs(spans, found):
         both = sorted(_days(spans, a, calendar) & _days(spans, b, calendar))
         if both:
             out.append(Duplicate((a, b), both[0], both[-1], len(both), why))

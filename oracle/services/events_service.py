@@ -36,6 +36,8 @@ SEC_SOURCE = "SEC 8-K item 2.02"
 BREAK = "price series break, skipped"
 NO_BASE = "no stored close near the date"
 _KEY = "earnings_dates:"
+TIMING = "utc"
+"""Stored dates parsed with SEC's stamp read as UTC; older ones (read as New York time) are refetched."""
 _TRIED = "earnings_dates_failed:"
 
 
@@ -101,7 +103,7 @@ async def earnings_study(ctx: AppContext, symbol: str, refresh: bool = True) -> 
     if "." in ticker:
         note = (f"no earnings dates source for {ticker}: SEC covers US listings only, and Yahoo gives "
                 "only the next date")
-    elif refresh and (stored is None or _age(ctx, stored["fetched_at"]) >= MAX_AGE):
+    elif refresh and (stored is None or stored.get("timing") != TIMING or _age(ctx, stored["fetched_at"]) >= MAX_AGE):
         stored, note = await _refresh(ctx, meta, ticker, stored)
     if stored is None:
         return EarningsStudy(listing.symbol, None, None, None, (), (), note or "earnings dates not fetched yet")
@@ -149,7 +151,7 @@ async def _fetch(ctx: AppContext, ticker: str) -> dict:
     async with open_client(ctx) as client:
         _, body = await submissions(client, SecTickerRepo(ctx.conn), ctx.clock, ctx.config.research.contact, ticker)
     releases = edgar.parse_earnings(body)
-    return {"source": SEC_SOURCE, "fetched_at": to_utc_iso(ctx.clock.utcnow()),
+    return {"source": SEC_SOURCE, "fetched_at": to_utc_iso(ctx.clock.utcnow()), "timing": TIMING,
             "releases": [[r.day.isoformat(), r.before_open] for r in releases]}
 
 

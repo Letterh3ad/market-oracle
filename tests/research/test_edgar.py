@@ -193,7 +193,7 @@ def test_earnings_releases_are_8ks_with_item_2_02_timed_against_the_open():
         ("8-K", "2026-06-02", "5.07", "2026-06-02T16:00:00.000Z"),
         ("8-K/A", "2026-05-02", "2.02", "2026-05-02T08:00:00.000Z"),
         ("10-Q", "2026-05-01", "", "2026-05-01T06:00:00.000Z"),
-        ("8-K", "2026-05-01", "2.02,7.01,9.01", "2026-05-01T06:45:00.000Z"),
+        ("8-K", "2026-05-01", "2.02,7.01,9.01", "2026-05-01T12:45:00.000Z"),
         ("8-K", "2026-01-29", "2.02", ""),
     )
     assert edgar.parse_earnings(body) == [
@@ -205,13 +205,23 @@ def test_earnings_releases_are_8ks_with_item_2_02_timed_against_the_open():
 
 def test_two_earnings_8ks_on_one_day_are_one_release_timed_by_the_first():
     body = _recent(("8-K", "2026-07-30", "2.02", "2026-07-30T16:31:02.000Z"),
-                   ("8-K", "2026-07-30", "2.02,9.01", "2026-07-30T07:00:00.000Z"))
+                   ("8-K", "2026-07-30", "2.02,9.01", "2026-07-30T11:00:00.000Z"))
     assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), True)]
 
 
 def test_a_filing_accepted_after_1730_is_released_on_its_acceptance_day():
-    body = _recent(("8-K", "2026-07-31", "2.02", "2026-07-30T18:05:00.000Z"))
+    body = _recent(("8-K", "2026-07-31", "2.02", "2026-07-30T22:05:00.000Z"))
     assert edgar.parse_earnings(body) == [edgar.Release(date(2026, 7, 30), False)]
+
+
+def test_acceptance_stamps_are_utc_and_read_in_new_york_time():
+    # JPM's 8-K 0001628280-26-048078: the filing index says accepted 06:30:38 (New York); the JSON says 10:30:38Z.
+    jpm = _recent(("8-K", "2026-07-14", "2.02,9.01", "2026-07-14T10:30:38.000Z"))
+    assert edgar.parse_earnings(jpm) == [edgar.Release(date(2026, 7, 14), True)], "pre-market, not after the open"
+    evening = _recent(("8-K", "2026-07-31", "2.02", "2026-07-31T00:10:00.000Z"))
+    assert edgar.parse_earnings(evening) == [edgar.Release(date(2026, 7, 30), False)], "20:10 New York the day before"
+    winter = _recent(("8-K", "2026-01-15", "2.02", "2026-01-15T14:29:00.000Z"))
+    assert edgar.parse_earnings(winter) == [edgar.Release(date(2026, 1, 15), True)], "09:29 EST"
 
 
 def test_a_submissions_body_without_items_has_no_releases():

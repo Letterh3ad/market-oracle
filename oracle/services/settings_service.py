@@ -20,6 +20,7 @@ from oracle.config import (
 )
 from oracle.services.context import AppContext
 from oracle.services.errors import ConfigInUse, InvalidQuery
+from oracle.services.paper_service import frozen
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,8 @@ __all__ = [
 LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
+SWITCHES = {"regime_account": "regime", "regime_ai_account": "regime-ai", "regime_v2_account": "regime-v2"}
+"""A line's on/off section and its account, so a frozen line's switch says it is ignored."""
 LIVE_FIELDS = (*LIVE_SECTIONS, "model_slots", "allow_claude_code")
 """The Config fields those sections load into."""
 
@@ -170,6 +173,8 @@ def _row(setting: Setting, raw: dict, meanings: dict) -> dict:
         row["choices"] = [DEFAULT_PROFILE, *(n for n in raw.get("models", {}) if n not in (DEFAULT_PROFILE, SLOTS_TABLE))]
     if setting.section == "llm" and setting.key in LLM_PROFILE_KEYS and DEFAULT_PROFILE in raw.get("models", {}):
         row["ignored"] = "ignored: [models.default] replaces it (Settings > Models)"
+    if setting.key == "enabled" and frozen(account := SWITCHES.get(setting.section, "")):
+        row["ignored"] = f"ignored: the {account} account is frozen and never steps (its history stays)"
     return {**row, "value": table.get(setting.key, setting.default)}
 
 

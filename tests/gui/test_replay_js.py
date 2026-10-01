@@ -228,7 +228,7 @@ ACCOUNT = {
 def test_the_account_shows_its_lines_against_buy_and_hold():
     text = run("console.log(JSON.stringify(node.textContent));", report={**REPORT, "account": ACCOUNT})
     assert "The verdicts traded as the AI account would, in memory, 2026-06-01 to 2026-09-23, over 2 listings" in text
-    assert "AI+4.20%-3.10%312.50" in text and "Buy and hold+2.10%-8.00%00.00" in text
+    assert "AI+4.20%-3.10%312.50" in text and "Buy and hold (today's list)+2.10%-8.00%00.00" in text
     assert "Costs (GBP)" in text and "from 10,000.00 GBP" in text and "Every verdict a buy+1.00%" in text
     assert "Left out: 9988.HK: a zero or missing close." in text and "indexed in its own currency" in text
 

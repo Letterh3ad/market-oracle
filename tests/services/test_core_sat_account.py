@@ -1,5 +1,6 @@
-"""The live core-sat account: 75% an equal-weight core of the main list rebalanced yearly, 25% the
-regime book's satellite, each sleeve with its own cash inside the one account."""
+"""The live core-sat account: an equal-weight core of the main list bought once and never rebalanced,
+and the regime book's satellite on its share of the money (0 until a signal earns weight), each sleeve
+with its own cash inside the one account. Tests of the satellite trading set its share to a quarter."""
 
 from dataclasses import replace
 from datetime import date
@@ -8,15 +9,14 @@ import pytest
 
 from oracle.broker.core_sat import EXPIRED, REBALANCE
 from oracle.broker.orders import Action, Side, Status
-from oracle.services.core_sat_service import (
-    BUY, CORE_SOURCE, REBALANCE as REBALANCE_PHASE, SAT_SOURCE, START, core_phase, next_rebalance, sleeves,
-)
+from oracle.services.core_sat_service import CORE_SOURCE, SAT_SOURCE, START, TOP_UP, core_phase, sleeves
+from oracle.broker.core_sat import SATELLITE_EXIT, SATELLITE_ZERO
 from oracle.services.paper_service import (
     ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log, fill_pending, place_buy, traded_by,
 )
 from oracle.services.regime_service import CORE_SAT_OFF, NOT_CORE, build_book, regime_card, regime_step
 from oracle.services.watch_service import watch
-from oracle.store.paper import Order, PaperRepo
+from oracle.store.paper import FillRow, Order, PaperRepo
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
@@ -36,27 +36,71 @@ def order(day, side=Side.BUY, status=Status.FILLED):
     return Order(1, ACCOUNT, "AAPL", side, 1.0, None, day, status, None, CORE_SOURCE)
 
 
-def test_core_sat_is_listed_on_by_default_and_its_cash_splits_75_25(ctx):
+@pytest.fixture
+def quarter(monkeypatch):
+    """The satellite at the quarter share its trading was built at."""
+    monkeypatch.setattr("oracle.broker.core_sat.SATELLITE_SHARE", 0.25)
+
+
+def test_core_sat_is_listed_on_by_default_and_the_core_has_all_the_cash(ctx):
     assert ACCOUNT in ACCOUNTS and ACCOUNT in TRADERS and LINE_NAMES[ACCOUNT] == "Core-sat"
     assert ctx.config.core_sat_account.enabled is True
     core, sat = sleeves(ctx)
-    assert (core.capital, sat.capital) == (7_500.0, 2_500.0)
-    assert account_view(ctx, ACCOUNT).cash == 10_000.0
-    assert (account_view(ctx, ACCOUNT, core).cash, account_view(ctx, ACCOUNT, sat).cash) == (7_500.0, 2_500.0)
+    assert (core.capital, sat.capital) == (10_000.0, 0.0)
+    assert (account_view(ctx, ACCOUNT, core).cash, account_view(ctx, ACCOUNT, sat).cash) == (10_000.0, 0.0)
     assert traded_by(ctx, ACCOUNT) == traded_by(ctx, "regime")
 
 
-def test_the_core_starts_then_rebalances_yearly_and_buys_once_its_trims_filled():
-    today = date(2027, 3, 1)
-    assert core_phase([], today) == START
-    assert core_phase([order(date(2026, 9, 22), status=Status.PENDING)], today) is None
-    assert core_phase([order(date(2026, 9, 22))], today) is None
-    assert core_phase([order(date(2026, 9, 22))], date(2027, 9, 22)) == REBALANCE_PHASE
-    trims = [order(date(2026, 9, 22)), order(date(2027, 9, 22), Side.SELL)]
-    assert core_phase(trims, date(2027, 9, 23)) == BUY
-    assert core_phase(trims + [order(date(2027, 9, 23))], date(2027, 9, 24)) is None
-    assert core_phase(trims, date(2028, 9, 22)) == REBALANCE_PHASE
-    assert next_rebalance(trims, date(2027, 9, 23)) == date(2028, 9, 22)
+def test_at_a_quarter_the_cash_splits_75_25(ctx, quarter):
+    core, sat = sleeves(ctx)
+    assert (core.capital, sat.capital) == (7_500.0, 2_500.0)
+    assert (account_view(ctx, ACCOUNT, core).cash, account_view(ctx, ACCOUNT, sat).cash) == (7_500.0, 2_500.0)
+
+
+def test_the_core_starts_once_then_only_tops_up_idle_cash_and_never_rebalances():
+    assert core_phase([]) == START
+    assert core_phase([order(date(2026, 9, 22), status=Status.PENDING)], idle=True) is None
+    assert core_phase([order(date(2026, 9, 22))]) is None
+    assert core_phase([order(date(2026, 9, 22))], idle=True) == TOP_UP
+    assert core_phase([order(date(2026, 9, 22)), order(date(2027, 9, 22), Side.SELL)]) is None
+
+
+def test_at_satellite_weight_0_the_core_buys_it_all_and_the_satellite_buys_nothing(ctx, monkeypatch):
+    use_stub(monkeypatch, leans={"AAPL": ("strong buy", 0.95, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
+    seed(ctx, "AAPL", "hold", size_share=0.5)
+    seed(ctx, "VOD.L", "hold", size_share=0.5)
+    watch(ctx, "AAPL")
+    watch(ctx, "VOD.L")
+    run = step(ctx)
+    orders = account_view(ctx, ACCOUNT).pending
+    assert {o.source for o in orders} == {CORE_SOURCE}
+    assert [o.cash for o in orders] == pytest.approx([5_000.0, 5_000.0])
+    assert all(d.reason.startswith(REBALANCE) for d in run.decisions)
+
+
+def test_at_satellite_weight_0_its_waiting_buys_are_dropped_its_holdings_sold_and_the_core_takes_the_money(
+        ctx, monkeypatch):
+    use_stub(monkeypatch, leans={"AAPL": ("strong buy", 0.95, PARTS)})
+    seed(ctx, "AAPL", "hold", size_share=0.5)
+    watch(ctx, "AAPL")
+    repo = PaperRepo(ctx.conn)
+    core_buy = place_buy(ctx, "AAPL", 7_400.0, ACCOUNT, source=CORE_SOURCE)
+    sat_buy = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=SAT_SOURCE)
+    waiting = place_buy(ctx, "AAPL", 300.0, ACCOUNT, source=SAT_SOURCE)
+    for o, shares in ((core_buy, 74), (sat_buy, 20)):
+        repo.record_fill(FillRow(o.id, ACCOUNT, "AAPL", Side.BUY, DAY, shares, 100.0, "USD", 1.0, -shares * 100.0,
+                                 0.0, 0.0, 0.0, 0.0))
+    run = step(ctx)
+    [dropped] = [o for o in repo.orders(ACCOUNT, SAT_SOURCE) if o.id == waiting.id]
+    assert (dropped.status, dropped.note) == (Status.REJECTED, SATELLITE_ZERO)
+    [sell] = [o for o in account_view(ctx, ACCOUNT).pending if o.side == Side.SELL]
+    assert (sell.source, sell.shares) == (SAT_SOURCE, 20)
+    [top_up] = [o for o in account_view(ctx, ACCOUNT).pending if o.side == Side.BUY]
+    # The core's 2,600 idle (its 10,000 less 7,400) is topped up, never past the account's free 600
+    assert (top_up.source, top_up.cash) == (CORE_SOURCE, pytest.approx(600.0))
+    assert [d.symbol for d in run.decisions if d.action == Action.SELL] == ["AAPL"]
+    [logged] = [d for d in decision_log(ctx, ACCOUNT) if d.action == Action.SELL]
+    assert logged.reason in (SATELLITE_EXIT, ) or logged.reason.startswith("stop")
 
 
 def test_off_it_decides_nothing_and_says_so(ctx, monkeypatch):
@@ -68,7 +112,7 @@ def test_off_it_decides_nothing_and_says_so(ctx, monkeypatch):
     assert (card.enabled, card.note) == (False, CORE_SAT_OFF) and "[core_sat_account]" in CORE_SAT_OFF
 
 
-def test_the_first_step_buys_the_core_equally_and_the_satellite_from_its_own_cash(ctx, monkeypatch):
+def test_the_first_step_buys_the_core_equally_and_the_satellite_from_its_own_cash(ctx, monkeypatch, quarter):
     built = use_stub(monkeypatch, leans={"AAPL": ("strong buy", 0.95, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
     seed(ctx, "AAPL", "hold", size_share=0.5)
     seed(ctx, "VOD.L", "hold", size_share=0.5)
@@ -92,7 +136,7 @@ def test_the_first_step_buys_the_core_equally_and_the_satellite_from_its_own_cas
         "a second step places no core order while its buys wait"
 
 
-async def test_the_satellite_never_spends_core_cash_and_sells_only_its_own_shares(ctx, yahoo, clock, monkeypatch):
+async def test_the_satellite_never_spends_core_cash_and_sells_only_its_own_shares(ctx, yahoo, clock, monkeypatch, quarter):
     use_stub(monkeypatch, leans={"AAPL": ("strong buy", 0.95, PARTS)})
     seed(ctx, "AAPL", "hold", size_share=0.5)
     watch(ctx, "AAPL")
@@ -112,7 +156,7 @@ async def test_the_satellite_never_spends_core_cash_and_sells_only_its_own_share
     assert not [o for o in PaperRepo(ctx.conn).pending(ACCOUNT) if o.source == CORE_SOURCE]
 
 
-def test_the_satellite_trades_the_main_lists_companies_only_as_its_backtest_does(ctx, monkeypatch):
+def test_the_satellite_trades_the_main_lists_companies_only_as_its_backtest_does(ctx, monkeypatch, quarter):
     use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("strong buy", 0.95, PARTS)})
     seed(ctx, "AAPL", "hold", size_share=0.5)
     seed(ctx, "VOD.L", "hold", size_share=0.5)
@@ -147,18 +191,41 @@ def test_a_manual_or_other_account_order_is_no_sleeves(ctx):
     assert account_view(ctx, ACCOUNT, core).pending == () == account_view(ctx, ACCOUNT, sat).pending
 
 
-def test_the_card_shows_each_sleeve_and_the_next_rebalance(ctx, monkeypatch):
+def test_the_card_shows_each_sleeve_no_rebalance_and_why_the_satellite_is_empty(ctx, monkeypatch):
     use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS)})
     seed(ctx, "AAPL", "hold", size_share=0.5)
     watch(ctx, "AAPL")
     step(ctx)
     card = regime_card(ctx, account=ACCOUNT)
-    assert card.sleeves["core"]["capital"] == 7_500.0 and card.sleeves["satellite"]["capital"] == 2_500.0
+    assert card.sleeves["core"]["capital"] == 10_000.0 and card.sleeves["satellite"]["capital"] == 0.0
     assert card.sleeves["core"]["pending"] == 1 and card.sleeves["core"]["listings"] == 1
-    assert card.sleeves["core"]["next_rebalance"] == "2027-09-22"
+    assert card.sleeves["core"]["rebalance"] is None
+    assert (card.sleeves["satellite"]["share"], card.sleeves["satellite"]["note"]) == (0.0, SATELLITE_ZERO)
     assert card.state["mood"] == "calm_up"
 
 
 def test_the_real_book_it_builds_is_the_regime_one_in_its_own_name(ctx):
     book = build_book(ctx, {}, None, account=ACCOUNT)
     assert (book._settings.spread_unscored, book._settings.rotation, book._source) == (False, None, ACCOUNT)
+
+
+async def test_at_satellite_weight_0_a_waiting_satellite_buy_never_fills_but_a_core_buy_does(ctx, yahoo, clock):
+    """No buy-then-sell round trip when the fill pass runs before core-sat's step (the tick's order)."""
+    sat = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=SAT_SOURCE)
+    core = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=CORE_SOURCE)
+    await next_day(ctx, yahoo, clock)
+    outcomes = {o.order.id: o for o in fill_pending(ctx)}
+    assert (outcomes[sat.id].status, outcomes[sat.id].note) == (Status.REJECTED, SATELLITE_ZERO)
+    assert outcomes[core.id].status == Status.FILLED
+    assert account_view(ctx, ACCOUNT, sleeves(ctx)[1]).positions == ()
+
+
+async def test_at_a_quarter_a_waiting_satellite_buy_fills(ctx, yahoo, clock, quarter):
+    sat = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=SAT_SOURCE)
+    await next_day(ctx, yahoo, clock)
+    [done] = fill_pending(ctx)
+    assert (done.order.id, done.status) == (sat.id, Status.FILLED)
+
+
+def test_the_satellites_exit_sells_say_they_sell_what_it_holds():
+    assert "sells what it holds" in SATELLITE_EXIT and "trades nothing" not in SATELLITE_EXIT

@@ -6,6 +6,7 @@ import { money, pct, tone } from "./fmt.js";
 import { tip } from "./tip.js";
 
 const LINES = {
+  index: { label: "Index (ACWI)", colour: "--bench1" },
   strategy: { label: "Strategy", colour: "--accent" },
   ai: { label: "AI", colour: "--warn" },
   manual: { label: "Manual", colour: "--text" },
@@ -17,7 +18,7 @@ const LINES = {
   core_sat: { label: "Core-sat", colour: "--core-sat" },
   core_sat_laya: { label: "Core-sat-laya", colour: "--laya" },
   laya: { label: "Laya", colour: "--laya" },
-  buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
+  buy_and_hold: { label: "Buy and hold (today's list)", colour: "--text-dim", dashed: true },
 };
 const BENCH_COLOURS = ["--bench1", "--bench2"];
 

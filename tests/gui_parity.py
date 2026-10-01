@@ -154,8 +154,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # --account core-sat is "Core-sat step" (POST /api/ledgers/core-sat/step, a job); its log, sleeves and switch
     # are the Core-sat reading card (GET and PUT /api/ledgers/core-sat), switch also in Settings. --account laya
     # is "Laya step" (POST /api/ledgers/laya/step, a job); its log, verdict and switch are the Laya reading card
-    # (GET and PUT /api/ledgers/laya), switch also in Settings. regime-ai is frozen: its step decides nothing,
-    # its card has no switch.
+    # (GET and PUT /api/ledgers/laya), switch also in Settings. --account index is "Index step" (POST
+    # /api/ledgers/index/step); its figures are the Index column. regime-ai, regime, regime-v2 and strategy are
+    # frozen: their steps decide nothing (Strategy step says so), their cards have no switch, and Settings
+    # marks their switches ignored.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",
@@ -180,6 +182,16 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # The card's Renames list and its "Check renames" button.
     "testbed aliases": "GET /api/testbed/coverage",
     "testbed aliases --verify": "POST /api/jobs/testbed",
+    # Same card: "Fetch SEC fundamentals", "Refetch" and the fundamentals coverage table.
+    "testbed fundamentals": "POST /api/jobs/xbrl",
+    "testbed fundamentals --refresh": "POST /api/jobs/xbrl",
+    **{f"testbed fundamentals --{flag}": Exempt("a smoke run on a scratch research DB; the card fetches every member")
+       for flag in ("only", "limit")},
+    "testbed fundamentals-status": "GET /api/xbrl/coverage",
+    # Same card: the signals table, each row's "Run test" and its kept result.
+    "signals list": "GET /api/signals",
+    "signals test": "POST /api/jobs/signal-test",
+    "signals test --train-only": "POST /api/jobs/signal-test",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},

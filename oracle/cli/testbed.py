@@ -7,6 +7,7 @@ from datetime import date
 from oracle.cli.history import PROGRESS_S, _every
 from oracle.services.context import AppContext
 from oracle.services.testbed_service import START, UNDER_PRICED, TestbedCoverage, build_testbed, testbed_coverage
+from oracle.services.xbrl_service import XbrlCoverage, fetch_fundamentals, fundamentals_coverage
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -33,6 +34,17 @@ def register(parser: argparse.ArgumentParser) -> None:
     aliases.add_argument("--verify", action="store_true",
                          help="check renames and reused tickers with SEC and Yahoo again (needs [research] contact)")
     aliases.set_defaults(handler=run_aliases)
+    facts = sub.add_parser("fundamentals", description="fetch the priced members' SEC XBRL facts, their filings' "
+                                                       "acceptance times and Yahoo splits into the research database "
+                                                       "(about an hour the first time; it resumes). It does not wait for "
+                                                       "the app's live work: start it from the app to have it step aside")
+    facts.add_argument("--refresh", action="store_true", help="fetch every member again (new filings)")
+    facts.add_argument("--only", nargs="+", metavar="TICKER", help="only these members (a smoke run)")
+    facts.add_argument("--limit", type=int, help="only the first N members, alphabetically (a smoke run)")
+    facts.set_defaults(handler=run_fundamentals)
+    cover = sub.add_parser("fundamentals-status", description="per year: priced members, those with a CIK and with "
+                                                              "facts, and per signal the members with a scored filing")
+    cover.set_defaults(handler=run_fundamentals_status)
 
 
 def run_build(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -95,3 +107,34 @@ def print_coverage(c: TestbedCoverage, where) -> None:
     accepted = sum(a.accepted for a in c.aliases)
     print(f"Renames: {accepted} accepted, {len(c.aliases) - accepted} kept for review; `oracle testbed aliases` "
           "lists them")
+
+
+def run_fundamentals(ctx: AppContext, args: argparse.Namespace) -> int:
+    r = asyncio.run(fetch_fundamentals(ctx, refresh=args.refresh, only=args.only, limit=args.limit,
+                                       on_progress=_every(PROGRESS_S)))
+    print(f"{r.seconds:.0f} s: {r.summary}")
+    for f in r.failures[:20]:
+        print(f"  failed: {f}")
+    if r.stopped:
+        print("run it again to resume")
+    return 1 if (r.stopped and r.stopped != "cancelled") or r.failures else 0
+
+
+def run_fundamentals_status(ctx: AppContext, args: argparse.Namespace) -> int:
+    print_fundamentals(fundamentals_coverage(ctx))
+    return 0
+
+
+def print_fundamentals(c: XbrlCoverage) -> None:
+    print(f"SEC fundamentals: {c.priced} priced members, {c.with_cik} with a CIK, {c.with_facts} with facts; "
+          f"SEC ticker map read {c.tickers_fetched_at or 'never'}")
+    print(f"Last fetch: {c.last_run.finished_at} {c.last_run.summary}" if c.last_run else "Last fetch: none yet")
+    names = list(c.years[0].scored) if c.years else []
+    print(f"{'year':<6} {'members':>7} {'CIK':>5} {'facts':>6}  " + "  ".join(f"{n:>24}" for n in names))
+    for y in c.years:
+        print(f"{y.year:<6} {y.members:>7} {y.with_cik:>5} {y.with_facts:>6}  "
+              + "  ".join(f"{f'{y.scored[n]} members, {y.events[n]} filings':>24}" for n in names))
+    if c.without_cik:
+        print(f"No CIK in SEC's ticker map ({len(c.without_cik)}): {' '.join(c.without_cik)}")
+    if c.without_facts:
+        print(f"No XBRL facts at SEC ({len(c.without_facts)}): {' '.join(c.without_facts)}")

@@ -72,6 +72,8 @@ class RenameRun:
     refetch: list[str] = field(default_factory=list)
     """Former members SEC says are today's holders of their ticker, noted reused by the first-trade rule."""
     dropped: list[str] = field(default_factory=list)
+    delisted: list[str] = field(default_factory=list)
+    """Noted reused by the first-trade rule, yet SEC has no filer under the ticker: gone, not reused."""
     """Former members whose stored bars SEC says are another company's."""
     same_company: list[tuple[str, str, str]] = field(default_factory=list)
 
@@ -372,6 +374,8 @@ class Renames:
                 continue
             self.progress(f"identity: {t}")
             verdict, note, cik = await self._judge(t)
+            if verdict is None and cik is None and first_trade:
+                self.run.delisted.append(t)
             self.repo.set_identity(t, verdict, note, cik)
             if verdict == SAME:
                 self._same_cik[t] = cik

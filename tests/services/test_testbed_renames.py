@@ -24,7 +24,7 @@ from tests.fakes.yahoo import FakeYahoo, bar, quote
 
 NOW = datetime(2012, 12, 31, 12, 0, tzinfo=timezone.utc)
 NY = "America/New_York"
-BASE = "AAA,BBB,SUN,PPP"
+BASE = "AAA,BBB,SUN,PPP,GONE"
 ROWS = [
     ("2010-01-04", f"{BASE},FB,EA,SYMC,GPS,DISCA,DISCK"),
     ("2011-03-01", f"{BASE},FB,EA,SYMC,CCC,DISCA,DISCK"),
@@ -64,6 +64,7 @@ def env(tmp_path):
     for s in ("SPY", "ACWI", "AAA", "META", "FERG", "GEN", "CCC", "GAP", "WBD", "DDD", "PPP"):
         yahoo.add(s, "USD", NY, series())
     yahoo.add("SUN", "USD", NY, series("2010-01-04"))
+    yahoo.add("GONE", "USD", NY, series("2012-11-01"), first_trade=date(2012, 11, 1))
     yahoo.add("BBB", "USD", NY, series("2010-09-20"), first_trade=date(2010, 9, 20))
     yahoo.quotes["GPS"] = [quote("GPSI34.SA", "The Gap, Inc."), quote("GPSC.BK", "Global Power Synergy")]
     sec.companies = {t: (cik, {"GAP": "Gap Inc", "SUN": "Sunoco LP"}.get(t, f"{t} Corp")) for t, cik in CIKS.items()}
@@ -213,6 +214,21 @@ async def test_two_members_priced_as_one_company_on_the_same_days_are_flagged(en
     assert ("DISCA", "DISCK") in pairs and "CIK 1437107" in pairs[("DISCA", "DISCK")].why
 
 
+@pytest.mark.parametrize("keep_priced", [False, True])
+async def test_two_members_priced_from_one_series_appear_once_in_a_days_cross_section(env, keep_priced):
+    from oracle.services.signal_test_service import load_panel
+
+    ctx, *_ = env
+    await build_testbed(ctx)
+    with open_testbed(ctx) as tb:
+        assert (("DISCA", "DISCK"), "one SEC filer, CIK 1437107 (WBD Corp)") in tb.duplicates()
+        assert tb.duplicates()[0][0] == ("KORS", "CPRI"), "the known pairs first"
+        p = load_panel(tb, date(2012, 3, 30), keep_priced_duplicate=keep_priced)
+    i = p.days.index(date(2011, 6, 1))
+    assert "DISCA" in p.members[i] and "DISCK" not in p.members[i]
+    assert p.priced("DISCA", i), "priced from WBD's series"
+
+
 async def test_the_check_runs_once_after_the_first_full_build_and_again_only_when_asked(env):
     ctx, _, sec, _ = env
     await build_testbed(ctx)
@@ -227,8 +243,16 @@ async def test_without_an_sec_contact_nothing_is_mapped_and_the_run_says_why(env
     ctx, *_ = env
     ctx = replace(ctx, config=replace(ctx.config, research=ResearchConfig()))
     run = await build_testbed(ctx)
-    assert run.renames.startswith("renames not checked: SEC needs a contact")
+    assert run.renames.startswith("renames not checked: SEC needs a contact") and not run.failures
     assert aliases(ctx) == {}
+    asked = await build_testbed(ctx, verify=True)
+    assert asked.failures == [asked.renames], "asked for and not done is a failure (the CLI exits 1)"
+
+
+async def test_a_first_trade_reused_ticker_sec_has_no_filer_for_is_noted_delisted(env):
+    ctx, *_ = env
+    await build_testbed(ctx)
+    assert members(ctx)["GONE"].bars_note == "not on Yahoo (delisted: SEC has no filer with GONE today)"
 
 
 async def test_sec_unavailable_maps_nothing_and_fails_the_run_so_a_retry_checks_again(env, monkeypatch):
