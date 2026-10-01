@@ -305,3 +305,89 @@ def _fit(sections: list[str], cap: int) -> str:
         sizes[i] = min(len(sections[i]), left // (len(sections) - k))
         left -= sizes[i]
     return "\n\n".join(s[:n].rstrip() for s, n in zip(sections, sizes))
+
+
+# Which ticker a company filed under: the dei:TradingSymbol on a report's cover (the XBRL viewer's
+# page R1; tagged on every cover since 2019 and on many before), else its document's name, which
+# filers usually start with the ticker (fb-20211231.htm), though not always and not exactly at a change.
+REPORTS = frozenset({"10-K", "10-Q", "20-F", "40-F"})
+_SYMBOL_CELL = re.compile(r"defref_dei_TradingSymbol.*?</td>\s*<td[^>]*>\s*([^<]*?)\s*<", re.S)
+_DOCUMENT_TICKER = re.compile(r"([a-z]{1,6})-\d")
+
+
+@dataclass(frozen=True)
+class Report:
+    """A periodic report (no amendments), as the submissions list it."""
+
+    form: str
+    filed: date
+    accession: str
+    document: str
+
+    @property
+    def document_ticker(self) -> str | None:
+        """The ticker its document's name starts with (fb-20211231.htm), when it is so named."""
+        m = _DOCUMENT_TICKER.match(self.document.lower())
+        return m.group(1).upper() if m else None
+
+
+def parse_reports(columns: object) -> list[Report]:
+    """Periodic reports from the submissions' recent list or an older page, oldest first."""
+    columns = columns if isinstance(columns, dict) else {}
+    out = []
+    for form, filed, accession, document in zip(*(columns.get(k, []) for k in (
+            "form", "filingDate", "accessionNumber", "primaryDocument"))):
+        try:
+            if form in REPORTS and accession:
+                out.append(Report(form, date.fromisoformat(filed), accession, document or ""))
+        except (TypeError, ValueError):
+            continue
+    return sorted(out, key=lambda r: r.filed)
+
+
+def recent(body: object) -> dict:
+    return body.get("filings", {}).get("recent", {}) if isinstance(body, dict) else {}
+
+
+def _files(body: object) -> list:
+    files = body.get("filings", {}).get("files", []) if isinstance(body, dict) else []
+    return files if isinstance(files, list) else []
+
+
+def pages_between(body: object, start: date, end: date) -> list[str]:
+    """The older submissions pages holding filings from `start` to `end`, as addresses."""
+    out = []
+    for f in _files(body):
+        try:
+            if date.fromisoformat(f["filingTo"]) >= start and date.fromisoformat(f["filingFrom"]) <= end:
+                out.append(f"{SUBMISSIONS}/{f['name']}")
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def first_filed(body: object) -> date | None:
+    """The filer's first filing day on EDGAR."""
+    days = []
+    for f in _files(body):
+        try:
+            days.append(date.fromisoformat(f["filingFrom"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    for filed in recent(body).get("filingDate", []):
+        try:
+            days.append(date.fromisoformat(filed))
+        except (TypeError, ValueError):
+            continue
+    return min(days, default=None)
+
+
+def cover_url(cik: int, accession: str) -> str:
+    """The XBRL viewer's first page of a filing: its cover (Document and Entity Information)."""
+    return f"{ARCHIVES}/{cik}/{accession.replace('-', '')}/R1.htm"
+
+
+def trading_symbols(cover_html: str) -> tuple[str, ...]:
+    """The cover's dei:TradingSymbol values (one per listed class), upper case."""
+    found = (html.unescape(v).strip().upper() for v in _SYMBOL_CELL.findall(cover_html))
+    return tuple(dict.fromkeys(v for v in found if v))
