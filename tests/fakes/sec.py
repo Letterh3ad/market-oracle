@@ -25,6 +25,8 @@ class FakeSec:
         self.failures: dict[str, httpx.Response | Exception] = {}
         """archive URL -> the response or transport error it fails with"""
         self.requests: list[httpx.Request] = []
+        self.facts: dict[int, dict] = {}
+        """cik -> its companyfacts body"""
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -34,6 +36,9 @@ class FakeSec:
         if path == "/files/company_tickers.json":
             return httpx.Response(200, json={str(i): {"cik_str": cik, "ticker": t, "title": name}
                                              for i, (t, (cik, name)) in enumerate(self.companies.items())})
+        if m := re.fullmatch(r"/api/xbrl/companyfacts/CIK(\d{10})\.json", path):
+            body = self.facts.get(int(m.group(1)))
+            return httpx.Response(200, json=body) if body is not None else httpx.Response(404)
         if m := re.fullmatch(r"/submissions/CIK(\d{10})-submissions-(\d{3})\.json", path):
             pages = self.older.get(int(m.group(1)), [])
             n = int(m.group(2))

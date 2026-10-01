@@ -5,7 +5,18 @@ from tests.services.test_signal_tests import REGISTRY, seed
 async def test_signals_lists_the_registry_with_no_result_before_a_run(loaded):
     body = (await loaded.get("/api/signals")).json()
     assert [(s["name"], s["horizons"], s["result"]) for s in body["signals"]] == [
-        ("momentum_12_1", [20], None), ("reversal_1m", [5], None)]
+        ("momentum_12_1", [20], None), ("reversal_1m", [5], None), ("sue", [60], None),
+        ("gross_profitability", [20], None), ("earnings_yield", [20], None)]
+
+
+async def test_the_fundamentals_fetch_is_a_job_and_its_coverage_reads_the_research_database(loaded):
+    first = await loaded.post("/api/jobs/xbrl")
+    again = await loaded.post("/api/jobs/xbrl")
+    refetch = await loaded.post("/api/jobs/xbrl?refresh=true")
+    assert first.status_code == 202 and first.json()["kind"] == "xbrl" and again.json()["id"] == first.json()["id"]
+    assert first.json()["label"] == "Fetch SEC fundamentals" and refetch.json()["label"] == "Refetch SEC fundamentals"
+    body = (await loaded.get("/api/xbrl/coverage")).json()
+    assert (body["priced"], body["years"], body["without_cik"]) == (0, [], [])
 
 
 async def test_signals_shows_each_ones_newest_kept_result(loaded, ctx, monkeypatch):

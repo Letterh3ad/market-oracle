@@ -4,6 +4,6 @@ tables (same DDL, so the same repos and gate work on it), then the testbed's. Ap
 from __future__ import annotations
 
 from oracle.store.migrations import m0001_meta, m0002_sources, m0003_job_locks, m0009_bars
-from oracle.store.testbed_migrations import t0001_testbed, t0002_signal_tests
+from oracle.store.testbed_migrations import t0001_testbed, t0002_signal_tests, t0003_xbrl
 
-MIGRATIONS = (m0001_meta, m0002_sources, m0003_job_locks, m0009_bars, t0001_testbed, t0002_signal_tests)
+MIGRATIONS = (m0001_meta, m0002_sources, m0003_job_locks, m0009_bars, t0001_testbed, t0002_signal_tests, t0003_xbrl)
