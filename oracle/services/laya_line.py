@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
-from oracle.analysts.predictive import lookback, pct_ranks
+from oracle.analysts.predictive import lookback, pct_ranks, usable_day
 from oracle.broker.regime import DatedScores, RegimeSettings
 from oracle.broker.walk_forward import segments
 from oracle.services.context import AppContext
@@ -25,8 +25,9 @@ from oracle.services.laya_test_service import (
     trailing_fit,
 )
 from oracle.services.watch_service import DEFAULT_LIST
+from oracle.store.db import to_utc_iso
 
-__all__ = ["METHOD", "PRICE_METHODS", "LayaInput", "LayaVerdict", "daily_scores", "laya_input", "laya_only",
+__all__ = ["METHOD", "PRICE_METHODS", "LayaInput", "LayaVerdict", "daily_scores", "laya_input", "laya_live", "laya_only",
            "laya_verdict", "segment_start", "verdict_note", "with_laya"]
 
 METHOD = "laya"
@@ -85,7 +86,7 @@ def laya_only(settings: RegimeSettings) -> RegimeSettings:
 
 def verdict_note(v: LayaVerdict, settings: RegimeSettings | None = None) -> str:
     """One line: the verdict, and the weight it gives in core-sat."""
-    head = (f"Laya's predictive test: {v.verdict} (test {v.test_id}, {v.run_at[:10]})" if v.verdict
+    head = (f"Laya's predictive test: {v.verdict} (test {v.test_id}, {(v.run_at or '')[:10]})" if v.verdict
             else "Laya's predictive test: none kept yet")
     if not v.useful:
         return f"{head}; {v.why.removesuffix(': weight 0')}: weight 0 in core-sat"
@@ -149,18 +150,44 @@ def laya_input(ctx: AppContext, listings: Collection[str], first: date, last: da
     of it has none, its open may differ) for decision days `first` to `last`, with the verdict.
     Without `scores` only the verdict is read (core-sat when Laya weighs nothing)."""
     verdict = laya_verdict(ctx, model)
-    if not scores or not listings or (start := segment_start(max(first, TEST_START))) is None or last < TEST_START:
+    if not scores:
         return LayaInput({}, verdict)
+    return LayaInput(_scored(ctx, listings, first, last, watchlist, model), verdict)
+
+
+def laya_live(ctx: AppContext, listings: Collection[str], first: date, day: date, now: datetime, *,
+              watchlist: str = DEFAULT_LIST, model: str = MODEL_TAG) -> LayaInput:
+    """Laya's scores for a live step at `now` that reads bar `day`: each listing's scores dated as
+    the backtest dates them up to the day before `day`, then at `day` the score of the decision day
+    its order fills on (its next open after `now`), from only the articles known by `now`. So the
+    live book trades the news the backtest's fill would have, never a session staler."""
+    verdict = laya_verdict(ctx, model)
+    fills = {s: usable_day(s, now) for s in listings}
+    if not fills:
+        return LayaInput({}, verdict)
+    found = _scored(ctx, listings, first, max(fills.values()), watchlist, model, to_utc_iso(now))
+    out = {}
+    for s, rows in found.items():
+        fresh = dict(rows).get(fills[s] - timedelta(days=1))
+        kept = [r for r in rows if r[0] < day] + ([(day, fresh)] if fresh is not None else [])
+        if kept:
+            out[s] = tuple(kept)
+    return LayaInput(out, verdict)
+
+
+def _scored(ctx: AppContext, listings: Collection[str], first: date, last: date, watchlist: str, model: str,
+            known_by: str | None = None) -> dict[str, tuple[tuple[date, float], ...]]:
+    if not listings or (start := segment_start(max(first, TEST_START))) is None or last < TEST_START:
+        return {}
     try:
         panel = build_panel(ctx, watchlist, start=start - timedelta(days=FIT_DAYS), end=last, model=model,
-                            research=True)
+                            research=True, known_by=known_by)
     except UnknownWatchlist:
-        return LayaInput({}, verdict)
-    found = daily_scores(panel, max(first, TEST_START), last)
-    by_company = {m.casefold(): rows for m, rows in found.items()}
+        return {}
+    by_company = {m.casefold(): rows for m, rows in daily_scores(panel, max(first, TEST_START), last).items()}
     out = {}
     for s in listings:
         rows = by_company.get(s.casefold())
         if rows and primary(ctx, s).casefold() == s.casefold():
             out[s] = tuple(rows)
-    return LayaInput(out, verdict)
+    return out

@@ -1,11 +1,12 @@
+import json
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from oracle.analysts.predictive import mean, own_return, spearman
 from oracle.broker.regime import PRESETS, RegimeSettings
 from oracle.services.laya_history_service import score_history
 from oracle.services.laya_line import (
-    METHOD, LayaInput, LayaVerdict, daily_scores, laya_input, laya_only, laya_verdict, segment_start, verdict_note,
+    METHOD, LayaInput, LayaVerdict, daily_scores, laya_input, laya_live, laya_only, laya_verdict, segment_start, verdict_note,
     with_laya,
 )
 from oracle.services.laya_test_service import FIT_DAYS, TEST_START, build_panel, keep_laya_test, run_laya_test
@@ -14,7 +15,8 @@ from oracle.store.industry_news import IndustryNewsRepo
 from tests.fakes.laya import FakeLaya
 from tests.services.test_backtest import BARS, END as BT_END, START as BT_START, make_ctx, market as stored  # noqa: F401
 from tests.broker.test_backtest import rising
-from tests.services.test_laya_test import END, MAINS, MODEL, ctx, market  # noqa: F401 (fixture)
+from oracle.services.watch_service import DEFAULT_LIST
+from tests.services.test_laya_test import END, MAINS, MODEL, backfill, ctx, market  # noqa: F401 (fixture)
 
 FIRST = TEST_START - timedelta(days=FIT_DAYS)
 SECOND = date(2023, 3, 21)
@@ -98,11 +100,11 @@ def test_without_the_list_or_any_listing_there_is_no_score_and_no_error(ctx):
     assert laya_input(ctx, [], TEST_START, END, model=MODEL).scores == {}
 
 
-def kept(ctx, verdict, beats=True, run="main", model=MODEL):
+def kept(ctx, verdict, beats=True, run="main", model=MODEL, **more):
     t = run_laya_test(ctx, model=MODEL, end=END)
     horizons = tuple(replace(h, beats_baseline=beats, beats_momentum=beats) for h in t.horizons)
     return keep_laya_test(ctx, replace(t, run=run, model=model, verdict=verdict, passed=verdict == "PASS",
-                                       horizons=horizons))
+                                       horizons=horizons, **more))
 
 
 def test_only_the_newest_main_verdict_for_the_model_that_passed_and_beat_both_baselines_gives_weight(ctx):
@@ -121,6 +123,53 @@ def test_only_the_newest_main_verdict_for_the_model_that_passed_and_beat_both_ba
     assert v.useful and v.test_id == newest.id
     kept(ctx, "FAIL")
     assert laya_verdict(ctx, MODEL).verdict == "FAIL" and not laya_verdict(ctx, MODEL).useful
+
+
+def test_only_a_run_on_the_main_list_from_the_tests_start_gives_weight(ctx):
+    market(ctx, signal=True)
+    score_history(ctx, scorer=FakeLaya())
+    assert run_laya_test(ctx, model=MODEL, end=END).watchlist == DEFAULT_LIST, "each result names its list"
+    main = kept(ctx, "PASS")
+    assert laya_verdict(ctx, MODEL).test_id == main.id
+    kept(ctx, "FAIL", watchlist="picked")
+    kept(ctx, "FAIL", start=SECOND)
+    v = laya_verdict(ctx, MODEL)
+    assert v.useful and v.test_id == main.id, "a newer look on another list or a later start is not the verdict"
+    kept(ctx, "FAIL")
+    kept(ctx, "PASS", watchlist="picked")
+    kept(ctx, "PASS", start=SECOND)
+    assert laya_verdict(ctx, MODEL).verdict == "FAIL", "a pass on a hand-picked list or span never gives weight"
+    unknown = json.loads(ctx.conn.execute("SELECT result FROM laya_tests WHERE id = ?", (main.id,)).fetchone()[0])
+    unknown.pop("watchlist")
+    ctx.conn.execute("DELETE FROM laya_tests")
+    ctx.conn.execute("INSERT INTO laya_tests (run, model, verdict, result, run_at) VALUES ('main', ?, 'PASS', ?, ?)",
+                     (MODEL, json.dumps(unknown), unknown["run_at"]))
+    assert laya_verdict(ctx, MODEL).verdict is None, "a result with no list recorded never gives weight"
+
+
+def test_the_live_score_is_the_one_for_the_fill_day_and_reads_only_what_is_known_at_the_tick(ctx):
+    market(ctx, signal=True)
+    score_history(ctx, scorer=FakeLaya())
+    now = datetime(2024, 3, 13, 22, 0, tzinfo=timezone.utc)
+    day, fill = date(2024, 3, 12), date(2024, 3, 14)
+    """A Wednesday-evening tick reads Tuesday's bar; its orders fill at Thursday's open."""
+    live = laya_live(ctx, ["GM", "F"], TEST_START, day, now, model=MODEL)
+    full = daily_scores(panel_of(ctx, end=fill), TEST_START, fill)
+    known = daily_scores(build_panel(ctx, model=MODEL, start=FIRST, end=fill, research=True,
+                                     known_by=now.isoformat()), TEST_START, fill)
+    for s in ("GM", "F"):
+        thursday = dict(known[s])[fill - timedelta(days=1)]
+        assert live.scores[s][-1] == (day, thursday), "Thursday's decision score, from what the tick knows"
+        assert thursday != dict(full[s])[day], "not Wednesday's, which the backtest's Tuesday bar would read"
+        assert list(live.scores[s][:-1]) == [r for r in full[s] if r[0] < day], "earlier days dated as the backtest"
+    late = backfill(ctx, "GM", [("General Motors shares rise sharply", date(2024, 3, 13))])
+    ctx.conn.execute("UPDATE articles SET published_at = '2024-03-13T23:30:00+00:00' WHERE id = ?", (late[0],))
+    score_history(ctx, scorer=FakeLaya())
+    after = daily_scores(panel_of(ctx, end=fill), TEST_START, fill)
+    assert dict(after["GM"])[fill - timedelta(days=1)] != dict(full["GM"])[fill - timedelta(days=1)], \
+        "the late headline is usable by Thursday's open"
+    assert laya_live(ctx, ["GM", "F"], TEST_START, day, now, model=MODEL).scores == live.scores, \
+        "known after the tick, so the live step never reads it"
 
 
 def test_a_useful_laya_weighs_as_the_mean_of_each_moods_price_methods_and_otherwise_0():

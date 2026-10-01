@@ -7,12 +7,13 @@ from datetime import date, timedelta
 
 from oracle.broker.regime import RegimeInputs
 from oracle.services.laya_line import LayaInput, LayaVerdict
-from oracle.services.paper_service import ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log
-from oracle.services.regime_service import LAYA_OFF, NO_LAYA, NOT_MAIN, build_book, regime_card, regime_step
+from oracle.broker.orders import Side
+from oracle.services.paper_service import ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log, fill_pending
+from oracle.services.regime_service import LAYA_OFF, NO_LAYA, NO_LAYA_HELD, NOT_MAIN, build_book, regime_card, regime_step
 from oracle.services.watch_service import watch
 from tests.broker.test_backtest import rising
 from tests.fakes.regime import use_stub
-from tests.services.test_paper import clock, ctx, seed, yahoo  # noqa: F401
+from tests.services.test_paper import clock, ctx, next_day, seed, yahoo  # noqa: F401
 from tests.services.test_paper_discovered import ai_trades, found
 from tests.services.test_regime_account import PARTS
 
@@ -22,14 +23,21 @@ USEFUL = LayaVerdict("PASS", True, "laya", 8, "2026-10-01T00:00:00+00:00", "pass
 
 
 def asked(monkeypatch, verdict=FAILED, scored=None):
-    """Laya's input as the step reads it, recording each read's (listings, first, last, scores)."""
+    """Laya's input as the step reads it, recording each read: ("verdict",) for the verdict alone,
+    ("live", listings, first, day, now) for scores."""
     calls = []
 
-    def fake(ctx, listings, first, last, *, scores=True, **_):
-        calls.append((sorted(listings), first, last, scores))
-        return LayaInput(dict(scored or {}) if scores else {}, verdict)
+    def verdict_only(ctx, listings, first, last, *, scores=True, **_):
+        assert not scores
+        calls.append(("verdict",))
+        return LayaInput({}, verdict)
 
-    monkeypatch.setattr("oracle.services.regime_service.laya_input", fake)
+    def live(ctx, listings, first, day, now, **_):
+        calls.append(("live", sorted(listings), first, day, now))
+        return LayaInput(dict(scored or {}), verdict)
+
+    monkeypatch.setattr("oracle.services.regime_service.laya_input", verdict_only)
+    monkeypatch.setattr("oracle.services.regime_service.laya_live", live)
     monkeypatch.setattr("oracle.services.regime_service.laya_verdict", lambda ctx, model=None: verdict)
     monkeypatch.setattr("oracle.services.laya_line.laya_verdict", lambda ctx, model=None: verdict)
     return calls
@@ -59,10 +67,11 @@ def test_it_leans_on_the_main_lists_companies_with_laya_scores_over_the_books_hi
     ai_trades(ctx, True)
     found(ctx, "VOD.L")
     regime_step(ctx, ACCOUNT)
-    today = ctx.clock.utcnow().date()
-    [(listings, first, last, scores)] = calls
-    assert listings == ["AAPL"] and scores and last == today
-    assert first <= today - timedelta(days=1000), "scores over the book's history, so its health reads like the backtest's"
+    now = ctx.clock.utcnow()
+    [(kind, listings, first, day, at)] = calls
+    assert (kind, listings, at) == ("live", ["AAPL"], now) and day < now.date()
+    assert day == built[0].asked[0][1], "the step day's score is the one the book reads"
+    assert first <= day - timedelta(days=1000), "scores over the book's history, so its health reads like the backtest's"
     assert built[0].account == ACCOUNT and built[0].laya.verdict == FAILED
     assert {o.symbol for o in account_view(ctx, ACCOUNT).pending} == {"AAPL"}
     reasons = {d.symbol: d.reason for d in decision_log(ctx, ACCOUNT)}
@@ -75,6 +84,22 @@ def test_a_company_without_a_laya_score_is_skipped_and_says_why(ctx, monkeypatch
     watch(ctx, "AAPL")
     regime_step(ctx, ACCOUNT)
     assert [d.reason for d in decision_log(ctx, ACCOUNT)] == [NO_LAYA]
+
+
+async def test_a_holding_without_a_laya_score_is_sold_on_the_next_step_saying_why(ctx, yahoo, clock, monkeypatch):
+    asked(monkeypatch)
+    use_stub(monkeypatch, leans={"AAPL": ("strong buy", 0.95, {"laya": 0.9})})
+    seed(ctx, "AAPL", "hold", size_share=0.5)
+    watch(ctx, "AAPL")
+    regime_step(ctx, ACCOUNT)
+    await next_day(ctx, yahoo, clock)
+    fill_pending(ctx)
+    [held] = account_view(ctx, ACCOUNT).positions
+    use_stub(monkeypatch)
+    regime_step(ctx, ACCOUNT)
+    [sell] = [o for o in account_view(ctx, ACCOUNT).pending if o.side == Side.SELL]
+    assert sell.symbol == held.symbol == "AAPL" and sell.shares is None, "the whole holding"
+    assert decision_log(ctx, ACCOUNT)[0].reason == NO_LAYA_HELD and "sold" in NO_LAYA_HELD
 
 
 def test_its_card_and_core_sats_carry_the_verdict_and_weight_0_on_a_fail(ctx, monkeypatch):
@@ -91,10 +116,10 @@ def test_core_sat_reads_laya_scores_only_when_its_verdict_gives_weight(ctx, monk
     built = use_stub(monkeypatch)
     watch(ctx, "AAPL")
     regime_step(ctx, "core-sat")
-    assert [c[3] for c in calls] == [False] and not built[-1].laya.verdict.useful
+    assert calls == [("verdict",)] and not built[-1].laya.verdict.useful
     calls = asked(monkeypatch, USEFUL, {"AAPL": ((date(2026, 9, 20), 0.5),)})
     regime_step(ctx, "core-sat")
-    assert [c[3] for c in calls] == [True] and built[-1].laya.scores == {"AAPL": ((date(2026, 9, 20), 0.5),)}
+    assert [c[0] for c in calls] == ["live"] and built[-1].laya.scores == {"AAPL": ((date(2026, 9, 20), 0.5),)}
     card = regime_card(ctx, account="core-sat").laya
     assert card["useful"] and card["weights"]["calm_up"] == 0.125 and "weighs in core-sat's satellite" in card["note"]
 

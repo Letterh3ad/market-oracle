@@ -27,7 +27,9 @@ from oracle.services.context import AppContext
 from oracle.services.core_sat_service import (
     core_card, core_listings, core_step, satellite_inputs, satellite_settings, satellite_traded, sleeves,
 )
-from oracle.services.laya_line import METHOD, LayaInput, laya_input, laya_only, laya_verdict, verdict_note, with_laya
+from oracle.services.laya_line import (
+    METHOD, LayaInput, laya_input, laya_live, laya_only, laya_verdict, verdict_note, with_laya,
+)
 from oracle.services.laya_test_service import TEST_START
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
@@ -43,7 +45,7 @@ from oracle.store.paper import DecisionRepo, LoggedDecision, PaperRepo
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["CORE_SAT_OFF", "LAYA_OFF", "laya_card", "laya_traded", "FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
+__all__ = ["CORE_SAT_OFF", "LAYA_OFF", "NO_LAYA_HELD", "laya_card", "laya_traded", "FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
            "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
@@ -72,6 +74,8 @@ NOT_CORE = "not one of the main list's companies: core-sat's satellite trades on
 NOT_MAIN = "not one of the main list's companies: the laya account trades only those Laya's score ranks"
 NO_LAYA = ("no Laya score within 7 days: no news fit for its segment yet, or it is not its company's primary "
            "listing")
+NO_LAYA_HELD = ("held with no Laya score within 7 days (left the main list, not its company's primary listing, or "
+                "no news fit): sold, as Laya alone decides this account")
 STALE_DAYS = 7
 """A listing whose last bar is this far behind the market's is not leaned on: its prices are stale."""
 COMPLETE_SHARE = 0.8
@@ -174,11 +178,13 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     history, day = complete_sessions(market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, traded), traded)
     tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
     leaned = (satellite_traded(ctx) if account == CORE_SAT else laya_traded(ctx) if account == LAYA else traded)
-    laya = _laya(ctx, account, leaned, last)
+    laya = _laya(ctx, account, leaned, day)
     book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account, laya)
     state = book.state(day) if day else None
     sleeve, core = (sleeves(ctx)[1], core_step(ctx, day, history) if day else []) if account == CORE_SAT else (None, [])
     found, skips, why = _leans(ctx, book, state, day, leaned, history, NO_LAYA if account == LAYA else NO_SCORE)
+    if account == LAYA and state is not None:
+        found, skips = _sell_unscored(ctx, day, found, skips)
     outside = NOT_CORE if account == CORE_SAT else NOT_MAIN
     skips += [Decision(s, Action.SKIP, None, outside) for s in traded if s not in leaned]
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
@@ -198,19 +204,30 @@ def _with_scores(inputs: RegimeInputs | None, scores: Mapping[str, DatedScores])
 
 def laya_traded(ctx: AppContext) -> list[str]:
     """What the laya account leans on: the main list's companies (never a fund or Tesla), as Laya's
-    score ranks them, plus what it holds, so a holding is never stranded."""
+    score ranks them, plus what it holds, so a holding is never stranded (one with no score is sold)."""
     held = PaperRepo(ctx.conn).held_symbols(LAYA)
     return sorted(set(core_listings(ctx)) | set(held))
 
 
-def _laya(ctx: AppContext, account: str, listings: list[str], last: date) -> LayaInput | None:
-    """Laya's scores over the book's history window, for the laya account always and for core-sat
-    only when its verdict gives weight (otherwise just the verdict)."""
+def _laya(ctx: AppContext, account: str, listings: list[str], day: date | None) -> LayaInput | None:
+    """Laya's scores over the book's history window, the step day's being the score for each
+    listing's fill (`laya_line.laya_live`), for the laya account always and for core-sat only when
+    its verdict gives weight (otherwise just the verdict)."""
     if account not in (CORE_SAT, LAYA):
         return None
-    if account == CORE_SAT and not laya_verdict(ctx).useful:
-        return laya_input(ctx, listings, last, last, scores=False)
-    return laya_input(ctx, listings, max(TEST_START, last - timedelta(days=HISTORY_DAYS)), last + timedelta(days=1))
+    if day is None or (account == CORE_SAT and not laya_verdict(ctx).useful):
+        return laya_input(ctx, listings, TEST_START, TEST_START, scores=False)
+    return laya_live(ctx, listings, max(TEST_START, day - timedelta(days=HISTORY_DAYS)), day, ctx.clock.utcnow())
+
+
+def _sell_unscored(ctx: AppContext, day: date, found: dict[str, Lean],
+                   skips: list[Decision]) -> tuple[dict[str, Lean], list[Decision]]:
+    """The laya account's holdings without a Laya score lean sell: Laya alone decides it, so with no
+    score there is nothing to hold them on (left the main list, not the primary listing, or no fit)."""
+    held = set(PaperRepo(ctx.conn).held_symbols(LAYA))
+    unscored = {d.symbol for d in skips if d.symbol in held and d.reason == NO_LAYA}
+    sells = {s: Lean(s, day, "sell", 1.0, LAYA, note=NO_LAYA_HELD) for s in unscored}
+    return {**found, **sells}, [d for d in skips if d.symbol not in unscored]
 
 
 def lag_warning(day: date, today: date) -> str | None:

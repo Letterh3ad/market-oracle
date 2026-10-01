@@ -37,8 +37,8 @@ class LayaTestRepo:
             "SELECT id, run, model, verdict, result, run_at FROM laya_tests WHERE id IN "
             "(SELECT MAX(id) FROM laya_tests GROUP BY run) ORDER BY run")]
 
-    def latest_for(self, run: str, model: str) -> TestRow | None:
-        """The newest result of `run` for `model`."""
-        r = self._conn.execute("SELECT id, run, model, verdict, result, run_at FROM laya_tests WHERE run = ? AND model = ? "
-                               "ORDER BY id DESC LIMIT 1", (run, model)).fetchone()
-        return TestRow(*r) if r else None
+    def kept_for(self, run: str, model: str) -> list[TestRow]:
+        """Every kept result of `run` for `model`, newest first."""
+        return [TestRow(*r) for r in self._conn.execute(
+            "SELECT id, run, model, verdict, result, run_at FROM laya_tests WHERE run = ? AND model = ? "
+            "ORDER BY id DESC", (run, model))]

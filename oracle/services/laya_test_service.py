@@ -102,9 +102,10 @@ class Panel:
 
 def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, start: date = TEST_START,
                 end: date | None = None, model: str = MODEL_TAG, research: bool = False,
-                say: Callable[[str], None] = lambda _: None) -> Panel:
+                known_by: str | None = None, say: Callable[[str], None] = lambda _: None) -> Panel:
     """With `research`, each company's articles are its backfill plus what the daily industry
-    research found for it (Laya's live score, ticket 08); the test reads the backfill alone."""
+    research found for it (Laya's live score, ticket 08); the test reads the backfill alone.
+    `known_by` (UTC ISO) leaves out articles known after it."""
     news = IndustryNewsRepo(ctx.conn)
 
     def ids(symbol: str) -> list[int]:
@@ -126,7 +127,7 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
                 about.setdefault(i, []).append(s.related)
         rows = daily_features(ctx, m, first, end, model=model, history=True,
                               relation_for=relation_for(set(ids(m)), about, sensitivity),
-                              day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)))
+                              day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)), known_by=known_by)
         days: dict[date, dict[str, tuple[int, float, float]]] = {}
         for r in rows:
             days.setdefault(r.day, {})[r.relation] = (r.articles, r.score, r.relevance)
@@ -210,6 +211,8 @@ class LayaTest:
     t_method: str = "Newey-West (Bartlett) with h lags over the daily ICs (overlapping windows)"
     caveat: str = CAVEAT
     id: int | None = None
+    watchlist: str = DEFAULT_LIST
+    """The list it ran on: only the main list from TEST_START can give Laya weight."""
 
 
 def _features(relations: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -375,7 +378,7 @@ def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity
     overall = "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
     run = SENSITIVITY if sensitivity else MAIN
     return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(results),
-                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()))
+                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()), watchlist=watchlist)
 
 
 def keep_laya_test(ctx: AppContext, test: LayaTest) -> LayaTest:
@@ -391,9 +394,13 @@ def laya_tests(ctx: AppContext) -> list[LayaTest]:
 
 
 def latest_verdict(ctx: AppContext, model: str = MODEL_TAG, run: str = MAIN) -> LayaTest | None:
-    """The newest kept result of `run` for `model`, if any."""
-    row = LayaTestRepo(ctx.conn).latest_for(run, model)
-    return _load(row.result, row.id) if row else None
+    """The newest kept result of `run` for `model` on the main list from TEST_START, if any: a run
+    on another list or from a later start is a look, never the pre-registered verdict."""
+    for row in LayaTestRepo(ctx.conn).kept_for(run, model):
+        test = _load(row.result, row.id)
+        if test.watchlist.casefold() == DEFAULT_LIST.casefold() and test.start == TEST_START:
+            return test
+    return None
 
 
 def _load(raw: str, test_id: int) -> LayaTest:
@@ -404,4 +411,6 @@ def _load(raw: str, test_id: int) -> LayaTest:
                                       "features": tuple(FeatureIC(**f) for f in h["features"])})
                      for h in d["horizons"])
     return LayaTest(**{**d, "start": date.fromisoformat(d["start"]), "end": date.fromisoformat(d["end"]),
-                       "horizons": horizons, "id": test_id})
+                       "horizons": horizons, "id": test_id,
+                       # A result kept before the list was recorded has no known list, so it never gives weight.
+                       "watchlist": d.get("watchlist", "")})
