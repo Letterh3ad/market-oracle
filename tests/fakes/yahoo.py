@@ -42,6 +42,8 @@ class FakeYahoo:
         self.search_status = 200
         self.searched: list[str] = []
         self.profiled: list[str] = []
+        self.splits: dict[str, list[tuple[date, float, float]]] = {}
+        """symbol -> (day, numerator, denominator), sent as the chart's split events."""
 
     def add(self, symbol: str, currency: str | None, tz: str, bars: list[tuple], open_at: time = time(9, 30),
             kind: str = "EQUITY", first_trade: date | None = None) -> None:
@@ -98,6 +100,9 @@ class FakeYahoo:
                 }],
                 "adjclose": [{"adjclose": [b[5] for _, b in stamps]}],
             },
+            **({"events": {"splits": {str(self._stamp(d, s)): {"date": self._stamp(d, s), "numerator": n,
+                                                                "denominator": m, "splitRatio": f"{n}:{m}"}
+                                      for d, n, m in self.splits[symbol]}}} if symbol in self.splits else {}),
         }]}})
 
     def _summary(self, request: httpx.Request) -> httpx.Response:

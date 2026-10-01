@@ -49,6 +49,28 @@ class YahooPrices:
                      local_date(first, tz) if isinstance(first, (int, float)) else None)
 
 
+    async def splits(self, instrument: Instrument, since: date, now: datetime) -> list[tuple[date, float]]:
+        """Split days from `since` with new shares per old share (4.0 for a 4-for-1, 0.1 for a 1-for-10)."""
+        params = {"interval": "1mo", "events": "split", "period1": str(_epoch(since)),
+                  "period2": str(int(now.timestamp()))}
+        url = CHART_URL.format(symbol=quote(instrument.symbol, safe=""))
+        resp = await sources.get(self._client, SOURCE, url, params)
+        results = resp.json()["chart"]["result"]
+        if not results:
+            raise NoData("no data")
+        r = results[0]
+        tz = (r.get("meta") or {}).get("exchangeTimezoneName") or "UTC"
+        out = []
+        for s in ((r.get("events") or {}).get("splits") or {}).values():
+            try:
+                ratio = float(s["numerator"]) / float(s["denominator"])
+                if ratio > 0:
+                    out.append((local_date(s["date"], tz), ratio))
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                continue
+        return sorted(out)
+
+
 @dataclass(frozen=True)
 class Chart:
     bars: list[Bar]

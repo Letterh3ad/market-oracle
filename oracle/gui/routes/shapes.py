@@ -262,6 +262,15 @@ def signal_list(signals, results: dict[str, SignalTest], trains: dict[str, Signa
                         for s in signals]}
 
 
+def xbrl_coverage(c) -> dict:
+    """The SEC fundamentals' coverage: one row per year, members without a CIK or facts, the last fetch."""
+    run = c.last_run
+    return {"priced": c.priced, "with_cik": c.with_cik, "with_facts": c.with_facts,
+            "without_cik": list(c.without_cik), "without_facts": list(c.without_facts),
+            "tickers_fetched_at": c.tickers_fetched_at, "years": [asdict(y) for y in c.years],
+            "last_run": {**asdict(run), "summary": run.summary} if run else None}
+
+
 def testbed_coverage(c: TestbedCoverage) -> dict:
     """The signal testbed's coverage: one row per year, and the members never priced."""
     run, snap = c.last_run, c.snapshot

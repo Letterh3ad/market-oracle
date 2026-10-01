@@ -12,6 +12,7 @@ from oracle.gui.routes import shapes
 from oracle.services.context import AppContext
 from oracle.services.signal_test_service import SIGNALS, signal_tests
 from oracle.services.testbed_service import testbed_coverage
+from oracle.services.xbrl_service import fundamentals_coverage
 
 router = APIRouter(prefix="/api")
 
@@ -28,3 +29,9 @@ async def signals(ctx: AppContext = Depends(get_ctx)) -> dict:
     """The pre-registered signals and each one's newest result, on a thread (its own research connection)."""
     full = await asyncio.to_thread(signal_tests, ctx)
     return shapes.signal_list(SIGNALS.values(), full, await asyncio.to_thread(signal_tests, ctx, True))
+
+
+@router.get("/xbrl/coverage")
+async def xbrl_coverage(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The SEC fundamentals' coverage per year, on a thread (it derives every member's filings)."""
+    return shapes.xbrl_coverage(await asyncio.to_thread(fundamentals_coverage, ctx))

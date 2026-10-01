@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_signal_test, submit_testbed, submit_tick, submit_universe_refresh,
+    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_signal_test, submit_testbed, submit_tick, submit_xbrl, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.laya_service import MODEL_TAG
@@ -183,6 +183,14 @@ async def testbed(refresh: bool = False, ctx: AppContext = Depends(get_ctx),
     re-read its membership and top up current members; it waits while live work runs and resumes
     where it stopped."""
     return shapes.job(submit_testbed(ctx, runner, refresh))
+
+
+@router.post("/xbrl", status_code=202)
+async def xbrl(refresh: bool = False, ctx: AppContext = Depends(get_ctx),
+               runner: JobRunner = Depends(get_runner)) -> dict:
+    """Fetch the testbed members' SEC fundamentals into the research database (about an hour the
+    first time; `refresh` fetches every member again); it waits while live work runs and resumes."""
+    return shapes.job(submit_xbrl(ctx, runner, refresh))
 
 
 @router.post("/signal-test", status_code=202)

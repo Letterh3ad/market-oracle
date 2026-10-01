@@ -19,6 +19,7 @@ def test_list_shows_the_registry_before_any_run(tmp_path, capsys):
     assert main(["--config", str(config(tmp_path)), "signals", "list"]) == 0
     out = capsys.readouterr().out
     assert "momentum_12_1        20 d  not run yet" in out and "reversal_1m           5 d  not run yet" in out
+    assert "sue                  60 d  not run yet" in out and "earnings_yield       20 d  not run yet" in out
 
 
 def test_test_prints_both_windows_power_missing_share_and_the_verdict(tmp_path, capsys, monkeypatch):

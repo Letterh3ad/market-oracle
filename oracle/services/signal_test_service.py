@@ -20,6 +20,7 @@ from oracle.research.training_cutoffs import training_cutoff
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.testbed_service import KNOWN_DUPLICATES, START, Testbed, research_context
+from oracle.services.xbrl_service import FUNDAMENTAL_SIGNALS
 from oracle.store.db import to_utc_iso
 from oracle.store.signal_tests import SignalTestRepo
 
@@ -44,6 +45,7 @@ SIGNALS: dict[str, Signal] = {s.name: s for s in (
     Signal("momentum_12_1", "12-1 momentum: the past year to the last close, leaving out its last month", (20,),
            momentum_12_1),
     Signal("reversal_1m", "1-month reversal: minus the last month's return to the last close", (5,), reversal_1m),
+    *FUNDAMENTAL_SIGNALS,
 )}
 
 
@@ -90,23 +92,23 @@ class SignalTest:
 
 
 def load_panel(tb: Testbed, end: date | None = None, start: date = START,
-               say: Callable[[str], None] = lambda _: None) -> Panel:
-    """Every member's adjusted bars on the trading calendar, each day's members (the later of a
-    duplicate pair dropped while both are in) and sectors."""
+               say: Callable[[str], None] = lambda _: None, keep_priced_duplicate: bool = False) -> Panel:
+    """Every member's adjusted bars on the trading calendar, each day's members and sectors. Of a
+    duplicate pair both in on a day, the later listing is dropped, or with `keep_priced_duplicate`
+    the one without a bar that day (the later one when both or neither have one)."""
     days = tb.calendar(start, end)
-    members = []
-    for d in days:
-        m = set(tb.members_on(d))
-        for (keep, drop), _ in KNOWN_DUPLICATES:
-            if keep in m and drop in m:
-                m.discard(drop)
-        members.append(frozenset(m))
+    members = [frozenset(tb.members_on(d)) for d in days]
     p = Panel(days, members, tb.sectors())
     tickers = sorted(set().union(*members)) if members else []
     for n, t in enumerate(tickers, 1):
         if n % 100 == 0:
             say(f"loading bars ({n}/{len(tickers)})")
         p.add(t, tb.bars(t, start, end))
+    for i, m in enumerate(members):
+        both = [(a, b) for (a, b), _ in KNOWN_DUPLICATES if a in m and b in m]
+        if both:
+            drop = {a if keep_priced_duplicate and p.priced(b, i) and not p.priced(a, i) else b for a, b in both}
+            p.members[i] = m - drop
     return p
 
 
@@ -150,9 +152,12 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
             await turn("loading the testbed")
             if train_only:
                 end = min(end or TRAIN_END, TRAIN_END)
-            p = load_panel(tb, end, say=say)
+            p = load_panel(tb, end, say=say, keep_priced_duplicate=signal.keep_priced_duplicate)
             if not any(p.members):
                 raise InvalidQuery("the testbed has no members: build it first")
+            if signal.prepare:
+                await turn(f"loading what {signal.name} reads")
+                signal.prepare(r, p)
             last = p.days[-1]
             cutoff = training_cutoff(signal.model) if signal.model else None
             train_spans, confirm_spans = segments(START, min(TRAIN_END, last)), segments(CONFIRM_START, last)
