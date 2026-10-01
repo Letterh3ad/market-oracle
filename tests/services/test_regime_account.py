@@ -8,6 +8,7 @@ from datetime import date
 import pytest
 
 from oracle.analysts.signals import AnalystSignal
+from oracle.broker.orders import Side
 from oracle.market.bars import Bar
 from oracle.services.paper_service import (
     ACCOUNTS, NEVER_BUY, TRADERS, account_view, comparison, decision_log, equity_history, fill_pending, traded_by,
@@ -19,6 +20,7 @@ from oracle.services.regime_service import (
 from oracle.services.watch_service import watch
 from oracle.store.bars import BarRepo
 from oracle.store.meta import MetaRepo
+from oracle.store.paper import FillRow, PaperRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.watchlists import WatchlistRepo
@@ -147,11 +149,17 @@ def test_todays_bars_are_never_read_whatever_the_time(ctx, monkeypatch):
     assert built[0].asked == [("AAPL", date(2026, 9, 21))]
 
 
-def test_the_book_reads_the_whole_stored_market_but_trades_only_its_set(ctx, monkeypatch):
+def test_the_book_reads_every_watched_or_held_company_but_trades_only_its_set(ctx, monkeypatch):
     built = use_stub(monkeypatch, leans={"AAPL": ("buy", 0.9, PARTS), "VOD.L": ("buy", 0.9, PARTS)})
     watch(ctx, "AAPL")
-    run = after_close(ctx)
-    assert set(built[0].history) >= {"AAPL", "VOD.L"}
+    after_close(ctx)
+    assert set(built[0].history) == {"AAPL"}, "VOD.L is only stored, on no watchlist and held by none"
+    paper = PaperRepo(ctx.conn)
+    order = paper.add_order("manual", "VOD.L", Side.BUY, None, 1, "2026-09-21T14:00:00Z", date(2026, 9, 21), "manual")
+    paper.record_fill(FillRow(order.id, "manual", "VOD.L", Side.BUY, date(2026, 9, 21), 1, 100.0, "GBP", 1.0,
+                              100.0, 0.0, 0.0, 0.0, 0.0))
+    run = regime_step(ctx)
+    assert set(built[1].history) == {"AAPL", "VOD.L"}
     assert [d.symbol for d in run.decisions] == ["AAPL"]
 
 
