@@ -6,6 +6,7 @@ review; chains resolve; SEC overrides Yahoo's first-trade day for a former membe
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
+import httpx
 import pytest
 
 from oracle.config import Config, ResearchConfig
@@ -205,6 +206,15 @@ async def test_without_an_sec_contact_nothing_is_mapped_and_the_run_says_why(env
     run = await build_testbed(ctx)
     assert run.renames.startswith("renames not checked: SEC needs a contact")
     assert aliases(ctx) == {}
+
+
+async def test_sec_unavailable_maps_nothing_and_fails_the_run_so_a_retry_checks_again(env, monkeypatch):
+    ctx, _, sec, _ = env
+    monkeypatch.setattr(sec, "handle", lambda request: httpx.Response(503))
+    run = await build_testbed(ctx)
+    assert run.renames.startswith("renames not checked: SEC unavailable") and run.failures[-1].startswith("renames")
+    assert aliases(ctx) == {}
+    assert coverage_of(ctx).renames_checked is None, "the next build checks again"
 
 
 def test_swap_candidates_pair_each_ticker_out_with_each_in_that_day():

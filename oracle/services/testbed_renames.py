@@ -30,6 +30,10 @@ from oracle.store.bars import BarRepo
 from oracle.store.testbed import Alias, Span, TestbedRepo
 
 SAME, OTHER = "same", "other"
+NOT_ON_YAHOO = "not on Yahoo"
+REUSED = "ticker reused by another instrument"
+NAMED = 3
+"""Companies Yahoo's search names under an old ticker that are checked, at most."""
 NEED = 0.9
 """A former member priced on under this share of its member-days is looked at for a rename."""
 YAHOO_COVER = 0.9
@@ -169,6 +173,11 @@ class Sec:
         return None
 
 
+def first_trade_note(t: str) -> str:
+    """How the build's first-trade rule notes a former member's ticker as reused."""
+    return f"{REUSED}: Yahoo's {t} first traded"
+
+
 def said(reading) -> str:
     r, symbols, how = reading
     return f"{r.form} {r.filed} {how} {'/'.join(symbols)}"
@@ -237,7 +246,7 @@ class Renames:
             if alias.accepted or c.one_for_one:
                 kept.append(alias)
         for t in sorted(need - set(found)):
-            if (self.members[t].bars_note or "").startswith("not on Yahoo"):
+            if (self.members[t].bars_note or "").startswith(NOT_ON_YAHOO):
                 for new in await self._named(t):
                     self.progress(f"renames after leaving: {t} -> {new}")
                     alias = await self._verify(Candidate(t, new, None, False), found, cik_of)
@@ -257,7 +266,7 @@ class Renames:
         for t, (cik, title) in (await self.sec.ticker_map()).items():
             if company_name(title) in names and normal(t) != normal(old) and cik not in {c for c, _ in out}:
                 out.append((cik, t))
-        return [t for _, t in out]
+        return [t for _, t in out][:NAMED]
 
     async def _verify(self, c: Candidate, found: dict[str, Alias], cik_of: dict[str, int]) -> Alias:
         final, chain = c.new, [c.new]
@@ -343,7 +352,7 @@ class Renames:
         for t, m in sorted(self.members.items()):
             if t in aliased or not self.spans.get(t) or not self.former(t):
                 continue
-            first_trade = (m.bars_note or "").startswith(f"ticker reused by another instrument: Yahoo's {t} first traded")
+            first_trade = (m.bars_note or "").startswith(first_trade_note(t))
             if not (first_trade or (m.bars_note is None and m.bars_tried_at)):
                 continue
             self.progress(f"identity: {t}")

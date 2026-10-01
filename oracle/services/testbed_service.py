@@ -26,7 +26,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import DatabaseTooNew, JobAlreadyRunning
 from oracle.research import edgar
 from oracle.services.http import open_client
-from oracle.services.testbed_renames import OTHER, SAME, Renames, Sec
+from oracle.services.testbed_renames import NOT_ON_YAHOO, OTHER, REUSED, SAME, Renames, Sec, first_trade_note
 from oracle.services.jobs_service import Held, single_flight
 from oracle.store.bars import BarRepo
 from oracle.store.db import connect, to_utc_iso
@@ -53,9 +53,7 @@ WAIT_STEP_S = 5.0
 FAILED_IN_A_ROW = 5
 LAST_RUN = "testbed_last_run"
 WIKIPEDIA, YAHOO = "wikipedia", "yahoo"
-NOT_ON_YAHOO = "not on Yahoo"
 NO_BARS_AS_MEMBER = "no bars while a member"
-REUSED = "ticker reused by another instrument"
 FIRST_TRADE_SLACK = timedelta(days=7)
 """Yahoo's first trade day may trail an index add made on a listing's first days."""
 RENAMES_RUN = "testbed_renames_run"
@@ -346,7 +344,7 @@ class _Build:
             why = f"{REUSED}: {m.identity_note}"
         elif (not current and m.identity != SAME and chart.first_trade
               and chart.first_trade > _first_day(spans) + FIRST_TRADE_SLACK):
-            why = f"{REUSED}: Yahoo's {t} first traded {chart.first_trade}, after it joined the index"
+            why = f"{first_trade_note(t)} {chart.first_trade}, after it joined the index"
         else:
             kept = self._window(chart.bars, since, keep_to)
             why = None if kept else NO_BARS_AS_MEMBER
@@ -403,7 +401,7 @@ class _Build:
         try:
             found = await Renames(self.repo, self.bar_repo, Testbed(self.r).calendar(START), Sec(sec_get), chart,
                                   search, self._at(), TAIL, START, progress).check()
-        except (RequestFailed, CircuitOpen) as exc:
+        except (RequestFailed, CircuitOpen, ValueError) as exc:  # ValueError: an unreadable SEC answer
             self.run.renames = f"renames not checked: SEC unavailable ({exc}); run it again"
             self.run.failures.append(f"renames: {exc}")
             return
