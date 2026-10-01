@@ -177,12 +177,12 @@ async def history(watchlist: str = DEFAULT_LIST, ctx: AppContext = Depends(get_c
 
 
 @router.post("/testbed", status_code=202)
-async def testbed(refresh: bool = False, ctx: AppContext = Depends(get_ctx),
+async def testbed(refresh: bool = False, verify: bool = False, ctx: AppContext = Depends(get_ctx),
                   runner: JobRunner = Depends(get_runner)) -> dict:
     """Build the signal testbed in the research database (hours the first time), or with `refresh`
-    re-read its membership and top up current members; it waits while live work runs and resumes
-    where it stopped."""
-    return shapes.job(submit_testbed(ctx, runner, refresh))
+    re-read its membership and top up current members, or with `verify` check renames and reused
+    tickers with SEC and Yahoo again; it waits while live work runs and resumes where it stopped."""
+    return shapes.job(submit_testbed(ctx, runner, refresh, verify))
 
 
 @router.post("/reader", status_code=202)
