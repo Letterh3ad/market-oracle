@@ -24,7 +24,7 @@ from tests.fakes.yahoo import FakeYahoo, bar, quote
 
 NOW = datetime(2012, 12, 31, 12, 0, tzinfo=timezone.utc)
 NY = "America/New_York"
-BASE = "AAA,BBB,SUN"
+BASE = "AAA,BBB,SUN,PPP"
 ROWS = [
     ("2010-01-04", f"{BASE},FB,EA,SYMC,GPS,DISCA,DISCK"),
     ("2011-03-01", f"{BASE},FB,EA,SYMC,CCC,DISCA,DISCK"),
@@ -36,7 +36,7 @@ ROWS = [
     ("2012-09-04", "AAA,DDD,META,FERG,GEN,CCC,WBD"),
 ]
 CIKS = {"META": 1326801, "FERG": 2011641, "GEN": 849399, "CCC": 3333, "GAP": 39911, "SUN": 1552275, "BBB": 5555,
-        "WBD": 1437107, "AAA": 1111, "DDD": 4444}
+        "WBD": 1437107, "AAA": 1111, "DDD": 4444, "PPP": 1585364}
 
 
 def weekdays(start: str, end: str) -> list[date]:
@@ -61,7 +61,7 @@ def reports(sec: FakeSec, cik: int, covers: list[tuple[str, str]]) -> None:
 @pytest.fixture
 def env(tmp_path):
     yahoo, sec, gh = FakeYahoo(), FakeSec(), FakeSp500(ROWS)
-    for s in ("SPY", "ACWI", "AAA", "META", "FERG", "GEN", "CCC", "GAP", "WBD", "DDD"):
+    for s in ("SPY", "ACWI", "AAA", "META", "FERG", "GEN", "CCC", "GAP", "WBD", "DDD", "PPP"):
         yahoo.add(s, "USD", NY, series())
     yahoo.add("SUN", "USD", NY, series("2010-01-04"))
     yahoo.add("BBB", "USD", NY, series("2010-09-20"), first_trade=date(2010, 9, 20))
@@ -76,6 +76,7 @@ def env(tmp_path):
     reports(sec, CIKS["GAP"], [("2010-12-01", "GPS"), ("2011-06-01", "GPS"), ("2011-12-01", "GPS"),
                                ("2012-06-01", "GAP"), ("2012-12-01", "GAP")])
     reports(sec, CIKS["SUN"], [("2012-06-22", "SUSP"), ("2012-11-14", "SUSP")])
+    reports(sec, CIKS["PPP"], [("2011-05-01", "PPP"), ("2011-11-01", "PPP")])
     reports(sec, CIKS["BBB"], [("2005-03-01", "BBB"), ("2012-02-01", "BBB")])
     reports(sec, CIKS["WBD"], [("2012-02-01", "DISCA/DISCK"), ("2012-05-01", "WBD")])
     wiki = FakeWikipedia()
@@ -179,6 +180,15 @@ async def test_sec_overrides_a_late_first_trade_day_for_a_former_member_that_is_
     assert bbb.identity == "same" and bbb.bars_note is None and bbb.cik == CIKS["BBB"]
     with open_testbed(ctx) as tb:
         assert tb.bars("BBB", date(2000, 1, 1))[0].date == date(2010, 9, 20)
+
+
+async def test_a_late_sec_filer_whose_yahoo_series_runs_from_before_is_judged_by_its_reports(env):
+    ctx, *_ = env
+    await build_testbed(ctx)
+    ppp = members(ctx)["PPP"]
+    assert ppp.identity == "same" and ppp.bars_note is None, "a new holding company keeping its ticker and series"
+    with open_testbed(ctx) as tb:
+        assert tb.bars("PPP", date(2000, 1, 1))[0].date == date(2010, 1, 1)
 
 
 async def test_two_members_priced_as_one_company_on_the_same_days_are_flagged(env):

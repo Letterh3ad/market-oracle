@@ -384,7 +384,10 @@ class Renames:
         title = await self.sec.title(cik)
         joined = max(min(s.start for s in self.spans[t]), self.start)
         first = edgar.first_filed(await self.sec.body(cik))
-        if first and first > joined + JOINED_SLACK:
+        # A new holding company keeps its ticker and Yahoo series (Perrigo plc, 2013): a late filer is
+        # another company only when Yahoo's own series under the ticker starts late too, or is not kept.
+        bars_from = self.bars.first_between(t, self.start, date.max)
+        if first and first > joined + JOINED_SLACK and (bars_from is None or bars_from > joined + REUSED_AFTER):
             return OTHER, (f"SEC's {t} is CIK {cik} ({title}), whose first filing ({first}) is after {t} joined the "
                            f"index ({joined})"), cik
         left = self.last_day(t)
