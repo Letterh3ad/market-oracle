@@ -11,6 +11,7 @@ import pytest
 from oracle.analysts.signal_test import INSIDE, Signal, daily_ics, momentum_12_1, reversal_1m
 from oracle.config import Config
 from oracle.market.bars import Bar
+from oracle.services.activity_service import JobRunner, retry, submit_signal_test
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.signal_test_service import (
@@ -164,3 +165,16 @@ def test_the_registry_holds_the_pre_registered_signals():
 async def test_an_empty_testbed_says_build_it_first(ctx):
     with pytest.raises(InvalidQuery, match="build it first"):
         await run_signal_test(ctx, "null", registry=REGISTRY)
+
+
+async def test_the_job_runs_and_keeps_the_test_and_a_cancelled_one_retries(ctx):
+    seed(ctx)
+    runner = JobRunner(ctx)
+    job = submit_signal_test(ctx, runner, "reversal_1m")
+    assert submit_signal_test(ctx, runner, "reversal_1m") is job, "pressed twice joins the first"
+    runner.cancel(job.id)
+    again = await runner.wait(retry(ctx, runner, job.id).id)
+    assert again.state == "done", again.error
+    assert signal_tests(ctx)["reversal_1m"].confirm[0].horizon == 5
+    with pytest.raises(InvalidQuery):
+        submit_signal_test(ctx, runner, "nope")

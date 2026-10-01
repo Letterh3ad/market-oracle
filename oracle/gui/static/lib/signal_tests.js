@@ -1,7 +1,8 @@
 // The Ledgers tab's Signal tests card: the testbed (S&P 500 members as they were on each day,
 // their bars from 2010 and sectors, in the research database), the buttons that build or refresh
-// it as a job, and its coverage per year: member-days with and without bars (the missing share)
-// and the members never priced.
+// it as a job, its coverage per year: member-days with and without bars (the missing share) and
+// the members never priced; then the pre-registered signals, each with Run test and its newest
+// result (power, missing share, train, confirm, verdict).
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
@@ -34,6 +35,63 @@ function underPricedTable(c) {
   return table(head, rows, "Every member has bars.");
 }
 
+const num = (x, digits = 4) => (x == null ? "-" : `${x > 0 ? "+" : ""}${x.toFixed(digits)}`);
+const fixed = (x, digits = 4) => (x == null ? "-" : x.toFixed(digits));
+const pct = (x) => (x == null ? "-" : share(x));
+
+function windowCell(w) {
+  return `IC ${num(w.ic)}, t ${fixed(w.t, 2)}, ${w.positive}+ of ${w.counted} segments: ${w.verdict}`;
+}
+
+function segmentsTable(w) {
+  const head = [["From"], ["To"], ["IC", null, 1], ["t", null, 1], ["Days", null, 1], ["Counted"]];
+  const rows = w.segments.map((s) => el("tr", null,
+    el("td", { class: "small" }, s.start), el("td", { class: "small" }, s.end),
+    el("td", { class: "num" }, num(s.ic)), el("td", { class: "num" }, fixed(s.t, 2)),
+    el("td", { class: "num" }, String(s.days)), el("td", { class: "small" }, s.counted ? "yes" : s.why)));
+  return table(head, rows, "No segments.");
+}
+
+function signalsTable(signals, runButton) {
+  const head = [["Signal"], ["Horizon", null, 1], ["Power train / confirm", null, 1],
+    ["Missing train / confirm", null, 1], ["Train (reported only)"], ["Confirm"], ["Verdict"], [""]];
+  const rows = signals.flatMap((s) => {
+    const r = s.result;
+    const label = el("td", null, el("span", { class: "mono" }, s.name), el("div", { class: "dim small" }, s.label));
+    if (!r) {
+      return [el("tr", null, label, el("td", { class: "num" }, s.horizons.join(", ")),
+        el("td", { class: "small", colspan: 5 }, "Not run yet."), el("td", null, runButton(s.name)))];
+    }
+    return r.confirm.map((c, k) => {
+      const t = r.train[k];
+      return el("tr", null, k ? el("td") : label,
+        el("td", { class: "num" }, String(c.horizon)),
+        el("td", { class: "num" }, `${fixed(t.power)} / ${fixed(c.power)}`),
+        el("td", { class: "num" }, `${pct(t.missing_share)} / ${pct(c.missing_share)}`),
+        el("td", { class: "small" }, windowCell(t)),
+        el("td", { class: "small" }, windowCell(c)),
+        el("td", { class: r.passed ? "up" : r.verdict === "FAIL" ? "down" : "dim" }, k ? "" : r.verdict),
+        el("td", null, k ? "" : runButton(s.name)));
+    });
+  });
+  return table(head, rows, "No signals are registered.");
+}
+
+function resultDetails(s) {
+  const r = s.result;
+  const windows = [...r.train, ...r.confirm];
+  return el("details", null, el("summary", null, `${s.name}: segments, power and the run (${String(r.run_at).slice(0, 16)
+    .replace("T", " ")} UTC)`),
+  el("p", { class: "small" }, `Testbed ${r.first_day} to ${r.last_day}, ${r.tickers} members; ${r.snapshot ?? "no snapshot"}.`
+    + `${r.cutoff ? ` Model-read: only days after its training cutoff ${r.cutoff} count.` : ""}`),
+  ...windows.flatMap((w) => [
+    el("p", { class: "small" }, `${w.window === "train" ? "Train" : "Confirm"} ${w.start} to ${w.end}, ${w.horizon}-day `
+      + `horizon: ${w.days} IC days, ${fixed(w.names, 0)} names a day, ${fixed(w.effective_days, 0)} effective days; `
+      + `power ${fixed(w.power)} (observed ${fixed(w.observed_power)}); missing share ${pct(w.missing_share)}.`),
+    segmentsTable(w)]),
+  el("p", { class: "dim small" }, `Caveat: ${r.caveat}`));
+}
+
 function signalTestsSection() {
   let started = false;
   const note = el("div", { class: "form-note" });
@@ -44,6 +102,50 @@ function signalTestsSection() {
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
 
   let following = null;
+  const signalNote = el("div", { class: "form-note" });
+  const signalsBody = el("div");
+  const sayTest = (text, bad = true) => {
+    signalNote.className = bad ? "form-note down" : "form-note";
+    signalNote.replaceChildren(text);
+  };
+  const testing = new Set();
+
+  function followTest(job) {
+    if (testing.has(job.id)) return;
+    testing.add(job.id);
+    const show = (j) => sayTest(el("span", null, `${j.label ?? "The signal test"} is ${j.state}`
+      + `${j.progress ? `: ${j.progress}` : ""}. Follow or cancel it in the `, el("a", { href: "#activity" },
+      "Activity tab"), "."), false);
+    show(job);
+    followJob(job, show).then(() => sayTest("The signal test finished.", false), (err) => sayTest(err.message))
+      .finally(() => { testing.delete(job.id); loadSignals(); });
+  }
+
+  const runButton = (name) => {
+    const b = el("button", { type: "button", onclick: async () => {
+      b.disabled = true;
+      try {
+        followTest(await api(`/api/jobs/signal-test?name=${encodeURIComponent(name)}`, { method: "POST" }));
+      } catch (err) {
+        sayTest(err.message);
+      } finally {
+        b.disabled = false;
+      }
+    } }, "Run test");
+    return b;
+  };
+
+  async function loadSignals() {
+    let body;
+    try {
+      body = await api("/api/signals");
+    } catch (err) {
+      sayTest(`Could not load the signal tests: ${err.message}`);
+      return;
+    }
+    signalsBody.replaceChildren(signalsTable(body.signals, runButton),
+      ...body.signals.filter((s) => s.result).map(resultDetails));
+  }
 
   function running(job) {
     if (following !== job.id) {
@@ -103,6 +205,7 @@ function signalTestsSection() {
       const jobs = (await api("/api/activity")).jobs;
       const job = jobs.find((j) => j.kind === "testbed" && ACTIVE.includes(j.state));
       if (job) running(job);
+      jobs.filter((j) => j.kind === "signal_test" && ACTIVE.includes(j.state)).forEach(followTest);
     } catch {
       // Activity is only a hint here.
     }
@@ -111,7 +214,7 @@ function signalTestsSection() {
   async function begin() {
     if (started) return;
     started = true;
-    await load();
+    await Promise.all([load(), loadSignals()]);
     follow();
   }
 
@@ -122,7 +225,13 @@ function signalTestsSection() {
       + "apart from the live one. Members Yahoo no longer lists (delisted, or renamed since) have no bars: the "
       + "missing share below is printed beside every result."),
     el("div", { class: "row" }, startButton("Build testbed", false), " ", startButton("Refresh testbed", true)),
-    note, snapshot, lastRun, summary, body);
+    note, snapshot, lastRun, summary, body,
+    el("h3", null, "Pre-registered signals"),
+    el("p", { class: "dim small" }, "Each signal is chosen on 2010-2019 (train, reported only) and judged on 2020 to "
+      + "today (confirm): PASS needs a confirm IC above 0, t above 2 and the IC positive in more than half the counted "
+      + "six-month segments. Power is the smallest IC the window could see at t 2; the missing share is its member-days "
+      + "without bars. Nothing here was tuned on results."),
+    signalNote, signalsBody);
   return { node, start: begin };
 }
 

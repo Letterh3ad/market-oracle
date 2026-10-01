@@ -41,6 +41,7 @@ from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
+from oracle.services.signal_test_service import check_signal, run_and_keep
 from oracle.services.testbed_service import build_testbed
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.paper_service import LINE_NAMES, REGIME_LINES
@@ -55,7 +56,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
-           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -600,6 +601,26 @@ def _retry_testbed(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_testbed(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
 
 
+def submit_signal_test(ctx: AppContext, runner: JobRunner, name: str) -> Job:
+    """The pre-registered signal test of `name` on the testbed, kept in the research database
+    (minutes). It reads only, waits while live work runs like the testbed build, and a Cancel
+    stops it between chunks of days, keeping nothing."""
+    check_signal(name)
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return await run_and_keep(c, name, stop=stopped.is_set, busy=lambda: _testbed_waits(c, runner),
+                                  on_progress=stage.append)
+
+    return runner.submit("signal_test", f"Signal test: {name}", work, subject=name, link="#ledgers",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _retry_signal_test(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_signal_test(ctx, runner, job.subject or "")
+
+
 def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
     """Score the company's stored articles with Laya, those its model has not scored yet. It waits
     while research, a tick, a question or discovery runs (their model shares the GPU), and a
@@ -965,7 +986,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
-    "history": _retry_history, "testbed": _retry_testbed,
+    "history": _retry_history, "testbed": _retry_testbed, "signal_test": _retry_signal_test,
     "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,
 }

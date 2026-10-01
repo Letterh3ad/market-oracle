@@ -28,10 +28,33 @@ COVERAGE = {"start": "2010-01-01", "members": 830, "fetched": 830, "sectors": 70
                               "member_days": 4170, "with_bars": 1, "note": "priced on 1 of 4170 member-days"}]}
 
 
+
+def window(name, start, end, ic, t, power, missing, verdict, positive, counted):
+    return {"window": name, "start": start, "end": end, "horizon": 20, "ic": ic, "t": t, "days": 2300, "names": 470.0,
+            "effective_days": 115.0, "power": power, "observed_power": 0.021, "missing_share": missing,
+            "verdict": verdict, "passed": verdict == "PASS", "positive": positive, "counted": counted,
+            "segments": [{"start": start, "end": "2010-06-30", "ic": None, "t": None, "days": 0, "counted": False,
+                          "why": "0 IC days (needs 20)"}]}
+
+
+SIGNALS = {"signals": [
+    {"name": "momentum_12_1", "label": "12-1 momentum", "horizons": [20], "model": None, "result": {
+        "signal": "momentum_12_1", "label": "12-1 momentum", "horizons": [20], "model": None, "cutoff": None,
+        "train": [window("train", "2010-01-01", "2019-12-31", 0.0123, 1.4, 0.0081, 0.2345, "FAIL", 11, 18)],
+        "confirm": [window("confirm", "2020-01-01", "2026-09-30", -0.004, -0.3, 0.0102, 0.0512, "FAIL", 6, 13)],
+        "train_verdict": "FAIL", "verdict": "FAIL", "passed": False, "first_day": "2010-01-04",
+        "last_day": "2026-09-30", "tickers": 848, "snapshot": "fja05680/sp500 at a2430f2, last change 2026-08-18",
+        "run_at": "2026-10-01T12:00:00+00:00", "caveat": "train is survivorship-weighted", "id": 3}},
+    {"name": "reversal_1m", "label": "1-month reversal", "horizons": [5], "model": None, "result": None}]}
+
+
 def run(body: str):
     script = f"""
         {PRELUDE}
         ANSWERS["GET /api/testbed/coverage"] = {json.dumps(COVERAGE)};
+        ANSWERS["GET /api/signals"] = {json.dumps(SIGNALS)};
+        ANSWERS["POST /api/jobs/signal-test"] = {{ id: 9, kind: "signal_test", label: "Signal test: reversal_1m",
+          state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed"] = {{ id: 7, kind: "testbed", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed?refresh=true"] = {{ id: 8, kind: "testbed", state: "queued", progress: null }};
         const {{ signalTestsSection }} = await import({json.dumps((STATIC_DIR / "lib" / "signal_tests.js").as_uri())});
@@ -55,7 +78,7 @@ def test_the_card_shows_the_missing_share_per_year_and_the_members_never_priced(
     assert "126000" in text and "under 50% of their member-days (2)" in text and "not on Yahoo" in text
     assert "priced on 1 of 4170 member-days" in text and "Listed twice: KORS and CPRI" in text
     assert "Its last change is 2026-08-18: to 2026-10-01" in text
-    assert red == ["20.6%"]
+    assert red == ["20.6%", "FAIL"], "a high missing share and a failed verdict"
 
 
 def test_the_table_reloads_when_the_build_ends():
@@ -80,3 +103,28 @@ def test_build_and_refresh_start_the_job_and_say_where_to_follow_it():
     """)
     assert asked == ["POST /api/jobs/testbed", "POST /api/jobs/testbed?refresh=true"]
     assert "The testbed build is queued" in text and "Activity tab" in text
+
+
+def test_each_signal_shows_power_missing_share_train_confirm_and_verdict():
+    text = run("""
+        section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "momentum_12_1" in text and "0.0081 / 0.0102" in text and "23.4% / 5.1%" in text
+    assert "IC +0.0123, t 1.40, 11+ of 18 segments: FAIL" in text
+    assert "IC -0.0040, t -0.30, 6+ of 13 segments: FAIL" in text
+    assert "reversal_1m" in text and "Not run yet." in text
+    assert "power 0.0102 (observed 0.0210); missing share 5.1%" in text and "0 IC days (needs 20)" in text
+    assert "Caveat: train is survivorship-weighted" in text
+
+
+def test_run_test_starts_the_job_and_reloads_the_table_when_it_ends():
+    asked, text = run("""
+        section.start(); await settle();
+        ANSWERS["GET /api/activity/9"] = { id: 9, kind: "signal_test", state: "done", result: null };
+        asked.length = 0;
+        node.all((n) => n.tag === "button" && n.textContent === "Run test")[1].fire("click"); await settle(1700);
+        console.log(JSON.stringify([asked, node.textContent]));
+    """)
+    assert asked == ["POST /api/jobs/signal-test?name=reversal_1m", "GET /api/activity/9", "GET /api/signals"]
+    assert "The signal test finished." in text
