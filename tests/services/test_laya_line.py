@@ -233,7 +233,8 @@ def test_at_weight_0_core_sat_laya_is_core_sat_exactly_in_the_backtest_and_walk_
     assert "FAIL" in laya.caption and "weight 0 in core-sat" in laya.caption and "core-sat's exactly" in laya.caption
 
 
-def test_a_useful_laya_moves_the_satellite(make_ctx, monkeypatch):
+def test_a_useful_laya_moves_the_satellite_once_the_satellite_has_weight(make_ctx, monkeypatch):
+    monkeypatch.setattr("oracle.broker.core_sat.SATELLITE_SHARE", 0.25)
     plain = {x.name: x for x in laya_backtest(make_ctx, monkeypatch, False, "a.db").lines}
     weighed = {x.name: x for x in laya_backtest(make_ctx, monkeypatch, True, "b.db").lines}
     assert weighed["core_sat"] == plain["core_sat"], "core_sat never reads Laya"

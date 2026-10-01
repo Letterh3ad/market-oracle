@@ -11,19 +11,19 @@ from oracle.broker.compare import INDEX_LINES, INDEX_SYMBOL, buy_and_hold
 from oracle.broker.orders import Action
 from oracle.broker.rules import Decision
 from oracle.services.context import AppContext
-from oracle.services.errors import UnknownSymbol
 from oracle.services.paper_service import INDEX, account_view, place_buy
 from oracle.services.prices_service import benchmark_history_in_base, update_listing
 from oracle.store.bars import BarRepo
 from oracle.store.paper import DecisionRepo, LoggedDecision, PaperRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["BUY_ALL", "INDEX_LINES", "NO_BARS", "Closes", "index_caption", "index_closes", "index_equity", "index_missing",
+__all__ = ["BUY_ALL", "INDEX_LINES", "NO_BARS", "Closes", "index_caption", "NOT_LISTED", "index_closes", "index_equity", "index_missing",
            "index_step", "update_index_prices"]
 
 BUY_ALL = f"buy and hold: all the cash in {INDEX_SYMBOL} at the next open, then held, never sold"
 NO_BARS = (f"; no {INDEX_SYMBOL} prices stored yet: the next price update fetches them (an ordered listing is "
            "priced) and the order fills at the first open after it was placed")
+NOT_LISTED = f"{INDEX_SYMBOL} is not in the universe (or it is not loaded yet): refresh the universe"
 Closes = list[tuple[date, float | None]]
 
 
@@ -36,12 +36,11 @@ def index_step(ctx: AppContext) -> list[Decision]:
     if any(p.symbol == INDEX_SYMBOL for p in view.positions) or view.cash <= 0:
         return []
     today = ctx.clock.utcnow().date()
-    try:
-        order = place_buy(ctx, INDEX_SYMBOL, view.cash, INDEX, source=INDEX)
-    except UnknownSymbol as exc:
-        d = Decision(INDEX_SYMBOL, Action.SKIP, None, f"{exc}: refresh the universe")
+    if UniverseRepo(ctx.conn).resolve(INDEX_SYMBOL) is None:
+        d = Decision(INDEX_SYMBOL, Action.SKIP, None, NOT_LISTED)
         DecisionRepo(ctx.conn).log([LoggedDecision(INDEX, today, d.symbol, d.action, None, d.reason, None)])
         return [d]
+    order = place_buy(ctx, INDEX_SYMBOL, view.cash, INDEX, source=INDEX)
     reason = BUY_ALL + ("" if BarRepo(ctx.conn).last_date(INDEX_SYMBOL) else NO_BARS)
     d = Decision(INDEX_SYMBOL, Action.BUY, order.cash, reason)
     DecisionRepo(ctx.conn).log([LoggedDecision(INDEX, today, d.symbol, d.action, d.cash, d.reason, order.id)])

@@ -10,7 +10,8 @@ from dataclasses import asdict, dataclass, replace
 from datetime import date, timedelta
 
 from oracle.broker.backtest import LeanSource, Replay, replay
-from oracle.broker.core_sat import SATELLITE_SHARE, CoreSat, core_sat_replay
+from oracle.broker import core_sat
+from oracle.broker.core_sat import CoreSat, core_sat_replay
 from oracle.broker.regime import (DatedScores, RegimeBook, RegimeInputs, Rotation, Tilt, regime_book, settings_from,
                                   v2_settings)
 from oracle.broker.regime.fit import MIN_WINDOWS, TRAILING
@@ -60,7 +61,8 @@ class RegimeLine:
             return replay(history, start, end, rules=rules, risk=risk, lean=self.book.lean_source(),
                           cap=self.book.cap, **fills)
         return core_sat_replay(history, start, end, rules=rules, risk=risk, members=self.members,
-                               lean=_only(self.book.lean_source(), self.members), cap=self.book.cap, **fills)
+                               lean=_only(self.book.lean_source(), self.members), cap=self.book.cap,
+                               satellite_share=core_sat.SATELLITE_SHARE, **fills)
 
 
 def _only(lean: LeanSource, members: Collection[str]) -> LeanSource:
@@ -184,12 +186,12 @@ SATELLITE_ZERO = ("satellite weight 0: no signal has passed the confirm test and
 
 
 def core_sat_caption(members: int, extra: Collection[str] = ()) -> str:
-    more = f", plus {', '.join(extra)}" if extra else ""
-    sat = (f"{SATELLITE_SHARE:.0%} traded by the regime book{more} over the same companies within its own cash, its "
-           "sizes and cash floor a share of it alone. The satellite otherwise as the regime line: "
-           if SATELLITE_SHARE else f"{SATELLITE_ZERO}; its book, were it to trade, as the regime line's: ")
-    return (f"Core-sat: {1 - SATELLITE_SHARE:.0%} in an equal-weight buy and hold of the {members} companies (funds "
-            "and Tesla left out), bought once at the next open with costs and never rebalanced; " + sat)
+    more, share = (f", plus {', '.join(extra)}" if extra else ""), core_sat.SATELLITE_SHARE
+    sat = (f"{share:.0%} traded by the regime book{more} over the same companies within its own cash, its sizes "
+           "and cash floor a share of it alone. The satellite otherwise as the regime line: "
+           if share else f"{SATELLITE_ZERO}; its book, were it to trade, as the regime line's: ")
+    return (f"Core-sat: {1 - share:.0%} in an equal-weight buy and hold of the {members} companies (funds and "
+            "Tesla left out), bought once at the next open with costs and never rebalanced; " + sat)
 
 
 WF_CAPTION = ("Regime-wf: the regime book with its mood weights refitted at the start of each walk-forward "
