@@ -9,16 +9,21 @@ from tests.gui.test_backtest_js import NODE, PRELUDE
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page's modules")
 
 COVERAGE = {"start": "2010-01-01", "members": 830, "fetched": 830, "sectors": 700, "calendar": "SPY",
-            "missing_share": 0.0712, "caveat": "delisted members are mostly not on Yahoo",
+            "missing_share": 0.0712, "missing_share_mapped": 0.0612, "caveat": "delisted members are mostly not on Yahoo",
+            "renames_checked": "2026-10-01T11:00:00+00:00",
+            "aliases": [{"old": "FB", "new": "META", "effective_day": "2022-06-09", "accepted": True,
+                         "evidence": "accepted (swap): SEC CIK 1326801", "verified_at": "x", "priced_to": "2022-10-07"},
+                        {"old": "EA", "new": "FERG", "effective_day": "2026-06-01", "accepted": False,
+                         "evidence": "rejected (swap): cover FERG (not EA)", "verified_at": "x", "priced_to": None}],
             "snapshot": {"source": "fja05680/sp500", "url": "https://x", "revision": "a2430f2af0c7",
                          "fetched_at": "2026-10-01T09:00:00+00:00", "first_day": "1996-01-02",
                          "last_day": "2026-08-18", "changes": 2720},
             "last_run": {"stopped": None, "failures": [], "finished_at": "2026-10-01T10:00:00+00:00",
                          "summary": "finished: 830 members"},
             "years": [{"year": 2010, "members": 520, "member_days": 126000, "with_bars": 100000, "unpriced": 60,
-                       "missing_share": 0.2063},
+                       "missing_share": 0.2063, "missing_share_mapped": 0.1802},
                       {"year": 2025, "members": 510, "member_days": 125000, "with_bars": 124500, "unpriced": 2,
-                       "missing_share": 0.004}],
+                       "missing_share": 0.004, "missing_share_mapped": 0.004}],
             "under_priced_below": 0.5, "as_of": "2026-10-01",
             "duplicates": [{"tickers": ["KORS", "CPRI"], "first_day": "2016-01-04", "last_day": "2018-09-17",
                             "days": 680, "why": "Michael Kors Holdings listed again as Capri Holdings"}],
@@ -77,6 +82,7 @@ def run(body: str):
         ANSWERS["POST /api/jobs/xbrl"] = {{ id: 11, kind: "xbrl", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/xbrl?refresh=true"] = {{ id: 12, kind: "xbrl", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed?refresh=true"] = {{ id: 8, kind: "testbed", state: "queued", progress: null }};
+        ANSWERS["POST /api/jobs/testbed?verify=true"] = {{ id: 9, kind: "testbed", state: "queued", progress: null }};
         const {{ signalTestsSection }} = await import({json.dumps((STATIC_DIR / "lib" / "signal_tests.js").as_uri())});
         const section = signalTestsSection();
         const node = section.node;
@@ -98,7 +104,9 @@ def test_the_card_shows_the_missing_share_per_year_and_the_members_never_priced(
     assert "126000" in text and "under 50% of their member-days (2)" in text and "not on Yahoo" in text
     assert "priced on 1 of 4170 member-days" in text and "Listed twice: KORS and CPRI" in text
     assert "Its last change is 2026-08-18: to 2026-10-01" in text
-    assert red == ["20.6%", UNSEEN], "a high missing share and a failed verdict"
+    assert red == ["20.6%", "18.0%", "for review", UNSEEN], "high missing shares, a pair for review, a failed verdict"
+    assert "6.1% with renames mapped" in text and "Renames (1 mapped, 1 for review, checked 2026-10-01)" in text
+    assert "rejected (swap): cover FERG (not EA)" in text and "for review" in text
 
 
 def test_the_table_reloads_when_the_build_ends():
@@ -119,9 +127,10 @@ def test_build_and_refresh_start_the_job_and_say_where_to_follow_it():
         asked.length = 0;
         button(node, "Build testbed").fire("click"); await settle();
         button(node, "Refresh testbed").fire("click"); await settle();
+        button(node, "Check renames").fire("click"); await settle();
         console.log(JSON.stringify([asked, node.textContent]));
     """)
-    assert asked == ["POST /api/jobs/testbed", "POST /api/jobs/testbed?refresh=true"]
+    assert asked == ["POST /api/jobs/testbed", "POST /api/jobs/testbed?refresh=true", "POST /api/jobs/testbed?verify=true"]
     assert "The testbed build is queued" in text and "Activity tab" in text
 
 

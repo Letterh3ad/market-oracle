@@ -571,26 +571,29 @@ def submit_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_
 
 TESTBED_SUBJECT = "testbed"
 TESTBED_REFRESH = "refresh"
+TESTBED_VERIFY = "verify"
 # Other Yahoo-heavy work too: the testbed paces itself on the research database, not the live one.
 TESTBED_WAITS = (*LIVE_WORK, "history", "replay_prices", "universe")
 
 
-def submit_testbed(ctx: AppContext, runner: JobRunner, refresh: bool = False) -> Job:
+def submit_testbed(ctx: AppContext, runner: JobRunner, refresh: bool = False, verify: bool = False) -> Job:
     """Build the signal testbed (or with `refresh` re-read its membership and top up current
-    members) as one long job: it waits while live work runs, a Cancel stops it between requests,
-    and what it fetched is kept, so a retry resumes."""
+    members, with `verify` check renames and reused tickers again) as one long job: it waits while
+    live work runs, a Cancel stops it between requests, and what it fetched is kept, so a retry resumes."""
     stage: list[str] = []
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        r = await build_testbed(c, refresh=refresh, stop=stopped.is_set, busy=lambda: _testbed_waits(c, runner),
-                                on_progress=stage.append)
+        r = await build_testbed(c, refresh=refresh, verify=verify, stop=stopped.is_set,
+                                busy=lambda: _testbed_waits(c, runner), on_progress=stage.append)
         if (r.stopped and r.stopped != "cancelled") or r.failures:
             raise ServiceError(r.summary)
         return r
 
-    return runner.submit("testbed", "Refresh the signal testbed" if refresh else "Build the signal testbed", work,
-                         subject=TESTBED_SUBJECT + (BACKTEST_SEP + TESTBED_REFRESH if refresh else ""),
+    modes = [m for m, on in ((TESTBED_REFRESH, refresh), (TESTBED_VERIFY, verify)) if on]
+    title = ("Refresh the signal testbed" if refresh else "Build the signal testbed") + (
+        " and check its renames" if verify else "")
+    return runner.submit("testbed", title, work, subject=BACKTEST_SEP.join([TESTBED_SUBJECT, *modes]),
                          link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
@@ -599,7 +602,8 @@ def _testbed_waits(ctx: AppContext, runner: JobRunner) -> str | None:
 
 
 def _retry_testbed(ctx: AppContext, runner: JobRunner, job) -> Job:
-    return submit_testbed(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
+    modes = (job.subject or "").split(BACKTEST_SEP)[1:]
+    return submit_testbed(ctx, runner, TESTBED_REFRESH in modes, TESTBED_VERIFY in modes)
 
 
 XBRL_SUBJECT = "xbrl"

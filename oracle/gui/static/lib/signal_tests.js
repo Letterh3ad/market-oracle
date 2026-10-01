@@ -1,9 +1,10 @@
 // The Ledgers tab's Signal tests card: the testbed (S&P 500 members as they were on each day,
 // their bars from 2010 and sectors, in the research database), the buttons that build or refresh
-// it as a job, its coverage per year: member-days with and without bars (the missing share) and
-// the members never priced; then the pre-registered signals, each with Run test and its newest
-// result (power, missing share, train, confirm, verdict). The SEC fundamentals the fundamental
-// signals read are fetched from here too, with their coverage per year.
+// it as a job, its coverage per year: member-days with and without bars (the missing share)
+// before and after the rename map, the members never priced and the renames (accepted only when
+// SEC and Yahoo agree; the rest kept for review, never applied); then the pre-registered signals,
+// each with Run test and its newest result (power, missing share, train, confirm, verdict). The
+// SEC fundamentals the fundamental signals read are fetched from here too, with their coverage.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
@@ -14,13 +15,15 @@ const share = (x) => `${(x * 100).toFixed(1)}%`;
 
 function yearsTable(c) {
   const head = [["Year"], ["Members", null, 1], ["Member-days", null, 1], ["With bars", null, 1], ["Missing", null, 1],
-    ["No bars", null, 1]];
+    ["Renames mapped", null, 1], ["No bars", null, 1]];
+  const missing = (x) => el("td", { class: `num${x > 0.1 ? " down" : ""}` }, share(x));
   const rows = c.years.map((y) => el("tr", null,
     el("td", null, String(y.year)),
     el("td", { class: "num" }, String(y.members)),
     el("td", { class: "num" }, String(y.member_days)),
     el("td", { class: "num" }, String(y.with_bars)),
-    el("td", { class: `num${y.missing_share > 0.1 ? " down" : ""}` }, share(y.missing_share)),
+    missing(y.missing_share),
+    missing(y.missing_share_mapped),
     el("td", { class: "num" }, String(y.unpriced))));
   return table(head, rows, "Nothing built yet: press Build testbed.");
 }
@@ -34,6 +37,17 @@ function underPricedTable(c) {
     el("td", { class: "num" }, String(u.member_days)),
     el("td", { class: "small" }, u.note)));
   return table(head, rows, "Every member has bars.");
+}
+
+function aliasesTable(c) {
+  const head = [["Old"], ["New"], ["Change"], ["Status"], ["Evidence"]];
+  const rows = c.aliases.map((a) => el("tr", null,
+    el("td", { class: "mono" }, a.old),
+    el("td", { class: "mono" }, a.new),
+    el("td", { class: "small" }, a.effective_day || ""),
+    el("td", { class: a.accepted ? "small" : "small down" }, a.accepted ? "mapped" : "for review"),
+    el("td", { class: "small" }, a.evidence)));
+  return table(head, rows, c.renames_checked ? "No renames found." : "Not checked yet: press Check renames.");
 }
 
 const FUNDAMENTAL = ["sue", "gross_profitability", "earnings_yield"];
@@ -185,11 +199,11 @@ function signalTestsSection() {
       + "or cancel it in the ", el("a", { href: "#activity" }, "Activity tab"), "."), false);
   }
 
-  const startButton = (label, refresh) => {
+  const startButton = (label, query) => {
     const b = el("button", { type: "button", onclick: async () => {
       b.disabled = true;
       try {
-        running(await api(`/api/jobs/testbed${refresh ? "?refresh=true" : ""}`, { method: "POST" }));
+        running(await api(`/api/jobs/testbed${query}`, { method: "POST" }));
       } catch (err) {
         say(err.message);
       } finally {
@@ -218,12 +232,17 @@ function signalTestsSection() {
     lastRun.replaceChildren(r ? `Last build, ${String(r.finished_at).slice(0, 16).replace("T", " ")} UTC: ${r.summary}.`
       : "No build has run yet.");
     summary.replaceChildren(`${c.members} members from ${c.start}, ${c.fetched} fetched, ${c.sectors} with a sector; `
-      + `trading days from ${c.calendar}. Missing share ${share(c.missing_share)} of member-days. Caveat: ${c.caveat}.`);
+      + `trading days from ${c.calendar}. Missing share ${share(c.missing_share)} of member-days, `
+      + `${share(c.missing_share_mapped)} with renames mapped. Caveat: ${c.caveat}.`);
+    const accepted = c.aliases.filter((a) => a.accepted).length;
     const dupes = c.duplicates.map((d) => el("p", { class: "small down" }, `Listed twice: ${d.tickers.join(" and ")}, `
       + `${d.first_day} to ${d.last_day} (${d.days} days): ${d.why}. A test keeps one of them.`));
     body.replaceChildren(yearsTable(c), ...dupes,
       el("details", null, el("summary", null, `Members priced on under ${Math.round(c.under_priced_below * 100)}% `
-        + `of their member-days (${c.under_priced.length})`), underPricedTable(c)));
+        + `of their member-days (${c.under_priced.length})`), underPricedTable(c)),
+      el("details", null, el("summary", null, `Renames (${accepted} mapped, ${c.aliases.length - accepted} for review`
+        + `${c.renames_checked ? `, checked ${String(c.renames_checked).slice(0, 10)}` : ", not checked yet"})`),
+      aliasesTable(c)));
   }
 
   const factsNote = el("div", { class: "form-note" });
@@ -303,9 +322,11 @@ function signalTestsSection() {
     el("h2", null, "Signal tests"),
     el("p", { class: "dim small" }, "The testbed signals are tested on: every S&P 500 member as it was on each day "
       + "since 2010 (not today's list taken back), with daily bars and GICS sectors, kept in the research database "
-      + "apart from the live one. Members Yahoo no longer lists (delisted, or renamed since) have no bars: the "
-      + "missing share below is printed beside every result."),
-    el("div", { class: "row" }, startButton("Build testbed", false), " ", startButton("Refresh testbed", true)),
+      + "apart from the live one. A renamed member is priced from the ticker it became when SEC and Yahoo agree "
+      + "(Check renames asks them again); delisted members have no bars: the missing share below is printed beside "
+      + "every result."),
+    el("div", { class: "row" }, startButton("Build testbed", ""), " ", startButton("Refresh testbed", "?refresh=true"),
+      " ", startButton("Check renames", "?verify=true")),
     note, snapshot, lastRun, summary, body,
     el("h3", null, "SEC fundamentals"),
     el("p", { class: "dim small" }, "What SUE, gross profitability and earnings yield read: each priced member's SEC "
