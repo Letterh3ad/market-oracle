@@ -19,6 +19,7 @@ from oracle.services.regime_service import LineStep, off_note
 from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
+from oracle.services.signal_test_service import SignalTest
 from oracle.services.testbed_service import UNDER_PRICED, TestbedCoverage
 from oracle.services.tick_service import KIND_LABELS, TickRun
 
@@ -161,7 +162,7 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
             "history": asdict, "laya": asdict, "edges": asdict, "reader": lambda r: {**asdict(r), "summary": r.summary},
             "industry": lambda r: {**asdict(r), "summary": r.summary},
             "laya_history": lambda r: {**asdict(r), "summary": r.summary, "ms_per_pair": r.ms_per_pair},
-            "laya_test": lambda r: laya_test(r)}
+            "laya_test": lambda r: laya_test(r), "signal_test": lambda r: signal_test(r)}
 
 
 def laya_test(t: LayaTest) -> dict:
@@ -244,6 +245,21 @@ def coverage(c: Coverage) -> dict:
             "rows": [{"symbol": r.symbol, "name": r.name, "main": r.main, "of": list(r.of), "first_bar": r.first_bar,
                       "thin": list(r.thin), "noisy": list(r.noisy), "search": asdict(r.search),
                       "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}
+
+
+def signal_test(t: SignalTest) -> dict:
+    """A kept test with each verdict as the page shows it (a FAIL too small to see says so)."""
+    def windows(ws):
+        return [{**asdict(w), "verdict_text": w.verdict_text} for w in ws]
+    return {**asdict(t), "train": windows(t.train), "confirm": windows(t.confirm), "verdict_text": t.verdict_text}
+
+
+def signal_list(signals, results: dict[str, SignalTest], trains: dict[str, SignalTest]) -> dict:
+    """The registry's signals, each with its newest full and train-only results (None before a run)."""
+    return {"signals": [{"name": s.name, "label": s.label, "horizons": list(s.horizons), "model": s.model,
+                         "result": signal_test(results[s.name]) if s.name in results else None,
+                         "train_result": signal_test(trains[s.name]) if s.name in trains else None}
+                        for s in signals]}
 
 
 def testbed_coverage(c: TestbedCoverage) -> dict:

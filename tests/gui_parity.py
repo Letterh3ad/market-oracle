@@ -177,6 +177,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{f"testbed build --{flag}": Exempt("a smoke run on a scratch research DB; the card builds the whole testbed")
        for flag in ("only", "limit", "from", "to")},
     "testbed status": "GET /api/testbed/coverage",
+    # Same card: the signals table, each row's "Run test" and its kept result.
+    "signals list": "GET /api/signals",
+    "signals test": "POST /api/jobs/signal-test",
+    "signals test --train-only": "POST /api/jobs/signal-test",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},
