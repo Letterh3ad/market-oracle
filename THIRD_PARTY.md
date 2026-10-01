@@ -66,6 +66,7 @@ Called over HTTP, not redistributed.
 | Service | Terms | Use |
 |---|---|---|
 | Yahoo Finance chart, quoteSummary and search APIs (unofficial) | Yahoo terms of service; personal, non-commercial use | daily bars, FX, fundamentals and name lookups (`oracle/market/yahoo.py`, `fx.py`, `fundamentals.py`) |
+| SEC EDGAR (company_tickers.json, the submissions API, filing archives including the XBRL viewer's cover page R1.htm) | US government public data, free to reuse; SEC fair-access policy: a declared User-Agent with a contact, at most 10 requests a second (5 used) | filings for research (`oracle/research/edgar.py`); testbed rename and identity evidence (`oracle/services/testbed_renames.py`); checked 2026-10-01 |
 | EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars, FX and fundamentals (`oracle/market/eodhd.py`, `fx.py`, `fundamentals.py`) |
 | ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
 | Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |

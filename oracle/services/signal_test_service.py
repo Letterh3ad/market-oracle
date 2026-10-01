@@ -20,7 +20,7 @@ from oracle.research.training_cutoffs import training_cutoff
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.insider_service import INSIDER_BUYS
-from oracle.services.testbed_service import KNOWN_DUPLICATES, START, Testbed, research_context
+from oracle.services.testbed_service import START, Testbed, research_context
 from oracle.services.xbrl_service import FUNDAMENTAL_SIGNALS
 from oracle.store.db import to_utc_iso
 from oracle.store.signal_tests import SignalTestRepo
@@ -108,8 +108,9 @@ def load_panel(tb: Testbed, end: date | None = None, start: date = START,
         if n % 100 == 0:
             say(f"loading bars ({n}/{len(tickers)})")
         p.add(t, tb.bars(t, start, end))
+    pairs = [pair for pair, _ in tb.duplicates()]
     for i, m in enumerate(members):
-        both = [(a, b) for (a, b), _ in KNOWN_DUPLICATES if a in m and b in m]
+        both = [(a, b) for a, b in pairs if a in m and b in m]
         if both:
             drop = {a if keep_priced_duplicate and p.priced(b, i) and not p.priced(a, i) else b for a, b in both}
             p.members[i] = m - drop

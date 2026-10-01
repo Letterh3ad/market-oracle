@@ -227,3 +227,31 @@ def test_acceptance_stamps_are_utc_and_read_in_new_york_time():
 def test_a_submissions_body_without_items_has_no_releases():
     assert edgar.parse_earnings({"filings": {"recent": {"form": ["8-K"], "filingDate": ["2026-07-30"]}}}) == []
     assert edgar.parse_earnings([]) == []
+
+
+def test_a_reports_cover_names_each_trading_symbol_it_tags():
+    from tests.fakes.sec import cover
+
+    assert edgar.trading_symbols(cover("META")) == ("META",)
+    assert edgar.trading_symbols(cover("GOOGL", "GOOG")) == ("GOOGL", "GOOG")
+    assert edgar.trading_symbols("<html>Document and Entity Information</html>") == ()
+
+
+def test_reports_are_periodic_filings_oldest_first_named_by_their_document_when_so_named():
+    columns = {"form": ["10-Q", "8-K", "10-K", "10-Q/A", "10-Q"],
+               "filingDate": ["2022-07-28", "2022-06-01", "2022-02-03", "2022-01-01", "2021-10-26"],
+               "accessionNumber": ["a5", "a4", "a3", "a2", "a1"],
+               "primaryDocument": ["meta-20220630.htm", "x.htm", "fb-20211231.htm", "y.htm", "d371464d10q.htm"]}
+    reports = edgar.parse_reports(columns)
+    assert [(r.form, r.filed, r.document_ticker) for r in reports] == [
+        ("10-Q", date(2021, 10, 26), None), ("10-K", date(2022, 2, 3), "FB"), ("10-Q", date(2022, 7, 28), "META")]
+    assert edgar.Report("10-Q", date(2021, 1, 1), "a", "wltw-10q_20210930.htm").document_ticker == "WLTW"
+
+
+def test_older_pages_between_two_days_and_the_filers_first_filing_day():
+    body = {"filings": {"recent": {"filingDate": ["2026-01-02", "2024-07-01"]}, "files": [
+        {"name": "p1.json", "filingFrom": "2017-05-17", "filingTo": "2024-06-15"},
+        {"name": "p2.json", "filingFrom": "2005-05-06", "filingTo": "2017-05-15"}]}}
+    assert edgar.pages_between(body, date(2018, 1, 1), date(2019, 1, 1)) == [f"{edgar.SUBMISSIONS}/p1.json"]
+    assert edgar.first_filed(body) == date(2005, 5, 6)
+    assert edgar.first_filed({"filings": {"recent": {"filingDate": ["2012-06-22"]}}}) == date(2012, 6, 22)

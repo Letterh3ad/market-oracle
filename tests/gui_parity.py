@@ -179,6 +179,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{f"testbed build --{flag}": Exempt("a smoke run on a scratch research DB; the card builds the whole testbed")
        for flag in ("only", "limit", "from", "to")},
     "testbed status": "GET /api/testbed/coverage",
+    # The card's Renames list and its "Check renames" button.
+    "testbed aliases": "GET /api/testbed/coverage",
+    "testbed aliases --verify": "POST /api/jobs/testbed",
     # Same card: "Fetch SEC fundamentals", "Refetch" and the fundamentals coverage table.
     "testbed fundamentals": "POST /api/jobs/xbrl",
     "testbed fundamentals --refresh": "POST /api/jobs/xbrl",

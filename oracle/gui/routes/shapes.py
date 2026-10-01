@@ -289,9 +289,11 @@ def testbed_coverage(c: TestbedCoverage) -> dict:
     """The signal testbed's coverage: one row per year, and the members never priced."""
     run, snap = c.last_run, c.snapshot
     return {"start": c.start, "members": c.members, "fetched": c.fetched, "sectors": c.sectors, "calendar": c.calendar,
-            "missing_share": c.missing_share, "caveat": c.caveat,
+            "missing_share": c.missing_share, "missing_share_mapped": c.missing_share_mapped, "caveat": c.caveat,
+            "aliases": [asdict(a) for a in c.aliases], "renames_checked": c.renames_checked,
             "snapshot": asdict(snap) if snap else None,
             "last_run": {**asdict(run), "summary": run.summary} if run else None,
-            "years": [{**asdict(y), "missing_share": y.missing_share} for y in c.years],
+            "years": [{**asdict(y), "missing_share": y.missing_share, "missing_share_mapped": y.missing_share_mapped}
+                      for y in c.years],
             "under_priced": [asdict(u) for u in c.under_priced], "under_priced_below": UNDER_PRICED,
             "duplicates": [asdict(d) for d in c.duplicates], "as_of": c.as_of}

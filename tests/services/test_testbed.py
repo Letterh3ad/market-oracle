@@ -233,6 +233,9 @@ async def test_the_build_is_one_activity_job_and_retry_resumes_a_cancelled_one(e
     again = await runner.wait(retry(ctx, runner, job.id).id)
     assert again.state == "done", again.error
     assert coverage_of(ctx).fetched == 5
+    checking = submit_testbed(ctx, runner, refresh=True, verify=True)
+    runner.cancel(checking.id)
+    assert retry(ctx, runner, checking.id).subject == "testbed|refresh|verify", "a retry checks the renames again"
 
 
 @pytest.mark.parametrize("currency, kind", [(None, "MUTUALFUND"), ("USD", "ETF")])
