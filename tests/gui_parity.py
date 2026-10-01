@@ -121,6 +121,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "laya test": "POST /api/jobs/laya-test",
     "laya test --list": "POST /api/jobs/laya-test",
     "laya test --sensitivity": "POST /api/jobs/laya-test",
+    # The test card's "Scores of" model choice and "Own news only" box.
+    "laya test --model": "POST /api/jobs/laya-test",
+    "laya test --own-only": "POST /api/jobs/laya-test",
     "laya test --show": "GET /api/laya/tests",
     # Company tab, Industry panel: "Find suppliers and customers" (this company or the main list),
     # the ties list and each unconfirmed tie's Confirm and Delete.

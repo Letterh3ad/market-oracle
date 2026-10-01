@@ -35,7 +35,7 @@ from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
 from oracle.store.laya_tests import LayaTestRepo
 
-__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "SENSITIVITY", "TEST_START", "FeatureIC", "HorizonResult",
+__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "OWN", "SENSITIVITY", "TEST_START", "FeatureIC", "HorizonResult",
            "LayaTest", "Panel", "SegmentRow", "build_panel", "horizon_result", "keep_laya_test", "laya_tests",
            "relation_for", "run_laya_test"]
 
@@ -43,7 +43,11 @@ TEST_START = date(2022, 9, 21)
 HORIZONS = ((5, 7), (20, 28))
 """(trading days ahead, feature lookback in calendar days)."""
 FIT_DAYS = 730
-MAIN, SENSITIVITY = "main", "sensitivity"
+MAIN, SENSITIVITY, OWN = "main", "sensitivity", "own"
+RUNS = (MAIN, OWN, SENSITIVITY)
+OWN_RELATIONS = ("own",)
+"""The own-news-only run (ticket 09: the stronger reader read only own news): the own feature
+alone, under the same bar, beside the same baselines."""
 MAIN_RELATIONS = ("own", "competitor", "industry")
 SENSITIVITY_RELATIONS = ("own", "competitor", "supplier", "customer", "industry")
 MAIN_LINK_SOURCES = ("user", "discovery", "chat")
@@ -59,7 +63,8 @@ COVERAGE_SHARE = 0.5
 CAVEAT = ("Survivorship: today's main list and industry maps taken back in time. Laya's probabilities are "
           "uncalibrated; returns are in each listing's own currency.")
 RUN_LABELS = {MAIN: "main (links first known by the article's day; 03's links left out)",
-              SENSITIVITY: "sensitivity: links as known today, 03's supplier and customer links included"}
+              SENSITIVITY: "sensitivity: links as known today, 03's supplier and customer links included",
+              OWN: "own news only (the own feature alone; no map companies)"}
 
 
 def relation_for(own: set[int], about: dict[int, list[Related]], sensitivity: bool) -> Callable[[ScoredArticle], str | None]:
@@ -98,8 +103,8 @@ class Panel:
     """Relation -> scored pairs counted."""
 
 
-def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, start: date = TEST_START,
-                end: date | None = None, model: str = MODEL_TAG,
+def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, own_only: bool = False,
+                start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
                 say: Callable[[str], None] = lambda _: None) -> Panel:
     companies = history_companies(ctx, watchlist)
     mains = [c.symbol for c in companies if c.main]
@@ -114,8 +119,9 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
         for s in subjects:
             for i in company_history(ctx, s.symbol):
                 about.setdefault(i, []).append(s.related)
+        rel = relation_for(set(company_history(ctx, m)), about, sensitivity)
         rows = daily_features(ctx, m, first, end, model=model, history=True,
-                              relation_for=relation_for(set(company_history(ctx, m)), about, sensitivity),
+                              relation_for=(lambda s, rel=rel: "own" if rel(s) == "own" else None) if own_only else rel,
                               day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)))
         days: dict[date, dict[str, tuple[int, float, float]]] = {}
         for r in rows:
@@ -327,16 +333,20 @@ def _r(x: float | None) -> float | None:
 
 
 def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False,
-                  start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
+                  own_only: bool = False, start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
                   on_progress: Callable[[str], None] | None = None) -> LayaTest:
-    """The test as pre-registered, over the stored scores of `model`; reads only."""
+    """The test as pre-registered, over the stored scores of `model`; reads only. `own_only` counts
+    only each company's own news and scores the own feature alone (same bar, same baselines)."""
+    if sensitivity and own_only:
+        raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     say = on_progress or (lambda _: None)
     end = end or ctx.clock.utcnow().date()
     spans = segments(start, end)
     if not spans:
         raise InvalidQuery(f"{start.isoformat()} to {end.isoformat()} is shorter than half a segment")
-    relations = SENSITIVITY_RELATIONS if sensitivity else MAIN_RELATIONS
-    panel = build_panel(ctx, watchlist, sensitivity=sensitivity, start=start, end=end, model=model, say=say)
+    relations = OWN_RELATIONS if own_only else SENSITIVITY_RELATIONS if sensitivity else MAIN_RELATIONS
+    panel = build_panel(ctx, watchlist, sensitivity=sensitivity, own_only=own_only, start=start, end=end, model=model,
+                        say=say)
     say("coverage")
     cov = coverage(ctx, watchlist)
     results = []
@@ -345,7 +355,7 @@ def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity
         results.append(horizon_result(panel, h, lb, spans, relations, cov))
     labels = [r.verdict for r in results]
     overall = "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
-    run = SENSITIVITY if sensitivity else MAIN
+    run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
     return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(results),
                     overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()))
 
@@ -359,7 +369,8 @@ def keep_laya_test(ctx: AppContext, test: LayaTest) -> LayaTest:
 def laya_tests(ctx: AppContext) -> list[LayaTest]:
     """The latest kept result of each run (main first)."""
     rows = LayaTestRepo(ctx.conn).latest()
-    return sorted((_load(r.result, r.id) for r in rows), key=lambda t: t.run != MAIN)
+    return sorted((_load(r.result, r.id) for r in rows),
+                  key=lambda t: (RUNS.index(t.run) if t.run in RUNS else len(RUNS), t.model != MODEL_TAG, t.model))
 
 
 def _load(raw: str, test_id: int) -> LayaTest:

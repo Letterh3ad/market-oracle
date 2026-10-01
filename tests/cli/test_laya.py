@@ -74,3 +74,5 @@ def test_history_plans_scores_and_the_test_prints_the_table_against_the_bar(cli,
     assert "momentum baseline (own_momentum" in out and "beats both baselines" in out
     code, shown, _ = cli("laya", "test", "--show")
     assert code == 0 and "Laya predictive test, main (links first known" in shown and "INCONCLUSIVE" in shown
+    code, out, _ = cli("laya", "test", "--own-only", "--model", "ollama:qwen2.5:32b")
+    assert code == 0 and "own news only" in out and "model ollama:qwen2.5:32b" in out

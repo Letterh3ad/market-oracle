@@ -32,9 +32,10 @@ function horizon(h) {
     el("p", { class: "small" }, `IC ${num(h.ic)}, t ${num(h.t, 2)}, ${h.days} IC days, positive in ${h.positive} of `
       + `${h.counted} counted segments.`),
     el("p", { class: "small" }, `News-attention baseline (own_attention, sign fitted): IC ${num(h.baseline_ic)}, t `
-      + `${num(h.baseline_t, 2)}; Laya ${BEATS[String(h.beats_baseline)]} it. Momentum baseline (own_momentum, sign `
-      + `fitted): IC ${num(h.momentum_ic)}, t ${num(h.momentum_t, 2)}; Laya ${BEATS[String(h.beats_momentum)]} it. `
-      + "Laya counts as useful only if it beats both baselines; the pass bar is separate."),
+      + `${num(h.baseline_t, 2)}; the reading ${BEATS[String(h.beats_baseline)]} it. Momentum baseline (own_momentum, `
+      + `sign fitted): IC ${num(h.momentum_ic)}, t ${num(h.momentum_t, 2)}; the reading `
+      + `${BEATS[String(h.beats_momentum)]} it. The reading counts as useful only if it beats both baselines; the pass `
+      + "bar is separate."),
     segments, features,
   ];
 }
@@ -65,6 +66,10 @@ function layaTestSection() {
       return;
     }
     const last = got.last_scoring ? `Last scoring run: ${got.last_scoring.summary}.` : "History not scored yet.";
+    if (!model.children.length && got.models?.length) {
+      model.replaceChildren(...got.models.map((m) => el("option", { value: m }, m)));
+      model.value = got.models[0];
+    }
     repaint(body, [el("p", { class: "small" }, last),
       ...(got.tests.length ? got.tests.map(result) : [el("p", { class: "dim" }, "No test run yet.")])]);
   }
@@ -79,10 +84,16 @@ function layaTestSection() {
     }
     await load();
   });
+  const model = el("select", { "aria-label": "Test model" });
+  const ownOnly = el("input", { type: "checkbox", "aria-label": "Own news only" });
   const test = (sensitivity) => busyButton(sensitivity ? "Run sensitivity (links as known today)" : "Run the test",
     async (onState) => {
+      const q = new URLSearchParams();
+      if (sensitivity) q.set("sensitivity", "true");
+      else if (ownOnly.checked) q.set("own_only", "true");
+      if (model.value) q.set("model", model.value);
       try {
-        const t = await runJob(`/api/jobs/laya-test${sensitivity ? "?sensitivity=true" : ""}`, onState);
+        const t = await runJob(`/api/jobs/laya-test?${q}`, onState);
         say(`${t.label}: ${t.verdict}`);
       } catch (err) {
         say(err.message);
@@ -112,6 +123,8 @@ function layaTestSection() {
       + "in six-month segments from 2022-09-21 against a bar fixed before any result: rank IC above 0 with t above 2 "
       + "overall and positive in most counted segments, at both horizons. Laya's probabilities are uncalibrated."),
     el("div", { class: "row" }, score, " ", estimate, " ", test(false), " ", test(true)),
+    el("div", { class: "row small" }, el("label", null, "Scores of ", model), " ",
+      el("label", null, ownOnly, " Own news only (the own feature alone, as the stronger reader read it)")),
     el("div", { class: "row small" }, el("label", null, cpu, " Allow the CPU when the GPU has no room (about 40 times "
       + "slower: days, not hours); otherwise scoring waits for GPU room")),
     plan, note, body);

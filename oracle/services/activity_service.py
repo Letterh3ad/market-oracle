@@ -34,7 +34,7 @@ from oracle.services.history_service import backfill_history
 from oracle.services.industry_research_service import BUTTON_FRESH_H, research_industry
 from oracle.services.laya_history_service import score_history
 from oracle.services.laya_service import MODEL_TAG, score_company
-from oracle.services.laya_test_service import MAIN, SENSITIVITY, keep_laya_test, run_laya_test
+from oracle.services.laya_test_service import MAIN, OWN, SENSITIVITY, keep_laya_test, run_laya_test
 from oracle.services.reader_service import score_reader, waits_anywhere
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
@@ -615,18 +615,21 @@ def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEF
 
 
 def submit_laya_test(ctx: AppContext, runner: JobRunner, sensitivity: bool = False, watchlist: str = DEFAULT_LIST,
-                     model: str = MODEL_TAG) -> Job:
-    """Run the pre-registered Laya predictive test (or its sensitivity run) over the scored
-    history, keeping the result for the Backtest page. Reads only."""
+                     model: str = MODEL_TAG, own_only: bool = False) -> Job:
+    """Run the pre-registered predictive test (or its sensitivity or own-news-only run) over
+    `model`'s scored history, keeping the result for the Backtest page. Reads only."""
+    if sensitivity and own_only:
+        raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     name = watchlist_symbols(ctx, watchlist)[0]
-    run = SENSITIVITY if sensitivity else MAIN
+    run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
     stage: list[str] = []
 
     async def work(c: AppContext):
-        return keep_laya_test(c, run_laya_test(c, name, sensitivity=sensitivity, model=model,
+        return keep_laya_test(c, run_laya_test(c, name, sensitivity=sensitivity, own_only=own_only, model=model,
                                                on_progress=stage.append))
 
-    return runner.submit("laya_test", f"Laya predictive test ({run}, {name})", work,
+    who = "" if model == MODEL_TAG else f", {model}"
+    return runner.submit("laya_test", f"Laya predictive test ({run}, {name}{who})", work,
                          subject=BACKTEST_SEP.join((run, name, model)), link="#ledgers",
                          progress=lambda: stage[-1] if stage else None)
 
@@ -893,7 +896,7 @@ def _retry_laya_history(ctx: AppContext, runner: JobRunner, job) -> Job:
 
 def _retry_laya_test(ctx: AppContext, runner: JobRunner, job) -> Job:
     run, name, model = (job.subject or "").split(BACKTEST_SEP, 2)
-    return submit_laya_test(ctx, runner, run == SENSITIVITY, name, model)
+    return submit_laya_test(ctx, runner, run == SENSITIVITY, name, model, run == OWN)
 
 
 def _retry_edges(ctx: AppContext, runner: JobRunner, job) -> Job:

@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends
 
 from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
+from oracle.research.reader import reader_tag
 from oracle.services.context import AppContext, worker_context
+from oracle.services.laya_service import MODEL_TAG
 from oracle.services.laya_history_service import last_history_run, plan_history
 from oracle.services.laya_test_service import laya_tests
 from oracle.services.watch_service import DEFAULT_LIST
@@ -20,9 +22,11 @@ router = APIRouter(prefix="/api/laya")
 
 @router.get("/tests")
 async def tests(ctx: AppContext = Depends(get_ctx)) -> dict:
-    """The newest kept result of the main and the sensitivity run, and the last scoring run."""
+    """The newest kept result of each run and model, the models a test can read (Laya and the
+    stronger reader), and the last scoring run."""
     last = last_history_run(ctx)
     return {"tests": [shapes.laya_test(t) for t in laya_tests(ctx)],
+            "models": [MODEL_TAG, reader_tag(ctx.config.laya.reader_model)],
             "last_scoring": {**asdict(last), "summary": last.summary} if last else None}
 
 

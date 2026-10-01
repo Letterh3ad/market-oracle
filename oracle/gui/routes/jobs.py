@@ -15,6 +15,7 @@ from oracle.services.activity_service import (
     submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_tick, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
+from oracle.services.laya_service import MODEL_TAG
 from oracle.services.watch_service import DEFAULT_LIST
 
 router = APIRouter(prefix="/api/jobs")
@@ -159,10 +160,12 @@ async def laya_history(watchlist: str = DEFAULT_LIST, allow_cpu: bool = False, c
 
 
 @router.post("/laya-test", status_code=202)
-async def laya_test(watchlist: str = DEFAULT_LIST, sensitivity: bool = False, ctx: AppContext = Depends(get_ctx),
+async def laya_test(watchlist: str = DEFAULT_LIST, sensitivity: bool = False, own_only: bool = False,
+                    model: str = MODEL_TAG, ctx: AppContext = Depends(get_ctx),
                     runner: JobRunner = Depends(get_runner)) -> dict:
-    """The pre-registered Laya predictive test (or its sensitivity run) over the scored history."""
-    return shapes.job(submit_laya_test(ctx, runner, sensitivity, watchlist))
+    """The pre-registered predictive test (or its sensitivity or own-news-only run) over `model`'s scored
+    history (Laya's by default)."""
+    return shapes.job(submit_laya_test(ctx, runner, sensitivity, watchlist, model, own_only))
 
 
 @router.post("/history", status_code=202)
