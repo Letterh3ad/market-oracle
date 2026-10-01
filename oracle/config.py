@@ -53,7 +53,10 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "financedatabase": SourceConfig(rate_per_second=0.5),
     # Index member pages: a few dozen a week, well inside Wikimedia's asks of scripted readers.
     "wikipedia": SourceConfig(rate_per_second=0.2),
+    # Raw files on GitHub other than FinanceDatabase's (the S&P 500 membership history).
+    "github": SourceConfig(rate_per_second=0.5),
 }
+PATH_KEYS = ("db_path", "research_db_path")
 
 
 PRICE_SOURCES = ("yahoo", "eodhd")
@@ -508,6 +511,8 @@ class Keys:
 @dataclass(frozen=True)
 class Config:
     db_path: Path = Path("oracle.db")
+    research_db_path: Path = Path("research.db")
+    """The testbed's own database: the live one is never written by it."""
     base_currency: str = "GBP"
     sources: dict[str, SourceConfig] = field(default_factory=lambda: dict(DEFAULT_SOURCES))
     prices: PricesConfig = field(default_factory=PricesConfig)
@@ -788,7 +793,7 @@ def _apply(raw: dict, strict: bool = False) -> Config:
         if name == "research":
             values[name] = _research(value)
             continue
-        expected = Path if name == "db_path" else type(getattr(Config, name))
+        expected = Path if name in PATH_KEYS else type(getattr(Config, name))
         if expected is Path:
             if not isinstance(value, str):
                 raise ConfigError(f"{name} must be a string path, got {value!r}")
@@ -1399,6 +1404,4 @@ def _sources(raw: object) -> dict[str, SourceConfig]:
 def _resolve(config: Config, base: Path) -> Config:
     # Relative to the config file, not the cwd: a scheduled task starts elsewhere and
     # would otherwise silently create a second, empty database.
-    if config.db_path.is_absolute():
-        return config
-    return replace(config, db_path=base / config.db_path)
+    return replace(config, **{k: p if (p := getattr(config, k)).is_absolute() else base / p for k in PATH_KEYS})

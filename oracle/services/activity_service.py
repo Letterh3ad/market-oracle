@@ -41,6 +41,7 @@ from oracle.services.replay_score import update_study_prices
 from oracle.services.research_service import (
     check_as_of, research, research_progress, stale_research, sweep_interrupted,
 )
+from oracle.services.testbed_service import build_testbed
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.paper_service import LINE_NAMES, REGIME_LINES
 from oracle.services.tick_service import (
@@ -566,6 +567,39 @@ def submit_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEFAULT_
                          progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
 
 
+TESTBED_SUBJECT = "testbed"
+TESTBED_REFRESH = "refresh"
+# Other Yahoo-heavy work too: the testbed paces itself on the research database, not the live one.
+TESTBED_WAITS = (*LIVE_WORK, "history", "replay_prices", "universe")
+
+
+def submit_testbed(ctx: AppContext, runner: JobRunner, refresh: bool = False) -> Job:
+    """Build the signal testbed (or with `refresh` re-read its membership and top up current
+    members) as one long job: it waits while live work runs, a Cancel stops it between requests,
+    and what it fetched is kept, so a retry resumes."""
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        r = await build_testbed(c, refresh=refresh, stop=stopped.is_set, busy=lambda: _testbed_waits(c, runner),
+                                on_progress=stage.append)
+        if (r.stopped and r.stopped != "cancelled") or r.failures:
+            raise ServiceError(r.summary)
+        return r
+
+    return runner.submit("testbed", "Refresh the signal testbed" if refresh else "Build the signal testbed", work,
+                         subject=TESTBED_SUBJECT + (BACKTEST_SEP + TESTBED_REFRESH if refresh else ""),
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _testbed_waits(ctx: AppContext, runner: JobRunner) -> str | None:
+    return _live_work(runner, TESTBED_WAITS) or scheduled_run_near(ctx)
+
+
+def _retry_testbed(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_testbed(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
+
+
 def submit_laya(ctx: AppContext, runner: JobRunner, symbol: str) -> Job:
     """Score the company's stored articles with Laya, those its model has not scored yet. It waits
     while research, a tick, a question or discovery runs (their model shares the GPU), and a
@@ -931,7 +965,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "research": _retry_research, "prices": _retry_prices, "analyse": _retry_analyse, "tick": _retry_tick,
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
-    "history": _retry_history,
+    "history": _retry_history, "testbed": _retry_testbed,
     "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,
 }

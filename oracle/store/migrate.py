@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 
 from oracle.store.db import transaction
 from oracle.store.migrations import MIGRATIONS
@@ -16,11 +17,14 @@ def current_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
 
-def migrate(conn: sqlite3.Connection) -> int:
+def migrate(conn: sqlite3.Connection, migrations: Sequence | None = None) -> int:
+    """Bring `conn` to the head of `migrations` (the live database's by default; the research
+    database has its own list)."""
     # Read at call time, not SCHEMA_VERSION, so tests can substitute MIGRATIONS.
-    head = len(MIGRATIONS)
+    migrations = MIGRATIONS if migrations is None else migrations
+    head = len(migrations)
     _refuse_newer(current_version(conn), head)
-    for index, module in enumerate(MIGRATIONS, start=1):
+    for index, module in enumerate(migrations, start=1):
         with transaction(conn):
             # Re-read under the write lock: another process opening the same fresh
             # database may have applied this step since the check above.

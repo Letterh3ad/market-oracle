@@ -98,6 +98,13 @@ def parse_members(spec: IndexSpec, html: str) -> list[Member]:
     return list({m.symbol: m for m in reversed(found)}.values())[::-1]
 
 
+def wiki_tables(html: str) -> list[list[list[str]]]:
+    """Each top-level `wikitable`'s rows as cell texts, footnote marks dropped."""
+    reader = _Reader()
+    reader.feed(html)
+    return reader.tables
+
+
 _TYO = re.compile(r"^(?P<name>.+?)\s*\(\s*TYO\s*:\s*(?P<code>[0-9A-Z]{4})\s*\)")
 
 

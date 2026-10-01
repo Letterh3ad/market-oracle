@@ -28,6 +28,17 @@ def test_relative_db_path_resolves_against_the_config_file_not_the_cwd(tmp_path)
     path.write_text('db_path = "data/o.db"\n', encoding="utf-8")
     config, _ = load_config(path, cwd=tmp_path / "elsewhere")
     assert config.db_path == conf_dir / "data" / "o.db"
+    assert config.research_db_path == conf_dir / "research.db", "the testbed's database sits beside the file too"
+
+
+def test_research_db_path_is_its_own_setting(tmp_path):
+    path = tmp_path / "oracle.toml"
+    path.write_text('research_db_path = "lab/r.db"\n', encoding="utf-8")
+    config, _ = load_config(path, cwd=tmp_path)
+    assert (config.db_path, config.research_db_path) == (tmp_path / "oracle.db", tmp_path / "lab" / "r.db")
+    path.write_text("research_db_path = 3\n", encoding="utf-8")
+    with pytest.raises(ConfigError, match="research_db_path must be a string path"):
+        load_config(path, cwd=tmp_path)
 
 
 def test_unknown_key_is_rejected_by_name(tmp_path):
@@ -302,7 +313,7 @@ def test_every_setting_is_a_real_key_with_a_one_line_meaning_in_the_example():
     assert set(meanings) <= {(s.section.split(".")[0], s.key) for s in listed}, "the example names a key the form lacks"
     sections = {s.section for s in listed}
     assert {"", "sources.yahoo", "sources.gdelt", "prices", "risk", "llm", "research", "keys"} <= sections
-    assert {s.key for s in listed if s.section == ""} == {"db_path", "base_currency"}
+    assert {s.key for s in listed if s.section == ""} == {"db_path", "research_db_path", "base_currency"}
     by_name = {(s.section, s.key): s for s in listed}
     assert (by_name["risk", "account"].kind, by_name["risk", "account"].default) == ("float", 10_000.0)
     assert by_name["prices", "sources"].default == ["yahoo", "eodhd"]
