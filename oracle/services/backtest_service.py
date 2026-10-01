@@ -298,7 +298,7 @@ def _notes(ctx: AppContext, name: str, start: date, end: date, slippage_bps: flo
     notes = [
         f"The {name} list is today's: companies that were delisted, taken over or went bust before today are "
         "missing from it, so every line likely looks better than investing back then would have (survivorship "
-        "bias). It reaches the regime line's mood too, which reads today's stored listings back in time.",
+        "bias). It reaches the regime line's mood too, which reads today's watched and held listings back in time.",
         fundamentals,
         f"Each day's decisions see only prices up to that day's close. Orders fill at the next trading day's open, "
         f"{slippage_bps:g} basis points worse, at that day's exchange rate, plus {commission:,.2f} {base} "

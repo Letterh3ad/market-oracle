@@ -10,7 +10,10 @@ from oracle.services.laya_line import LayaInput, LayaVerdict
 from oracle.broker.orders import Side
 from oracle.services.paper_service import ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log, fill_pending
 from oracle.services.regime_service import LAYA_OFF, NO_LAYA, NO_LAYA_HELD, NOT_MAIN, build_book, regime_card, regime_step
+from oracle.services.core_sat_service import SAT_SOURCE, satellite_traded
+from oracle.services.regime_service import laya_traded
 from oracle.services.watch_service import watch
+from oracle.store.paper import FillRow, PaperRepo
 from tests.broker.test_backtest import rising
 from tests.fakes.regime import use_stub
 from tests.services.test_paper import clock, ctx, next_day, seed, yahoo  # noqa: F401
@@ -148,3 +151,18 @@ def test_the_real_core_sat_book_is_the_regime_one_unless_laya_is_useful(ctx):
     useful = build_book(ctx, BARS, RegimeInputs(), account="core-sat", laya=LayaInput(scores, USEFUL))
     assert failed.explain("UP", day) == plain.explain("UP", day) and "laya" not in plain.explain("UP", day).parts
     assert useful.explain("UP", day).parts["laya"] < 0
+
+
+def test_every_listing_laya_and_the_satellite_lean_on_has_prices_in_the_narrowed_market(ctx, monkeypatch):
+    asked(monkeypatch)
+    built = use_stub(monkeypatch, leans={})
+    watch(ctx, "AAPL")
+    paper = PaperRepo(ctx.conn)
+    for account, source in ((ACCOUNT, ACCOUNT), ("core-sat", SAT_SOURCE)):
+        order = paper.add_order(account, "VOD.L", Side.BUY, None, 1, "2026-09-21T14:00:00Z", date(2026, 9, 21), source)
+        paper.record_fill(FillRow(order.id, account, "VOD.L", Side.BUY, date(2026, 9, 21), 1, 100.0, "GBP", 1.0,
+                                  100.0, 0.0, 0.0, 0.0, 0.0))
+    ctx.clock.advance(86400)  # the fixture's last session (2026-09-21) known final
+    for account, leaned in ((ACCOUNT, laya_traded), ("core-sat", satellite_traded)):
+        regime_step(ctx, account)
+        assert set(leaned(ctx)) == {"AAPL", "VOD.L"} and set(leaned(ctx)) <= set(built[-1].history)

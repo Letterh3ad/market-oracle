@@ -1,5 +1,5 @@
 """The live regime line accounts: each step builds one regime book from stored bars (the traded
-listings and the whole stored market, for the mood) and trades its leans under the strategy's
+listings and every watched or held company, for the mood) and trades its leans under the strategy's
 rules, logging each decision with what its lean was made of and saving the day's reading for
 the Ledgers card. `regime` trades the rules weights; `regime-ai` the same book with the daily
 model tilt (`regime_tilt`), so the two records measure what the model adds (frozen since the
@@ -175,9 +175,10 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     today = ctx.clock.utcnow().date()
     last = today - timedelta(days=1)
     traded = traded_by(ctx, account)
-    history, day = complete_sessions(market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, traded), traded)
-    tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
     leaned = (satellite_traded(ctx) if account == CORE_SAT else laya_traded(ctx) if account == LAYA else traded)
+    history, day = complete_sessions(
+        market_history(ctx, last - timedelta(days=HISTORY_DAYS), last, {*traded, *leaned}), traded)
+    tilt = DailyTilt(ctx, account, day, ctx.config.regime.tilt_cap, model) if account == REGIME_AI and day else None
     laya = _laya(ctx, account, leaned, day)
     book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account, laya)
     state = book.state(day) if day else None

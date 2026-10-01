@@ -20,7 +20,7 @@ from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
 from oracle.services.laya_line import METHOD, LayaInput, verdict_note, with_laya
 from oracle.services.never_list import never_company
-from oracle.services.prices_service import ConvertedBar, histories_in_base
+from oracle.services.prices_service import ConvertedBar, held_or_watched, histories_in_base
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
@@ -78,14 +78,18 @@ def core_members(ctx: AppContext, symbols: Collection[str]) -> tuple[str, ...]:
 
 def market_history(ctx: AppContext, start: date, end: date,
                    traded: Collection[str]) -> dict[str, list[ConvertedBar]]:
-    """The stored bars a book reads, `start` to `end`, base currency: every listing the universe
-    calls an equity, plus the traded ones, never a never-listed company (Tesla). Funds are left
-    out, as they would count the market twice in the mood and rank beside companies."""
+    """The stored bars a book reads, `start` to `end`, base currency: the regime market, i.e.
+    every company on any watchlist or held by any paper account, plus the traded listings, never
+    a never-listed company (Tesla). Funds are left out, as they would count the market twice in
+    the mood and rank beside companies. A listing only stored (a backfilled industry-map company)
+    is never read, so fetching data never changes a line's market."""
     universe = UniverseRepo(ctx.conn)
+    watched_or_held = held_or_watched(ctx)
     out = {}
     for s, rows in histories_in_base(ctx, start, end).items():
         profile = universe.profile(s)
-        if s not in traded and (profile is None or profile.type.lower() != MARKET_TYPE):
+        if s not in traded and (s not in watched_or_held or profile is None
+                                or profile.type.lower() != MARKET_TYPE):
             continue
         if profile is not None and never_company(ctx, s, user=False):
             continue
@@ -229,7 +233,7 @@ def _caption(listings: int, inputs: RegimeInputs, verdicts: bool, end: date, ear
             "its first buys rest on trend, reversion and low volatility while the momentum line waits for its "
             "first month-end rank." if early else "")
     return (f"Regime: trend, 12-1 momentum, short-term reversion, low volatility and a steady hold score, "
-            f"weighted by the mood of the stored market ({listings} listings: companies only, Tesla and funds left out), "
-            f"capped per sector and traded under the same rules, sizes and costs; {drift}; {fundamentals}; {ai}. "
-            f"The mood, ranks and health read today's stored listings back in time, survivors and later picks "
-            f"included, so the past market they see is kinder than the real one was.{wait}")
+            f"weighted by the mood of the stored market ({listings} listings: companies on a watchlist or held, Tesla "
+            f"and funds left out), capped per sector and traded under the same rules, sizes and costs; {drift}; "
+            f"{fundamentals}; {ai}. The mood, ranks and health read today's watched and held listings back in time, "
+            f"survivors and later picks included, so the past market they see is kinder than the real one was.{wait}")

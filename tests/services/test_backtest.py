@@ -214,11 +214,12 @@ async def test_a_cancelled_backtest_is_retried_with_the_same_request(runner):
 
 
 def market(ctx, bars):
-    """Stored prices for a listing on no watchlist: only the regime line's mood and ranks read it."""
+    """Stored prices for a listing on another watchlist: only the regime line's mood and ranks read it."""
     s = bars[0].symbol
     UniverseRepo(ctx.conn).add(Listing(s, f"{s} Inc", "Equity", "United States", "NMS", currency="USD",
                                        company_key=s.lower(), is_primary=True))
     BarRepo(ctx.conn).upsert(bars, "2026-09-24T00:00:00Z")
+    watch(ctx, s, "market")
 
 
 def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_it_had(make_ctx):
@@ -229,7 +230,7 @@ def test_the_regime_line_trades_the_blend_beside_momentum_and_says_which_inputs_
     regime = r.lines[3]
     assert regime.label == "Regime" and regime.points[0] == (START, 0.0)
     assert regime.trades >= 1 and regime.costs >= regime.trades * 2.0
-    assert "stored market (3 listings: companies only, Tesla and funds left out)" in regime.caption
+    assert "stored market (3 listings: companies on a watchlist or held, Tesla and funds left out)" in regime.caption
     assert "no AI verdicts" in regime.caption and "no value or quality" in regime.caption
     assert "no earnings drift" in regime.caption
     assert "every line likely looks better" in " ".join(r.notes) and "The strategy line leaves out" in " ".join(r.notes)
