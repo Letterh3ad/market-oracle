@@ -16,6 +16,8 @@ class Series:
     bars: list[tuple]
     """(date, open, high, low, close, adj_close, volume); None fields allowed."""
     open_at: time = time(9, 30)
+    kind: str = "EQUITY"
+    first_trade: date | None = None
 
 
 class FakeYahoo:
@@ -41,8 +43,9 @@ class FakeYahoo:
         self.searched: list[str] = []
         self.profiled: list[str] = []
 
-    def add(self, symbol: str, currency: str, tz: str, bars: list[tuple], open_at: time = time(9, 30)) -> None:
-        self.series[symbol] = Series(currency, tz, bars, open_at)
+    def add(self, symbol: str, currency: str | None, tz: str, bars: list[tuple], open_at: time = time(9, 30),
+            kind: str = "EQUITY", first_trade: date | None = None) -> None:
+        self.series[symbol] = Series(currency, tz, bars, open_at, kind, first_trade)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if request.url.host == "fc.yahoo.com":
@@ -84,7 +87,8 @@ class FakeYahoo:
             stamps = [(t, b) for t, b in stamps if int(p1) <= t < p2]
         return httpx.Response(200, json={"chart": {"error": None, "result": [{
             "meta": {"currency": s.currency, "symbol": symbol, "exchangeTimezoneName": s.tz,
-                     "instrumentType": "EQUITY"},
+                     "instrumentType": s.kind,
+                     **({"firstTradeDate": self._stamp(s.first_trade, s)} if s.first_trade else {})},
             "timestamp": [t for t, _ in stamps],
             "indicators": {
                 "quote": [{

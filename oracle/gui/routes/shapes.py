@@ -19,6 +19,7 @@ from oracle.services.regime_service import LineStep, off_note
 from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
+from oracle.services.testbed_service import UNDER_PRICED, TestbedCoverage
 from oracle.services.tick_service import KIND_LABELS, TickRun
 
 
@@ -243,3 +244,15 @@ def coverage(c: Coverage) -> dict:
             "rows": [{"symbol": r.symbol, "name": r.name, "main": r.main, "of": list(r.of), "first_bar": r.first_bar,
                       "thin": list(r.thin), "noisy": list(r.noisy), "search": asdict(r.search),
                       "cells": {q: asdict(x) for q, x in r.cells.items()}} for r in c.rows]}
+
+
+def testbed_coverage(c: TestbedCoverage) -> dict:
+    """The signal testbed's coverage: one row per year, and the members never priced."""
+    run, snap = c.last_run, c.snapshot
+    return {"start": c.start, "members": c.members, "fetched": c.fetched, "sectors": c.sectors, "calendar": c.calendar,
+            "missing_share": c.missing_share, "caveat": c.caveat,
+            "snapshot": asdict(snap) if snap else None,
+            "last_run": {**asdict(run), "summary": run.summary} if run else None,
+            "years": [{**asdict(y), "missing_share": y.missing_share} for y in c.years],
+            "under_priced": [asdict(u) for u in c.under_priced], "under_priced_below": UNDER_PRICED,
+            "duplicates": [asdict(d) for d in c.duplicates], "as_of": c.as_of}

@@ -2,6 +2,7 @@
 # Relative paths resolve against this file's folder.
 
 db_path = "oracle.db"   # the database file
+research_db_path = "research.db"   # the signal testbed's own database; the testbed never writes the one above
 
 # ISO 4217 code. Every price, position and P&L is converted to this.
 base_currency = "GBP"   # every price, position and P&L is shown in this currency
@@ -9,7 +10,7 @@ base_currency = "GBP"   # every price, position and P&L is shown in this currenc
 # Per-source request pacing, shared by every oracle process on this database.
 # Override any field of a built-in source, or add a new one (rate_per_second required).
 # Built-ins: yahoo 0.5, eodhd 2.0, ecb 0.5, frankfurter 0.5, open_er_api 0.05, gdelt 0.1, google_news 0.5, ddgs 0.2, sec_edgar 5.0, web 1.0 (pages research reads),
-# financedatabase 0.5 (GitHub, used by `oracle universe refresh`)
+# financedatabase 0.5 (GitHub, used by `oracle universe refresh`), wikipedia 0.2, github 0.5 (the S&P 500 history)
 [sources.gdelt]
 rate_per_second = 0.1   # requests a second (GDELT asks for one per 5 seconds and locks out quicker ones)
 cooldown_s = 900        # how long a tripped breaker stays open

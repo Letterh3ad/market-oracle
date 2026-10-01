@@ -46,6 +46,8 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | Dataset | License | Use |
 |---|---|---|
 | [FinanceDatabase](https://github.com/JerBouma/FinanceDatabase) (compressed CSVs, fetched at a pinned commit) | MIT | offline universe: names, classification, exchanges (`oracle/universe/financedatabase.py`) |
+| [fja05680/sp500](https://github.com/fja05680/sp500) "S&P 500 Historical Components & Changes (Updated).csv" (point-in-time S&P 500 membership since 1996), read at a pinned commit and stored with its fetch time in the research DB, not redistributed | MIT (Copyright 2019-2020 Farrell J. Aultman; its 1996-2019 base is from Andreas Clenow's *Trading Evolved*) | signal testbed membership by day (`oracle/universe/sp500_history.py`); checked 2026-10-01 |
+| Wikipedia "List of S&P 500 companies" GICS Sector column | CC BY-SA 4.0; sectors kept locally, not redistributed | testbed sectors of current members (`oracle/universe/sp500_history.py`); checked 2026-10-01 |
 | Wikipedia index member tables (KOSPI 200, S&P 500 and the rest in `oracle/universe/indexes.py`), read through the Wikimedia REST API and cached a week | CC BY-SA 4.0; member symbols and names only, kept locally, not redistributed | index backfill: which home lines the universe lacks (`oracle/services/backfill_service.py`); checked 2026-09-24 |
 
 ## Models

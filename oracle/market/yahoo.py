@@ -29,6 +29,10 @@ class YahooPrices:
         self._client = client
 
     async def daily_bars(self, instrument: Instrument, since: date | None, now: datetime) -> list[Bar]:
+        return (await self.daily_chart(instrument, since, now)).bars
+
+    async def daily_chart(self, instrument: Instrument, since: date | None, now: datetime) -> Chart:
+        """The bars with what the chart says the symbol is: its instrument type and first trade day."""
         params = {"interval": "1d", "includeAdjustedClose": "true"}
         if since is None:
             params["range"] = f"{sources.HISTORY_YEARS}y"
@@ -37,7 +41,22 @@ class YahooPrices:
             params["period2"] = str(int(now.timestamp()))
         url = CHART_URL.format(symbol=quote(instrument.symbol, safe=""))
         resp = await sources.get(self._client, SOURCE, url, params)
-        return _parse(instrument.symbol, resp.json())
+        body = resp.json()
+        meta = (body["chart"]["result"] or [{}])[0].get("meta") or {}
+        first = meta.get("firstTradeDate")
+        tz = meta.get("exchangeTimezoneName") or "UTC"
+        return Chart(_parse(instrument.symbol, body), meta.get("instrumentType"), meta.get("currency"),
+                     local_date(first, tz) if isinstance(first, (int, float)) else None)
+
+
+@dataclass(frozen=True)
+class Chart:
+    bars: list[Bar]
+    instrument_type: str | None
+    """EQUITY for a company's shares; ETF, MUTUALFUND and others are not."""
+    currency: str | None
+    first_trade: date | None
+    """The first day the symbol's current instrument traded, when Yahoo says."""
 
 
 def _parse(symbol: str, body: dict) -> list[Bar]:

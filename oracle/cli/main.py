@@ -8,7 +8,7 @@ from pathlib import Path
 from oracle.cli import (
     analyse, automation, backtest, company, discover, edges, events, factors, fx, gui, history, holiday, industry, jobs,
     industry_news, laya, links, reader,
-    models, net, paper, peers, prices, replay, research, schedule, status, tag, tick, universe, watch,
+    models, net, paper, peers, prices, replay, research, schedule, status, tag, testbed, tick, universe, watch,
 )
 from oracle.services.context import load_settings, open_context
 from oracle.services.errors import ConfigInvalid, ServiceError
@@ -40,6 +40,7 @@ SUBCOMMANDS: list[tuple[str, Callable]] = [
     ("paper", paper.register),
     ("backtest", backtest.register),
     ("history", history.register),
+    ("testbed", testbed.register),
     ("tick", tick.register),
     ("schedule", schedule.register),
     ("automation", automation.register),
