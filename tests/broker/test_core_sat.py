@@ -3,14 +3,16 @@ from datetime import date
 
 import pytest
 
-from oracle.broker.core_sat import (CORE_SHARE, EXPIRED, REBALANCE, core_replay, core_sat_replay, rebalance_buys,
-                                    rebalance_days, rebalance_sells)
+from oracle.broker.core_sat import (EXPIRED, REBALANCE, SATELLITE_CAP, SATELLITE_SHARE, core_replay, core_sat_replay,
+                                    rebalance_buys, rebalance_days, rebalance_sells)
 from oracle.broker.orders import Side
 from oracle.broker.rules import Lean
 from tests.analysts.bars import weekdays
 from tests.broker.test_backtest import RISK, RULES, priced, rising
 
 CAPITAL = 100_000.0
+SHARE = 0.25
+"""The satellite share the machinery was built and tested at (the lines now trade SATELLITE_SHARE)."""
 
 
 def market(n=700):
@@ -26,7 +28,27 @@ def core(history, start, end=None, members=None, **kw):
 
 def test_rebalance_days_are_the_first_market_day_of_each_year_from_the_first():
     days = weekdays(600, date(2024, 1, 3))
-    assert rebalance_days(days) == [date(2024, 1, 3), date(2025, 1, 3), date(2026, 1, 5)]
+    assert rebalance_days(days, 1) == [date(2024, 1, 3), date(2025, 1, 3), date(2026, 1, 5)]
+
+
+def test_the_lines_never_rebalance_and_the_satellite_has_no_weight_until_a_signal_earns_it():
+    assert rebalance_days(weekdays(600, date(2024, 1, 3))) == [date(2024, 1, 3)]
+    assert SATELLITE_SHARE == 0.0 and SATELLITE_CAP == 0.20
+
+
+def test_by_default_the_core_buys_once_and_holds_all_the_money_and_the_satellite_trades_nothing():
+    h = market()
+    start = h["UP"][100].bar.date
+
+    def always_buy(symbol, bars):
+        return Lean(symbol, bars[-1].date, "strong buy", 0.99, "regime")
+
+    x = core_sat_replay(h, start, h["UP"][-1].bar.date, rules=RULES, risk={**RISK, "account": CAPITAL},
+                        members=list(h), slippage=0.001, commission=0.0, lean=always_buy)
+    assert x.satellite.trades == () and all(v == 0.0 for _, v in x.satellite.equity)
+    assert {t.side for t in x.core.trades} == {Side.BUY} and len({t.day for t in x.core.trades}) == 1
+    assert sum(-t.cash for t in x.core.trades) == pytest.approx(CAPITAL, rel=0.01)
+    assert x.equity[0][1] == pytest.approx(CAPITAL)
 
 
 def test_sells_trim_overweights_and_drop_non_members_then_buys_fill_underweights_within_cash():
@@ -61,13 +83,13 @@ def test_core_buys_equal_amounts_at_the_next_open_with_costs_and_holds():
     assert sum(spent) <= CAPITAL
 
 
-def test_core_rebalances_yearly_back_to_equal_weight():
+def test_core_rebalances_yearly_back_to_equal_weight_when_asked():
     h = market()
     start = h["UP"][100].bar.date
-    r = core(h, start)
+    r = core(h, start, rebalance_years=1)
     sold = [t for t in r.trades if t.side == Side.SELL]
     assert sold and {t.symbol for t in sold} == {"UP"}
-    yearly = rebalance_days([p.bar.date for p in h["UP"] if p.bar.date >= start])
+    yearly = rebalance_days([p.bar.date for p in h["UP"] if p.bar.date >= start], 1)
     assert len(yearly) == 3
     assert {d for d, o in r.orders if o.action.value == "sell"} == set(yearly[1:])
     bought_after = {d for d, o in r.orders if o.action.value == "buy"} - {yearly[0]}
@@ -86,7 +108,7 @@ def test_a_stale_holding_is_left_alone_an_unfilled_order_expires_and_a_sub_share
     h["LATE"] = priced(rising(101, "LATE", 0.001))  # its last bar is the first day: its buy never fills
     h["BIG"] = [replace(p, bar=replace(p.bar, open=p.bar.open * 1e6, close=p.bar.close * 1e6))
                 for p in priced(rising(700, "BIG", 0.001))]
-    r = core(h, start)
+    r = core(h, start, rebalance_years=1)
     assert "GAP" in {t.symbol for t in r.trades} and "GAP" not in {t.symbol for t in r.trades if t.side == Side.SELL}
     assert any(f"LATE: {EXPIRED}" in n for n in r.rejected)
     assert "LATE" not in r.unfilled
@@ -109,14 +131,14 @@ def test_the_satellite_never_spends_core_cash():
 
     risk = {**RISK, "account": CAPITAL}
     x = core_sat_replay(h, start, h["UP"][-1].bar.date, rules=RULES, risk=risk, members=list(h), slippage=0.001,
-                        commission=0.0, lean=always_buy)
-    sat_cash = (1 - CORE_SHARE) * CAPITAL
+                        commission=0.0, lean=always_buy, satellite_share=SHARE)
+    sat_cash = SHARE * CAPITAL
     for t in sorted(x.satellite.trades, key=lambda t: (t.day, t.side != Side.SELL)):
         sat_cash += t.cash
         assert sat_cash >= -1e-6
-    assert sum(-t.cash for t in x.satellite.trades if t.side == Side.BUY) <= (1 - CORE_SHARE) * CAPITAL + 1e-6
+    assert sum(-t.cash for t in x.satellite.trades if t.side == Side.BUY) <= SHARE * CAPITAL + 1e-6
     core_spent = sum(-t.cash for t in x.core.trades if t.side == Side.BUY and t.day == x.core.trades[0].day)
-    assert core_spent == pytest.approx(CORE_SHARE * CAPITAL, rel=0.01)
+    assert core_spent == pytest.approx((1 - SHARE) * CAPITAL, rel=0.01)
     days = [d for d, _ in x.equity]
     assert days == [d for d, _ in x.core.equity] == [d for d, _ in x.satellite.equity]
     assert x.equity[0][1] == pytest.approx(CAPITAL)
@@ -139,7 +161,8 @@ def test_a_future_bar_never_changes_a_past_core_sat_decision():
 
     def run(history):
         return core_sat_replay(history, start, h["UP"][-1].bar.date, rules=RULES, risk=risk, members=list(history),
-                               slippage=0.001, commission=0.0, lean=trend)
+                               slippage=0.001, commission=0.0, lean=trend, satellite_share=SHARE,
+                               rebalance_years=1)
 
     a, b = run(h), run(changed)
 

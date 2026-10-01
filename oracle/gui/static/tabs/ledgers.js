@@ -46,9 +46,18 @@ function metrics(a, base) {
     row("Largest fall", "max_fall", pct(a.max_fall), a.max_fall < 0 ? "down" : "")));
 }
 
+function indexRules() {
+  return "All its cash in ACWI, a fund holding the world's large and mid-sized companies, bought once at the next "
+    + "open with costs and then held: the honest \"do nothing\" every other line is measured against. Index step "
+    + "places that buy when nothing is held or waiting; each tick runs it.";
+}
+
+const FROZEN = "Frozen: it no longer steps or records equity; buy and hold beat it, and the real-money plan is the "
+  + "index. Its history stays. ";
+
 function strategyRules(r) {
   const p = (v) => `${Math.round(v * 100)}%`;
-  return `Trades by itself on the leans, under fixed rules: buy on a buy lean at ${p(r.min_probability)} or more, ` +
+  return FROZEN + `It traded by itself on the leans, under fixed rules: buy on a buy lean at ${p(r.min_probability)} or more, ` +
     `at most ${r.max_positions} positions of up to ${p(r.max_position)} each, ${p(r.cash_floor)} always kept in cash, ` +
     `sell on a sell lean or ${p(r.stop_loss)} below cost. Its record is the honest test. Change the rules in oracle.toml.`;
 }
@@ -64,7 +73,7 @@ function aiRules(r, ai) {
 
 function regimeRules(r) {
   const p = (v) => `${Math.round(v * 100)}%`;
-  return "Trades by itself on a blend of known methods (trend, momentum, mean reversion, low volatility, value and " +
+  return FROZEN + "It traded by itself on a blend of known methods (trend, momentum, mean reversion, low volatility, value and " +
     "quality, earnings drift, buy and hold, the research verdict) weighted by the market's mood, under the strategy's " +
     `rules: buy the strongest blends at ${p(r.min_probability)} or more, sell on a sell blend or ${p(r.stop_loss)} ` +
     "below cost. Same listings as the AI account. Its reading and switch are in the Regime reading card below.";
@@ -77,10 +86,10 @@ function regimeAiRules() {
 }
 
 function coreSatRules() {
-  return "Three quarters of the money in an equal-weight buy and hold of the main list's companies (never a fund or " +
-    "Tesla), bought at the next open with costs and set back to equal weight once a year; one quarter traded by the " +
-    "Regime blend under the strategy's rules within its own cash, so neither ever spends the other's. Its sleeves, " +
-    "reading and switch are in the Core-sat reading card below.";
+  return "An equal-weight buy and hold of the main list's companies (never a fund or Tesla), bought once at the next " +
+    "open with costs and never rebalanced, beside a satellite traded by the Regime blend within its own cash. The " +
+    "satellite's share is 0 until a signal passes the confirm test and then six months as its own paper line, so " +
+    "today the core holds it all. Its sleeves, reading and switch are in the Core-sat reading card below.";
 }
 
 function layaRules() {
@@ -91,7 +100,7 @@ function layaRules() {
 }
 
 function regimeV2Rules() {
-  return "The Regime blend on the same listings, under the same rules, with two changes: a method without a score " +
+  return FROZEN + "The Regime blend on the same listings, under the same rules, with two changes: a method without a score " +
     "for a listing hands its weight to the price methods, not to the steady buy-and-hold score, and a holding kept " +
     "long enough that is clearly weaker than the best buy not held is sold to make room for it. Its record against " +
     "the Regime line's shows what the two changes add. Its reading, switch and rotation rule are in the Regime-v2 " +
@@ -207,7 +216,8 @@ function column(a, base, rules, ai, stale, discovery) {
         : a.name === "regime-ai" ? tipText("Regime-AI", regimeAiRules())
           : a.name === "regime-v2" ? tipText("Regime-v2", regimeV2Rules())
             : a.name === "core-sat" ? tipText("Core-sat", coreSatRules())
-              : a.name === "laya" ? tipText("Laya", layaRules()) : tipText("Strategy", strategyRules(rules));
+              : a.name === "laya" ? tipText("Laya", layaRules())
+                : a.name === "index" ? tipText("Index", indexRules()) : tipText("Strategy", strategyRules(rules));
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
@@ -278,7 +288,9 @@ function jobs(base) {
   const stepLines = (account, r, empty) => (r.length
     ? r.map((d) => `${account}: ${d.action} ${d.symbol}${d.cash != null ? ` for ${money(d.cash)} ${base}` : ""} (${d.reason})`)
     : [empty]);
-  const strategyLines = (r) => stepLines("strategy", r, "Nothing to decide: watch listings and analyse them first.");
+  const strategyLines = (r) => (r.off ? [r.off]
+    : stepLines("strategy", r.decisions, "Nothing to decide: watch listings and analyse them first."));
+  const indexLines = (r) => stepLines("index", r, "Nothing to decide: it holds ACWI, or its buy waits to fill.");
   const aiLines = (r) => (r.off ? [r.off] : [r.badge[0].toUpperCase() + r.badge.slice(1),
     ...stepLines("ai", r.decisions, "Nothing to decide: watch listings and research them first.")]);
   const tiltLine = (t) => (t.error ? `No model tilt: ${t.error}. The rules weights were traded.`
@@ -300,15 +312,15 @@ function jobs(base) {
   });
   return el("div", null,
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
+      run("Index step", "/api/ledgers/index/step", indexLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
-      runLine("Regime step", "/api/ledgers/regime/step"), runLine("Regime-v2 step", "/api/ledgers/regime-v2/step"),
       runLine("Core-sat step", "/api/ledgers/core-sat/step"), runLine("Laya step", "/api/ledgers/laya/step"),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
-        + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts; "
-        + "Regime step lets the regime account act on the regime blend, Regime-v2 step the regime-v2 account on the "
-        + "blend without hold padding and with its rotation, and Core-sat step the core-sat account (its core's "
-        + "yearly rebalance when due, its satellite on the blend), and Laya step the laya account on Laya's daily news "
-        + "score alone. Regime-AI is frozen and no longer steps.")),
+        + "Index step buys ACWI with the index account's cash when it holds nothing; AI step lets the AI account act "
+        + "on the research verdicts; Core-sat step the core-sat account (its core's first buy, or a top-up of idle "
+        + "core cash; its satellite, at weight 0, only sells what it holds), and Laya step the laya account on Laya's "
+        + "daily news score alone. Strategy, Regime, Regime-v2 and Regime-AI are frozen: they no longer step, and "
+        + "Strategy step says so.")),
     out);
 }
 

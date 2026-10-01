@@ -1,6 +1,6 @@
 """What the replay study's verdicts would have earned as an account: the backtest engine, in
 memory, trading each study date's verdicts under the AI account's rules, risk sizes and costs,
-drawn against the same verdicts all taken as buys (what the rules alone make of the listings),
+drawn against ACWI and SPY held (the honest "do nothing"), the same verdicts all taken as buys (what the rules alone make of the listings),
 the same listings bought in equal amounts and held, the momentum baseline and the regime lines.
 Nothing is written to the ledgers."""
 
@@ -21,6 +21,7 @@ from oracle.broker.regime import LABEL_SCORES, DatedScores
 from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
+from oracle.services.index_service import INDEX_LINES, index_caption, index_closes, index_equity, index_missing
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import LINE_LABELS, RegimeLine, regime_lines
@@ -65,8 +66,8 @@ class Account:
     listings: tuple[str, ...]
     """The study's listings the stored bars can price."""
     lines: tuple[Line, ...]
-    """The verdicts' account (`ai`), every verdict a buy (`all_buy`), buy and hold, any BASELINES, then
-    the regime lines (`regime`, `regime_v2`)."""
+    """ACWI and SPY held (`index`, `spy`), the verdicts' account (`ai`), every verdict a buy
+    (`all_buy`), buy and hold, any BASELINES, then the regime lines (`regime`, `regime_v2`)."""
     trades: tuple[Trade, ...]
     """The verdicts' account's."""
     left_out: tuple[str, ...]
@@ -105,19 +106,25 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
     regime = regime or regime_lines(ctx, start, end, rules, rows, regime_verdicts(calls))
     held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
+    indexes = index_closes(ctx, end, local=True)
     lines = (
+        *(Line(name, index_caption(symbol, label, start) + " In its own currency, as every line here is.",
+               _returns(e, capital), max_fall(e), 0, 0.0, label)
+          for name, symbol, label in INDEX_LINES for e in [index_equity(indexes, symbol, start, end, capital)]),
         line("ai", "The replay verdicts, traded under the AI account's rules, risk sizes and costs.", ai),
         line("all_buy", "Every verdict a buy: the same replays and rules, each verdict taken as a buy at its "
                         "confidence, so AI against this line is what the calls themselves added.",
              run(_verdicts({s: [(d, "buy", c) for d, _, c in cs] for s, cs in calls.items()}, max_age)),
              "Every verdict a buy"),
-        Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'}, bought at the "
-                             "first close after the first as-of day, paying the same costs, and never sold.",
-             _returns(held, capital), max_fall(held), entered, held_costs),
+        Line("buy_and_hold", f"Buy and hold (survivorship: today's picks): equal amounts of the {n} "
+                             f"listing{'' if n == 1 else 's'}, bought at the first close after the first as-of day, "
+                             "paying the same costs, and never sold.",
+             _returns(held, capital), max_fall(held), entered, held_costs, "Buy and hold (today's list)"),
         *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
           for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]),
         *(line(name, x.caption, x.run(rows, start, end, rules=rules, risk=risk, **fills), LINE_LABELS[name]) for name, x in regime.items()))
     notes = [
+        *index_missing(indexes, start),
         f"The traded lines keep {ctx.config.risk.cash_floor:.0%} in cash and hold at most {rules.max_positions} "
         f"positions of at most {ctx.config.risk.max_position:.0%} each, sized by the risk analyst, selling at the "
         f"{rules.stop_loss:.0%} stop, and act on a verdict for {max_age} days; buy and hold is fully invested, so read "

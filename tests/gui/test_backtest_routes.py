@@ -41,7 +41,7 @@ async def test_a_backtest_runs_as_a_job_and_is_kept_for_later(watched):
     summary = job["result"]
     assert (summary["watchlist"], summary["start"], summary["end"]) == ("main", START, END)
     assert (summary["slippage_bps"], summary["commission"], summary["base_currency"]) == (5, 1, "GBP")
-    assert [line["name"] for line in summary["lines"]] == ["strategy", "buy_and_hold", "momentum", "regime",
+    assert [line["name"] for line in summary["lines"]] == ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime",
                                                             "regime_v2", "core_sat", "core_sat_laya"]
     assert "points" not in summary["lines"][0]
 
@@ -50,7 +50,7 @@ async def test_a_backtest_runs_as_a_job_and_is_kept_for_later(watched):
 
     full = (await watched.get(f"/api/backtests/{summary['id']}")).json()
     assert full["listings"] == ["AAPL"]
-    strategy, held, momentum, regime, v2, core_sat, core_sat_laya = full["lines"]
+    _, _, strategy, held, momentum, regime, v2, core_sat, core_sat_laya = full["lines"]
     assert core_sat_laya["label"] == "Core-sat-laya" and core_sat_laya["points"] == core_sat["points"]
     assert v2["label"] == "Regime-v2" and v2["points"][0] == [START, 0.0]
     assert held["points"][0] == [START, 0.0] and held["return"] == held["points"][-1][1] > 0
@@ -69,7 +69,7 @@ async def test_a_walk_forward_backtest_keeps_its_segment_table_and_fits(watched)
     full = (await watched.get(f"/api/backtests/{job['result']['id']}")).json()
     wf = full["walk_forward"]
     assert wf["months"] == 6 and len(wf["segments"]) == 1 and wf["segments"][0][0] == START
-    assert [x["name"] for x in wf["lines"]] == [x["name"] for x in full["lines"]][:8]
+    assert [x["name"] for x in wf["lines"]] == [x["name"] for x in full["lines"]][2:10]
     assert full["lines"][-1]["name"] == "regime_wf"
     held = wf["lines"][1]
     assert held["beat"] is None and held["segments"][0]["excess"] == 0.0

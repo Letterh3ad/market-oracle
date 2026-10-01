@@ -97,7 +97,7 @@ async def test_report_scores_from_stored_bars_and_the_status_carries_the_interim
     report = (await listed.get("/api/replay/report")).json()["report"]
     assert report["verdicts"] == 0 and [h["horizon"] for h in report["horizons"]] == ["1m", "3m"]
     assert report["refetch_listings"] == ["AAPL", "7203.T"] and report["limits"]  # no whole-window fetch yet
-    ai, _, held, momentum, regime, v2, core_sat = report["account"]["lines"]
+    _, _, ai, _, held, momentum, regime, v2, core_sat = report["account"]["lines"]
     assert (ai["name"], ai["trades"], held["name"]) == ("ai", 0, "buy_and_hold") and "return" in held and momentum["name"] == "momentum"
     assert regime["label"] == "Regime" and "replay verdicts as its AI input" not in regime["caption"]
     assert v2["label"] == "Regime-v2" and v2["caption"].startswith("Regime-v2:")

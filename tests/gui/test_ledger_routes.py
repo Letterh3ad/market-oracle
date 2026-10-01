@@ -12,7 +12,7 @@ from tests.gui.jobs import run_job
 async def test_every_account_starts_level_side_by_side(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["base_currency"] == "GBP"
-    assert [a["name"] for a in body["accounts"]] == ["strategy", "ai", "manual", "regime", "regime-ai", "regime-v2",
+    assert [a["name"] for a in body["accounts"]] == ["index", "strategy", "ai", "manual", "regime", "regime-ai", "regime-v2",
                                                        "core-sat", "laya"]
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
@@ -22,7 +22,7 @@ async def test_every_account_starts_level_side_by_side(loaded):
 
 async def test_a_queued_buy_shows_as_pending_on_its_account(ctx, loaded):
     place_buy(ctx, "AAPL", 1000.0)
-    manual = (await loaded.get("/api/ledgers")).json()["accounts"][2]
+    manual = (await loaded.get("/api/ledgers")).json()["accounts"][3]
     [order] = manual["pending"]
     assert (order["symbol"], order["side"], order["cash"], order["status"]) == ("AAPL", "buy", 1000.0, "pending")
 
@@ -37,7 +37,7 @@ async def test_a_filled_buy_shows_as_a_position_with_an_equity_record(ctx, price
     clock.advance(2 * 86400)  # past that session's close, so its bar counts as complete
     run = (await run_job(priced, "/api/jobs/prices", symbol="AAPL"))["result"]
     assert [f["status"] for f in run["fills"]] == ["filled"]
-    manual = (await priced.get("/api/ledgers")).json()["accounts"][2]
+    manual = (await priced.get("/api/ledgers")).json()["accounts"][3]
     [position] = manual["positions"]
     assert position["symbol"] == "AAPL" and position["shares"] > 0 and manual["pending"] == []
     assert manual["cash"] < 10_000.0 and manual["costs"] > 0
@@ -104,7 +104,7 @@ async def test_the_comparison_waits_for_the_ai_account_history(loaded):
     compare = (await loaded.get("/api/ledgers")).json()["compare"]
     assert compare["start"] is None and "no history yet" in compare["notes"][0]
     assert [(line["name"], line["points"], line["return"]) for line in compare["lines"]] == [
-        ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("regime", [], None), ("regime-ai", [], None),
+        ("index", [], None), ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("regime", [], None), ("regime-ai", [], None),
         ("regime-v2", [], None), ("core-sat", [], None), ("laya", [], None), ("buy_and_hold", [], None),
         ("VWRL.L", [], None), ("VUSA.L", [], None)]
     assert [line["label"] for line in compare["lines"][-2:]] == ["World (VWRL.L)", "S&P 500 (VUSA.L)"]

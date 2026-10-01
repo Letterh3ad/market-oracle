@@ -38,7 +38,7 @@ async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(
     yahoo.series["GBPUSD=X"].bars.append(bar(tomorrow, 1.25))
     clock.advance(2 * 86400)
     await run_job(priced, "/api/jobs/prices", symbol="AAPL")  # fills on the way in
-    [position] = (await priced.get("/api/ledgers")).json()["accounts"][2]["positions"]
+    [position] = (await priced.get("/api/ledgers")).json()["accounts"][3]["positions"]
     sell = (await priced.post("/api/ledgers/manual/sell", json={"symbol": "AAPL", "shares": 2})).json()
     assert (sell["side"], sell["shares"], position["shares"] > 2) == ("sell", 2, True)
     too_many = await priced.post("/api/ledgers/manual/sell", json={"symbol": "AAPL", "shares": 10_000})
@@ -47,6 +47,23 @@ async def test_fill_now_buys_at_the_next_open_then_a_sell_of_some_shares_queues(
 
 async def test_a_strategy_step_runs_the_rules_and_says_why_for_each_listing(priced):
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
-    [d] = (await priced.post("/api/ledgers/step")).json()
+    body = (await priced.post("/api/ledgers/step")).json()
+    assert body["off"] is None
+    [d] = body["decisions"]
     assert (d["symbol"], d["action"], d["reason"]) == ("AAPL", "skip", "no lean yet: analyse it first")
     assert [x["symbol"] for x in (await priced.get("/api/ledgers/decisions")).json()] == ["AAPL"]
+
+
+@pytest.mark.frozen_lines
+async def test_a_frozen_strategy_step_decides_nothing_and_says_so(priced):
+    from oracle.services.paper_service import frozen_note
+
+    await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
+    assert (await priced.post("/api/ledgers/step")).json() == {"off": frozen_note("strategy"), "decisions": []}
+    assert (await priced.get("/api/ledgers/decisions")).json() == []
+
+
+async def test_index_step_says_why_it_bought_nothing_without_acwi_in_the_universe(priced):
+    [d] = (await priced.post("/api/ledgers/index/step")).json()
+    assert (d["symbol"], d["action"]) == ("ACWI", "skip") and "refresh the universe" in d["reason"]
+    assert [x["symbol"] for x in (await priced.get("/api/ledgers/decisions?account=index")).json()] == ["ACWI"]

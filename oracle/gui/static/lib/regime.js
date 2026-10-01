@@ -3,9 +3,9 @@
 // decisions with what each lean was made of. The regime-ai line's card adds the day's model
 // tilt beside the rules weights, its reason or why there was none, and the model it runs on; the
 // regime-v2 line's says how it rotates out of stale holdings; the core-sat line's shows its two
-// sleeves (the equal-weight core and the regime satellite) and the core's next rebalance. The
+// sleeves (the equal-weight core, never rebalanced, and the regime satellite, why it holds nothing). The
 // core-sat and laya cards say what Laya's kept predictive test found and the weight it gives in
-// core-sat's satellite. A frozen line (regime-ai) keeps its card and history but has no switch.
+// core-sat's satellite. A frozen line (regime-ai, regime, regime-v2) keeps its card and history but has no switch.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, showError, clearError, companyLink } from "./dom.js";
@@ -35,8 +35,9 @@ const LINES = {
       + "methods (trend, momentum, reversion, low volatility), not to the steady buy-and-hold score, and it rotates "
       + "out of long-held, clearly weaker holdings. Compare its record with the Regime line's to see what they add." },
   "core-sat": { name: "Core-sat", path: "/api/ledgers/core-sat", step: "Core-sat step",
-    about: "Here the blend runs only the satellite, a quarter of the money in its own cash; the other three "
-      + "quarters are an equal-weight buy and hold of the main list's companies, set back to equal weight once a year." },
+    about: "Here the blend runs only the satellite, in its own cash, and its share is 0 until a signal passes "
+      + "the confirm test and then six months as its own paper line; the core, an equal-weight buy and hold of the "
+      + "main list's companies, holds the rest and is never rebalanced." },
   laya: { name: "Laya", path: "/api/ledgers/laya", step: "Laya step",
     about: "Here only one method weighs: Laya's daily news score (its combined score from the predictive test, "
       + "each segment's weights fitted on the trailing two years), on the main list's companies, kept running as "
@@ -179,19 +180,19 @@ function rotation(r) {
     + "a step. The freed slot is bought by the usual rules once the sale's cash is back.");
 }
 
-// core-sat's two sleeves: each one's cash and holdings, and when the core next rebalances.
+// core-sat's two sleeves: each one's cash and holdings, and why the satellite is empty.
 function sleeves(s, base) {
   if (!s) return null;
   const row = (label, x) => el("tr", null, el("td", null, label), el("td", { class: "num" }, money(x.capital, 0)),
     el("td", { class: "num" }, money(x.cash, 0)), el("td", { class: "num" }, money(x.holdings, 0)),
     el("td", { class: "num" }, String(x.positions)), el("td", { class: "num" }, String(x.pending)));
-  const next = s.core.next_rebalance
-    ? `The core next sets itself back to equal weight on or after ${s.core.next_rebalance} (trims first, then the laggards once they fill).`
-    : "The core buys its equal shares at the next step.";
+  const core = "The core buys its equal shares once and holds them: it is never set back to equal weight. "
+    + "Core cash left idle (money the satellite handed over) is topped up towards equal shares, never by selling.";
   return el("div", null,
     table([["Sleeve"], [`Start (${base})`, null, 1], ["Cash", null, 1], ["Holdings", null, 1], ["Positions", null, 1],
       ["Waiting", null, 1]], [row(`Core (${s.core.listings} companies)`, s.core), row("Satellite", s.satellite)]),
-    el("p", { class: "dim small" }, next));
+    el("p", { class: "dim small" }, core),
+    s.satellite.note ? el("p", { class: "small warn-text" }, `Satellite: ${s.satellite.note}.`) : null);
 }
 
 // What Laya's kept test found and the weight it gives in core-sat's satellite (0 unless it passed

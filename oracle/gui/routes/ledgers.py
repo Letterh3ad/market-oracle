@@ -11,8 +11,8 @@ from oracle.services.activity_service import JobRunner, queue_stale_research, st
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
-    equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
+    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, STRATEGY, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    equity_history, fill_pending, frozen_note, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
@@ -20,7 +20,7 @@ from oracle.services.settings_service import (
     set_ai_account, set_ai_research, set_core_sat_account, set_laya_account, set_regime_account, set_regime_ai_account,
     set_regime_v2_account,
 )
-from oracle.services.tick_service import discovery_line
+from oracle.services.tick_service import discovery_line, run_index_step
 
 router = APIRouter(prefix="/api/ledgers")
 WAITING = "waiting for the next opening price after it was placed"
@@ -61,9 +61,17 @@ async def fill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
 
 
 @router.post("/step")
-async def step(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    """Run the strategy rules over the watched listings' leans and queue what they decide."""
-    return [asdict(d) for d in strategy_step(ctx)]
+async def step(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Run the strategy rules over the watched listings' leans and queue what they decide, unless frozen."""
+    decisions = strategy_step(ctx)
+    return {"off": frozen_note(STRATEGY) if decisions is None else None,
+            "decisions": [asdict(d) for d in decisions or []]}
+
+
+@router.post("/index/step")
+async def step_index(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """Buy ACWI with the index account's cash when it holds nothing and nothing waits."""
+    return [asdict(d) for d in run_index_step(ctx)]
 
 
 @router.post("/ai/step")
@@ -117,7 +125,7 @@ async def get_regime_v2(limit: int = Query(default=20, ge=1, le=200), ctx: AppCo
 
 @router.post("/core-sat/step", status_code=202)
 async def step_core_sat(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
-    """Queue the core-sat account's step (the core's rebalance when due, the satellite's leans) on the tick queue."""
+    """Queue the core-sat account's step (the core's first buy or top-up, the satellite's leans) on the tick queue."""
     return shapes.job(submit_line_step(ctx, runner, CORE_SAT))
 
 
@@ -129,7 +137,7 @@ async def put_core_sat(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> di
 
 @router.get("/core-sat")
 async def get_core_sat(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
-    """The regime card of the satellite's book, with each sleeve's cash and holdings and the core's next rebalance."""
+    """The regime card of the satellite's book, with each sleeve's cash and holdings and why the satellite is empty."""
     return _card(ctx, limit, CORE_SAT)
 
 

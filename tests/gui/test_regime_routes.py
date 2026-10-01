@@ -2,7 +2,8 @@ from datetime import date
 
 from oracle.analysts.signals import AnalystSignal
 from oracle.services import regime_tilt
-from oracle.services.regime_service import FROZEN_NOTE, NO_MOOD, REGIME_AI_OFF, REGIME_OFF, REGIME_V2_OFF
+from oracle.services.paper_service import frozen_note
+from oracle.services.regime_service import NO_MOOD, REGIME_AI_OFF, REGIME_OFF, REGIME_V2_OFF
 from oracle.store.signals import SignalRepo
 from tests.fakes.regime import thaw, use_stub
 from tests.fakes.tilt_model import TiltModel
@@ -94,7 +95,7 @@ async def test_the_regime_ai_account_is_on_by_default_and_listed_with_its_model(
     card = (await loaded.get("/api/ledgers/regime-ai")).json()
     assert (card["account"], card["enabled"], card["frozen"], card["tilt"], card["model"], card["research_profile"]) == (
         "regime-ai", False, True, None, "", "default")
-    assert card["note"] == FROZEN_NOTE.format("regime-ai")
+    assert card["note"] == frozen_note("regime-ai")
 
 
 async def test_a_regime_ai_step_is_a_job_that_tilts_once_and_the_card_shows_the_tilt(ctx, priced, monkeypatch):

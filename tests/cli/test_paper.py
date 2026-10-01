@@ -188,3 +188,17 @@ def test_the_laya_step_prints_its_mood_and_layas_verdict_and_off_says_so(run, mo
                           encoding="utf-8")
     _, out, _ = run("paper", "step", "--account", "laya")
     assert out.startswith("the laya account is off")
+
+
+@pytest.mark.frozen_lines
+def test_a_frozen_lines_step_says_it_is_frozen(run):
+    for account in ("strategy", "regime", "regime-v2"):
+        code, out, _ = run("paper", "step", "--account", account)
+        assert code == 0 and out.startswith(f"the {account} account is frozen"), account
+
+
+def test_the_index_step_says_what_it_did(run):
+    code, out, _ = run("paper", "step", "--account", "index")
+    assert code == 0 and "ACWI" in out and "refresh the universe" in out
+    _, out, _ = run("paper", "show", "--account", "index")
+    assert out.startswith("index: equity 10,000.00")

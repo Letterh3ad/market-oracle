@@ -15,6 +15,14 @@ def _in_a_temp_folder(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _lines_as_they_stepped(monkeypatch, request):
+    """strategy, regime and regime-v2 froze on 2026-10-01 (regime-ai before): most tests pin the code
+    they stepped with, so only regime-ai stays frozen. A test of the freeze is marked `frozen_lines`."""
+    if request.node.get_closest_marker("frozen_lines") is None:
+        monkeypatch.setattr("oracle.services.paper_service.FROZEN", frozenset({"regime-ai"}))
+
+
+@pytest.fixture(autouse=True)
 def _public_dns(monkeypatch):
     """Fake hosts resolve to a public address, so the page reader's DNS check never asks the network."""
     monkeypatch.setattr("oracle.research.web.resolve", lambda host: ["93.184.216.34"])
