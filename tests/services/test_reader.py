@@ -11,7 +11,7 @@ from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning
 from oracle.services.jobs_service import single_flight
 from oracle.services.laya_service import laya_scores
-from oracle.services.reader_service import PairGroup, last_reader_run, plan_reader, score_reader
+from oracle.services.reader_service import PairGroup, last_reader_run, plan_reader, score_reader, waits_anywhere
 from oracle.services.universe_service import refresh_universe
 from oracle.services.watch_service import watch
 from oracle.store.articles import ArticleRepo
@@ -175,6 +175,60 @@ async def test_the_job_waits_for_model_work_anywhere_and_a_scheduled_tick(ctx, r
     ctx.config = replace(ctx.config, schedule=ScheduleConfig(enabled=False))
     monkeypatch.setattr(laya_service, "live_model_work", lambda c, locks: "research" if "tick" in locks else None)
     assert _reader_waits(ctx, runner) == "research", "another process's research"
+
+
+def test_the_reader_and_laya_history_wait_on_each_others_locks_never_their_own(ctx):
+    from oracle.services.laya_history_service import JOB as HISTORY_JOB, history_waits_anywhere
+
+    assert waits_anywhere(ctx) is None and history_waits_anywhere(ctx) is None
+    with single_flight(ctx, HISTORY_JOB, 60):
+        assert waits_anywhere(ctx) == "laya history"
+        assert history_waits_anywhere(ctx) is None, "not on its own lock"
+    with single_flight(ctx, reader_service.JOB, 60):
+        assert history_waits_anywhere(ctx) == "reader"
+        assert waits_anywhere(ctx) is None, "not on its own lock"
+
+
+async def test_the_reader_and_laya_history_jobs_wait_for_a_regime_ai_backtest(ctx, runner):
+    import asyncio
+
+    from oracle.services.activity_service import BACKTEST_SEP, REGIME_AI_PART, _laya_history_waits
+
+    hold = asyncio.Event()
+
+    async def replaying(c):
+        await hold.wait()
+
+    plain = runner.submit("backtest", "Backtest main", replaying, subject=BACKTEST_SEP.join(("main", "a", "b", "10.0", "0.0")))
+    await asyncio.sleep(0.05)
+    assert _reader_waits(ctx, runner) is None and _laya_history_waits(runner) is None, "a plain backtest uses no model"
+    hold.set()
+    await runner.wait(plain.id)
+    hold.clear()
+    ai = runner.submit("backtest", "Backtest main, with regime AI", replaying,
+                       subject=BACKTEST_SEP.join(("main", "x", "y", "10.0", "0.0", REGIME_AI_PART)))
+    await asyncio.sleep(0.05)
+    assert _reader_waits(ctx, runner) == _laya_history_waits(runner) == "Backtest main, with regime AI"
+    hold.set()
+    await runner.wait(ai.id)
+
+
+def test_the_last_run_says_why_it_stopped_after_an_error_or_a_takeover(ctx, pairs):
+    class Broken(FakeReader):
+        def __init__(self, exc):
+            super().__init__()
+            self.exc = exc
+
+        def score(self, items):
+            raise self.exc
+
+    with pytest.raises(RuntimeError):
+        score_reader(ctx, groups=pairs, reader=Broken(RuntimeError("disk full")))
+    assert last_reader_run(ctx).stopped == "failed: disk full"
+    assert last_reader_run(ctx).summary.startswith("stopped early (failed: disk full)")
+    with pytest.raises(JobAlreadyRunning):
+        score_reader(ctx, groups=pairs, reader=Broken(JobAlreadyRunning("reader was taken over")))
+    assert last_reader_run(ctx).stopped == "taken over by another process"
 
 
 async def test_laya_off_refuses_the_job_at_once(ctx, runner):

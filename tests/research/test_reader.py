@@ -4,7 +4,8 @@ import httpx
 import pytest
 
 from oracle.research.laya import LayaInput
-from oracle.research.reader import CODES, OllamaReader, ReaderError, decode, reader_tag, schema
+from oracle.research.reader import CODES, TIMEOUT_S, OllamaReader, ReaderError, decode, reader_tag, schema
+from oracle.services import reader_service
 
 ITEMS = [LayaInput("Toyota Motor (7203.T)", "Toyota recalls 1m cars"), LayaInput("Apple (AAPL)", "Apple beats"),
          LayaInput("Linde (LIN)", "van der Linde crowned champion")]
@@ -83,7 +84,9 @@ def test_a_call_that_times_out_leaves_its_batch_unscored():
     def slow(request):
         raise httpx.ReadTimeout("slow")
     reader = OllamaReader("m", "http://x", transport=httpx.MockTransport(slow))
-    assert reader.score(ITEMS) == [None, None, None] and reader.stats.unparsed == 3 and reader.stats.calls == 2
+    assert reader.score(ITEMS) == [None, None, None] and reader.stats.unparsed == 3
+    assert reader.stats.calls == 1, "no retry after a timeout: a Cancel answers within one timeout"
+    assert TIMEOUT_S <= 300 and reader_service.LEASE_S >= 2 * TIMEOUT_S
 
 
 def test_a_missing_model_or_ollama_is_an_error():

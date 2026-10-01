@@ -34,7 +34,7 @@ from oracle.services.history_service import backfill_history
 from oracle.services.industry_research_service import BUTTON_FRESH_H, research_industry
 from oracle.services.laya_history_service import score_history
 from oracle.services.laya_service import MODEL_TAG, score_company
-from oracle.services.laya_test_service import MAIN, OWN, SENSITIVITY, keep_laya_test, run_laya_test
+from oracle.services.laya_test_service import MAIN, OWN, SENSITIVITY, check_test_model, keep_laya_test, run_laya_test
 from oracle.services.reader_service import score_reader, waits_anywhere
 from oracle.services.models_service import check_model_profile
 from oracle.services.replay_score import update_study_prices
@@ -602,7 +602,7 @@ def submit_laya_history(ctx: AppContext, runner: JobRunner, watchlist: str = DEF
     stopped = threading.Event()
 
     async def work(c: AppContext):
-        r = score_history(c, name, allow_cpu=allow_cpu, stop=stopped.is_set, busy=lambda: _model_work(runner),
+        r = score_history(c, name, allow_cpu=allow_cpu, stop=stopped.is_set, busy=lambda: _laya_history_waits(runner),
                           on_progress=stage.append)
         if r.stopped and r.stopped != "cancelled":
             raise ServiceError(r.summary)
@@ -621,6 +621,7 @@ def submit_laya_test(ctx: AppContext, runner: JobRunner, sensitivity: bool = Fal
     if sensitivity and own_only:
         raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     name = watchlist_symbols(ctx, watchlist)[0]
+    check_test_model(ctx, model)
     run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
     stage: list[str] = []
 
@@ -841,7 +842,19 @@ def _history_waits(ctx: AppContext, runner: JobRunner) -> str | None:
 def _reader_waits(ctx: AppContext, runner: JobRunner) -> str | None:
     """Model work in this app or any process, or a scheduled run due within TICK_QUIET (or due and
     not yet run): the stronger reader leaves Ollama to it."""
-    return _model_work(runner) or waits_anywhere(ctx)
+    return _laya_history_waits(runner) or waits_anywhere(ctx)
+
+
+def _laya_history_waits(runner: JobRunner) -> str | None:
+    """In-app work Laya's history scoring and the stronger reader give way to: model work, and a
+    regime-AI backtest (it asks Ollama's model every replayed day)."""
+    if live := _model_work(runner):
+        return live
+    try:
+        return next((j.label for j in list(runner.current()) if j.state == "running" and j.kind == "backtest"
+                     and (j.subject or "").endswith(BACKTEST_SEP + REGIME_AI_PART)), None)
+    except RuntimeError:
+        return None
 
 
 def scheduled_run_near(ctx: AppContext) -> str | None:

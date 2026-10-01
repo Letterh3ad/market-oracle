@@ -25,8 +25,9 @@ _LETTER = {"up": "u", "down": "d", "none": "n"}
 _EVENTS = list(EVENT_TYPES)
 CODES = [NOT_ABOUT] + [f"{_LETTER[d]}{n}" for d in DIRECTIONS for n in range(len(_EVENTS))]
 _DIRECTION = {v: k for k, v in _LETTER.items()}
-TIMEOUT_S = 900.0
-"""A call on a model partly on the CPU (qwen2.5:32b) reads a batch in minutes."""
+TIMEOUT_S = 300.0
+"""qwen2.5:32b, 70% on the CPU, reads a batch of 25 in about 26 s and loads in 16 to 23 s; a call
+this long has stalled. A timed-out batch is not asked again, so a Cancel answers within one."""
 KEEP_ALIVE = "30m"
 """How long Ollama keeps the reader loaded between calls: a model partly on the CPU takes about a
 minute to load, so a long run keeps it; the job unloads it itself while live work runs."""
@@ -74,6 +75,10 @@ def decode(code: object) -> LayaScore | None:
     return LayaScore(1.0, direction, {direction: 1.0}, _EVENTS[n], 1.0)
 
 
+class _TimedOut(list):
+    """A batch's answers (all None) from a call that timed out: not asked again."""
+
+
 class ReaderError(RuntimeError):
     """Ollama cannot be reached or has no such model."""
 
@@ -106,7 +111,7 @@ class OllamaReader:
     def score(self, items: list[LayaInput]) -> list[LayaScore | None]:
         out = self._ask(items)
         missed = [n for n, s in enumerate(out) if s is None]
-        if missed:
+        if missed and not isinstance(out, _TimedOut):
             again = self._ask([items[n] for n in missed])
             for n, s in zip(missed, again):
                 out[n] = s
@@ -125,7 +130,7 @@ class OllamaReader:
             response = self._http.post(self._url, json=payload)
         except httpx.TimeoutException:
             # A slow call (live work sharing Ollama) loses its batch, not a day-long run.
-            return [None] * len(items)
+            return _TimedOut([None] * len(items))
         except httpx.TransportError as exc:
             raise ReaderError(f"Ollama is not reachable at {self._url} ({exc}): start it with `ollama serve`") from exc
         finally:

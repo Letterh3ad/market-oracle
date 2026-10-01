@@ -29,15 +29,18 @@ from oracle.services.industry_research_service import KIND_RELATION, relation_fo
 from oracle.services.industry_service import Related
 from oracle.services.laya_features import daily_features
 from oracle.services.laya_history_service import MapSubject, map_subjects
+from oracle.research.reader import reader_tag
+from oracle.services import laya_service
 from oracle.services.laya_service import MODEL_TAG, ScoredArticle
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.laya import LayaRepo
 from oracle.store.laya_tests import LayaTestRepo
 
 __all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "OWN", "SENSITIVITY", "TEST_START", "FeatureIC", "HorizonResult",
            "LayaTest", "Panel", "SegmentRow", "build_panel", "horizon_result", "keep_laya_test", "laya_tests",
-           "relation_for", "run_laya_test"]
+           "check_test_model", "own_coverage", "relation_for", "run_laya_test", "testable_models"]
 
 TEST_START = date(2022, 9, 21)
 HORIZONS = ((5, 7), (20, 28))
@@ -53,6 +56,10 @@ SENSITIVITY_RELATIONS = ("own", "competitor", "supplier", "customer", "industry"
 MAIN_LINK_SOURCES = ("user", "discovery", "chat")
 """Links the main run counts; 03's `filing` and `laya` links wait for the sensitivity run."""
 INDUSTRY_SOURCES = ("industry", "industry_group")
+READER_PREFIX = "ollama:"
+READER_CAVEAT = (" The stronger reader scores a headline it judges not about the company as 0 (an implicit "
+                 "relevance filter Laya does not have) and reads headlines only (Laya read headline and snippet), so a "
+                 "gap between the two readers may come from those as well as from reading direction better.")
 BASELINE = "own_attention"
 """log(1 + own articles in the window): news attention alone, Laya's reading left out."""
 MOMENTUM = "own_momentum"
@@ -206,6 +213,9 @@ class LayaTest:
     t_method: str = "Newey-West (Bartlett) with h lags over the daily ICs (overlapping windows)"
     caveat: str = CAVEAT
     id: int | None = None
+    own_coverage: dict[str, int] | None = None
+    """{"needed": the main list's own backfill pairs, "scored": those `model` has a score for}: two
+    models' results compare like for like only with the same coverage."""
 
 
 def _features(relations: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -356,8 +366,31 @@ def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity
     labels = [r.verdict for r in results]
     overall = "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
     run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
+    caveat = CAVEAT + (READER_CAVEAT if model.startswith(READER_PREFIX) else "")
     return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(results),
-                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()))
+                    overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()), caveat=caveat,
+                    own_coverage=own_coverage(ctx, panel.mains, model))
+
+
+def own_coverage(ctx: AppContext, mains: Sequence[str], model: str) -> dict[str, int]:
+    """The main list's own backfill pairs, and how many of them `model` has scored."""
+    repo, needed, missing = LayaRepo(ctx.conn), 0, 0
+    for m in mains:
+        ids = list(dict.fromkeys(company_history(ctx, m)))
+        needed += len(ids)
+        missing += repo.unscored_count(laya_service.primary(ctx, m), model, ids)
+    return {"needed": needed, "scored": needed - missing}
+
+
+def testable_models(ctx: AppContext) -> list[str]:
+    """The models a test may read: Laya's tag and the configured stronger reader's."""
+    return [MODEL_TAG, reader_tag(ctx.config.laya.reader_model)]
+
+
+def check_test_model(ctx: AppContext, model: str) -> str:
+    if model not in (known := testable_models(ctx)):
+        raise InvalidQuery(f"no scores are kept under {model!r}; the test reads {' or '.join(known)}")
+    return model
 
 
 def keep_laya_test(ctx: AppContext, test: LayaTest) -> LayaTest:

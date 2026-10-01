@@ -5,7 +5,7 @@ import argparse
 from oracle.services.context import AppContext
 from oracle.services.laya_history_service import plan_history, score_history
 from oracle.services.laya_service import MODEL_TAG, laya_scores, score_company
-from oracle.services.laya_test_service import LayaTest, keep_laya_test, laya_tests, run_laya_test
+from oracle.services.laya_test_service import LayaTest, check_test_model, keep_laya_test, laya_tests, run_laya_test
 from oracle.services.watch_service import DEFAULT_LIST
 
 UNCALIBRATED = "probabilities are uncalibrated"
@@ -82,7 +82,7 @@ def test_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
             print(format_test(t))
         return 0
     t = keep_laya_test(ctx, run_laya_test(ctx, args.list, sensitivity=args.sensitivity, own_only=args.own_only,
-                                          model=args.model,
+                                          model=check_test_model(ctx, args.model),
                                           on_progress=lambda line: print(line, flush=True)))
     print(format_test(t))
     return 0
@@ -92,11 +92,21 @@ def _num(x: float | None, fmt: str = "+.4f") -> str:
     return "n/a" if x is None else format(x, fmt)
 
 
+def coverage_line(c: dict | None) -> str | None:
+    if not c:
+        return None
+    gap = c["needed"] - c["scored"]
+    return (f"own pairs scored by this model: {c['scored']} of {c['needed']}"
+            + (f"; {gap} not scored, so it is not like for like with a model that scored them all" if gap else ""))
+
+
 def format_test(t: LayaTest) -> str:
     lines = [f"Laya predictive test, {t.label}: {t.verdict}",
              f"model {t.model}; {t.start.isoformat()} to {t.end.isoformat()}; {t.companies} companies; pairs counted "
              + ", ".join(f"{r} {n}" for r, n in t.articles.items()),
              f"t-stat: {t.t_method}"]
+    if line := coverage_line(t.own_coverage):
+        lines.append(line)
     for h in t.horizons:
         beats = {True: "beats", False: "does not beat", None: "cannot be set against"}
         lines += ["", f"{h.horizon}-day excess return (features over {h.lookback} days): {h.verdict}: IC {_num(h.ic)}, "

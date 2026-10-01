@@ -30,7 +30,7 @@ def cli(tmp_path, capsys, monkeypatch):
 
 
 def test_plan_counts_and_estimates(cli):
-    code, out, _ = cli("reader", "plan", "--own-only")
+    code, out, _ = cli("reader", "plan")
     assert code == 0 and "0 of 0 headlines to read" in out and "the bake-off's rate for qwen2.5:32b" in out
 
 
@@ -43,7 +43,9 @@ def test_run_yields_to_live_work_in_any_process_and_exits_1_when_stopped(cli, mo
 
     monkeypatch.setattr(reader_cli, "score_reader", fake)
     monkeypatch.setattr(reader_cli, "waits_anywhere", lambda ctx: "research AAPL")
-    code, out, _ = cli("reader", "run", "--own-only")
+    code, out, _ = cli("reader", "run")
     assert code == 1 and "stopped early (cancelled)" in out
     [(watchlist, busy, own_only)] = seen
-    assert watchlist == "main" and own_only and busy() == "research AAPL"
+    assert watchlist == "main" and own_only and busy() == "research AAPL", "own news only unless asked"
+    cli("reader", "run", "--all")
+    assert seen[1][2] is False

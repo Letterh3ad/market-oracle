@@ -416,6 +416,12 @@ def test_the_stronger_readers_own_news_runs_the_own_feature_alone_beside_laya(ct
     reader = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END)
     laya_own = run_laya_test(ctx, model=MODEL, own_only=True, end=END)
     laya_main = run_laya_test(ctx, model=MODEL, end=END)
+    assert reader.own_coverage == laya_own.own_coverage and reader.own_coverage["needed"] == reader.own_coverage["scored"] > 0
+    assert "headlines only" in reader.caveat and "headlines only" not in laya_own.caveat
+    ctx.conn.execute("DELETE FROM laya_scores WHERE model = 'ollama:fake' AND article_id = "
+                     "(SELECT MIN(article_id) FROM laya_scores WHERE model = 'ollama:fake' AND relation = 'own')")
+    partial = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END)
+    assert partial.own_coverage["scored"] < partial.own_coverage["needed"] == reader.own_coverage["needed"]
     for t in (reader, laya_own):
         five = t.horizons[0]
         assert t.run == "own" and "own news only" in t.label and set(t.articles) == {"own"}
@@ -451,7 +457,10 @@ def test_a_thin_segment_is_named_and_left_out(ctx):
 async def test_jobs_score_and_test_and_retry_rebuilds_them(ctx, monkeypatch):
     backfill(ctx, "HMC", [("Honda shares rise", date(2023, 1, 3))])
     monkeypatch.setattr("oracle.services.laya_service.load_scorer", lambda c: FakeLaya(MODEL, "cuda"))
+    monkeypatch.setattr("oracle.services.laya_test_service.testable_models", lambda c: [MODEL, "ollama:qwen2.5:32b"])
     runner = JobRunner(ctx)
+    with pytest.raises(InvalidQuery, match="no scores are kept under 'ollama:qwen2.5:3b'"):
+        submit_laya_test(ctx, runner, model="ollama:qwen2.5:3b")
     job = submit_laya_history(ctx, runner)
     done = await runner.wait(job.id)
     assert done.state == "done" and done.result.scored == len(MAINS)

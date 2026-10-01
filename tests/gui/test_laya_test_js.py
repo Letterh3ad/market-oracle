@@ -79,6 +79,17 @@ def test_the_sensitivity_button_starts_that_run_and_the_estimate_reads_the_plan(
     assert "sensitivity: FAIL" in text and "about 2.0 h at 12.5 ms a pair" in text
 
 
+def test_a_result_shows_how_many_own_pairs_its_model_scored():
+    text, red = run("""
+        ANSWERS["GET /api/laya/tests"].tests[0].own_coverage = { needed: 10, scored: 8 };
+        section.start(); await settle();
+        const red = node.all((n) => n.tag === "p" && n.className.includes("down")).map((n) => n.textContent);
+        console.log(JSON.stringify([node.textContent, red]));
+    """)
+    line = "Own pairs scored by this model: 8 of 10; 2 not scored, so it is not like for like"
+    assert line in text and any(r.startswith(line) for r in red)
+
+
 def test_the_test_runs_on_the_picked_models_scores_and_own_news_only():
     asked, options = run("""
         ANSWERS["GET /api/laya/tests"].models = ["laya-multilingual@e4e9ddf", "ollama:qwen2.5:32b"];

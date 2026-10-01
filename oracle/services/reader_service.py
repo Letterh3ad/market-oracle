@@ -19,8 +19,8 @@ from oracle.research.laya import LayaInput
 from oracle.research.reader import BATCH, OllamaReader, ReaderError, reader_tag
 from oracle.services import laya_service
 from oracle.services.context import AppContext
-from oracle.services.errors import InvalidQuery
-from oracle.services.laya_history_service import HISTORY_WAITS_FOR, PairGroup, history_pairs
+from oracle.services.errors import InvalidQuery, JobAlreadyRunning
+from oracle.services.laya_history_service import HISTORY_WAITS_FOR, JOB as HISTORY_JOB, READER_JOB, PairGroup, history_pairs
 from oracle.services.jobs_service import single_flight
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.db import to_utc_iso
@@ -30,7 +30,9 @@ from oracle.store.meta import MetaRepo
 __all__ = ["BAKE_OFF_RATES", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
            "plan_reader", "reader_groups", "reader_tag", "score_reader", "waits_anywhere"]
 
-JOB = "reader"
+JOB = READER_JOB
+READER_WAITS_FOR = (*HISTORY_WAITS_FOR, HISTORY_JOB)
+"""Job locks (any process) the reader gives way to: what Laya's history scoring waits for, and that scoring."""
 LEASE_S = 1800.0
 LAST_RUN = "reader_last_run"
 BAKE_OFF_RATES = {"qwen3:4b-instruct-2507-q8_0": 16.6, "gemma4:12b": 3.79, "qwen2.5:32b": 1.02}
@@ -53,7 +55,7 @@ def waits_anywhere(ctx: AppContext) -> str | None:
     # Imported here: the activity module imports this one.
     from oracle.services.activity_service import scheduled_run_near
 
-    return laya_service.live_model_work(ctx, HISTORY_WAITS_FOR) or scheduled_run_near(ctx)
+    return laya_service.live_model_work(ctx, READER_WAITS_FOR) or scheduled_run_near(ctx)
 
 
 def load_reader(ctx: AppContext, model: str | None = None) -> OllamaReader:
@@ -208,7 +210,14 @@ def score_reader(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, own_only: bo
                     + _eta(done, len(todo), run.model_seconds))
             run.copied = _copy_pairs(ctx, groups, reader.tag)
         except ReaderError as exc:
+            run.stopped = f"failed: {exc}"
             raise InvalidQuery(str(exc)) from exc
+        except JobAlreadyRunning:
+            run.stopped = "taken over by another process"
+            raise
+        except Exception as exc:
+            run.stopped = f"failed: {exc}"
+            raise
         finally:
             if owned:
                 reader.close()

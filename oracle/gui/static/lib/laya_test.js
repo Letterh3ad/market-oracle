@@ -40,12 +40,19 @@ function horizon(h) {
   ];
 }
 
+function coverage(c) {
+  const gap = c.needed - c.scored;
+  return el("p", { class: gap ? "small down" : "small" }, `Own pairs scored by this model: ${c.scored} of ${c.needed}`
+    + (gap ? `; ${gap} not scored, so it is not like for like with a model that scored them all.` : "."));
+}
+
 function result(t) {
   const pairs = Object.entries(t.articles).map(([r, n]) => `${r} ${n}`).join(", ");
   return el("div", null,
     el("h3", null, `${t.label}: `, el("span", { class: tone(t.verdict) }, t.verdict)),
     el("p", { class: "dim small" }, `Model ${t.model}; ${t.start} to ${t.end}; ${t.companies} companies; pairs counted `
       + `${pairs || "none"}. Run ${String(t.run_at).slice(0, 16)}. t-stat: ${t.t_method}.`),
+    ...(t.own_coverage ? [coverage(t.own_coverage)] : []),
     ...t.horizons.flatMap(horizon),
     el("p", { class: "dim small" }, t.caveat));
 }
