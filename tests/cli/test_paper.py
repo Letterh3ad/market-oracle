@@ -175,3 +175,16 @@ def test_the_regime_v2_step_prints_its_mood_and_off_says_so(run, monkeypatch):
                           encoding="utf-8")
     _, out, _ = run("paper", "step", "--account", "regime-v2")
     assert out.startswith("the regime-v2 account is off")
+
+
+def test_the_laya_step_prints_its_mood_and_layas_verdict_and_off_says_so(run, monkeypatch):
+    from tests.fakes.regime import use_stub
+
+    built = use_stub(monkeypatch, leans={"VOD.L": ("hold", 0.5, {"laya": 0.1})})
+    code, out, _ = run("paper", "step", "--account", "laya")
+    assert code == 0 and out.startswith("Laya: mood calm_up on 2026-09-17") and built[0].account == "laya"
+    assert "Laya's predictive test: none kept yet; no predictive test kept for this model: weight 0 in core-sat" in out
+    run.config.write_text(run.config.read_text(encoding="utf-8") + "[laya_account]\nenabled = false\n",
+                          encoding="utf-8")
+    _, out, _ = run("paper", "step", "--account", "laya")
+    assert out.startswith("the laya account is off")

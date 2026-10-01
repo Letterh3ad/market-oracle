@@ -154,6 +154,12 @@ enabled = true             # false: the regime-v2 account decides nothing each t
 [core_sat_account]
 enabled = true             # false: the core-sat account decides nothing each tick
 
+# The laya paper account: Laya's daily news score alone traded on the main list's companies under
+# the strategy's rules, as evidence whatever its predictive test said. Its weight in core-sat comes
+# only from that test's kept verdict, never from a setting.
+[laya_account]
+enabled = true             # false: the laya account decides nothing each tick
+
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]
 rotation_min_hold_days = 20   # trading days a holding is kept before it can be rotated out (1 to 250)

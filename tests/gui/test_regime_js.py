@@ -187,3 +187,31 @@ def test_a_frozen_card_keeps_its_reading_but_has_no_switch_or_model_pick():
     """, card)
     assert "frozen" in text and "Mood on 2026-09-28" in text and "Regime-AI decisions" in text
     assert found is False
+
+
+FAILED = {"verdict": "FAIL", "useful": False, "model": "laya", "test_id": 7, "run_at": "2026-10-01T00:00:00Z",
+          "why": "FAIL: weight 0", "weights": {"calm_up": 0.0},
+          "note": "Laya's predictive test: FAIL (test 7, 2026-10-01); FAIL: weight 0 in core-sat"}
+
+
+def test_the_laya_card_names_the_verdict_and_weight_0_in_core_sat_and_saves_its_own_switch():
+    card = {**CARD, "account": "laya", "laya": FAILED}
+    text, puts = run("""
+        const box = labelled(node, "Laya account on");
+        box.checked = false; box.fire("change"); await settle();
+        console.log(JSON.stringify([node.textContent, asked]));
+    """, card)
+    for piece in ("Laya reading", "Laya FAIL: weight 0 in core-sat", "FAIL (test 7, 2026-10-01)",
+                  "Laya's daily news score", "Laya decisions"):
+        assert piece in text, piece
+    assert puts == ["PUT /api/ledgers/laya"]
+
+
+def test_the_core_sat_card_shows_laya_s_verdict_and_weight():
+    passed = {**FAILED, "verdict": "PASS", "useful": True,
+              "note": "Laya's predictive test: PASS (test 8, 2026-10-01); passed and beat both baselines: weighs in "
+                      "core-sat's satellite (calm_up 0.125)"}
+    text = run("console.log(JSON.stringify(node.textContent));", {**CORE_SAT_CARD, "laya": passed})
+    assert "Laya PASS" in text and "weight 0" not in text and "calm_up 0.125" in text
+    text = run("console.log(JSON.stringify(node.textContent));", {**CORE_SAT_CARD, "laya": FAILED})
+    assert "Laya FAIL: weight 0 in core-sat" in text

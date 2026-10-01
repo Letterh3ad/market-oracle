@@ -37,3 +37,9 @@ class LayaTestRepo:
         return [TestRow(*r) for r in self._conn.execute(
             "SELECT id, run, model, verdict, result, run_at FROM laya_tests WHERE id IN "
             "(SELECT MAX(id) FROM laya_tests GROUP BY run, model) ORDER BY run, model")]
+
+    def kept_for(self, run: str, model: str) -> list[TestRow]:
+        """Every kept result of `run` for `model`, newest first."""
+        return [TestRow(*r) for r in self._conn.execute(
+            "SELECT id, run, model, verdict, result, run_at FROM laya_tests WHERE run = ? AND model = ? "
+            "ORDER BY id DESC", (run, model))]

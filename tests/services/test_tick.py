@@ -50,7 +50,7 @@ def _states(run):
 async def test_a_tick_runs_every_stage_in_order(ctx):
     run = await run_tick(ctx)
     assert [s.name for s in run.stages] == list(STAGES) == [
-        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step", "ai_step", "industry"]
+        "prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step", "discover", "research", "step", "ai_step", "industry"]
     assert set(_states(run).values()) == {"ok"} and run.outcome == "ok"
     # The step ran on the analysis the same tick produced.
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"]
@@ -96,7 +96,7 @@ async def test_the_frozen_regime_ai_stage_decides_nothing_and_says_so(ctx, monke
     built = use_stub(monkeypatch)
     stage = next(s for s in (await run_tick(ctx)).stages if s.name == "regime_ai_step")
     assert (stage.state, stage.summary) == ("ok", "regime-ai account frozen: nothing decided")
-    assert [b.account for b in built] == ["regime", "regime-v2", "core-sat"]
+    assert [b.account for b in built] == ["regime", "regime-v2", "core-sat", "laya"]
 
 
 async def test_a_failed_tilt_is_the_regime_ai_stages_error_and_a_lagging_day_a_warning(ctx, monkeypatch):
@@ -121,7 +121,7 @@ async def test_a_failing_regime_step_leaves_every_other_stage_running(ctx, monke
     monkeypatch.setattr("oracle.services.tick_service.regime_step", boom)
     run = await run_tick(ctx)
     states = _states(run)
-    assert {states.pop(s) for s in ("regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step")} == {"failed"}
+    assert {states.pop(s) for s in ("regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step")} == {"failed"}
     assert set(states.values()) == {"ok"}
     assert [s.name for s in run.stages] == list(STAGES)
     assert [d.symbol for d in decision_log(ctx, "strategy")] == ["AAPL"], "the strategy step still ran"

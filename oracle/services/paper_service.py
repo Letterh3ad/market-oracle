@@ -31,7 +31,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "CORE_SAT", "DISCOVERED_OFF", "FROZEN", "Sleeve", "frozen", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
+    "ACCOUNTS", "AI_OFF", "CORE_SAT", "LAYA", "DISCOVERED_OFF", "FROZEN", "Sleeve", "frozen", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
@@ -44,12 +44,14 @@ REGIME = "regime"
 REGIME_AI = "regime-ai"
 REGIME_V2 = "regime-v2"
 CORE_SAT = "core-sat"
-REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2, CORE_SAT)
+LAYA = "laya"
+REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2, CORE_SAT, LAYA)
 """The accounts that trade the regime blend: rules only, with the daily model tilt (frozen), v2 (no
-hold padding, rotation), and core-sat's satellite beside its equal-weight core."""
+hold padding, rotation), core-sat's satellite beside its equal-weight core, and laya (the book
+weighing Laya's daily news score alone, for evidence whatever its test said)."""
 FROZEN = frozenset({REGIME_AI})
 """Accounts that no longer step and record no equity; their history stays (spec decision 9)."""
-LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2", CORE_SAT: "Core-sat"}
+LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2", CORE_SAT: "Core-sat", LAYA: "Laya"}
 """Each regime line's name on buttons, jobs and printed steps."""
 ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
 TRADERS = ("strategy", "ai", *REGIME_LINES)
@@ -430,6 +432,8 @@ CAPTIONS = {
                 "holdings, under the same rules."),
     CORE_SAT: ("Core-sat: 75% in an equal-weight buy and hold of the main list, set back to equal weight yearly; "
                "25% traded by the regime blend within its own cash."),
+    LAYA: ("Laya: trades Laya's daily news score alone on the main list's companies, under the same rules, as "
+           "evidence whatever its predictive test said."),
 }
 NOT_VALIDATED = f"Nothing here is validated yet, so no line proves anything ({UNVALIDATED})."
 BENCHMARK_LABELS = {"VWRL.L": "World (VWRL.L)", "VUSA.L": "S&P 500 (VUSA.L)"}
@@ -542,6 +546,8 @@ def account_on(ctx: AppContext, account: str) -> bool:
         return ctx.config.regime_v2_account.enabled
     if account == CORE_SAT:
         return ctx.config.core_sat_account.enabled
+    if account == LAYA:
+        return ctx.config.laya_account.enabled
     return True
 
 

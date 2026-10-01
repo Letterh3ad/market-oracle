@@ -26,6 +26,7 @@ from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segment
 from oracle.services import regime_tilt
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
+from oracle.services.laya_line import laya_input
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
 from oracle.services.regime_lines import (LINE_LABELS, REGIME_AI_LINE, REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE,
@@ -154,7 +155,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     if regime_ai:
         model, label = regime_tilt.tilt_model(ctx)
         tilt = regime_tilt.ReplayTilt(model, ctx.config.regime.tilt_cap, start, end, stop, progress, busy)
-    blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans], tilt=tilt)
+    laya = laya_input(ctx, history, start, end, watchlist=name)
+    blends = regime_lines(ctx, start, end, rules, history, refits=[a for a, _ in spans], tilt=tilt, laya=laya)
     runs = {name: run_line(x) for name, x in blends.items()}
     captions = {name: x.caption for name, x in blends.items()}
     if tilt:

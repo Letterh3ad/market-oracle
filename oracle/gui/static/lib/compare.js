@@ -15,6 +15,8 @@ const LINES = {
   regime_v2: { label: "Regime-v2", colour: "--regime-v2" },
   "core-sat": { label: "Core-sat", colour: "--core-sat" },
   core_sat: { label: "Core-sat", colour: "--core-sat" },
+  core_sat_laya: { label: "Core-sat-laya", colour: "--laya" },
+  laya: { label: "Laya", colour: "--laya" },
   buy_and_hold: { label: "Buy and hold", colour: "--text-dim", dashed: true },
 };
 const BENCH_COLOURS = ["--bench1", "--bench2"];

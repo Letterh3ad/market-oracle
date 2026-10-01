@@ -90,7 +90,7 @@ async def test_the_regime_routes_refuse_what_they_do_not_know(loaded):
 async def test_the_regime_ai_account_is_on_by_default_and_listed_with_its_model(loaded):
     body = (await loaded.get("/api/ledgers")).json()
     assert body["regime_ai_account"] == {"enabled": True, "model": ""}
-    assert [a["name"] for a in body["accounts"]][-4:] == ["regime", "regime-ai", "regime-v2", "core-sat"]
+    assert [a["name"] for a in body["accounts"]][-5:] == ["regime", "regime-ai", "regime-v2", "core-sat", "laya"]
     card = (await loaded.get("/api/ledgers/regime-ai")).json()
     assert (card["account"], card["enabled"], card["frozen"], card["tilt"], card["model"], card["research_profile"]) == (
         "regime-ai", False, True, None, "", "default")

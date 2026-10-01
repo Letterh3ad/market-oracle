@@ -543,7 +543,7 @@ async def test_with_no_ai_history_the_accounts_are_compared_from_their_own_start
     c = comparison(ctx)
     assert c.start is None and any("the ai account has no history yet" in n.lower() for n in c.notes)
     lines = {line.name: line for line in c.lines}
-    assert list(lines) == ["strategy", "ai", "manual", "regime", "regime-ai", "regime-v2", "core-sat", "buy_and_hold",
+    assert list(lines) == ["strategy", "ai", "manual", "regime", "regime-ai", "regime-v2", "core-sat", "laya", "buy_and_hold",
                           "VWRL.L", "VUSA.L"]
     assert lines["strategy"].points == ((date(2026, 9, 18), 0.0), (date(2026, 9, 21), pytest.approx(0.05)))
     assert lines["ai"].points == () and lines["ai"].return_ is None and lines["buy_and_hold"].points == ()

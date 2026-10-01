@@ -11,13 +11,13 @@ from oracle.services.activity_service import JobRunner, queue_stale_research, st
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, CORE_SAT, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
     equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
 from oracle.services.settings_service import (
-    set_ai_account, set_ai_research, set_core_sat_account, set_regime_account, set_regime_ai_account,
+    set_ai_account, set_ai_research, set_core_sat_account, set_laya_account, set_regime_account, set_regime_ai_account,
     set_regime_v2_account,
 )
 from oracle.services.tick_service import discovery_line
@@ -133,6 +133,24 @@ async def get_core_sat(limit: int = Query(default=20, ge=1, le=200), ctx: AppCon
     return _card(ctx, limit, CORE_SAT)
 
 
+@router.post("/laya/step", status_code=202)
+async def step_laya(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Queue the laya account's step (the book weighing Laya's daily score alone) on the tick queue."""
+    return shapes.job(submit_line_step(ctx, runner, LAYA))
+
+
+@router.put("/laya")
+async def put_laya(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
+    set_laya_account(ctx, body.enabled)
+    return {"enabled": ctx.config.laya_account.enabled}
+
+
+@router.get("/laya")
+async def get_laya(limit: int = Query(default=20, ge=1, le=200), ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The laya account's regime card, with Laya's kept verdict and the weight it gives in core-sat."""
+    return _card(ctx, limit, LAYA)
+
+
 @router.put("/regime")
 async def put_regime(body: AiSwitch, ctx: AppContext = Depends(get_ctx)) -> dict:
     set_regime_account(ctx, body.enabled)
@@ -222,6 +240,7 @@ async def get_ledgers(ctx: AppContext = Depends(get_ctx)) -> dict:
         "regime_ai_account": asdict(ctx.config.regime_ai_account),
         "regime_v2_account": asdict(ctx.config.regime_v2_account),
         "core_sat_account": asdict(ctx.config.core_sat_account),
+        "laya_account": asdict(ctx.config.laya_account),
         "discovery": discovery_line(ctx),
         "compare": _compare(ctx),
     }

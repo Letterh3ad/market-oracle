@@ -9,7 +9,7 @@ async def test_run_tick_now_returns_each_stage_and_status_shows_it(ctx, priced):
     assert (await priced.get("/api/status")).json()["tick"] is None
     await priced.post("/api/watchlists/main/items", json={"symbol": "AAPL"})
     tick = (await run_job(priced, "/api/jobs/tick"))["result"]
-    assert [s["name"] for s in tick["stages"]] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step",
+    assert [s["name"] for s in tick["stages"]] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step", "discover", "research", "step",
         "ai_step", "industry"]
     assert (tick["trigger"], tick["outcome"], tick["first_error"]) == ("manual", "ok", None)
     assert (await priced.get("/api/status")).json()["tick"] == tick
