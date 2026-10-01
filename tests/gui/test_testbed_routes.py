@@ -17,7 +17,7 @@ def seed(ctx):
 
 async def test_coverage_is_empty_before_a_build(loaded):
     body = (await loaded.get("/api/testbed/coverage")).json()
-    assert body["years"] == [] and body["unpriced"] == [] and body["snapshot"] is None and body["last_run"] is None
+    assert body["years"] == [] and body["under_priced"] == [] and body["snapshot"] is None and body["last_run"] is None
 
 
 async def test_coverage_shows_the_missing_share_per_year_and_the_unpriced(loaded, ctx):
@@ -25,8 +25,9 @@ async def test_coverage_shows_the_missing_share_per_year_and_the_unpriced(loaded
     body = (await loaded.get("/api/testbed/coverage")).json()
     assert body["years"][0] == {"year": 2010, "members": 2, "member_days": 2, "with_bars": 1, "unpriced": 1,
                                 "missing_share": 0.5}
-    assert body["unpriced"] == [{"ticker": "BBB", "first_day": "2010-01-04", "last_day": "2010-01-04",
-                                 "member_days": 1, "note": "not fetched yet"}]
+    assert body["under_priced"] == [{"ticker": "BBB", "first_day": "2010-01-04", "last_day": "2010-01-04",
+                                     "member_days": 1, "with_bars": 0, "note": "not fetched yet"}]
+    assert body["duplicates"] == [] and body["under_priced_below"] == 0.5 and body["as_of"] == "2026-09-23"
     assert body["snapshot"]["revision"] == "abc1234" and body["calendar"] == "SPY"
 
 

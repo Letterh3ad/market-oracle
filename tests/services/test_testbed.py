@@ -6,11 +6,14 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from oracle.config import Config
+from oracle.market.yahoo import YahooPrices
 from oracle.services.activity_service import JobRunner, retry, submit_testbed
 from oracle.services.context import open_context
 from oracle.services.testbed_service import (
     FAILED_IN_A_ROW, TAIL, build_testbed, last_run, open_testbed, testbed_coverage as coverage_of,
 )
+from oracle.services.testbed_service import REUSED, research_context
+from oracle.store.testbed import TestbedRepo
 from tests.fakes.clock import FakeClock
 from tests.fakes.sp500 import SHA, FakeSp500
 from tests.fakes.web import FakeWeb
@@ -54,6 +57,11 @@ def env(tmp_path):
     config = Config(db_path=tmp_path / "live.db", research_db_path=tmp_path / "research.db")
     with open_context(config, None, FakeClock(NOW), web.transport) as ctx:
         yield ctx, yahoo, gh, web
+
+
+def members(ctx):
+    with research_context(ctx) as r:
+        return TestbedRepo(r.conn).members()
 
 
 def dump(conn) -> list[str]:
@@ -124,7 +132,8 @@ async def test_coverage_counts_member_days_with_and_without_bars_per_year_and_li
     assert by_year[2010].missing_share == 0.25
     assert by_year[2011].member_days == 4 * days[2011] and by_year[2011].members == 5
     assert (by_year[2012].member_days, by_year[2012].with_bars) == (3 * days[2012] + ddd_2012, 3 * days[2012])
-    [ddd] = c.unpriced
+    [ddd] = c.under_priced
+    assert c.duplicates == () and c.as_of == NOW.date()
     assert (ddd.ticker, ddd.note, ddd.first_day, ddd.last_day) == ("DDD", "not on Yahoo", date(2010, 1, 1),
                                                                    date(2012, 6, 1))
     assert c.calendar == "SPY" and c.members == 5 and c.fetched == 5 and c.sectors == 4
@@ -148,6 +157,12 @@ async def test_a_second_run_asks_nothing_again_and_refresh_tops_up_current_membe
     topped = charts(web)[charts(web).index("ACWI", 2):]
     assert gh.reads == 2
     assert set(topped) >= {"AAA", "BRK-B", "CCC"} and "BBB" not in topped and "DDD" not in topped
+    with open_testbed(ctx) as tb:
+        assert tb.bars("AAA", date(2012, 12, 1))[-1].date == date(2012, 12, 28)
+    assert {m.ticker: m.bars_note for m in members(ctx)}["AAA"] is None, "nothing newer yet is not 'no bars'"
+    asked = len(charts(web))
+    await build_testbed(ctx, refresh=True)
+    assert {"AAA", "BRK-B", "CCC"} <= set(charts(web)[asked:]), "a refresh before the close never freezes a member"
 
 
 async def test_a_cancelled_run_stops_between_requests_and_the_next_resumes(env):
@@ -193,6 +208,10 @@ async def test_only_and_limit_narrow_a_smoke_run_and_end_bounds_the_bars(env):
     assert [s for s in charts(web) if s not in ("SPY", "ACWI")] == ["AAA", "BBB"]
     with open_testbed(ctx) as tb:
         assert tb.bars("AAA", date(2010, 1, 1))[-1].date == date(2010, 12, 31)
+    assert coverage_of(ctx).fetched == 0, "a run over part of the period marks no member tried"
+    await build_testbed(ctx, limit=1)
+    with open_testbed(ctx) as tb:
+        assert tb.bars("AAA", date(2010, 1, 1))[-1].date == date(2012, 12, 28), "a full build extends it"
     run = await build_testbed(ctx, only=["brk.b"])
     assert run.members == 1 and charts(web)[-1] == "BRK-B"
 
@@ -214,3 +233,76 @@ async def test_the_build_is_one_activity_job_and_retry_resumes_a_cancelled_one(e
     again = await runner.wait(retry(ctx, runner, job.id).id)
     assert again.state == "done", again.error
     assert coverage_of(ctx).fetched == 5
+
+
+@pytest.mark.parametrize("currency, kind", [(None, "MUTUALFUND"), ("USD", "ETF")])
+async def test_a_former_tickers_answer_that_is_not_the_companys_shares_is_noted_and_the_run_goes_on(env, currency,
+                                                                                                    kind):
+    ctx, yahoo, *_ = env
+    yahoo.add("BBB", currency, NY, series("2010-01-01"), kind=kind)
+    run = await build_testbed(ctx)
+    assert run.stopped is None and not run.failures and run.reused == 1
+    note = {m.ticker: m.bars_note for m in members(ctx)}["BBB"]
+    assert note.startswith(REUSED) and kind in note
+    with open_testbed(ctx) as tb:
+        assert tb.bars("BBB", date(2000, 1, 1)) == []
+
+
+async def test_a_former_tickers_bars_from_a_listing_that_began_after_it_joined_are_another_companys(env):
+    ctx, yahoo, *_ = env
+    yahoo.add("BBB", "USD", NY, series("2010-09-20"), first_trade=date(2010, 9, 20))
+    yahoo.add("CCC", "USD", NY, series("2012-01-02"), first_trade=date(2012, 1, 2))
+    await build_testbed(ctx)
+    notes = {m.ticker: m.bars_note for m in members(ctx)}
+    assert notes["BBB"] == f"{REUSED}: Yahoo's BBB first traded 2010-09-20, after it joined the index"
+    assert notes["CCC"] is None, "a current member's ticker is its own, whenever Yahoo's history starts"
+    with open_testbed(ctx) as tb:
+        assert tb.bars("BBB", date(2000, 1, 1)) == [] and tb.bars("CCC", date(2000, 1, 1))
+
+
+async def test_one_tickers_unexpected_answer_is_its_failure_and_the_run_goes_on(env, monkeypatch):
+    ctx, *_ = env
+    real = YahooPrices.daily_chart
+
+    async def chart(self, instrument, since, now):
+        if instrument.symbol == "BBB":
+            raise KeyError("chart")
+        return await real(self, instrument, since, now)
+
+    monkeypatch.setattr(YahooPrices, "daily_chart", chart)
+    run = await build_testbed(ctx)
+    assert run.stopped is None and run.failures == ["BBB bars: KeyError: 'chart'"]
+    assert {m.ticker: m.bars_tried_at for m in members(ctx)}["BBB"] is None, "asked again next run"
+    assert run.priced == 3
+
+
+async def test_the_last_run_is_kept_when_the_build_raises(env, monkeypatch):
+    ctx, *_ = env
+
+    def boom(self, only, limit):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr("oracle.services.testbed_service._Build.scope", boom)
+    with pytest.raises(RuntimeError):
+        await build_testbed(ctx)
+    assert last_run(ctx).stopped == "failed: RuntimeError: disk full"
+
+
+async def test_members_priced_on_under_half_their_days_are_listed_with_counts(env):
+    ctx, yahoo, *_ = env
+    yahoo.add("AAA", "USD", NY, series("2012-06-01"))
+    await build_testbed(ctx)
+    under = {u.ticker: u for u in coverage_of(ctx).under_priced}
+    assert set(under) == {"AAA", "DDD"}
+    aaa = under["AAA"]
+    assert aaa.with_bars == len(weekdays("2012-06-01", "2012-12-28"))
+    assert aaa.note == f"priced on {aaa.with_bars} of {aaa.member_days} member-days"
+
+
+async def test_one_company_listed_under_two_tickers_on_the_same_days_is_flagged(env):
+    ctx, _, gh, _ = env
+    gh.rows = [*ROWS[:3], ("2012-01-03", "AAA,BRK.B,CCC,DDD,KORS,CPRI"), ("2012-06-04", "AAA,BRK.B,CCC,CPRI")]
+    await build_testbed(ctx)
+    [d] = coverage_of(ctx).duplicates
+    assert (d.tickers, d.first_day, d.last_day, d.days) == (("KORS", "CPRI"), date(2012, 1, 3), date(2012, 6, 1),
+                                                            len(weekdays("2012-01-03", "2012-06-01")))

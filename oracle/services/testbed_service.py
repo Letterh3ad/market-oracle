@@ -23,7 +23,7 @@ from oracle.market.yahoo import QuoteSummary, YahooPrices
 from oracle.net.client import RateLimitedClient
 from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.services.context import AppContext
-from oracle.services.errors import DatabaseTooNew
+from oracle.services.errors import DatabaseTooNew, JobAlreadyRunning
 from oracle.services.http import open_client
 from oracle.services.jobs_service import Held, single_flight
 from oracle.store.bars import BarRepo
@@ -36,7 +36,7 @@ from oracle.universe import indexes as index_pages
 from oracle.universe import sp500_history as sp500
 from oracle.universe.indexes import BY_CODE, Unreadable
 
-__all__ = ["BENCHMARKS", "CALENDAR", "JOB", "START", "Testbed", "TestbedCoverage", "TestbedRun", "UnpricedMember",
+__all__ = ["BENCHMARKS", "CALENDAR", "JOB", "START", "Duplicate", "Testbed", "TestbedCoverage", "TestbedRun", "UnpricedMember",
            "YearCoverage", "build_testbed", "last_run", "open_testbed", "research_context", "testbed_coverage"]
 
 START = date(2010, 1, 1)
@@ -52,6 +52,13 @@ FAILED_IN_A_ROW = 5
 LAST_RUN = "testbed_last_run"
 WIKIPEDIA, YAHOO = "wikipedia", "yahoo"
 NOT_ON_YAHOO = "not on Yahoo"
+NO_BARS_AS_MEMBER = "no bars while a member"
+REUSED = "ticker reused by another instrument"
+FIRST_TRADE_SLACK = timedelta(days=7)
+"""Yahoo's first trade day may trail an index add made on a listing's first days."""
+UNDER_PRICED = 0.5
+"""Share of its member-days with bars below which a member is listed as under-priced."""
+_FAILED = object()
 
 
 @contextmanager
@@ -129,6 +136,7 @@ class TestbedRun:
     """"fetched" or "kept" (younger than a refresh needs), or why it could not be read."""
     priced: int = 0
     not_on_yahoo: int = 0
+    reused: int = 0
     bars_added: int = 0
     sectors_set: int = 0
     stopped: str | None = None
@@ -141,7 +149,7 @@ class TestbedRun:
         head = f"stopped early ({self.stopped})" if self.stopped else "finished"
         tail = f"; {len(self.failures)} failed, first: {self.failures[0]}" if self.failures else ""
         return (f"{head}: {self.members} members, {self.requests} requests, {self.priced} priced, "
-                f"{self.not_on_yahoo} not on Yahoo, {self.bars_added} bars added, {self.sectors_set} sectors set{tail}")
+                f"{self.not_on_yahoo} not on Yahoo, {self.reused} reused tickers, {self.bars_added} bars added, {self.sectors_set} sectors set{tail}")
 
 
 class _Stopped(Exception):
@@ -159,22 +167,28 @@ async def build_testbed(ctx: AppContext, *, refresh: bool = False, only: Sequenc
     began = time.monotonic()
     run = TestbedRun()
     with research_context(ctx) as r:
-        with single_flight(r, JOB, LEASE_S) as held:
-            b = _Build(r, held, run, start, end, stop, busy, on_progress)
-            try:
-                async with open_client(r) as client:
-                    b.client = client
-                    await b.membership(refresh)
-                    scope = b.scope(only, limit)
-                    await b.wikipedia_sectors(refresh)
-                    await b.benchmarks(refresh)
-                    await b.bars(scope, refresh)
-                    await b.yahoo_sectors(scope)
-            except _Stopped:
-                pass
-        run.seconds = round(time.monotonic() - began, 1)
-        run.finished_at = to_utc_iso(ctx.clock.utcnow())
-        MetaRepo(r.conn).set(LAST_RUN, json.dumps(asdict(run)))
+        try:
+            with single_flight(r, JOB, LEASE_S) as held:
+                b = _Build(r, held, run, start, end, stop, busy, on_progress)
+                try:
+                    async with open_client(r) as client:
+                        b.client = client
+                        await b.membership(refresh)
+                        scope = b.scope(only, limit)
+                        await b.wikipedia_sectors(refresh)
+                        await b.benchmarks(refresh)
+                        await b.bars(scope, refresh)
+                        await b.yahoo_sectors(scope)
+                except _Stopped:
+                    pass
+        except Exception as exc:
+            run.stopped = f"failed: {type(exc).__name__}: {exc}"
+            raise
+        finally:
+            # Kept even when the run raised, so the card shows this run, not the one before.
+            run.seconds = round(time.monotonic() - began, 1)
+            run.finished_at = to_utc_iso(ctx.clock.utcnow())
+            MetaRepo(r.conn).set(LAST_RUN, json.dumps(asdict(run)))
     return run
 
 
@@ -198,6 +212,8 @@ class _Build:
         self.repo, self.bar_repo = TestbedRepo(r.conn), BarRepo(r.conn)
         self.now = r.clock.utcnow()
         self.failed_in_a_row = 0
+        # Bars of only part of the period: a member is not marked tried, so a full build fetches it whole.
+        self.narrowed = start != START or end is not None
 
     async def membership(self, refresh: bool) -> None:
         if self.repo.snapshot() is not None and not refresh:
@@ -260,7 +276,12 @@ class _Build:
             if last is not None and not refresh:
                 continue
             await self._turn(f"benchmark bars: {symbol}")
-            await self._fetch(symbol, last + timedelta(days=1) if last else self.start, None)
+            await self._guarded(symbol, self._benchmark(symbol, last + timedelta(days=1) if last else self.start))
+
+    async def _benchmark(self, symbol: str, since: date) -> None:
+        chart = await self._chart(symbol, since)
+        if chart and chart is not _FAILED and chart.currency:
+            self.run.bars_added += self.bar_repo.upsert(self._window(chart.bars, since, None), self._at())
 
     async def bars(self, scope: list[str], refresh: bool) -> None:
         members = {m.ticker: m for m in self.repo.members()}
@@ -271,39 +292,75 @@ class _Build:
                 or (refresh and members[t].bars_note is None and any(s.end is None for s in spans[t]))]
         for i, t in enumerate(todo, 1):
             await self._turn(f"bars from {self.start}: {t} ({i}/{len(todo)})")
-            last = self.bar_repo.last_date(t)
-            since = last + timedelta(days=1) if last and members[t].bars_tried_at else self.start
-            ends = [s.end for s in spans[t]]
-            keep_to = None if None in ends else max(ends) + TAIL
-            await self._fetch(t, since, keep_to, member=True)
+            await self._guarded(t, self._member(t, members[t], spans[t]))
 
-    async def _fetch(self, symbol: str, since: date, keep_to: date | None, member: bool = False) -> None:
+    async def _member(self, t: str, m: MemberRow, spans: list[Span]) -> None:
+        last = self.bar_repo.last_date(t) if m.bars_tried_at else None
+        since = last + timedelta(days=1) if last else self.start
+        ends = [s.end for s in spans]
+        current = None in ends
+        keep_to = None if current else max(ends) + TAIL
+        chart = await self._chart(t, since)
+        if chart is _FAILED:
+            return
+        kept: list[Bar] = []
+        if not chart or not chart.bars:
+            why = NOT_ON_YAHOO
+        elif chart.currency is None or chart.instrument_type != "EQUITY":
+            why = f"{REUSED}: Yahoo's {t} is a {chart.instrument_type or 'listing of no type'}"
+        elif not current and chart.first_trade and chart.first_trade > _first_day(spans) + FIRST_TRADE_SLACK:
+            why = f"{REUSED}: Yahoo's {t} first traded {chart.first_trade}, after it joined the index"
+        else:
+            kept = self._window(chart.bars, since, keep_to)
+            why = None if kept else NO_BARS_AS_MEMBER
+        reused = bool(why and why.startswith(REUSED))
+        if why and last is not None and not reused:
+            # Nothing newer yet (a weekend, before the close): the bars it has stand.
+            self._note(t, m.bars_note)
+            return
+        if reused:
+            self.repo.drop_bars(t)
+        self.run.bars_added += self.bar_repo.upsert(kept, self._at())
+        self.run.priced += bool(kept)
+        self.run.not_on_yahoo += why == NOT_ON_YAHOO
+        self.run.reused += reused
+        self._note(t, why)
+
+    def _note(self, t: str, why: str | None) -> None:
+        if not self.narrowed:
+            self.repo.note_bars(t, self._at(), why)
+
+    def _window(self, bars: list[Bar], since: date, keep_to: date | None) -> list[Bar]:
+        return [b for b in bars if since <= b.date and (keep_to is None or b.date <= keep_to)
+                and (self.end is None or b.date <= self.end)]
+
+    async def _chart(self, symbol: str, since: date):
+        """The chart from `since`, None when Yahoo has nothing, or _FAILED after noting why."""
         upto = self._until()
         if since > upto.date():
-            return
+            return None
         try:
             self.run.requests += 1
-            bars = await YahooPrices(self.client).daily_bars(Instrument(symbol, None), since, upto)
+            chart = await YahooPrices(self.client).daily_chart(Instrument(symbol, None), since, upto)
         except NoData:
-            bars = None
+            chart = None
         except SourceFailed as exc:
             # Yahoo answers 400 "Data doesn't exist for startDate" for a ticker with nothing then.
             if exc.status != 400:
                 self._failed(f"{symbol} bars: {exc}")
-                return
-            bars = None
+                return _FAILED
+            chart = None
         self.failed_in_a_row = 0
-        if not bars:
-            if member:
-                self.repo.note_bars(symbol, self._at(), NOT_ON_YAHOO)
-                self.run.not_on_yahoo += 1
-            return
-        kept = [b for b in bars if since <= b.date and (keep_to is None or b.date <= keep_to)
-                and (self.end is None or b.date <= self.end)]
-        self.run.bars_added += self.bar_repo.upsert(kept, self._at())
-        if member:
-            self.repo.note_bars(symbol, self._at(), None if kept else "no bars while a member")
-            self.run.priced += bool(kept)
+        return chart
+
+    async def _guarded(self, symbol: str, step) -> None:
+        """One ticker's step: an unexpected answer is that ticker's failure, never the run's end."""
+        try:
+            await step
+        except (_Stopped, JobAlreadyRunning):
+            raise
+        except Exception as exc:
+            self._failed(f"{symbol} bars: {type(exc).__name__}: {exc}")
 
     async def yahoo_sectors(self, scope: list[str]) -> None:
         """Members Wikipedia's table lacks (former ones), from Yahoo's profile, in GICS's words."""
@@ -389,8 +446,21 @@ class UnpricedMember:
     """Its first and last member trading day from the start."""
     last_day: date
     member_days: int
+    with_bars: int
     note: str
-    """Why: not on Yahoo, no bars while a member, or not fetched yet."""
+    """Why: not on Yahoo, a reused ticker, no bars while a member, not fetched yet, or how few days it has."""
+
+
+@dataclass(frozen=True)
+class Duplicate:
+    """One company listed under two tickers on the same days: a cross-section should keep one."""
+
+    tickers: tuple[str, str]
+    first_day: date
+    last_day: date
+    days: int
+    """Trading days both are members."""
+    why: str
 
 
 @dataclass(frozen=True)
@@ -398,7 +468,9 @@ class TestbedCoverage:
     __test__ = False
     start: date
     years: tuple[YearCoverage, ...]
-    unpriced: tuple[UnpricedMember, ...]
+    under_priced: tuple[UnpricedMember, ...]
+    """Members with bars on under UNDER_PRICED of their member-days, none at all included."""
+    duplicates: tuple[Duplicate, ...]
     members: int
     fetched: int
     """Members whose bars were asked for."""
@@ -407,6 +479,8 @@ class TestbedCoverage:
     calendar: str
     snapshot: Snapshot | None
     last_run: TestbedRun | None
+    as_of: date
+    """Membership after the snapshot's last change repeats that day's list up to this day."""
     caveat: str = ("delisted members and members whose ticker later changed are mostly not on Yahoo (counted as "
                    "missing); sectors are today's GICS, not as they were")
 
@@ -431,17 +505,19 @@ def testbed_coverage(ctx: AppContext, start: date = START) -> TestbedCoverage:
             t = per_ticker.setdefault(c.ticker, [0, 0])
             t[0] += c.member_days
             t[1] += c.with_bars
-        never = {t for t, (_, priced) in per_ticker.items() if priced == 0}
-        first_last = _first_last([s for s in spans if s.ticker in never], calendar)
-        unpriced = tuple(UnpricedMember(t, *first_last[t], per_ticker[t][0], _why(members.get(t))) for t in sorted(never))
+        low = {t for t, (n, priced) in per_ticker.items() if priced < UNDER_PRICED * n}
+        first_last = _first_last([s for s in spans if s.ticker in low], calendar)
+        under = tuple(UnpricedMember(t, *first_last[t], *per_ticker[t], _why(members.get(t), *per_ticker[t]))
+                      for t in sorted(low))
         in_scope = set(per_ticker)
         return TestbedCoverage(
             start,
             tuple(YearCoverage(y, len(cs), sum(c.member_days for c in cs), sum(c.with_bars for c in cs),
                                sum(c.with_bars == 0 for c in cs)) for y, cs in sorted(years.items())),
-            unpriced, len(in_scope), sum(members[t].bars_tried_at is not None for t in in_scope if t in members),
+            under, _duplicates(spans, calendar), len(in_scope),
+            sum(members[t].bars_tried_at is not None for t in in_scope if t in members),
             sum(members[t].sector is not None for t in in_scope if t in members),
-            tb.calendar_source(start), repo.snapshot(), _last_run(r))
+            tb.calendar_source(start), repo.snapshot(), _last_run(r), r.clock.utcnow().date())
 
 
 def _first_last(spans: list[Span], calendar: list[date]) -> dict[str, tuple[date, date]]:
@@ -455,7 +531,39 @@ def _first_last(spans: list[Span], calendar: list[date]) -> dict[str, tuple[date
     return out
 
 
-def _why(m: MemberRow | None) -> str:
+def _why(m: MemberRow | None, member_days: int, with_bars: int) -> str:
+    if with_bars:
+        return f"priced on {with_bars} of {member_days} member-days"
     if m is None or m.bars_tried_at is None:
         return "not fetched yet"
-    return m.bars_note or "no bars while a member"
+    return m.bars_note or NO_BARS_AS_MEMBER
+
+
+# One company under two tickers on the same days in the source (checked by hand at gate 01, 2026-10-01). A
+# general check (same company by SEC CIK) belongs with the rename map (ticket 01b).
+KNOWN_DUPLICATES = (
+    (("KORS", "CPRI"), "Michael Kors Holdings listed again as Capri Holdings"),
+    (("CCE", "CCEP"), "Coca-Cola Enterprises listed again as Coca-Cola Europacific Partners"),
+)
+
+
+def _duplicates(spans: list[Span], calendar: list[date]) -> tuple[Duplicate, ...]:
+    out = []
+    for (a, b), why in KNOWN_DUPLICATES:
+        both = sorted(_days(spans, a, calendar) & _days(spans, b, calendar))
+        if both:
+            out.append(Duplicate((a, b), both[0], both[-1], len(both), why))
+    return tuple(out)
+
+
+def _days(spans: list[Span], ticker: str, calendar: list[date]) -> set[date]:
+    out: set[date] = set()
+    for s in spans:
+        if s.ticker == ticker:
+            out.update(calendar[bisect_left(calendar, s.start):bisect_left(calendar, s.end or date.max)])
+    return out
+
+
+def _first_day(spans: list[Span]) -> date:
+    """Its first member day from the start."""
+    return max(min(s.start for s in spans), START)

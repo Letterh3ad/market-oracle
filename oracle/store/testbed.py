@@ -118,6 +118,10 @@ class TestbedRepo:
                                "ON CONFLICT(ticker) DO UPDATE SET bars_tried_at = excluded.bars_tried_at, "
                                "bars_note = excluded.bars_note", (ticker, at, note))
 
+    def drop_bars(self, ticker: str) -> None:
+        with transaction(self._conn):
+            self._conn.execute("DELETE FROM bars WHERE symbol = ?", (ticker,))
+
     def year_tickers(self, spans: Iterable[Span], calendar: Sequence[date]) -> list[YearTicker]:
         """Per year and ticker: its trading days as a member (`calendar` days inside its spans) and
         how many of those have a stored bar."""

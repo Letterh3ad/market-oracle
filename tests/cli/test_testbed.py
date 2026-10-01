@@ -21,7 +21,9 @@ def test_status_prints_the_missing_share_per_year_and_every_unpriced_member(tmp_
     assert f"Signal testbed in {tmp_path / 'r.db'}" in out
     assert "Membership: fja05680/sp500 at abc1234" in out and "missing share 50.0%" in out
     assert "2010         2           2          1    50.0%        1" in out
+    assert "1 members priced on under 50% of their member-days:" in out
     assert "  BBB      2010-01-04 to 2010-01-04, 1 member-days: not fetched yet" in out
+    assert "Its last change is 2010-01-04: to " in out
 
 
 def test_build_passes_a_smoke_runs_bounds_and_fails_on_a_stop(tmp_path, capsys, monkeypatch):

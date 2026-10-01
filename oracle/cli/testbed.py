@@ -6,7 +6,7 @@ from datetime import date
 
 from oracle.cli.history import PROGRESS_S, _every
 from oracle.services.context import AppContext
-from oracle.services.testbed_service import START, TestbedCoverage, build_testbed, testbed_coverage
+from oracle.services.testbed_service import START, UNDER_PRICED, TestbedCoverage, build_testbed, testbed_coverage
 
 
 def register(parser: argparse.ArgumentParser) -> None:
@@ -51,14 +51,19 @@ def print_coverage(c: TestbedCoverage, where) -> None:
     s = c.snapshot
     print(f"Membership: {s.source} at {s.revision or 'unknown revision'}, fetched {s.fetched_at[:16]} UTC, "
           f"{s.changes} rows {s.first_day} to {s.last_day}" if s else "Membership: not fetched yet")
+    if s and s.last_day < c.as_of:
+        print(f"  Its last change is {s.last_day}: to {c.as_of} the members are that day's list; later changes "
+              "arrive when the source adds them and a refresh reads them")
     print(f"Last build: {c.last_run.finished_at} {c.last_run.summary}" if c.last_run else "Last build: none yet")
     print(f"{c.members} members from {c.start}, {c.fetched} fetched, {c.sectors} with a sector; "
           f"trading days from {c.calendar}; missing share {c.missing_share:.1%}")
     print(f"Caveat: {c.caveat}")
-    print(f"{'year':<6} {'members':>7} {'member-days':>11} {'with bars':>10} {'missing':>8} {'unpriced':>8}")
+    print(f"{'year':<6} {'members':>7} {'member-days':>11} {'with bars':>10} {'missing':>8} {'no bars':>8}")
     for y in c.years:
         print(f"{y.year:<6} {y.members:>7} {y.member_days:>11} {y.with_bars:>10} {y.missing_share:>8.1%} "
               f"{y.unpriced:>8}")
-    print(f"{len(c.unpriced)} members never priced:")
-    for u in c.unpriced:
+    print(f"{len(c.under_priced)} members priced on under {UNDER_PRICED:.0%} of their member-days:")
+    for u in c.under_priced:
         print(f"  {u.ticker:<8} {u.first_day} to {u.last_day}, {u.member_days} member-days: {u.note}")
+    for d in c.duplicates:
+        print(f"Listed twice: {' and '.join(d.tickers)}, {d.first_day} to {d.last_day} ({d.days} days): {d.why}")

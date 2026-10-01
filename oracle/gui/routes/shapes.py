@@ -19,7 +19,7 @@ from oracle.services.regime_service import LineStep, off_note
 from oracle.services.replay_service import StudyStatus
 from oracle.services.research_service import UNVALIDATED, ResearchRun
 from oracle.services.schedule_service import ScheduleView, Upcoming
-from oracle.services.testbed_service import TestbedCoverage
+from oracle.services.testbed_service import UNDER_PRICED, TestbedCoverage
 from oracle.services.tick_service import KIND_LABELS, TickRun
 
 
@@ -254,4 +254,5 @@ def testbed_coverage(c: TestbedCoverage) -> dict:
             "snapshot": asdict(snap) if snap else None,
             "last_run": {**asdict(run), "summary": run.summary} if run else None,
             "years": [{**asdict(y), "missing_share": y.missing_share} for y in c.years],
-            "unpriced": [asdict(u) for u in c.unpriced]}
+            "under_priced": [asdict(u) for u in c.under_priced], "under_priced_below": UNDER_PRICED,
+            "duplicates": [asdict(d) for d in c.duplicates], "as_of": c.as_of}
