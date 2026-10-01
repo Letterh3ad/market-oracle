@@ -391,7 +391,7 @@ def test_news_that_leads_the_price_passes_the_bar_and_the_result_is_kept(ctx):
     score_history(ctx, scorer=FakeLaya())
     t = run_laya_test(ctx, model=MODEL, end=END)
     assert [h.horizon for h in t.horizons] == [h for h, _ in HORIZONS]
-    five = t.horizons[0]
+    five = t.full_horizons[0]
     assert [s.counted for s in five.segments] == [False, True, True]
     assert five.segments[0].why == "no trailing fit"
     assert five.segments[1].weights["own_mean"] > 0, "fitted on the first segment's days only"
@@ -423,7 +423,7 @@ def test_the_stronger_readers_own_news_runs_the_own_feature_alone_beside_laya(ct
     partial = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END)
     assert partial.own_coverage["scored"] < partial.own_coverage["needed"] == reader.own_coverage["needed"]
     for t in (reader, laya_own):
-        five = t.horizons[0]
+        five = t.full_horizons[0]
         assert t.run == "own" and "own news only" in t.label and set(t.articles) == {"own"}
         assert set(five.segments[1].weights) == {"own_mean"}, "the own feature alone"
         assert five.baseline_ic is not None and five.momentum_ic is not None, "the same baselines"
@@ -449,9 +449,9 @@ def test_a_thin_segment_is_named_and_left_out(ctx):
                      "published_at >= '2023-10-01' AND published_at < '2024-04-01')")
     score_history(ctx, scorer=FakeLaya())
     t = run_laya_test(ctx, model=MODEL, end=END)
-    last = t.horizons[0].segments[2]
+    last = t.full_horizons[0].segments[2]
     assert not last.counted and last.why.startswith("thin coverage"), last.why
-    assert t.horizons[0].verdict == "INCONCLUSIVE", "one counted segment is too few"
+    assert t.full_horizons[0].verdict == "INCONCLUSIVE", "one counted segment is too few"
 
 
 async def test_jobs_score_and_test_and_retry_rebuilds_them(ctx, monkeypatch):
@@ -476,3 +476,53 @@ async def test_jobs_score_and_test_and_retry_rebuilds_them(ctx, monkeypatch):
         assert (again.kind, again.subject, again.label) == (job.kind, job.subject, job.label) and again.id != job.id
         await runner.wait(again.id)
     await runner.stop()
+
+
+CUT = date(2023, 6, 30)
+"""Inside the second segment: the first is wholly inside the model's training, the second is trimmed."""
+
+
+def test_the_cutoff_table_names_laya_and_the_stronger_reader_and_defaults_the_rest():
+    from oracle.research.laya import MODEL_TAG
+    from oracle.research.training_cutoffs import DEFAULT_CUTOFF, training_cutoff
+
+    assert DEFAULT_CUTOFF == date(2025, 5, 31)
+    assert training_cutoff(MODEL_TAG) == training_cutoff("ollama:qwen2.5:32b") == DEFAULT_CUTOFF
+    assert training_cutoff("ollama:unheard-of") == DEFAULT_CUTOFF
+
+
+def test_days_inside_the_models_training_never_count_toward_the_verdict(ctx):
+    market(ctx, signal=True)
+    score_history(ctx, scorer=FakeLaya())
+    t = run_laya_test(ctx, model=MODEL, end=END, cutoff=CUT)
+    full, post = t.full_horizons[0], t.horizons[0]
+    assert t.cutoff == CUT and full.verdict == "PASS"
+    first, trimmed, after = post.segments
+    assert not first.counted and first.why == "inside the model's training"
+    assert (trimmed.start, trimmed.end) == (CUT + timedelta(days=1), full.segments[1].end)
+    assert trimmed.counted and trimmed.days < full.segments[1].days and trimmed.weights == full.segments[1].weights
+    assert after == full.segments[2], "a segment wholly after the cutoff is the same in both"
+    assert post.counted == 2 and post.days == trimmed.days + after.days
+    late = run_laya_test(ctx, model=MODEL, end=END)
+    assert late.cutoff == date(2025, 5, 31) and late.full_horizons[0].verdict == "PASS"
+    assert late.verdict == "INCONCLUSIVE" and not late.passed, "every day is inside the model's training"
+    assert all(s.why == "inside the model's training" for h in late.horizons for s in h.segments)
+    kept = keep_laya_test(ctx, t)
+    assert kept.full_horizons == t.full_horizons and kept.horizons == t.horizons and kept.cutoff == CUT
+
+
+def test_a_partly_read_segment_is_left_out_and_the_post_cutoff_share_read_is_reported(ctx):
+    from oracle.services.reader_service import score_reader
+    from tests.fakes.reader import FakeReader
+
+    market(ctx, signal=True)
+    score_reader(ctx, own_only=True, reader=FakeReader("fake"))
+    whole = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END, cutoff=CUT)
+    assert whole.post_read["read"] == whole.post_read["needed"] > 0
+    ctx.conn.execute("DELETE FROM laya_scores WHERE model = 'ollama:fake' AND article_id IN (SELECT id FROM articles "
+                     "WHERE published_at >= '2023-11-01' AND published_at < '2024-03-01')")
+    t = run_laya_test(ctx, model="ollama:fake", own_only=True, end=END, cutoff=CUT)
+    last = t.horizons[0].segments[2]
+    assert not last.counted and "of own headlines read" in last.why, last.why
+    assert t.post_read["read"] < t.post_read["needed"] == whole.post_read["needed"]
+    assert t.horizons[0].verdict == "INCONCLUSIVE", "one counted segment is too few"
