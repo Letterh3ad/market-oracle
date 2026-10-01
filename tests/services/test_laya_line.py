@@ -93,6 +93,11 @@ def test_the_live_score_reads_what_the_daily_research_found_too(ctx):
     assert set(got.scores) == {"HMC", "GM"} and got.verdict.verdict is None
 
 
+def test_without_the_list_or_any_listing_there_is_no_score_and_no_error(ctx):
+    assert laya_input(ctx, ["HMC"], TEST_START, END, watchlist="nope", model=MODEL).scores == {}
+    assert laya_input(ctx, [], TEST_START, END, model=MODEL).scores == {}
+
+
 def kept(ctx, verdict, beats=True, run="main", model=MODEL):
     t = run_laya_test(ctx, model=MODEL, end=END)
     horizons = tuple(replace(h, beats_baseline=beats, beats_momentum=beats) for h in t.horizons)

@@ -18,6 +18,7 @@ from oracle.analysts.predictive import lookback, pct_ranks
 from oracle.broker.regime import DatedScores, RegimeSettings
 from oracle.broker.walk_forward import segments
 from oracle.services.context import AppContext
+from oracle.services.errors import UnknownWatchlist
 from oracle.services.laya_service import MODEL_TAG, primary
 from oracle.services.laya_test_service import (
     FIT_DAYS, HORIZONS, MAIN, MAIN_RELATIONS, TEST_START, LayaTest, Panel, build_panel, latest_verdict, observations,
@@ -148,9 +149,13 @@ def laya_input(ctx: AppContext, listings: Collection[str], first: date, last: da
     of it has none, its open may differ) for decision days `first` to `last`, with the verdict.
     Without `scores` only the verdict is read (core-sat when Laya weighs nothing)."""
     verdict = laya_verdict(ctx, model)
-    if not scores or (start := segment_start(max(first, TEST_START))) is None or last < TEST_START:
+    if not scores or not listings or (start := segment_start(max(first, TEST_START))) is None or last < TEST_START:
         return LayaInput({}, verdict)
-    panel = build_panel(ctx, watchlist, start=start - timedelta(days=FIT_DAYS), end=last, model=model, research=True)
+    try:
+        panel = build_panel(ctx, watchlist, start=start - timedelta(days=FIT_DAYS), end=last, model=model,
+                            research=True)
+    except UnknownWatchlist:
+        return LayaInput({}, verdict)
     found = daily_scores(panel, max(first, TEST_START), last)
     by_company = {m.casefold(): rows for m, rows in found.items()}
     out = {}

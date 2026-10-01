@@ -138,7 +138,7 @@ def _stage(run, name):
 async def test_ai_off_skips_research_and_the_ai_step_saying_so(ctx):
     ctx.config = replace(ctx.config, ai_account=replace(ctx.config.ai_account, enabled=False))
     run = await run_tick(ctx)
-    assert [s.name for s in run.stages] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "discover", "research", "step",
+    assert [s.name for s in run.stages] == ["prices", "fx", "fill", "analyse", "regime_step", "regime_ai_step", "regime_v2_step", "core_sat_step", "laya_step", "discover", "research", "step",
         "ai_step", "industry"]
     assert _stage(run, "research").summary == "AI account off: nothing researched"
     assert _stage(run, "ai_step").summary == "AI account off: nothing traded"
