@@ -216,7 +216,10 @@ class Renames:
         return max(s.end for s in self.spans[t])
 
     async def check(self) -> RenameRun:
-        need = set()
+        # Identity first: a former member whose bars prove another company's (BBT, now Beacon) is then
+        # a rename candidate like one never priced (BBT -> TFC).
+        await self._identity()
+        need = set(self.run.dropped)
         for t in self.spans:
             days = self.member_days(t)
             if days and self.former(t):
@@ -225,7 +228,6 @@ class Renames:
                     need.add(t)
         aliases = await self._renames(need)
         self.repo.save_aliases(aliases)
-        await self._identity({a.old for a in aliases if a.accepted})
         await self._same_company(aliases)
         return self.run
 
@@ -246,7 +248,7 @@ class Renames:
             if alias.accepted or c.one_for_one:
                 kept.append(alias)
         for t in sorted(need - set(found)):
-            if (self.members[t].bars_note or "").startswith(NOT_ON_YAHOO):
+            if (self.members[t].bars_note or "").startswith((NOT_ON_YAHOO, REUSED)) or t in self.run.dropped:
                 for new in await self._named(t):
                     self.progress(f"renames after leaving: {t} -> {new}")
                     alias, partly = await self._verify(Candidate(t, new, None, False), found, cik_of)
@@ -359,10 +361,10 @@ class Renames:
                 said_ += f"; Yahoo still lists {c.old} on {late[0].date}"
         return ok, said_
 
-    async def _identity(self, aliased: set[str]) -> None:
+    async def _identity(self) -> None:
         """Former members with bars, or noted reused by the first-trade rule: SEC's say where it has one."""
         for t, m in sorted(self.members.items()):
-            if t in aliased or not self.spans.get(t) or not self.former(t):
+            if not self.spans.get(t) or not self.former(t):
                 continue
             first_trade = (m.bars_note or "").startswith(first_trade_note(t))
             if not (first_trade or (m.bars_note is None and m.bars_tried_at)):

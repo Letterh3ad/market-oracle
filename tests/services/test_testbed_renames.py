@@ -165,13 +165,14 @@ async def test_coverage_shows_the_missing_share_before_and_after_the_map(env):
 
 
 async def test_sec_says_a_former_tickers_bars_are_another_companys_and_they_are_dropped(env):
-    ctx, *_ = env
+    ctx, yahoo, *_ = env
     run = await build_testbed(ctx)
     sun = members(ctx)["SUN"]
     assert sun.identity == "other" and sun.bars_note.startswith(REUSED) and "2012-06-22" in sun.bars_note
     with open_testbed(ctx) as tb:
         assert tb.bars("SUN", date(2000, 1, 1)) == []
     assert "SUN" in {u.ticker for u in coverage_of(ctx).under_priced}
+    assert "SUN" in yahoo.searched, "then looked for as renamed, like a member never priced"
     assert run.reused >= 1
 
 
