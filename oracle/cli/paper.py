@@ -8,9 +8,8 @@ from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, CORE_SAT, INDEX, LAYA, LINE_NAMES, REGIME_LINES, STRATEGY, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
     decision_log, equity_history, fill_pending, frozen_note, place_buy, place_sell, strategy_step,
 )
-from oracle.services.index_service import index_step
 from oracle.services.regime_service import laya_card, off_note
-from oracle.services.tick_service import run_line_step, tilt_line
+from oracle.services.tick_service import run_index_step, run_line_step, tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
 
@@ -121,7 +120,7 @@ def step_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     if args.account in REGIME_LINES:
         return _regime_step(ctx, args.account)
     if args.account == INDEX:
-        decisions = index_step(ctx)
+        decisions = run_index_step(ctx)
         if not decisions:
             print("index: nothing to do, it holds ACWI or its buy waits to fill")
         _print_decisions(ctx, decisions)

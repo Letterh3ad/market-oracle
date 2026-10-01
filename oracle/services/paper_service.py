@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from oracle.broker.backtest import LeanCap
+from oracle.broker import core_sat
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
 from oracle.broker.fills import Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
@@ -31,7 +32,7 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "CORE_SAT", "INDEX", "LAYA", "DISCOVERED_OFF", "FROZEN", "STRATEGY", "Sleeve", "frozen",
+    "ACCOUNTS", "AI_OFF", "CORE_SAT", "INDEX", "LAYA", "DISCOVERED_OFF", "FROZEN", "SAT_SOURCE", "STRATEGY", "Sleeve", "frozen",
     "frozen_note", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
@@ -45,6 +46,8 @@ REGIME = "regime"
 REGIME_AI = "regime-ai"
 REGIME_V2 = "regime-v2"
 CORE_SAT = "core-sat"
+SAT_SOURCE = f"{CORE_SAT}:satellite"
+"""The source of core-sat's satellite orders (its sleeve)."""
 LAYA = "laya"
 REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2, CORE_SAT, LAYA)
 """The accounts that trade the regime blend: rules only, with the daily model tilt (frozen), v2 (no
@@ -594,6 +597,10 @@ def account_view(ctx: AppContext, account: str, sleeve: Sleeve | None = None) ->
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
+    # A satellite buy placed while it had weight never fills once its weight is 0, so the fill pass
+    # (before core-sat's step in a tick) cannot buy what that step would sell the same day.
+    if order.source == SAT_SOURCE and order.side == Side.BUY and not core_sat.SATELLITE_SHARE:
+        return _reject(repo, order, core_sat.SATELLITE_ZERO)
     # A never rule set after the order was placed (or a discovery-only one, for a discovered
     # symbol) still blocks it before it spends real-looking cash.
     if order.side == Side.BUY and never_company(ctx, order.symbol, user=order.symbol in discovered_only(ctx)):

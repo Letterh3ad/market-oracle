@@ -26,6 +26,12 @@ SATELLITE_SHARE = 0.0
 """The satellite's share of the starting capital; the core has the rest. 0 until a signal passes
 the confirm and then its own six months of paper trading (spec 10), and never over SATELLITE_CAP."""
 SATELLITE_CAP = 0.20
+SATELLITE_ZERO = ("satellite weight 0: no signal has passed the confirm test and then six months as its own paper "
+                  "line, so the satellite trades nothing (next-signals spec 9, 10)")
+"""Why core-sat's satellite holds no money: its caption, card, and each waiting buy it drops."""
+SATELLITE_EXIT = ("satellite weight 0: no signal has passed the confirm test and then six months as its own paper "
+                  "line, so the satellite sells what it holds and buys nothing (next-signals spec 9, 10)")
+"""The reason on the satellite's sells while its weight is 0."""
 REBALANCE_YEARS: int | None = None
 """None: the core is bought once and held, never set back to equal weight (spec 9)."""
 REBALANCE = "core"

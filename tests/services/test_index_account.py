@@ -89,3 +89,16 @@ def test_strategy_regime_and_regime_v2_are_frozen_like_regime_ai(ctx, monkeypatc
     assert EquityRepo(ctx.conn).history("core-sat") and EquityRepo(ctx.conn).history("index")
     for account in ("strategy", "regime", "regime-v2"):
         assert account in ACCOUNTS and "Frozen" in next(x.caption for x in comparison(ctx).lines if x.name == account)
+
+
+def test_the_index_button_waits_for_no_tick_and_never_orders_beside_one(ctx):
+    from oracle.services.errors import JobAlreadyRunning
+    from oracle.services.jobs_service import single_flight
+    from oracle.services.tick_service import run_index_step
+
+    add_acwi(ctx)
+    with single_flight(ctx, "tick", 60.0):
+        with pytest.raises(JobAlreadyRunning):
+            run_index_step(ctx)
+    assert account_view(ctx, "index").pending == ()
+    assert [d.action for d in run_index_step(ctx)] == [Action.BUY]

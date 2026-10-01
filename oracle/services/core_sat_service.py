@@ -13,23 +13,25 @@ from dataclasses import replace
 from datetime import date
 
 from oracle.broker import core_sat
-from oracle.broker.core_sat import EXPIRED, STALE, CoreOrder, expired, rebalance_buys, whole_share_buys
+from oracle.broker.core_sat import (
+    EXPIRED, SATELLITE_EXIT, SATELLITE_ZERO, STALE, CoreOrder, expired, rebalance_buys, whole_share_buys,
+)
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.regime import RegimeInputs, RegimeSettings
 from oracle.broker.rules import Decision, Lean
 from oracle.services.context import AppContext
 from oracle.services.errors import UnknownWatchlist
 from oracle.services.laya_line import METHOD, LayaInput, with_laya
-from oracle.services.paper_service import CORE_SAT, Sleeve, account_view, place_buy
+from oracle.services.paper_service import CORE_SAT, SAT_SOURCE, Sleeve, account_view, place_buy
 from oracle.services.prices_service import ConvertedBar
-from oracle.services.regime_lines import SATELLITE_ZERO, core_members
+from oracle.services.regime_lines import core_members
 from oracle.services.watch_service import DEFAULT_LIST, watchlist_symbols
 from oracle.store.paper import DecisionRepo, LoggedDecision, Order, PaperRepo
 
 __all__ = ["CORE_SOURCE", "SAT_SOURCE", "core_card", "core_listings", "core_phase", "core_step", "satellite_exit",
            "satellite_inputs", "satellite_settings", "satellite_share", "satellite_traded", "sleeves"]
 
-CORE_SOURCE, SAT_SOURCE = f"{CORE_SAT}:core", f"{CORE_SAT}:satellite"
+CORE_SOURCE = f"{CORE_SAT}:core"
 START, TOP_UP = "start", "top up"
 TOP_UP_SHARE = 0.05
 """Core cash idle beyond this share of the core's capital (money the satellite handed over) is
@@ -126,7 +128,7 @@ def satellite_exit(ctx: AppContext, day: date) -> dict[str, Lean]:
         if o.source == SAT_SOURCE and o.side == Side.BUY:
             repo.set_status(o.id, Status.REJECTED, SATELLITE_ZERO)
     held = account_view(ctx, CORE_SAT, sleeves(ctx)[1]).positions
-    return {p.symbol: Lean(p.symbol, day, "sell", 1.0, CORE_SAT, note=SATELLITE_ZERO) for p in held}
+    return {p.symbol: Lean(p.symbol, day, "sell", 1.0, CORE_SAT, note=SATELLITE_EXIT) for p in held}
 
 
 def _live_orders(repo: PaperRepo, today: date) -> list[Order]:

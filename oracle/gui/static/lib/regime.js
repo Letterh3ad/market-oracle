@@ -180,7 +180,7 @@ function rotation(r) {
     + "a step. The freed slot is bought by the usual rules once the sale's cash is back.");
 }
 
-// core-sat's two sleeves: each one's cash and holdings, and when the core next rebalances.
+// core-sat's two sleeves: each one's cash and holdings, and why the satellite is empty.
 function sleeves(s, base) {
   if (!s) return null;
   const row = (label, x) => el("tr", null, el("td", null, label), el("td", { class: "num" }, money(x.capital, 0)),

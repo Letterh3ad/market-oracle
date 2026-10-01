@@ -133,7 +133,7 @@ class RegimeCard:
     frozen: bool = False
     """The account no longer steps (regime-ai); its card and history stay."""
     sleeves: dict | None = None
-    """core-sat: each sleeve's cash, holdings and positions, and the core's next rebalance."""
+    """core-sat: each sleeve's cash, holdings and positions, and why the satellite holds what it does."""
     laya: dict | None = None
     """core-sat and laya: Laya's kept verdict and the weight it gives in core-sat's satellite."""
 

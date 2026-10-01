@@ -10,7 +10,7 @@ import pytest
 from oracle.broker.core_sat import EXPIRED, REBALANCE
 from oracle.broker.orders import Action, Side, Status
 from oracle.services.core_sat_service import CORE_SOURCE, SAT_SOURCE, START, TOP_UP, core_phase, sleeves
-from oracle.services.regime_lines import SATELLITE_ZERO
+from oracle.broker.core_sat import SATELLITE_EXIT, SATELLITE_ZERO
 from oracle.services.paper_service import (
     ACCOUNTS, LINE_NAMES, TRADERS, account_view, decision_log, fill_pending, place_buy, traded_by,
 )
@@ -99,6 +99,8 @@ def test_at_satellite_weight_0_its_waiting_buys_are_dropped_its_holdings_sold_an
     # The core's 2,600 idle (its 10,000 less 7,400) is topped up, never past the account's free 600
     assert (top_up.source, top_up.cash) == (CORE_SOURCE, pytest.approx(600.0))
     assert [d.symbol for d in run.decisions if d.action == Action.SELL] == ["AAPL"]
+    [logged] = [d for d in decision_log(ctx, ACCOUNT) if d.action == Action.SELL]
+    assert logged.reason in (SATELLITE_EXIT, ) or logged.reason.startswith("stop")
 
 
 def test_off_it_decides_nothing_and_says_so(ctx, monkeypatch):
@@ -205,3 +207,25 @@ def test_the_card_shows_each_sleeve_no_rebalance_and_why_the_satellite_is_empty(
 def test_the_real_book_it_builds_is_the_regime_one_in_its_own_name(ctx):
     book = build_book(ctx, {}, None, account=ACCOUNT)
     assert (book._settings.spread_unscored, book._settings.rotation, book._source) == (False, None, ACCOUNT)
+
+
+async def test_at_satellite_weight_0_a_waiting_satellite_buy_never_fills_but_a_core_buy_does(ctx, yahoo, clock):
+    """No buy-then-sell round trip when the fill pass runs before core-sat's step (the tick's order)."""
+    sat = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=SAT_SOURCE)
+    core = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=CORE_SOURCE)
+    await next_day(ctx, yahoo, clock)
+    outcomes = {o.order.id: o for o in fill_pending(ctx)}
+    assert (outcomes[sat.id].status, outcomes[sat.id].note) == (Status.REJECTED, SATELLITE_ZERO)
+    assert outcomes[core.id].status == Status.FILLED
+    assert account_view(ctx, ACCOUNT, sleeves(ctx)[1]).positions == ()
+
+
+async def test_at_a_quarter_a_waiting_satellite_buy_fills(ctx, yahoo, clock, quarter):
+    sat = place_buy(ctx, "AAPL", 2_000.0, ACCOUNT, source=SAT_SOURCE)
+    await next_day(ctx, yahoo, clock)
+    [done] = fill_pending(ctx)
+    assert (done.order.id, done.status) == (sat.id, Status.FILLED)
+
+
+def test_the_satellites_exit_sells_say_they_sell_what_it_holds():
+    assert "sells what it holds" in SATELLITE_EXIT and "trades nothing" not in SATELLITE_EXIT

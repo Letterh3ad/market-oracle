@@ -38,7 +38,7 @@ from oracle.store.watchlists import WatchlistRepo
 __all__ = [
     "FILL", "FILL_STAGES", "KIND_LABELS", "MIDDAY", "MIDDAY_STAGES", "STAGES", "Stage", "TICK", "TickRun",
     "discover_cap_min", "discovery_line", "last_fill", "last_midday", "last_tick", "record_skipped", "run_fill",
-    "run_midday", "run_tick", "RUNS", "ticked_since",
+    "run_index_step", "run_midday", "run_tick", "RUNS", "ticked_since",
 ]
 
 log = logging.getLogger(__name__)
@@ -276,6 +276,13 @@ def run_line_step(ctx: AppContext, account: str) -> LineStep:
     beside a tick's own step in another process and places the same orders twice."""
     with single_flight(ctx, JOB, LEASE_S):
         return LineStep(account, regime_step(ctx, account))
+
+
+def run_index_step(ctx: AppContext) -> list[Decision]:
+    """The index step outside a tick (its button), under the tick's lock like the regime lines', so
+    a press never orders ACWI beside the tick's own step."""
+    with single_flight(ctx, JOB, LEASE_S):
+        return index_step(ctx)
 
 
 def tilt_line(tilt: StoredTilt) -> str:

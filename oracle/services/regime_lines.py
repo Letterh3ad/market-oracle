@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 from oracle.broker.backtest import LeanSource, Replay, replay
 from oracle.broker import core_sat
-from oracle.broker.core_sat import CoreSat, core_sat_replay
+from oracle.broker.core_sat import SATELLITE_ZERO, CoreSat, core_sat_replay
 from oracle.broker.regime import (DatedScores, RegimeBook, RegimeInputs, Rotation, Tilt, regime_book, settings_from,
                                   v2_settings)
 from oracle.broker.regime.fit import MIN_WINDOWS, TRAILING
@@ -180,9 +180,6 @@ def laya_caption(laya: LayaInput, settings) -> str:
             + (", and at weight 0 the line is core-sat's exactly. " if not laya.verdict.useful else ". "))
 
 
-SATELLITE_ZERO = ("satellite weight 0: no signal has passed the confirm test and then six months as its own paper "
-                  "line, so the satellite trades nothing (next-signals spec 9, 10)")
-"""Why core-sat's satellite holds no money, on its caption, card and step."""
 
 
 def core_sat_caption(members: int, extra: Collection[str] = ()) -> str:
