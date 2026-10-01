@@ -2,7 +2,8 @@
 // their bars from 2010 and sectors, in the research database), the buttons that build or refresh
 // it as a job, its coverage per year: member-days with and without bars (the missing share) and
 // the members never priced; then the pre-registered signals, each with Run test and its newest
-// result (power, missing share, train, confirm, verdict).
+// result (power, missing share, train, confirm, verdict). The SEC fundamentals the fundamental
+// signals read are fetched from here too, with their coverage per year.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
@@ -33,6 +34,20 @@ function underPricedTable(c) {
     el("td", { class: "num" }, String(u.member_days)),
     el("td", { class: "small" }, u.note)));
   return table(head, rows, "Every member has bars.");
+}
+
+const FUNDAMENTAL = ["sue", "gross_profitability", "earnings_yield"];
+
+function fundamentalsTable(c) {
+  const head = [["Year"], ["Members", null, 1], ["With a CIK", null, 1], ["With facts", null, 1],
+    ...FUNDAMENTAL.map((n) => [`${n}: members / filings`, null, 1])];
+  const rows = (c.years ?? []).map((y) => el("tr", null,
+    el("td", null, String(y.year)),
+    el("td", { class: "num" }, String(y.members)),
+    el("td", { class: "num" }, String(y.with_cik)),
+    el("td", { class: "num" }, String(y.with_facts)),
+    ...FUNDAMENTAL.map((n) => el("td", { class: "num" }, `${y.scored?.[n] ?? 0} / ${y.events?.[n] ?? 0}`))));
+  return table(head, rows, "No fundamentals yet: press Fetch SEC fundamentals.");
 }
 
 const num = (x, digits = 4) => (x == null ? "-" : `${x > 0 ? "+" : ""}${x.toFixed(digits)}`);
@@ -211,11 +226,66 @@ function signalTestsSection() {
         + `of their member-days (${c.under_priced.length})`), underPricedTable(c)));
   }
 
+  const factsNote = el("div", { class: "form-note" });
+  const factsBody = el("div");
+  const sayFacts = (text, bad = true) => {
+    factsNote.className = bad ? "form-note down" : "form-note";
+    factsNote.replaceChildren(text);
+  };
+  let fetching = null;
+
+  async function loadFacts() {
+    let c;
+    try {
+      c = await api("/api/xbrl/coverage");
+    } catch (err) {
+      sayFacts(`Could not load the fundamentals coverage: ${err.message}`);
+      return;
+    }
+    const r = c.last_run;
+    factsBody.replaceChildren(
+      el("p", { class: r && (r.stopped || r.failures.length) ? "small down" : "small" },
+        `${c.priced ?? 0} priced members, ${c.with_cik ?? 0} with a CIK, ${c.with_facts ?? 0} with facts. `
+        + (r ? `Last fetch, ${stamp(r.finished_at)} UTC: ${r.summary}.` : "No fetch has run yet.")),
+      fundamentalsTable(c),
+      ...((c.without_cik ?? []).length ? [el("p", { class: "small" }, `No CIK in SEC's ticker map `
+        + `(${c.without_cik.length}): ${c.without_cik.join(" ")}.`)] : []),
+      ...((c.without_facts ?? []).length ? [el("p", { class: "small" }, `No XBRL facts at SEC `
+        + `(${c.without_facts.length}): ${c.without_facts.join(" ")}.`)] : []));
+  }
+
+  function fetchingFacts(job) {
+    if (fetching !== job.id) {
+      fetching = job.id;
+      followJob(job, fetchingFacts).then(() => sayFacts("The fundamentals fetch finished.", false),
+        (err) => sayFacts(err.message)).finally(() => { fetching = null; loadFacts(); });
+    }
+    sayFacts(el("span", null, `The fundamentals fetch is ${job.state}${job.progress ? `: ${job.progress}` : ""}. `
+      + "It waits while live work runs and resumes where it stopped. Follow or cancel it in the ",
+    el("a", { href: "#activity" }, "Activity tab"), "."), false);
+  }
+
+  const factsButton = (label, refresh) => {
+    const b = el("button", { type: "button", onclick: async () => {
+      b.disabled = true;
+      try {
+        fetchingFacts(await api(`/api/jobs/xbrl${refresh ? "?refresh=true" : ""}`, { method: "POST" }));
+      } catch (err) {
+        sayFacts(err.message);
+      } finally {
+        b.disabled = false;
+      }
+    } }, label);
+    return b;
+  };
+
   async function follow() {
     try {
       const jobs = (await api("/api/activity")).jobs;
       const job = jobs.find((j) => j.kind === "testbed" && ACTIVE.includes(j.state));
       if (job) running(job);
+      const facts = jobs.find((j) => j.kind === "xbrl" && ACTIVE.includes(j.state));
+      if (facts) fetchingFacts(facts);
       jobs.filter((j) => j.kind === "signal_test" && ACTIVE.includes(j.state)).forEach(followTest);
     } catch {
       // Activity is only a hint here.
@@ -225,7 +295,7 @@ function signalTestsSection() {
   async function begin() {
     if (started) return;
     started = true;
-    await Promise.all([load(), loadSignals()]);
+    await Promise.all([load(), loadSignals(), loadFacts()]);
     follow();
   }
 
@@ -237,6 +307,12 @@ function signalTestsSection() {
       + "missing share below is printed beside every result."),
     el("div", { class: "row" }, startButton("Build testbed", false), " ", startButton("Refresh testbed", true)),
     note, snapshot, lastRun, summary, body,
+    el("h3", null, "SEC fundamentals"),
+    el("p", { class: "dim small" }, "What SUE, gross profitability and earnings yield read: each priced member's SEC "
+      + "XBRL facts, each filing's acceptance time and Yahoo's splits. A figure counts from the session after its "
+      + "filing was accepted, and a restated figure never replaces what was first filed."),
+    el("div", { class: "row" }, factsButton("Fetch SEC fundamentals", false), " ", factsButton("Refetch", true)),
+    factsNote, factsBody,
     el("h3", null, "Pre-registered signals"),
     el("p", { class: "dim small" }, "Each signal is chosen on 2010-2019 (train, reported only) and judged on 2020 to "
       + "today (confirm): PASS needs a confirm IC above 0, t above 2 and the IC positive in more than half the counted "

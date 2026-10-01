@@ -58,6 +58,13 @@ SIGNALS = {"signals": [
                       "id": 4}}]}
 
 
+XBRL = {"priced": 609, "with_cik": 590, "with_facts": 585, "without_cik": ["OLDCO"], "without_facts": ["BANKX"],
+        "tickers_fetched_at": "2026-10-01T10:00:00+00:00", "last_run": None,
+        "years": [{"year": 2012, "members": 450, "with_cik": 440, "with_facts": 438,
+                   "scored": {"sue": 300, "gross_profitability": 380, "earnings_yield": 420},
+                   "events": {"sue": 900, "gross_profitability": 1400, "earnings_yield": 1600}}]}
+
+
 def run(body: str):
     script = f"""
         {PRELUDE}
@@ -66,6 +73,9 @@ def run(body: str):
         ANSWERS["POST /api/jobs/signal-test"] = {{ id: 9, kind: "signal_test", label: "Signal test: reversal_1m",
           state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed"] = {{ id: 7, kind: "testbed", state: "queued", progress: null }};
+        ANSWERS["GET /api/xbrl/coverage"] = {json.dumps(XBRL)};
+        ANSWERS["POST /api/jobs/xbrl"] = {{ id: 11, kind: "xbrl", state: "queued", progress: null }};
+        ANSWERS["POST /api/jobs/xbrl?refresh=true"] = {{ id: 12, kind: "xbrl", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed?refresh=true"] = {{ id: 8, kind: "testbed", state: "queued", progress: null }};
         const {{ signalTestsSection }} = await import({json.dumps((STATIC_DIR / "lib" / "signal_tests.js").as_uri())});
         const section = signalTestsSection();
@@ -151,3 +161,18 @@ def test_train_only_starts_its_own_job():
         console.log(JSON.stringify(asked));
     """)
     assert asked[0] == "POST /api/jobs/signal-test?name=momentum_12_1&train_only=true"
+
+
+def test_the_fundamentals_coverage_shows_per_year_and_fetch_starts_its_job():
+    asked, text = run("""
+        section.start(); await settle();
+        asked.length = 0;
+        button(node, "Fetch SEC fundamentals").fire("click"); await settle();
+        button(node, "Refetch").fire("click"); await settle();
+        console.log(JSON.stringify([asked, node.textContent]));
+    """)
+    assert asked == ["POST /api/jobs/xbrl", "POST /api/jobs/xbrl?refresh=true"]
+    assert "609 priced members, 590 with a CIK, 585 with facts. No fetch has run yet." in text
+    assert "300 / 900" in text and "420 / 1600" in text and "sue: members / filings" in text
+    assert "No CIK in SEC's ticker map (1): OLDCO." in text and "No XBRL facts at SEC (1): BANKX." in text
+    assert "The fundamentals fetch is queued" in text

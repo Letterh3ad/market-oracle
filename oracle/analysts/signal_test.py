@@ -46,17 +46,22 @@ class Panel:
         self.sectors = dict(sectors)
         self.open: dict[str, array] = {}
         self.close: dict[str, array] = {}
+        self.split_close: dict[str, array] = {}
+        """Yahoo's close as stored: split-adjusted to today's shares, dividends not taken out."""
         self._bad: dict[str, array] = {}
+        self.extra: dict[str, object] = {}
+        """What a signal's `prepare` loaded for its score (fundamentals, say)."""
 
     def add(self, symbol: str, bars: Sequence[Bar]) -> None:
         """`symbol`'s bars on the calendar, adjusted by each bar's adj_close / close (one fetch's basis)."""
         n = len(self.days)
-        o, c = array("d", [NAN]) * n, array("d", [NAN]) * n
+        o, c, sc = array("d", [NAN]) * n, array("d", [NAN]) * n, array("d", [NAN]) * n
         for b in bars:
             i = self.at.get(b.date)
             if i is None or not (b.close and b.close > 0):
                 continue
             k = b.adj_close / b.close if b.adj_close and b.adj_close > 0 else 1.0
+            sc[i] = b.close
             c[i] = b.close * k
             o[i] = b.open * k if b.open and b.open > 0 else NAN
         # bad[i]: closes 0..i hold that many missing closes or split-sized steps into them.
@@ -65,7 +70,7 @@ class Panel:
             if not _price(c[i]) or (i and _price(c[i - 1]) and not _steady(c[i - 1], c[i])):
                 run += 1
             bad[i] = run
-        self.open[symbol], self.close[symbol], self._bad[symbol] = o, c, bad
+        self.open[symbol], self.close[symbol], self.split_close[symbol], self._bad[symbol] = o, c, sc, bad
 
     def _clean(self, s: str, a: int, b: int) -> bool:
         """Closes a..b all prices with no split-sized step between."""
@@ -109,6 +114,11 @@ class Signal:
     score: Score
     model: str | None = None
     """The model tag of a model-read signal: it counts only after that model's training cutoff."""
+    prepare: Callable[[object, Panel], None] | None = None
+    """(research context, panel): loads what `score` reads into `panel.extra`, once per run."""
+    keep_priced_duplicate: bool = False
+    """Of a known duplicate pair on the same day, keep the listing with a bar that day (gate 02 L3);
+    False keeps the earlier listing, as the first two signals were pre-registered."""
 
 
 MOMENTUM_SKIP, MOMENTUM_YEAR, REVERSAL_DAYS = 21, 252, 21
