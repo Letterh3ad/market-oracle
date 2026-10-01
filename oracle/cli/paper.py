@@ -5,10 +5,10 @@ import argparse
 from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, LINE_NAMES, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
+    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, LINE_NAMES, REGIME_LINES, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
     decision_log, equity_history, fill_pending, place_buy, place_sell, strategy_step,
 )
-from oracle.services.regime_service import off_note
+from oracle.services.regime_service import laya_card, off_note
 from oracle.services.tick_service import run_line_step, tilt_line
 
 AI_HEADER = f"AI decisions ({UNVALIDATED})"
@@ -142,6 +142,8 @@ def _regime_step(ctx: AppContext, account: str) -> int:
               else f"{tilt_line(run.tilt)} ({run.tilt.reason})")
     if run.lag:
         print(f"WARNING: {run.lag}")
+    if account in (CORE_SAT, LAYA):
+        print(laya_card(ctx)["note"])
     _print_decisions(ctx, run.decisions)
     return 0
 
