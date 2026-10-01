@@ -3,10 +3,12 @@
 // it as a job, its coverage per year: member-days with and without bars (the missing share) and
 // the members never priced; then the pre-registered signals, each with Run test and its newest
 // result (power, missing share, train, confirm, verdict). The SEC fundamentals the fundamental
-// signals read are fetched from here too, with their coverage per year.
+// signals read are fetched from here too, with their coverage per year, and so are the Form 4s
+// and 8-Ks insider_buys and the typed-event study read (insider_events.js).
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
+import { insiderEventsSection } from "./insider_events.js";
 import { followJob } from "./ui.js";
 
 const ACTIVE = ["queued", "running"];
@@ -287,6 +289,7 @@ function signalTestsSection() {
       const facts = jobs.find((j) => j.kind === "xbrl" && ACTIVE.includes(j.state));
       if (facts) fetchingFacts(facts);
       jobs.filter((j) => j.kind === "signal_test" && ACTIVE.includes(j.state)).forEach(followTest);
+      insider.follow(jobs);
     } catch {
       // Activity is only a hint here.
     }
@@ -295,10 +298,11 @@ function signalTestsSection() {
   async function begin() {
     if (started) return;
     started = true;
-    await Promise.all([load(), loadSignals(), loadFacts()]);
+    await Promise.all([load(), loadSignals(), loadFacts(), insider.start()]);
     follow();
   }
 
+  const insider = insiderEventsSection();
   const node = el("div", { class: "card" },
     el("h2", null, "Signal tests"),
     el("p", { class: "dim small" }, "The testbed signals are tested on: every S&P 500 member as it was on each day "
@@ -313,6 +317,7 @@ function signalTestsSection() {
       + "filing was accepted, and a restated figure never replaces what was first filed."),
     el("div", { class: "row" }, factsButton("Fetch SEC fundamentals", false), " ", factsButton("Refetch", true)),
     factsNote, factsBody,
+    insider.node,
     el("h3", null, "Pre-registered signals"),
     el("p", { class: "dim small" }, "Each signal is chosen on 2010-2019 (train, reported only) and judged on 2020 to "
       + "today (confirm): PASS needs a confirm IC above 0, t above 2 and the IC positive in more than half the counted "
