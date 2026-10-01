@@ -13,6 +13,8 @@ class ArticleText:
     id: int
     title: str
     snippet: str | None
+    known: str | None = None
+    """Published, else fetched (UTC ISO)."""
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class LayaRepo:
         for i in range(0, len(article_ids), 500):
             part = article_ids[i:i + 500]
             out += [ArticleText(*r) for r in self._conn.execute(
-                f"SELECT a.id, a.title, a.snippet FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) "
+                f"SELECT a.id, a.title, a.snippet, COALESCE(a.published_at, a.fetched_at) FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) "
                 "AND NOT EXISTS (SELECT 1 FROM laya_scores s WHERE s.article_id = a.id AND s.symbol = ? "
                 "AND s.model = ?)", (*part, symbol, model))]
         return sorted(out, key=lambda a: a.id)

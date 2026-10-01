@@ -257,3 +257,21 @@ async def test_laya_off_refuses_the_job_at_once(ctx, runner):
     ctx.config = replace(ctx.config, laya=LayaConfig(enabled=False))
     with pytest.raises(InvalidQuery, match="Laya is off"):
         submit_reader(ctx, runner)
+
+
+def test_a_cut_run_has_read_the_newest_headlines_across_every_company(ctx):
+    """Newest first across subjects, so a run stopped early covers the latest (post-cutoff) days."""
+    def dated(title, day):
+        return ArticleRepo(ctx.conn).save([Article(f"https://news.test/{title}", title, "Wire",
+                                                   datetime(2026, 9, day, 9, tzinfo=timezone.utc))],
+                                          "google_news", "2026-09-29T10:00:00Z")[0]
+    a_old, a_new, k_mid, k_newest = (dated("Apple old", 1), dated("Apple new", 20), dated("Coca-Cola mid", 10),
+                                     dated("Coca-Cola newest", 25))
+    groups = [PairGroup("AAPL", "AAPL", "own", (a_old, a_new)), PairGroup("KO", "KO", "own", (k_mid, k_newest))]
+    fake = FakeReader()
+    run = score_reader(ctx, groups=groups, reader=fake, batch=1, stop=iter([False, False, False, True]).__next__)
+    assert run.stopped == "cancelled"
+    assert [i.headline for b in fake.batches for i in b] == ["Coca-Cola newest", "Apple new", "Coca-Cola mid"]
+    again = FakeReader()
+    score_reader(ctx, groups=groups, reader=again)
+    assert [i.headline for b in again.batches for i in b] == ["Apple old"], "resumes with what is left"
