@@ -42,7 +42,8 @@ def build_report(w: Watch) -> str:
     out += _paper(ledgers, _get(w, "/api/ledgers/regime") if ledgers else None,
                   _get(w, "/api/ledgers/regime-ai") if ledgers else None,
                   _get(w, "/api/ledgers/regime-v2") if ledgers else None,
-                  _get(w, "/api/ledgers/core-sat") if ledgers else None)
+                  _get(w, "/api/ledgers/core-sat") if ledgers else None,
+                  _get(w, "/api/ledgers/laya") if ledgers else None)
     out += ["", "## Replay study", ""]
     study = (_get(w, "/api/replay") or {}).get("study") if status else None
     if not study:
@@ -62,9 +63,9 @@ def build_report(w: Watch) -> str:
 
 
 def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = None,
-           regime_v2: dict | None = None, core_sat: dict | None = None) -> list[str]:
+           regime_v2: dict | None = None, core_sat: dict | None = None, laya: dict | None = None) -> list[str]:
     """Every paper account the app lists, then the regime lines' last mood reading, the regime-ai
-    tilt, regime-v2's rotations, core-sat's sleeves and any lag warning."""
+    tilt, regime-v2's rotations, core-sat's sleeves, Laya's verdict and weight and any lag warning."""
     if not ledgers:
         return ["No ledgers (or the app is down)."]
     base = ledgers.get("base_currency")
@@ -79,7 +80,15 @@ def _paper(ledgers: dict | None, regime: dict | None, regime_ai: dict | None = N
         out += _mood("Regime-v2", regime_v2) + _rotations(regime_v2)
     if core_sat:
         out += _mood("Core-sat", core_sat) + _sleeves(core_sat, base)
+    if laya:
+        out += _mood("Laya", laya) + _laya(laya)
     return out
+
+
+def _laya(card: dict) -> list[str]:
+    """Laya's kept predictive verdict and the weight it gives in core-sat's satellite."""
+    v = card.get("laya") or {}
+    return [f"Laya: {v['note']}"] if v.get("note") else []
 
 
 def _sleeves(card: dict, base: str | None) -> list[str]:
