@@ -44,6 +44,8 @@ from oracle.services.research_service import (
 from oracle.services.signal_test_service import check_signal, run_and_keep
 from oracle.services.testbed_service import build_testbed
 from oracle.services.xbrl_service import fetch_fundamentals
+from oracle.services.insider_service import fetch_insiders
+from oracle.services.event_study_service import run_and_keep_events
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.paper_service import LINE_NAMES, REGIME_LINES
 from oracle.services.tick_service import (
@@ -57,7 +59,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
-           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_insiders", "submit_event_study", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -631,8 +633,55 @@ def _retry_xbrl(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_xbrl(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
 
 
-SIGNAL_TEST_WAITS = (*TESTBED_WAITS, "testbed", "xbrl")
-"""A test run during a build or a fundamentals fetch would read a half-filled testbed."""
+INSIDERS_SUBJECT = "insiders"
+
+
+def submit_insiders(ctx: AppContext, runner: JobRunner, refresh: bool = False) -> Job:
+    """Fetch the testbed members' Form 4 trades (SEC's quarterly data sets) and their Form 4 and 8-K
+    filing times and items into the research database (with `refresh`, all again). It waits like the
+    fundamentals fetch, a Cancel stops it between requests, and what it fetched is kept."""
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        r = await fetch_insiders(c, refresh=refresh, stop=stopped.is_set,
+                                 busy=lambda: _live_work(runner, (*XBRL_WAITS, "xbrl")) or scheduled_run_near(c),
+                                 on_progress=stage.append)
+        if (r.stopped and r.stopped != "cancelled") or r.failures:
+            raise ServiceError(r.summary)
+        return r
+
+    return runner.submit("insiders", "Refetch Form 4s and 8-Ks" if refresh else "Fetch Form 4s and 8-Ks", work,
+                         subject=INSIDERS_SUBJECT + (BACKTEST_SEP + TESTBED_REFRESH if refresh else ""),
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _retry_insiders(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_insiders(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TESTBED_REFRESH))
+
+
+SIGNAL_TEST_WAITS = (*TESTBED_WAITS, "testbed", "xbrl", "insiders")
+"""A test run during a build or a fetch would read a half-filled testbed."""
+EVENT_STUDY_SUBJECT = "event_study"
+
+
+def submit_event_study(ctx: AppContext, runner: JobRunner, train_only: bool = False) -> Job:
+    """The pre-registered typed-event study on the testbed (with `train_only`, 2010-2019 alone), kept
+    in the research database. It reads only and waits like a signal test; a Cancel keeps nothing."""
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return await run_and_keep_events(c, train_only=train_only, stop=stopped.is_set,
+                                         busy=lambda: _signal_test_waits(c, runner), on_progress=stage.append)
+
+    return runner.submit("event_study", "Event study" + (", train only" if train_only else ""), work,
+                         subject=EVENT_STUDY_SUBJECT + (BACKTEST_SEP + TRAIN_PART if train_only else ""),
+                         link="#ledgers", progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _retry_event_study(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_event_study(ctx, runner, (job.subject or "").endswith(BACKTEST_SEP + TRAIN_PART))
 TRAIN_PART = "train"
 
 
@@ -1029,6 +1078,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history, "testbed": _retry_testbed, "signal_test": _retry_signal_test, "xbrl": _retry_xbrl,
+    "insiders": _retry_insiders, "event_study": _retry_event_study,
     "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,
 }

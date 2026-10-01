@@ -27,6 +27,8 @@ class FakeSec:
         self.requests: list[httpx.Request] = []
         self.facts: dict[int, dict] = {}
         """cik -> its companyfacts body"""
+        self.datasets: dict[str, bytes] = {}
+        """quarter "2010q1" -> its insider transactions data set zip"""
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -36,6 +38,13 @@ class FakeSec:
         if path == "/files/company_tickers.json":
             return httpx.Response(200, json={str(i): {"cik_str": cik, "ticker": t, "title": name}
                                              for i, (t, (cik, name)) in enumerate(self.companies.items())})
+        if path == "/data-research/sec-markets-data/insider-transactions-data-sets":
+            links = "".join(f'<a href="/files/structureddata/data/insider-transactions-data-sets/{q}_form345.zip">'
+                            for q in self.datasets)
+            return httpx.Response(200, text=f"<html>{links}</html>", headers={"Content-Type": "text/html"})
+        if m := re.fullmatch(r"/files/structureddata/data/insider-transactions-data-sets/(\d{4}q\d)_form345\.zip", path):
+            data = self.datasets.get(m.group(1))
+            return httpx.Response(200, content=data) if data is not None else httpx.Response(404)
         if m := re.fullmatch(r"/api/xbrl/companyfacts/CIK(\d{10})\.json", path):
             body = self.facts.get(int(m.group(1)))
             return httpx.Response(200, json=body) if body is not None else httpx.Response(404)
