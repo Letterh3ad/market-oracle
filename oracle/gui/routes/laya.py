@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 
 from oracle.gui.deps import get_ctx
 from oracle.gui.routes import shapes
-from oracle.research.reader import reader_tag
+from oracle.services.reader_service import reader_tag
 from oracle.services.context import AppContext, worker_context
 from oracle.services.laya_service import MODEL_TAG
 from oracle.services.laya_history_service import last_history_run, plan_history

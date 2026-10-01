@@ -28,7 +28,7 @@ from oracle.store.laya import ArticleText, LayaRepo
 from oracle.store.meta import MetaRepo
 
 __all__ = ["BAKE_OFF_RATES", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
-           "plan_reader", "reader_groups", "score_reader", "waits_anywhere"]
+           "plan_reader", "reader_groups", "reader_tag", "score_reader", "waits_anywhere"]
 
 JOB = "reader"
 LEASE_S = 1800.0
