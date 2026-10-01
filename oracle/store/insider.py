@@ -4,7 +4,7 @@ the testbed's issuers. Lives in the research database only."""
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from datetime import date
 
 from oracle.research.insider import Filing, Trade
@@ -15,20 +15,27 @@ class InsiderRepo:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
-    def replace_quarter(self, quarter: str, url: str, trades: Sequence[Trade], at: str) -> None:
-        """A quarter's trades, replacing what was stored for it (a refetch is whole)."""
+    def replace_quarter(self, quarter: str, url: str, trades: Sequence[Trade], issuers: Collection[int],
+                        at: str) -> None:
+        """A quarter's trades of `issuers`, replacing what was stored for it (a refetch is whole)."""
         rows = [(t.accession, n, t.issuer_cik, t.owner_cik, t.owner, t.role, t.code, t.traded.isoformat(), t.shares,
                  t.price, t.filed.isoformat(), quarter) for n, t in enumerate(trades)]
         with transaction(self._conn):
             self._conn.execute("DELETE FROM insider_trades WHERE quarter = ?", (quarter,))
             self._conn.executemany("INSERT OR REPLACE INTO insider_trades VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                    rows)
-            self._conn.execute("INSERT OR REPLACE INTO insider_quarters VALUES (?, ?, ?, ?)",
-                               (quarter, url, len(rows), at))
+            self._conn.execute("INSERT OR REPLACE INTO insider_quarters (quarter, url, trades, issuers, fetched_at) "
+                               "VALUES (?, ?, ?, ?, ?)", (quarter, url, len(rows), ",".join(map(str, sorted(issuers))),
+                                                          at))
 
     def quarters(self) -> dict[str, int]:
         """quarter -> trades stored."""
         return dict(self._conn.execute("SELECT quarter, trades FROM insider_quarters ORDER BY quarter"))
+
+    def quarter_issuers(self) -> dict[str, frozenset[int]]:
+        """quarter -> the CIKs it was filtered to."""
+        return {q: frozenset(int(c) for c in issuers.split(",") if c) for q, issuers in self._conn.execute(
+            "SELECT quarter, issuers FROM insider_quarters")}
 
     def trades(self, cik: int) -> list[Trade]:
         return [Trade(r[0], r[1], r[2], r[3], r[4], r[5], date.fromisoformat(r[6]), r[7], r[8], date.fromisoformat(r[9]))
@@ -37,10 +44,11 @@ class InsiderRepo:
                     "FROM insider_trades WHERE issuer_cik = ? ORDER BY filed, accession, row", (cik,))]
 
     def replace_filings(self, cik: int, filings: Iterable[Filing], at: str) -> int:
-        rows = [(f.accession, cik, f.form, f.items, f.filed.isoformat(), f.accepted) for f in filings]
+        rows = [(cik, f.accession, f.form, f.items, f.filed.isoformat(), f.accepted) for f in filings]
         with transaction(self._conn):
             self._conn.execute("DELETE FROM sec_filings WHERE cik = ?", (cik,))
-            self._conn.executemany("INSERT OR REPLACE INTO sec_filings VALUES (?, ?, ?, ?, ?, ?)", rows)
+            self._conn.executemany("INSERT OR REPLACE INTO sec_filings (cik, accession, form, items, filed, accepted) "
+                                   "VALUES (?, ?, ?, ?, ?, ?)", rows)
             self._conn.execute("INSERT OR REPLACE INTO sec_filings_tried VALUES (?, ?, ?)", (cik, at, len(rows)))
         return len(rows)
 

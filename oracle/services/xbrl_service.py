@@ -33,8 +33,9 @@ from oracle.store.meta import MetaRepo
 from oracle.store.testbed import TestbedRepo
 from oracle.store.xbrl import XbrlRepo
 
-__all__ = ["EARNINGS_YIELD", "FUNDAMENTAL_SIGNALS", "GROSS_PROFITABILITY", "JOB", "SUE", "XbrlCoverage", "XbrlRun",
-           "fetch_fundamentals", "fundamentals_coverage", "last_xbrl_run", "timelines"]
+__all__ = ["EARNINGS_YIELD", "FUNDAMENTAL_SIGNALS", "FetchStopped", "GROSS_PROFITABILITY", "JOB", "SUE", "SecFetch",
+           "XbrlCoverage", "XbrlRun", "fetch_fundamentals", "fundamentals_coverage", "last_xbrl_run", "lookup_cik",
+           "priced_members", "timelines"]
 
 JOB = "xbrl_fetch"
 LEASE_S = 1800.0
@@ -74,7 +75,7 @@ class XbrlRun:
                 f"{self.facts_added} facts stored, {self.splits} split histories{tail}")
 
 
-class _Stopped(Exception):
+class FetchStopped(Exception):
     pass
 
 
@@ -90,13 +91,13 @@ async def fetch_fundamentals(ctx: AppContext, *, refresh: bool = False, only: Se
     with research_context(ctx) as r:
         try:
             with single_flight(r, JOB, LEASE_S) as held:
-                f = _Fetch(r, held, run, stop, busy, on_progress)
+                f = SecFetch(r, held, run, stop, busy, on_progress)
                 try:
                     async with open_client(r) as client:
                         f.client = client
                         await f.ticker_map(refresh)
                         await f.members(f.scope(only, limit), refresh)
-                except _Stopped:
+                except FetchStopped:
                     pass
         except Exception as exc:
             run.stopped = f"failed: {type(exc).__name__}: {exc}"
@@ -118,11 +119,11 @@ def _last_run(r: AppContext) -> XbrlRun | None:
     return XbrlRun(**json.loads(raw)) if raw else None
 
 
-def _priced(r: AppContext) -> list[str]:
+def priced_members(r: AppContext) -> list[str]:
     return [m.ticker for m in TestbedRepo(r.conn).members() if m.bars_tried_at and m.bars_note is None]
 
 
-def _lookup(repo: XbrlRepo, ticker: str) -> int | None:
+def lookup_cik(repo: XbrlRepo, ticker: str) -> int | None:
     """SEC spells share classes with a dash like Yahoo (BRK-B); some with a dot or none."""
     for t in (ticker, ticker.replace("-", "."), ticker.replace("-", "")):
         if (cik := repo.cik(t)) is not None:
@@ -130,7 +131,10 @@ def _lookup(repo: XbrlRepo, ticker: str) -> int | None:
     return None
 
 
-class _Fetch:
+class SecFetch:
+    """One SEC fetch run: pacing, the contact, waits for live work, stops and failure rules
+    (the Form 4 fetch builds on it)."""
+
     client: RateLimitedClient
 
     def __init__(self, r: AppContext, held: Held, run: XbrlRun, stop, busy, on_progress) -> None:
@@ -145,7 +149,7 @@ class _Fetch:
     def headers(self) -> dict:
         if not self.contact:
             self.run.stopped = "SEC needs a contact: set the research contact (name and email) in the settings"
-            raise _Stopped
+            raise FetchStopped
         return {"User-Agent": edgar.user_agent(self.contact)}
 
     async def ticker_map(self, refresh: bool) -> None:
@@ -158,14 +162,14 @@ class _Fetch:
         except (RequestFailed, CircuitOpen, ValueError) as exc:
             if at is None:
                 self.run.stopped = f"no ticker map from SEC: {exc}"
-                raise _Stopped from None
+                raise FetchStopped from None
             self.run.failures.append(f"ticker map: {exc}")
             return
         if found:
             self.repo.replace_tickers(found, self._at())
 
     def scope(self, only: Sequence[str] | None, limit: int | None) -> list[str]:
-        tickers = _priced(self.r)
+        tickers = priced_members(self.r)
         if only is not None:
             wanted = {t.upper().replace(".", "-") for t in only}
             tickers = [t for t in tickers if t in wanted]
@@ -177,7 +181,7 @@ class _Fetch:
         known = self.repo.members()
         for i, t in enumerate(scope, 1):
             m = known.get(t)
-            cik = _lookup(self.repo, t)
+            cik = lookup_cik(self.repo, t)
             self.run.mapped += cik is not None
             self.run.no_cik += cik is None
             if refresh or m is None or m.facts_tried_at is None:
@@ -238,14 +242,14 @@ class _Fetch:
         """One member's step: an unexpected answer is that member's failure, never the run's end."""
         try:
             await step
-        except (_Stopped, JobAlreadyRunning):
+        except (FetchStopped, JobAlreadyRunning):
             raise
         except Exception as exc:
             self.run.failures.append(f"{t}: {type(exc).__name__}: {exc}")
             self.failed_in_a_row += 1
             if self.failed_in_a_row >= FAILED_IN_A_ROW:
                 self.run.stopped = f"{FAILED_IN_A_ROW} requests failed in a row; run it again to resume"
-                raise _Stopped from None
+                raise FetchStopped from None
 
     async def _turn(self, label: str) -> None:
         self._check()
@@ -259,7 +263,7 @@ class _Fetch:
         self.held.check()
         if self.stop and self.stop():
             self.run.stopped = "cancelled"
-            raise _Stopped
+            raise FetchStopped
 
     def _at(self) -> str:
         return to_utc_iso(self.r.clock.utcnow())
@@ -383,7 +387,7 @@ def fundamentals_coverage(ctx: AppContext, start: date = START) -> XbrlCoverage:
     scored filing that year and how many; plus who has no CIK or no facts."""
     with research_context(ctx) as r:
         repo, tb = XbrlRepo(r.conn), TestbedRepo(r.conn)
-        priced = set(_priced(r))
+        priced = set(priced_members(r))
         members = repo.members()
         lines = timelines(r, sorted(priced))
         years: dict[int, set[str]] = {}

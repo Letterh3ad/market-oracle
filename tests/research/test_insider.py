@@ -90,3 +90,9 @@ def test_clusters_need_three_insiders_in_30_days_and_fire_at_most_once_a_month()
     assert insider.clusters(b) == [D("2020-01-30"), D("2020-03-01")]
     assert insider.clusters(insider.buys([trade("a", 1, "2020-01-01"), trade("b", 2, "2020-01-15"),
                                           trade("c", 3, "2020-01-31")], {})) == [], "01-01 is 31 days back"
+
+
+def test_quarter_of_a_day():
+    assert [insider.quarter_of(D(d)) for d in ("2010-01-01", "2010-03-31", "2010-04-01", "2010-12-31")] == [
+        "2010q1", "2010q1", "2010q2", "2010q4"]
+    assert insider.quarter_start("2010q2") == D("2010-04-01")

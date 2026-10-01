@@ -70,6 +70,14 @@ def dataset_links(page: str, base: str = "https://www.sec.gov") -> dict[str, str
     return {q.lower(): (href if href.startswith("http") else base + href) for href, q in _DATASET.findall(page)}
 
 
+def quarter_of(day: date) -> str:
+    return f"{day.year}q{(day.month - 1) // 3 + 1}"
+
+
+def quarter_start(quarter: str) -> date:
+    return date(int(quarter[:4]), 3 * int(quarter[-1]) - 2, 1)
+
+
 def quarter_end(quarter: str) -> date:
     y, q = int(quarter[:4]), int(quarter[-1])
     return date(y, 12, 31) if q == 4 else date(y, 3 * q + 1, 1) - timedelta(days=1)

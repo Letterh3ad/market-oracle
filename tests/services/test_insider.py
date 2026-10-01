@@ -10,6 +10,7 @@ from oracle.analysts.event_study import clustered_t, passes, summarise
 from oracle.analysts.signal_test import Panel
 from oracle.config import Config, ResearchConfig
 from oracle.market.bars import Bar
+from oracle.research import insider
 from oracle.research.insider import Filing, Trade
 from oracle.services.context import open_context
 from oracle.services.event_study_service import event_studies, run_and_keep_events, run_event_study
@@ -92,11 +93,16 @@ async def test_a_fetch_without_a_contact_stops_and_says_so(tmp_path):
     assert run.stopped and "contact" in run.stopped
 
 
-def store(ctx, cik, trades=(), filings=(), quarter="2020q4"):
+def store(ctx, cik, trades=(), filings=(), quarters=("2020q4",), issuers=(1, 2)):
     with research_context(ctx) as r:
         repo = InsiderRepo(r.conn)
-        repo.replace_quarter(quarter, "u", list(trades), AT)
+        for q in quarters:
+            repo.replace_quarter(q, "u", [t for t in trades if insider.quarter_of(t.filed) == q], issuers, AT)
         repo.replace_filings(cik, list(filings), AT)
+
+
+def form4(a, cik, filed, accepted=None):
+    return Filing(a, cik, "4", "", D(filed), accepted)
 
 
 def buy(a, owner, filed, cik=1, role="Officer", code="P"):
@@ -115,7 +121,9 @@ def test_insider_buys_counts_from_the_session_after_acceptance_scores_zero_and_s
     ctx, *_ = env
     seed(ctx)
     store(ctx, 1, [buy("a", 7, "2020-11-03"), buy("b", 8, "2020-11-05"), buy("c", 9, "2020-11-05", code="S")],
-          [Filing("a", 1, "4", "", D("2020-11-03"), "2020-11-02T19:00")])
+          [form4("old", 1, "2019-05-01"), form4("a", 1, "2020-11-03", "2020-11-02T19:00")],
+          quarters=("2019q2", "2019q3", "2019q4", "2020q1", "2020q2", "2020q3", "2020q4"))
+    store(ctx, 2, filings=[form4("b0", 2, "2019-01-02")], quarters=())
     days = weekdays(D("2020-10-01"), D("2021-01-29"))
     p = panel(days, ["AAA", "BBB", "NOSEC"])
     with research_context(ctx) as r:
@@ -209,3 +217,68 @@ async def test_the_fetch_job_retries_as_it_was_and_a_signal_test_waits_for_it(en
     assert _signal_test_waits(ctx, runner) == "Fetch Form 4s and 8-Ks"
     hold.set()
     await runner.wait(other.id)
+
+
+def test_a_member_is_unscored_until_its_cik_has_90_days_of_form4s_and_data_sets_fetched_with_it(env):
+    ctx, *_ = env
+    seed(ctx)
+    # AAA's CIK files its first Form 4 on 2020-03-02 (a new holding company): unscored before 2020-06-01.
+    # BBB's CIK never filed a Form 4 (as XOM's today): never scored.
+    store(ctx, 1, filings=[form4("f", 1, "2020-03-02")], quarters=("2019q4", "2020q1", "2020q2", "2020q3"),
+          issuers=(1, 2))
+    # A later quarter fetched without AAA's CIK: nothing it covers is scored for AAA.
+    store(ctx, 1, filings=[form4("f", 1, "2020-03-02")], quarters=("2020q4",), issuers=(2,))
+    days = weekdays(D("2020-05-01"), D("2020-12-31"))
+    p = panel(days, ["AAA", "BBB"])
+    with research_context(ctx) as r:
+        p.extra["insider"] = issuer_data(r, ["AAA", "BBB"])
+    on = lambda d: insider_buys(p, p.at[D(d)], ["AAA", "BBB"])  # noqa: E731
+    assert on("2020-05-29") == {}, "AAA's first Form 4 is under 90 days old; BBB has none"
+    assert on("2020-06-01") == {"AAA": 0.0}
+    assert on("2020-09-30") == {"AAA": 0.0}
+    assert on("2020-10-01") == {"AAA": 0.0} and on("2020-10-02") == {}, "the window reaches 2020q4, fetched without AAA's CIK"
+
+
+async def test_a_smoke_run_then_a_full_run_stores_every_issuers_trades(env):
+    ctx, sec, _ = env
+    seed(ctx)
+    sec.filings = {1: [("4", "2010-03-31", "a1", "f.xml", "", "", "2010-03-31T01:00:00.000Z")],
+                   2: [("4", "2010-03-31", "a2", "f.xml", "", "", "2010-03-31T01:00:00.000Z")]}
+    sec.datasets = {"2010q1": dataset(
+        [("a1", "31-MAR-2010", "30-MAR-2010", "4", "0000000001", "AAA"),
+         ("a2", "31-MAR-2010", "30-MAR-2010", "4", "0000000002", "BBB")],
+        [("a1", "0000000500", "Doe", "Director", ""), ("a2", "0000000501", "X", "Officer", "")],
+        [("a1", "1", "29-MAR-2010", "P", "100.0", "8.5", "A"), ("a2", "1", "29-MAR-2010", "P", "1.0", "1.0", "A")])}
+    smoke = await fetch_insiders(ctx, only=["AAA"])
+    assert smoke.quarters_fetched == 1 and smoke.trades_added == 1
+    full = await fetch_insiders(ctx)
+    assert full.quarters_fetched == 1, "the quarter lacked BBB's CIK: fetched again"
+    with research_context(ctx) as r:
+        repo = InsiderRepo(r.conn)
+        assert len(repo.trades(1)) == 1 and len(repo.trades(2)) == 1
+        assert repo.quarter_issuers()["2010q1"] == frozenset({1, 2})
+    again = await fetch_insiders(ctx, only=["AAA"], refresh=True)
+    with research_context(ctx) as r:
+        assert InsiderRepo(r.conn).quarter_issuers()["2010q1"] == frozenset({1, 2}), "a smoke refetch never shrinks"
+        assert len(InsiderRepo(r.conn).trades(2)) == 1
+    assert again.quarters_fetched == 1
+    assert (await fetch_insiders(ctx)).quarters_fetched == 0
+
+
+def test_a_filing_listed_under_two_member_ciks_is_kept_under_both(env):
+    ctx, *_ = env
+    seed(ctx)
+    with research_context(ctx) as r:
+        repo = InsiderRepo(r.conn)
+        repo.replace_filings(1, [form4("x", 1, "2020-01-03", "2020-01-02T18:00")], AT)
+        repo.replace_filings(2, [form4("x", 2, "2020-01-03", "2020-01-02T18:00")], AT)
+        assert repo.accepted(1) == {"x": "2020-01-02T18:00"} and repo.accepted(2) == {"x": "2020-01-02T18:00"}
+
+
+def test_coverage_lists_members_whose_cik_starts_late(env):
+    ctx, *_ = env
+    seed(ctx)
+    store(ctx, 1, filings=[form4("f", 1, "2015-03-02")], quarters=("2010q1",), issuers=(1, 2))
+    c = insider_coverage(ctx)
+    assert [(x.ticker, x.member_from, x.scored_from) for x in c.late] == [
+        ("AAA", D("2010-01-04"), D("2015-05-31")), ("BBB", D("2010-01-04"), None)]

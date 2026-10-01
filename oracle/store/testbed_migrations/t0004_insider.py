@@ -6,7 +6,9 @@ from oracle.store.migrations import run_ddl
 
 # insider_trades: open-market purchases (P) and sales (S) of original Form 4s, from SEC's quarterly
 # data sets. sec_filings: original Form 4s and 8-Ks from each issuer's submissions, accepted in New
-# York time (YYYY-MM-DDTHH:MM), and the 8-K items.
+# York time (YYYY-MM-DDTHH:MM), and the 8-K items, under each CIK that lists them (an owner company's
+# Form 4 about another member sits under both). insider_quarters.issuers: the CIKs a quarter was
+# filtered to, comma-separated; a quarter lacking a CIK now in scope is fetched again.
 DDL = """
 CREATE TABLE insider_trades (
     accession  TEXT    NOT NULL,
@@ -30,18 +32,19 @@ CREATE TABLE insider_quarters (
     quarter    TEXT PRIMARY KEY,
     url        TEXT NOT NULL,
     trades     INTEGER NOT NULL,
+    issuers    TEXT NOT NULL,
     fetched_at TEXT NOT NULL
 ) WITHOUT ROWID;
 
 CREATE TABLE sec_filings (
-    accession TEXT    PRIMARY KEY,
     cik       INTEGER NOT NULL,
+    accession TEXT    NOT NULL,
     form      TEXT    NOT NULL,
     items     TEXT    NOT NULL,
     filed     TEXT    NOT NULL,
-    accepted  TEXT
+    accepted  TEXT,
+    PRIMARY KEY (cik, accession)
 ) WITHOUT ROWID;
-CREATE INDEX sec_filings_cik ON sec_filings (cik);
 
 CREATE TABLE sec_filings_tried (
     cik      INTEGER PRIMARY KEY,

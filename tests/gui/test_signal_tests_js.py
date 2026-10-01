@@ -66,7 +66,8 @@ XBRL = {"priced": 609, "with_cik": 590, "with_facts": 585, "without_cik": ["OLDC
 
 
 INSIDERS = {"priced": 609, "issuers": 600, "no_cik": 9, "filings_fetched": 600, "quarters": {"2009q1": 10, "2026q2": 20},
-            "last_run": None, "years": [{"year": 2015, "P": 812, "P_issuers": 140, "S": 9100, "4": 30000, "8-K": 6000,
+            "last_run": None, "late": [{"ticker": "XOM", "cik": 2115436, "member_from": "2010-01-04",
+                                        "scored_from": None}], "years": [{"year": 2015, "P": 812, "P_issuers": 140, "S": 9100, "4": 30000, "8-K": 6000,
                                          "8-K 2.02": 2300, "8-K 1.01": 700, "8-K 2.01": 90}]}
 
 
@@ -214,5 +215,6 @@ def test_form4_coverage_and_the_event_study_tables_with_their_jobs():
     assert asked == ["POST /api/jobs/insiders", "POST /api/jobs/event-study", "POST /api/jobs/event-study?train_only=true"]
     assert "600 issuers with a CIK (9 members without)" in text and "trades for 2 quarters, 2009q1 to 2026q2" in text
     assert "9100" in text and "2300" in text
+    assert "Today's CIK starts late (1)" in text and "XOM (CIK 2115436) member from 2010-01-04, scored from never" in text
     assert "20 d (primary)" in text and "-1.23%, t -1.10" in text and "insider trades through 2026-06-30" in text
     assert "The Form 4 and 8-K fetch is queued" in text and "The event study is queued" in text

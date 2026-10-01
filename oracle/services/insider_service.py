@@ -12,7 +12,7 @@ import json
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import date
+from datetime import date, timedelta
 
 from oracle.analysts.signal_test import Panel, Signal
 from oracle.net.errors import CircuitOpen, RequestFailed
@@ -21,14 +21,15 @@ from oracle.research.insider import Buys
 from oracle.services.context import AppContext
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
-from oracle.services.testbed_service import research_context
-from oracle.services.xbrl_service import SEC, SINCE, _Fetch, _lookup, _priced, _Stopped
+from oracle.services.testbed_service import START, research_context
+from oracle.services.xbrl_service import SEC, SINCE, SecFetch, lookup_cik, priced_members, FetchStopped
 from oracle.store.db import to_utc_iso
 from oracle.store.insider import InsiderRepo
 from oracle.store.meta import MetaRepo
+from oracle.store.testbed import TestbedRepo
 from oracle.store.xbrl import XbrlRepo
 
-__all__ = ["INSIDER_BUYS", "InsiderCoverage", "InsiderRun", "JOB", "fetch_insiders", "insider_coverage",
+__all__ = ["INSIDER_BUYS", "InsiderCoverage", "InsiderRun", "JOB", "LateCik", "fetch_insiders", "insider_coverage",
            "issuer_data", "last_insider_run"]
 
 JOB = "insider_fetch"
@@ -84,7 +85,7 @@ async def fetch_insiders(ctx: AppContext, *, refresh: bool = False, only: Sequen
                         ciks = f.issuers(f.scope(only, limit))
                         await f.filings(ciks, refresh)
                         await f.quarters(ciks, refresh)
-                except _Stopped:
+                except FetchStopped:
                     pass
         except Exception as exc:
             run.stopped = f"failed: {type(exc).__name__}: {exc}"
@@ -106,7 +107,7 @@ def _last_run(r: AppContext) -> InsiderRun | None:
     return InsiderRun(**json.loads(raw)) if raw else None
 
 
-class _InsiderFetch(_Fetch):
+class _InsiderFetch(SecFetch):
     """The fundamentals fetch's pacing, waits, contact and failure rules, for Form 4s and 8-Ks."""
 
     def __init__(self, r, held, run, stop, busy, on_progress) -> None:
@@ -116,7 +117,7 @@ class _InsiderFetch(_Fetch):
     def issuers(self, tickers: list[str]) -> list[int]:
         ciks = set()
         for t in tickers:
-            cik = _lookup(self.repo, t)
+            cik = lookup_cik(self.repo, t)
             self.run.no_cik += cik is None
             if cik is not None:
                 ciks.add(cik)
@@ -147,12 +148,15 @@ class _InsiderFetch(_Fetch):
         except (RequestFailed, CircuitOpen) as exc:
             self.run.failures.append(f"data sets page: {exc}")
             return
-        stored = self.insiders.quarters()
-        wanted = [q for q in sorted(links) if q >= FIRST_QUARTER and (refresh or q not in stored)]
-        keep = frozenset(ciks)
+        stored = self.insiders.quarter_issuers()
+        scope = frozenset(ciks)
+        # A quarter is done only for the issuers it was filtered to; a refetch keeps those too, so a
+        # smoke run never shrinks what a full one stored.
+        wanted = [q for q in sorted(links)
+                  if q >= FIRST_QUARTER and (refresh or not scope <= stored.get(q, frozenset()))]
         for n, q in enumerate(wanted, 1):
             await self._turn(f"insider trades {q} ({n}/{len(wanted)})")
-            await self._guarded(q, self._quarter(q, links[q], keep))
+            await self._guarded(q, self._quarter(q, links[q], scope | stored.get(q, frozenset())))
 
     async def _quarter(self, q: str, url: str, ciks: frozenset[int]) -> None:
         self.run.requests += 1
@@ -161,7 +165,7 @@ class _InsiderFetch(_Fetch):
             raise RequestFailed(SEC, resp.status_code, f"HTTP {resp.status_code}")
         self.failed_in_a_row = 0
         trades = await asyncio.to_thread(insider.parse_dataset, resp.content, ciks)
-        self.insiders.replace_quarter(q, url, trades, self._at())
+        self.insiders.replace_quarter(q, url, trades, ciks, self._at())
         self.run.quarters_fetched += 1
         self.run.trades_added += len(trades)
 
@@ -180,6 +184,27 @@ class IssuerData:
     buys: Buys
     items: dict[str, list[date]]
     """8-K item -> known days."""
+    first_form4: date | None
+    """Known day of the CIK's first stored Form 4: before it this CIK says nothing about insiders
+    (a company under a CIK it took later, or a ticker since given to another company)."""
+    quarters: frozenset[str]
+    """The data-set quarters fetched with this CIK in scope."""
+
+    def covers(self, first: date, last: date) -> bool:
+        """Whether its insider data is whole from `first` to `last`."""
+        if self.first_form4 is None or first < self.first_form4:
+            return False
+        q, end = insider.quarter_of(first), insider.quarter_of(last)
+        while q <= end:
+            if q not in self.quarters:
+                return False
+            q = insider.quarter_of(insider.quarter_end(q) + timedelta(days=1))
+        return True
+
+    @property
+    def scored_from(self) -> date | None:
+        """The first decision day its window could be whole (quarters aside)."""
+        return None if self.first_form4 is None else self.first_form4 + insider.WINDOW
 
 
 @dataclass(frozen=True)
@@ -194,22 +219,26 @@ def issuer_data(r: AppContext, tickers: Sequence[str], through: date | None = No
     """Each ticker with a CIK: its insider purchases and 8-K item days by known day; with `through`,
     only what was known by then (a train-only run reads nothing later)."""
     xr, ir = XbrlRepo(r.conn), InsiderRepo(r.conn)
-    quarters = ir.quarters()
+    quarters = ir.quarter_issuers()
     last = insider.quarter_end(max(quarters)) if quarters else None
     cache: dict[int, IssuerData] = {}
     out = {}
     for t in tickers:
-        cik = _lookup(xr, t)
+        cik = lookup_cik(xr, t)
         if cik is None:
             continue
         if cik not in cache:
             b = insider.buys(ir.trades(cik), ir.accepted(cik))
-            items = insider.item_events(ir.filings(cik))
+            filings = ir.filings(cik)
+            items = insider.item_events(filings)
+            first = min((insider.known_day(f.filed, f.accepted) for f in filings if f.form == insider.FORM4),
+                        default=None)
             if through is not None:
                 k = sum(d <= through for d in b[0])
                 b = (b[0][:k], b[1][:k])
                 items = {i: [d for d in days if d <= through] for i, days in items.items()}
-            cache[cik] = IssuerData(b, items)
+            cache[cik] = IssuerData(b, items, first if through is None or (first and first <= through) else None,
+                                    frozenset(q for q, ciks in quarters.items() if cik in ciks))
         out[t] = cache[cik]
     return InsiderData(out, last)
 
@@ -222,12 +251,16 @@ def _prepare(r: AppContext, p: Panel) -> None:
 
 def insider_buys(p: Panel, i: int, names: Sequence[str]) -> dict[str, float]:
     """Distinct insiders buying in Form 4s known from 90 days before the decision day to the day
-    before; every member with a CIK scores (0 without buys); nothing after the trades' last quarter."""
+    before. A member scores (0 without buys) only when its CIK's insider data covers that window: its
+    first Form 4 is no later than the window's start and every quarter in it was fetched with the CIK.
+    Nothing after the trades' last quarter."""
     data: InsiderData = p.extra["insider"]
     day = p.days[i]
     if data.through is None or day > data.through:
         return {}
-    return {s: float(insider.insider_score(d.buys, day)) for s in names if (d := data.by_ticker.get(s))}
+    first, last = day - insider.WINDOW, day - timedelta(days=1)
+    return {s: float(insider.insider_score(d.buys, day)) for s in names
+            if (d := data.by_ticker.get(s)) and d.covers(first, last)}
 
 
 INSIDER_BUYS = Signal("insider_buys", "Insider buys: distinct officers and directors with an open-market purchase in "
@@ -248,18 +281,39 @@ class InsiderCoverage:
     years: dict[int, dict[str, int]]
     """year -> purchases, sales, issuers with each, Form 4s, 8-Ks and each item's 8-Ks."""
     last_run: InsiderRun | None
+    late: tuple[LateCik, ...] = ()
+    """Priced members whose CIK's Form 4s start over LATE after they were first a member from START."""
+
+
+LATE = timedelta(days=365)
+
+
+@dataclass(frozen=True)
+class LateCik:
+    ticker: str
+    cik: int
+    member_from: date
+    scored_from: date | None
+    """None: no Form 4 under today's CIK at all."""
 
 
 def insider_coverage(ctx: AppContext) -> InsiderCoverage:
     with research_context(ctx) as r:
         xr, ir = XbrlRepo(r.conn), InsiderRepo(r.conn)
-        priced = _priced(r)
-        ciks = {c for t in priced if (c := _lookup(xr, t)) is not None}
+        priced = priced_members(r)
+        ciks = {c for t in priced if (c := lookup_cik(xr, t)) is not None}
         years: dict[int, dict[str, int]] = {}
         for y, row in ir.counts_by_year().items():
             years.setdefault(y, {}).update(row)
         for y, row in ir.items_by_year().items():
             years.setdefault(y, {}).update(row)
-        return InsiderCoverage(len(priced), len(ciks), sum(_lookup(xr, t) is None for t in priced),
+        data = issuer_data(r, priced)
+        starts: dict[str, date] = {}
+        for span in TestbedRepo(r.conn).spans():
+            if span.ticker in data.by_ticker and (span.end is None or span.end > START):
+                starts.setdefault(span.ticker, max(span.start, START))
+        late = tuple(LateCik(t, lookup_cik(xr, t), d, f) for t, d in sorted(starts.items())
+                     if (f := data.by_ticker[t].scored_from) is None or f > d + LATE)
+        return InsiderCoverage(len(priced), len(ciks), sum(lookup_cik(xr, t) is None for t in priced),
                                len(set(ir.filings_tried()) & ciks), ir.quarters(), dict(sorted(years.items())),
-                               _last_run(r))
+                               _last_run(r), late)

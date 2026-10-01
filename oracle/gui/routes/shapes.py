@@ -276,6 +276,7 @@ def insider_coverage(c) -> dict:
     run = c.last_run
     return {"priced": c.priced, "issuers": c.issuers, "no_cik": c.no_cik, "filings_fetched": c.filings_fetched,
             "quarters": c.quarters, "years": [{"year": y, **row} for y, row in c.years.items()],
+            "late": [asdict(x) for x in c.late],
             "last_run": {**asdict(run), "summary": run.summary} if run else None}
 
 

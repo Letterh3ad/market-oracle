@@ -35,7 +35,10 @@ EVENT_TYPES = {
 CAVEAT = ("Entry at the open of the session after the filing's acceptance day, so a results 8-K's own reaction is "
           "mostly before it (this measures the drift after). The t is clustered by decision day; it does not "
           "allow for windows overlapping across nearby days, so at 20 and 60 days it is optimistic. Train 2010-2014 "
-          "misses 25-35% of member-days; renamed members have no CIK; share classes with one CIK repeat events. "
+          "misses 25-35% of member-days; each member is matched to the CIK its ticker has today, so a company that "
+          "reorganised under a new CIK, or whose ticker now belongs to another company, has no events and no "
+          "insider score before that CIK's first Form 4 (the Form 4 coverage lists them); share classes with one "
+          "CIK repeat events. "
           "Only the confirm window at the primary horizon gives a verdict.")
 
 

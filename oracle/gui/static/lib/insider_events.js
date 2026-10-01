@@ -75,7 +75,10 @@ function insiderEventsSection() {
         + `${c.filings_fetched ?? 0} issuers' filings fetched; trades for ${q.length} quarters`
         + `${q.length ? `, ${q[0]} to ${q[q.length - 1]}` : ""}. `
         + (r ? `Last fetch, ${stamp(r.finished_at)} UTC: ${r.summary}.` : "No fetch has run yet.")),
-      coverageTable(c));
+      coverageTable(c),
+      ...((c.late ?? []).length ? [el("details", null, el("summary", null, `Today's CIK starts late (${c.late.length}): `
+        + "no insider score before the date"), el("p", { class: "small" }, c.late.map((x) => `${x.ticker} (CIK ${x.cik}) `
+        + `member from ${x.member_from}, scored from ${x.scored_from ?? "never"}`).join("; ") + "."))] : []));
   }
 
   async function loadStudy() {

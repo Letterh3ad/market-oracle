@@ -79,10 +79,14 @@ def test_insiders_passes_a_smoke_runs_bounds_and_status_prints_the_years(tmp_pat
     assert main(["--config", str(config(tmp_path)), "testbed", "insiders", "--only", "AAA", "--refresh"]) == 0
     assert (seen["only"], seen["limit"], seen["refresh"]) == (["AAA"], None, True)
     assert "2 quarters of trades" in capsys.readouterr().out
+    from oracle.services.insider_service import LateCik
+    from datetime import date
     cover = InsiderCoverage(600, 590, 10, 590, {"2009q1": 5, "2026q2": 7},
-                            {2015: {"P": 812, "P_issuers": 140, "S": 9100, "4": 30000, "8-K 2.02": 2300}}, None)
+                            {2015: {"P": 812, "P_issuers": 140, "S": 9100, "4": 30000, "8-K 2.02": 2300}}, None,
+                            (LateCik("XOM", 2115436, date(2010, 1, 4), None),))
     monkeypatch.setattr("oracle.cli.testbed.insider_coverage", lambda ctx: cover)
     assert main(["--config", str(config(tmp_path)), "testbed", "insiders-status"]) == 0
     out = capsys.readouterr().out
     assert "590 issuers with a CIK (10 members without)" in out and "2 quarters, 2009q1 to 2026q2" in out
     assert "2015        812      140     9100    30000        0     2300        0        0" in out
+    assert "Today's CIK starts late (1)" in out and "XOM      CIK 2115436  member from 2010-01-04" in out

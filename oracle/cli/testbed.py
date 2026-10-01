@@ -153,3 +153,9 @@ def print_insiders(c: InsiderCoverage) -> None:
     print(f"{'year':<6}" + "".join(f"{label:>9}" for _, label in INSIDER_COLUMNS))
     for y, row in c.years.items():
         print(f"{y:<6}" + "".join(f"{row.get(k, 0):>9}" for k, _ in INSIDER_COLUMNS))
+    if c.late:
+        print(f"Today's CIK starts late ({len(c.late)}): no insider score before the date (a new CIK after a "
+              "reorganisation, or a ticker now another company's)")
+        for x in c.late:
+            print(f"  {x.ticker:<8} CIK {x.cik:<8} member from {x.member_from}, scored from "
+                  f"{x.scored_from or 'never (no Form 4 under this CIK)'}")
