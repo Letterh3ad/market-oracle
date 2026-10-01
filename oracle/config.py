@@ -221,6 +221,14 @@ class LayaConfig:
 
 
 @dataclass(frozen=True)
+class LayaAccountConfig:
+    """The paper account that trades Laya's daily news score alone, for evidence whatever its
+    predictive test said. On by default, so its record starts the day it ships."""
+
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class RegimeV2Config:
     """regime-v2's rotation (see `broker.regime.Rotation`); its weights are `[regime]`'s. Set a
     priori, not fitted to a backtest."""
@@ -517,6 +525,7 @@ class Config:
     regime_v2_account: RegimeV2AccountConfig = field(default_factory=RegimeV2AccountConfig)
     regime_v2: RegimeV2Config = field(default_factory=RegimeV2Config)
     core_sat_account: CoreSatAccountConfig = field(default_factory=CoreSatAccountConfig)
+    laya_account: LayaAccountConfig = field(default_factory=LayaAccountConfig)
     laya: LayaConfig = field(default_factory=LayaConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
@@ -756,6 +765,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
             continue
         if name == "core_sat_account":
             values[name] = _switch(value, CoreSatAccountConfig, name)
+            continue
+        if name == "laya_account":
+            values[name] = _switch(value, LayaAccountConfig, name)
             continue
         if name == "laya":
             values[name] = _laya(value)

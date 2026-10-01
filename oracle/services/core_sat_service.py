@@ -7,7 +7,7 @@ orders carry its own source, so each has its own cash and holdings inside the on
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from oracle.broker.core_sat import (
@@ -18,6 +18,7 @@ from oracle.broker.regime import RegimeInputs, RegimeSettings
 from oracle.broker.rules import Decision
 from oracle.services.context import AppContext
 from oracle.services.errors import UnknownWatchlist
+from oracle.services.laya_line import METHOD, LayaInput, with_laya
 from oracle.services.paper_service import CORE_SAT, Sleeve, account_view, place_buy, place_sell
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import core_members
@@ -52,14 +53,17 @@ def satellite_traded(ctx: AppContext) -> list[str]:
     return sorted(set(core_listings(ctx)) | held)
 
 
-def satellite_inputs(inputs: RegimeInputs) -> RegimeInputs:
-    """The satellite book's inputs: the regime line's. An extra method joins here through
-    `RegimeInputs.extra`, its weights through `satellite_settings` (ticket 08: Laya)."""
-    return inputs
+def satellite_inputs(inputs: RegimeInputs, laya: LayaInput | None = None) -> RegimeInputs:
+    """The satellite book's inputs: the regime line's, plus Laya's scores when its verdict gives it
+    weight (`laya_line`); at weight 0 the book is the regime line's."""
+    if laya is None or not laya.verdict.useful:
+        return inputs
+    return replace(inputs, extra={**inputs.extra, METHOD: laya.scores})
 
 
-def satellite_settings(settings: RegimeSettings) -> RegimeSettings:
-    return settings
+def satellite_settings(settings: RegimeSettings, laya: LayaInput | None = None) -> RegimeSettings:
+    """The regime line's settings, with Laya's row at the weight its verdict gives (0 unless useful)."""
+    return with_laya(settings, laya is not None and laya.verdict.useful)
 
 
 def core_phase(orders: Collection[Order], today: date) -> str | None:

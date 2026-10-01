@@ -3,8 +3,9 @@
 // decisions with what each lean was made of. The regime-ai line's card adds the day's model
 // tilt beside the rules weights, its reason or why there was none, and the model it runs on; the
 // regime-v2 line's says how it rotates out of stale holdings; the core-sat line's shows its two
-// sleeves (the equal-weight core and the regime satellite) and the core's next rebalance. A frozen
-// line (regime-ai) keeps its card and history but has no switch.
+// sleeves (the equal-weight core and the regime satellite) and the core's next rebalance. The
+// core-sat and laya cards say what Laya's kept predictive test found and the weight it gives in
+// core-sat's satellite. A frozen line (regime-ai) keeps its card and history but has no switch.
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, showError, clearError, companyLink } from "./dom.js";
@@ -21,6 +22,7 @@ const FLAGS = {
 const METHODS = {
   trend: "Trend", momentum: "Momentum", reversion: "Mean reversion", low_vol: "Low volatility",
   quality_value: "Value and quality", earnings_drift: "Earnings drift", hold: "Buy and hold", ai_verdict: "AI verdict",
+  laya: "Laya news score",
 };
 const LINES = {
   regime: { name: "Regime", path: "/api/ledgers/regime", step: "Regime step",
@@ -35,6 +37,10 @@ const LINES = {
   "core-sat": { name: "Core-sat", path: "/api/ledgers/core-sat", step: "Core-sat step",
     about: "Here the blend runs only the satellite, a quarter of the money in its own cash; the other three "
       + "quarters are an equal-weight buy and hold of the main list's companies, set back to equal weight once a year." },
+  laya: { name: "Laya", path: "/api/ledgers/laya", step: "Laya step",
+    about: "Here only one method weighs: Laya's daily news score (its combined score from the predictive test, "
+      + "each segment's weights fitted on the trailing two years), on the main list's companies, kept running as "
+      + "evidence whatever the test said." },
 };
 
 const share = (v) => (v == null ? "" : `${Math.round(v * 100)}%`);
@@ -188,6 +194,16 @@ function sleeves(s, base) {
     el("p", { class: "dim small" }, next));
 }
 
+// What Laya's kept test found and the weight it gives in core-sat's satellite (0 unless it passed
+// and beat both baselines); never a setting.
+function layaVerdict(v) {
+  if (!v) return null;
+  const label = v.verdict ?? "no test kept";
+  const badge = el("span", { class: v.useful ? "badge" : "badge warn-text" },
+    v.useful ? `Laya ${label}` : `Laya ${label}: weight 0 in core-sat`);
+  return el("p", { class: "small" }, badge, " ", el("span", { class: "dim" }, `${v.note}.`));
+}
+
 // `done` repaints the tab after the switch or the model changes.
 function regimeCard(card, base, done) {
   const line = lineOf(card);
@@ -199,6 +215,7 @@ function regimeCard(card, base, done) {
       + "mood, its known warning and good signs, and its own recent record (health), then trades the blend under the "
       + `strategy's rules. ${line.about}`),
     rotation(card.rotation),
+    layaVerdict(card.laya),
     sleeves(card.sleeves, base),
     card.note ? el("p", { class: "small warn-text" }, card.note) : null,
     card.lag ? el("p", { class: "small warn-text" }, `Warning: ${card.lag}.`) : null,

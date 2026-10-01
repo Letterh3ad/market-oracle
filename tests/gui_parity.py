@@ -142,8 +142,10 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # "Regime-v2 step" (POST /api/ledgers/regime-v2/step, a job); its log, rotation rule and switch are the
     # Regime-v2 reading card (GET and PUT /api/ledgers/regime-v2), switch and rotation also in Settings.
     # --account core-sat is "Core-sat step" (POST /api/ledgers/core-sat/step, a job); its log, sleeves and switch
-    # are the Core-sat reading card (GET and PUT /api/ledgers/core-sat), switch also in Settings. regime-ai is
-    # frozen: its step decides nothing, its card has no switch.
+    # are the Core-sat reading card (GET and PUT /api/ledgers/core-sat), switch also in Settings. --account laya
+    # is "Laya step" (POST /api/ledgers/laya/step, a job); its log, verdict and switch are the Laya reading card
+    # (GET and PUT /api/ledgers/laya), switch also in Settings. regime-ai is frozen: its step decides nothing,
+    # its card has no switch.
     "paper step --account": "POST /api/ledgers/ai/step",
     "paper log": "GET /api/ledgers/decisions",
     "paper log --account": "GET /api/ledgers/decisions",

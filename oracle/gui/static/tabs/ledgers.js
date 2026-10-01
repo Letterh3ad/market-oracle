@@ -79,6 +79,13 @@ function coreSatRules() {
     "reading and switch are in the Core-sat reading card below.";
 }
 
+function layaRules() {
+  return "Laya's daily news score alone, on the main list's companies (never a fund or Tesla), traded under the " +
+    "strategy's rules with its own full starting cash, kept running as evidence whatever its predictive test said. " +
+    "That test alone decides Laya's weight in core-sat's satellite (0 unless it passed and beat both baselines). " +
+    "Its verdict, reading and switch are in the Laya reading card below.";
+}
+
 function regimeV2Rules() {
   return "The Regime blend on the same listings, under the same rules, with two changes: a method without a score " +
     "for a listing hands its weight to the price methods, not to the steady buy-and-hold score, and a holding kept " +
@@ -195,7 +202,8 @@ function column(a, base, rules, ai, stale, discovery) {
       : a.name === "regime" ? tipText("Regime", regimeRules(rules))
         : a.name === "regime-ai" ? tipText("Regime-AI", regimeAiRules())
           : a.name === "regime-v2" ? tipText("Regime-v2", regimeV2Rules())
-            : a.name === "core-sat" ? tipText("Core-sat", coreSatRules()) : tipText("Strategy", strategyRules(rules));
+            : a.name === "core-sat" ? tipText("Core-sat", coreSatRules())
+              : a.name === "laya" ? tipText("Laya", layaRules()) : tipText("Strategy", strategyRules(rules));
   const badge = a.name === "ai" ? unvalidatedBadge() : null;
   return el("div", { class: "card ledger" },
     el("h2", null, title, badge ? " " : null, badge), a.name === "ai" ? aiSwitch(ai) : null,
@@ -290,12 +298,13 @@ function jobs(base) {
     el("div", { class: "row" }, run("Fill now", "/api/ledgers/fill", fillLines),
       run("Strategy step", "/api/ledgers/step", strategyLines), run("AI step", "/api/ledgers/ai/step", aiLines),
       runLine("Regime step", "/api/ledgers/regime/step"), runLine("Regime-v2 step", "/api/ledgers/regime-v2/step"),
-      runLine("Core-sat step", "/api/ledgers/core-sat/step"),
+      runLine("Core-sat step", "/api/ledgers/core-sat/step"), runLine("Laya step", "/api/ledgers/laya/step"),
       el("span", { class: "dim small" }, "Fill now runs waiting orders whose next opening price is stored. "
         + "Strategy step lets the strategy account act on its leans; AI step lets the AI account act on the research verdicts; "
         + "Regime step lets the regime account act on the regime blend, Regime-v2 step the regime-v2 account on the "
         + "blend without hold padding and with its rotation, and Core-sat step the core-sat account (its core's "
-        + "yearly rebalance when due, its satellite on the blend). Regime-AI is frozen and no longer steps.")),
+        + "yearly rebalance when due, its satellite on the blend), and Laya step the laya account on Laya's daily news "
+        + "score alone. Regime-AI is frozen and no longer steps.")),
     out);
 }
 
@@ -306,12 +315,12 @@ function refresh() {
 
 async function load(mine) {
   const asked = ++loads;
-  let body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat;
+  let body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat, laya;
   try {
-    [body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat] = await Promise.all([api("/api/ledgers"),
+    [body, log, aiLog, stale, regime, regimeAi, regimeV2, coreSat, laya] = await Promise.all([api("/api/ledgers"),
       api("/api/ledgers/decisions"), api("/api/ledgers/decisions?account=ai"), api("/api/ledgers/ai/stale"),
       api("/api/ledgers/regime"), api("/api/ledgers/regime-ai"), api("/api/ledgers/regime-v2"),
-      api("/api/ledgers/core-sat")]);
+      api("/api/ledgers/core-sat"), api("/api/ledgers/laya")]);
   } catch (err) {
     if (asked !== loads || !pane.contains(mine)) return;
     if (mine.dataset.painted) showError(`Could not reload the ledgers: ${err.message}`);
@@ -331,6 +340,7 @@ async function load(mine) {
     regimeCard(regimeAi, base, refresh),
     regimeCard(regimeV2, base, refresh),
     regimeCard(coreSat, base, refresh),
+    regimeCard(laya, base, refresh),
     el("h3", null, "Strategy decisions"), decisions(log, base, "The strategy has not run yet: press Strategy step."),
     el("h3", null, "AI decisions ", unvalidatedBadge()), decisions(aiLog, base, body.ai_account.enabled
       ? "The AI account has not run yet: press AI step." : "The AI account is off: turn it on above its figures.",

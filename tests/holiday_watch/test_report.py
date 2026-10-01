@@ -146,6 +146,18 @@ def test_the_report_gives_core_sats_mood_and_its_sleeves(tmp_path):
             "core rebalances on or after 2027-09-30") in text
 
 
+def test_the_report_gives_the_laya_lines_mood_and_its_verdict_with_the_weight_in_core_sat(tmp_path):
+    w = seeded(tmp_path)
+    w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
+    w.http.routes[f"{APP}/api/ledgers/laya"] = {
+        "day": "2026-09-30", "note": None, "state": {"mood": "calm_up", "flags": []}, "decisions": [],
+        "laya": {"verdict": "FAIL", "useful": False,
+                 "note": "Laya's predictive test: FAIL (test 7, 2026-10-01); FAIL: weight 0 in core-sat"}}
+    text = build_report(w)
+    assert "Laya mood on 2026-09-30: calm_up" in text
+    assert "Laya: Laya's predictive test: FAIL (test 7, 2026-10-01); FAIL: weight 0 in core-sat" in text
+
+
 def test_write_report_puts_claudes_summary_on_top(tmp_path):
     system = FakeSystem(result=Ran(0, "All running. Nothing to act on."))
     w = seeded(tmp_path, system=system)

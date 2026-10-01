@@ -18,12 +18,13 @@ from oracle.broker.regime.playbook import HORIZON
 from oracle.broker.rules import Rules
 from oracle.services.context import AppContext
 from oracle.services.events_service import stored_releases
+from oracle.services.laya_line import METHOD, LayaInput, verdict_note, with_laya
 from oracle.services.never_list import never_company
 from oracle.services.prices_service import ConvertedBar, held_or_watched, histories_in_base
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["CORE_SAT_LINE", "CORE_SAT_SOURCE", "HISTORY_DAYS", "LINE_LABELS", "REGIME_AI_LINE", "REGIME_LINE", "REGIME_V2_LINE", "REGIME_WF_LINE",
+__all__ = ["CORE_SAT_LAYA_LINE", "CORE_SAT_LINE", "CORE_SAT_SOURCE", "HISTORY_DAYS", "LINE_LABELS", "REGIME_AI_LINE", "REGIME_LINE", "REGIME_V2_LINE", "REGIME_WF_LINE",
            "WF_CAPTION", "RegimeLine", "combined", "core_members", "market_history", "regime_inputs", "regime_line", "regime_lines",
            "v2_caption"]
 
@@ -34,11 +35,12 @@ older bars change nothing and only cost time."""
 FACTOR_ANALYSTS = ("value", "quality")
 MARKET_TYPE = "equity"
 REGIME_LINE, REGIME_V2_LINE, REGIME_WF_LINE, REGIME_AI_LINE = "regime", "regime_v2", "regime_wf", "regime_ai"
-CORE_SAT_LINE = "core_sat"
+CORE_SAT_LINE, CORE_SAT_LAYA_LINE = "core_sat", "core_sat_laya"
 LINE_LABELS = {REGIME_LINE: "Regime", REGIME_V2_LINE: "Regime-v2", CORE_SAT_LINE: "Core-sat",
-               REGIME_WF_LINE: "Regime-wf", REGIME_AI_LINE: "Regime AI"}
+               CORE_SAT_LAYA_LINE: "Core-sat-laya", REGIME_WF_LINE: "Regime-wf", REGIME_AI_LINE: "Regime AI"}
 """The replayed regime lines' names in a backtest or replay study, and their labels."""
 REGIME_V2_SOURCE, REGIME_WF_SOURCE, CORE_SAT_SOURCE = "regime-v2", "regime-wf", "core-sat"
+CORE_SAT_LAYA_SOURCE = "core-sat-laya"
 """The v2 and wf books' leans say which made them, so a rotation or buy reason names its line."""
 RANK_WAIT = timedelta(days=400)
 """About a year of bars and the next month-end: before it the 12-1 momentum rank does not exist."""
@@ -122,13 +124,16 @@ def regime_line(ctx: AppContext, start: date, end: date, rules: Rules, traded: C
 def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: Collection[str],
                  verdicts: Mapping[str, DatedScores] | None = None,
                  refits: Collection[date] = (), tilt: Tilt | None = None,
-                 extra: Mapping[str, Mapping[str, DatedScores]] | None = None) -> dict[str, RegimeLine]:
+                 extra: Mapping[str, Mapping[str, DatedScores]] | None = None,
+                 laya: LayaInput | None = None) -> dict[str, RegimeLine]:
     """Every replayed regime line by name (`LINE_LABELS`), each its own book over one read of the
     market and inputs, as `regime_line` builds them. With `refits` (a walk-forward's segment
     starts), also regime_wf: the regime book with its presets refitted at each. `tilt` adds the
     regime_ai book: the regime line's settings with that (replayed model) tilt. core_sat is the
     regime book as the satellite of an equal-weight core of the traded companies; `extra` adds
-    methods to its book alone (`RegimeInputs.extra`; their weights come from `[regime]`)."""
+    methods to its book alone (`RegimeInputs.extra`; their weights come from `[regime]`). `laya` adds
+    core_sat_laya: core_sat with Laya's scores in its satellite at the weight its verdict gives
+    (`laya_line.with_laya`; 0 unless it passed, when it is core_sat's book exactly)."""
     market = market_history(ctx, start - timedelta(days=HISTORY_DAYS), end, traded)
     inputs = regime_inputs(ctx, market, end, verdicts)
     settings = settings_from(asdict(ctx.config.regime), max_positions=rules.max_positions,
@@ -140,6 +145,10 @@ def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: 
              REGIME_V2_LINE: RegimeLine(regime_book(market, inputs=inputs, settings=v2, source=REGIME_V2_SOURCE),
                                         v2_caption(v2.rotation) + caption.removeprefix("Regime: ")),
              CORE_SAT_LINE: core_sat_line(ctx, market, inputs, settings, traded, extra, caption)}
+    if laya is not None:
+        lines[CORE_SAT_LAYA_LINE] = core_sat_line(
+            ctx, market, inputs, with_laya(settings, laya.verdict.useful), traded, {**(extra or {}), METHOD: laya.scores},
+            caption, CORE_SAT_LAYA_SOURCE, laya_caption(laya, settings))
     if refits:
         lines[REGIME_WF_LINE] = RegimeLine(
             regime_book(market, inputs=inputs, settings=settings, source=REGIME_WF_SOURCE, refits=refits),
@@ -150,12 +159,23 @@ def regime_lines(ctx: AppContext, start: date, end: date, rules: Rules, traded: 
 
 
 def core_sat_line(ctx: AppContext, market: Mapping, inputs: RegimeInputs, settings, traded: Collection[str],
-                  extra: Mapping[str, Mapping[str, DatedScores]] | None, caption: str) -> RegimeLine:
+                  extra: Mapping[str, Mapping[str, DatedScores]] | None, caption: str, source: str = CORE_SAT_SOURCE,
+                  head: str = "") -> RegimeLine:
     members = core_members(ctx, traded)
-    book = regime_book(market, inputs=replace(inputs, extra=dict(extra or {})), settings=settings,
-                       source=CORE_SAT_SOURCE)
-    return RegimeLine(book, core_sat_caption(len(members), sorted(extra or {})) + caption.removeprefix("Regime: "),
+    book = regime_book(market, inputs=replace(inputs, extra=dict(extra or {})), settings=settings, source=source)
+    return RegimeLine(book, head + core_sat_caption(len(members), sorted(extra or {})) + caption.removeprefix("Regime: "),
                       members)
+
+
+def laya_caption(laya: LayaInput, settings) -> str:
+    """What core_sat_laya adds to core_sat: Laya's score, the verdict and the weight it gives."""
+    listed = len(laya.scores)
+    return (f"Core-sat-laya: core-sat with Laya's daily news score as a satellite method ({listed} "
+            f"compan{'y' if listed == 1 else 'ies'} scored; 06's combined score, each 6-month segment's weights "
+            "fitted on the trailing two years only, a score from the articles usable at a day's open acting from "
+            f"the next). {verdict_note(laya.verdict, settings)}. The weight comes from the verdict kept today, "
+            "itself measured over this history: whether it trades at all is an in-sample choice"
+            + (", and at weight 0 the line is core-sat's exactly. " if not laya.verdict.useful else ". "))
 
 
 def core_sat_caption(members: int, extra: Collection[str] = ()) -> str:
