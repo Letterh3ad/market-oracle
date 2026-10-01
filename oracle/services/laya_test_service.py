@@ -4,6 +4,10 @@ against its next 5 and 20 trading-day return over its industry, Spearman rank IC
 per day, a combined score whose feature signs and weights are fitted on trailing data only, and
 the fixed bar. Nothing here is tuned on results.
 
+Training cutoff (spec decision 7): the verdict counts only decision days after the model's
+training cutoff; a segment wholly before it is labelled inside the model's training, one across it
+keeps its pre-registered fit and counts only its later days. The full period is kept beside it.
+
 Point in time: features are built from backfilled, dated articles through the shared aggregator
 (`daily_features(history=True)`), a feature day used only by later decision days; a map link
 counts for an article only when first known by that article's day (the sensitivity run takes
@@ -30,6 +34,7 @@ from oracle.services.industry_service import Related
 from oracle.services.laya_features import daily_features
 from oracle.services.laya_history_service import MapSubject, map_subjects
 from oracle.research.reader import reader_tag
+from oracle.research.training_cutoffs import training_cutoff
 from oracle.services import laya_service
 from oracle.services.laya_service import MODEL_TAG, ScoredArticle
 from oracle.services.watch_service import DEFAULT_LIST
@@ -39,8 +44,8 @@ from oracle.store.industry_news import IndustryNewsRepo
 from oracle.store.laya import LayaRepo
 from oracle.store.laya_tests import LayaTestRepo
 
-__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "OWN", "SENSITIVITY", "TEST_START", "FeatureIC",
-           "HorizonResult", "LayaTest", "MAIN_RELATIONS", "Obs", "Panel", "SegmentRow", "build_panel",
+__all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "INSIDE", "MAIN", "OWN", "SENSITIVITY", "STANDING", "TEST_START", "FeatureIC",
+           "HorizonResult", "LayaTest", "MAIN_RELATIONS", "Obs", "Panel", "SegmentRow", "build_panel", "horizon_results",
            "check_test_model", "horizon_result", "keep_laya_test", "latest_verdict", "laya_tests",
            "observations", "own_coverage", "relation_for", "run_laya_test", "testable_models", "trailing_fit"]
 
@@ -69,6 +74,13 @@ MOMENTUM = "own_momentum"
 BASELINES = (BASELINE, MOMENTUM)
 MIN_INDUSTRY = 3
 COVERAGE_SHARE = 0.5
+READ_SHARE = 0.95
+"""Own headlines a segment needs read by the model to count: an unread one is a silent zero, and
+the reader may be cut part way (it reads newest first, so at most one segment is part read)."""
+INSIDE = "inside the model's training"
+STANDING = {MODEL_TAG: "Laya's FAIL stands: judged on the full period on 2026-09-30, before the cutoff rule "
+                       "(DECISIONS 2026-10-01)"}
+"""A verdict given before the cutoff rule that the rule does not reopen."""
 CAVEAT = ("Survivorship: today's main list and industry maps taken back in time. Laya's probabilities are "
           "uncalibrated; returns are in each listing's own currency.")
 RUN_LABELS = {MAIN: "main (links first known by the article's day; 03's links left out)",
@@ -110,6 +122,8 @@ class Panel:
     peers: dict[str, list[str]]
     articles: dict[str, int] = field(default_factory=dict)
     """Relation -> scored pairs counted."""
+    read: dict[str, list[tuple[date, bool]]] = field(default_factory=dict)
+    """Per main company, each dated own headline's first usable day and whether the model read it."""
 
 
 def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, own_only: bool = False,
@@ -147,6 +161,9 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
             days.setdefault(r.day, {})[r.relation] = (r.articles, r.score, r.relevance)
             panel.articles[r.relation] = panel.articles.get(r.relation, 0) + r.articles
         panel.daily[m] = days
+        if not research:
+            panel.read[m] = [(usable_day(m, known_moment(at)), done) for at, done in
+                             LayaRepo(ctx.conn).read_marks(laya_service.primary(ctx, m), model, ids(m))]
         panel.peers[m] = [s.symbol for s in subjects
                           if any(x.first_known is None and x.source in INDUSTRY_SOURCES for x in s.related.relations)]
     for symbol in {*mains, *(p for ps in panel.peers.values() for p in ps)}:
@@ -230,6 +247,17 @@ class LayaTest:
     models' results compare like for like only with the same coverage."""
     watchlist: str = DEFAULT_LIST
     """The list it ran on: only the main list from TEST_START can give Laya weight."""
+    cutoff: date | None = None
+    """The model's training cutoff: `horizons` and the verdict count only later days. None for a
+    result kept before the rule, whose `horizons` and verdict are the full period's."""
+    full_horizons: tuple[HorizonResult, ...] = ()
+    full_verdict: str | None = None
+    post_read: dict[str, int] | None = None
+    """{"needed": own headlines first usable after the cutoff, "read": those the model read}."""
+
+    @property
+    def standing(self) -> str | None:
+        return STANDING.get(self.model)
 
 
 def _features(relations: Sequence[str]) -> tuple[list[str], list[str]]:
@@ -324,11 +352,17 @@ def trailing_fit(obs: Obs, ics: dict[str, dict[date, float]], start: date, names
 def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, date]], relations: Sequence[str],
                    cov: Coverage | None) -> HorizonResult:
     """The test at one horizon over `spans`, reading only `panel`."""
+    return horizon_results(panel, h, lb, spans, relations, cov)[0]
+
+
+def horizon_results(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, date]], relations: Sequence[str],
+                    cov: Coverage | None, cutoff: date | None = None) -> tuple[HorizonResult, HorizonResult | None]:
+    """(full period, only decision days after `cutoff`) from one set of daily ICs and fits; the
+    second is None without a cutoff."""
     in_score, secondary = _features(relations)
     names = in_score + secondary
     obs, ics = observations(panel, h, lb, spans[0][0] - timedelta(days=FIT_DAYS), spans[-1][1], relations, names)
-    out_segments, counted_ics = [], []
-    counted_base: dict[str, list[tuple[date, float]]] = {b: [] for b in BASELINES}
+    fitted = []
     for s, e in spans:
         w = trailing_fit(obs, ics, s, in_score)
         signs = {b: trailing_fit(obs, ics, s, [b])[b] for b in BASELINES}
@@ -339,11 +373,37 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
                 score = combine({f: [x[f] for x, _, _ in rows] for f in in_score}, w)
                 if (ic := spearman(score, [y for _, y, _ in rows])) is not None:
                     seg.append((t, ic))
-        why = ("no trailing fit" if not any(w.values()) else _coverage_why(cov, s, e)
+        fitted.append((s, e, w, signs, seg))
+    full = _summary(h, lb, fitted, obs, ics, names, in_score, cov, panel.read, None)
+    return full, None if cutoff is None else _summary(h, lb, fitted, obs, ics, names, in_score, cov, panel.read, cutoff)
+
+
+def _read_why(read: dict[str, list[tuple[date, bool]]], start: date, end: date) -> str | None:
+    marks = [done for days in read.values() for d, done in days if start <= d <= end]
+    share = sum(marks) / len(marks) if marks else 1.0
+    return None if share >= READ_SHARE else f"{share:.0%} of own headlines read (needs {READ_SHARE:.0%})"
+
+
+def _summary(h: int, lb: int, fitted: list, obs: Obs, ics: dict[str, dict[date, float]], names: Sequence[str],
+             in_score: Sequence[str], cov: Coverage | None, read: dict[str, list[tuple[date, bool]]],
+             cutoff: date | None) -> HorizonResult:
+    out_segments, counted_ics = [], []
+    counted_base: dict[str, list[tuple[date, float]]] = {b: [] for b in BASELINES}
+    for s, e, w, signs, seg in fitted:
+        weights = {f: round(v, 4) for f, v in w.items()}
+        if cutoff is not None and e <= cutoff:
+            vals = [ic for _, ic in seg]
+            out_segments.append(SegmentRow(s, e, _r(mean(vals)), _r(newey_west_t(vals, h)), len(vals), False, INSIDE,
+                                           weights))
+            continue
+        if cutoff is not None and s <= cutoff:
+            s = cutoff + timedelta(days=1)
+            seg = [(t, ic) for t, ic in seg if t >= s]
+        why = ("no trailing fit" if not any(w.values()) else _coverage_why(cov, s, e) or _read_why(read, s, e)
                or (f"{len(seg)} IC days (needs {MIN_DAYS})" if len(seg) < MIN_DAYS else None))
         vals = [ic for _, ic in seg]
         out_segments.append(SegmentRow(s, e, _r(mean(vals)), _r(newey_west_t(vals, h)), len(vals), why is None, why,
-                                       {f: round(v, 4) for f, v in w.items()}))
+                                       weights))
         if why is None:
             counted_ics += seg
             for b in BASELINES:
@@ -360,14 +420,15 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
     vals = [ic for _, ic in sorted(counted_ics)]
     ic, t = mean(vals), newey_west_t(vals, h)
     v = verdict(ic, t, [SegmentIC(x.start, x.end, x.ic, x.t, x.days, x.counted, x.why) for x in out_segments])
-    fitted = {}
+    base = {}
     for b in BASELINES:
         series = [x for _, x in sorted(counted_base[b])]
         b_ic = mean(series)
-        fitted[b] = (_r(b_ic), _r(newey_west_t(series, h)), None if ic is None or b_ic is None else ic > b_ic,
-                     next(f.ic for f in features if f.name == b))
-    return HorizonResult(h, lb, _r(ic), _r(t), len(vals), sum(len(x) for x in obs.values()), tuple(out_segments),
-                         tuple(features), v.label, v.passed, v.positive, v.counted, *fitted[BASELINE], *fitted[MOMENTUM])
+        base[b] = (_r(b_ic), _r(newey_west_t(series, h)), None if ic is None or b_ic is None else ic > b_ic,
+                   next(f.ic for f in features if f.name == b))
+    seen = sum(len(rows) for day, rows in obs.items() if cutoff is None or day > cutoff)
+    return HorizonResult(h, lb, _r(ic), _r(t), len(vals), seen, tuple(out_segments),
+                         tuple(features), v.label, v.passed, v.positive, v.counted, *base[BASELINE], *base[MOMENTUM])
 
 
 def _r(x: float | None) -> float | None:
@@ -376,9 +437,10 @@ def _r(x: float | None) -> float | None:
 
 def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False,
                   own_only: bool = False, start: date = TEST_START, end: date | None = None, model: str = MODEL_TAG,
-                  on_progress: Callable[[str], None] | None = None) -> LayaTest:
+                  cutoff: date | None = None, on_progress: Callable[[str], None] | None = None) -> LayaTest:
     """The test as pre-registered, over the stored scores of `model`; reads only. `own_only` counts
-    only each company's own news and scores the own feature alone (same bar, same baselines)."""
+    only each company's own news and scores the own feature alone (same bar, same baselines). The
+    verdict reads only days after `cutoff` (by default the model's training cutoff)."""
     if sensitivity and own_only:
         raise InvalidQuery("the sensitivity run is about map links; it cannot be own news only")
     say = on_progress or (lambda _: None)
@@ -391,17 +453,27 @@ def run_laya_test(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity
                         say=say)
     say("coverage")
     cov = coverage(ctx, watchlist)
-    results = []
+    cutoff = cutoff or training_cutoff(model)
+    full, post = [], []
     for h, lb in HORIZONS:
         say(f"{h}-day horizon")
-        results.append(horizon_result(panel, h, lb, spans, relations, cov))
-    labels = [r.verdict for r in results]
-    overall = "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
+        f, p = horizon_results(panel, h, lb, spans, relations, cov, cutoff)
+        full.append(f)
+        post.append(p)
+    overall = _overall(post)
     run = OWN if own_only else SENSITIVITY if sensitivity else MAIN
     caveat = CAVEAT + (READER_CAVEAT if model.startswith(READER_PREFIX) else "")
-    return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(results),
+    after = [done for days in panel.read.values() for d, done in days if cutoff < d <= end]
+    return LayaTest(run, RUN_LABELS[run], model, start, end, len(panel.mains), panel.articles, tuple(post),
                     overall, overall == "PASS", to_utc_iso(ctx.clock.utcnow()), caveat=caveat,
-                    own_coverage=own_coverage(ctx, panel.mains, model), watchlist=watchlist)
+                    own_coverage=own_coverage(ctx, panel.mains, model), watchlist=watchlist, cutoff=cutoff,
+                    full_horizons=tuple(full), full_verdict=_overall(full),
+                    post_read={"needed": len(after), "read": sum(after)})
+
+
+def _overall(results: Sequence[HorizonResult]) -> str:
+    labels = [r.verdict for r in results]
+    return "PASS" if all(x == "PASS" for x in labels) else "FAIL" if "FAIL" in labels else "INCONCLUSIVE"
 
 
 def own_coverage(ctx: AppContext, mains: Sequence[str], model: str) -> dict[str, int]:
@@ -448,14 +520,19 @@ def latest_verdict(ctx: AppContext, model: str = MODEL_TAG, run: str = MAIN) -> 
     return None
 
 
+def _horizons(rows: list[dict]) -> tuple[HorizonResult, ...]:
+    return tuple(HorizonResult(**{**h, "segments": tuple(SegmentRow(**{**s, "start": date.fromisoformat(s["start"]),
+                                                                       "end": date.fromisoformat(s["end"])})
+                                                          for s in h["segments"]),
+                                  "features": tuple(FeatureIC(**f) for f in h["features"])})
+                 for h in rows)
+
+
 def _load(raw: str, test_id: int) -> LayaTest:
     d = json.loads(raw)
-    horizons = tuple(HorizonResult(**{**h, "segments": tuple(SegmentRow(**{**s, "start": date.fromisoformat(s["start"]),
-                                                                           "end": date.fromisoformat(s["end"])})
-                                                              for s in h["segments"]),
-                                      "features": tuple(FeatureIC(**f) for f in h["features"])})
-                     for h in d["horizons"])
+    cutoff = d.get("cutoff")
     return LayaTest(**{**d, "start": date.fromisoformat(d["start"]), "end": date.fromisoformat(d["end"]),
-                       "horizons": horizons, "id": test_id,
+                       "horizons": _horizons(d["horizons"]), "full_horizons": _horizons(d.get("full_horizons", [])),
+                       "cutoff": date.fromisoformat(cutoff) if cutoff else None, "id": test_id,
                        # A result kept before the list was recorded has no known list, so it never gives weight.
                        "watchlist": d.get("watchlist", "")})

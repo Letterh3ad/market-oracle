@@ -27,4 +27,5 @@ async def test_scoring_the_history_and_the_test_are_jobs_whose_results_the_card_
     assert (test["kind"], test["state"], test["result"]["run"]) == ("laya_test", "done", "sensitivity")
     got = (await loaded.get("/api/laya/tests")).json()
     assert [t["run"] for t in got["tests"]] == ["sensitivity"] and got["tests"][0]["verdict"] == "INCONCLUSIVE"
+    assert got["tests"][0]["cutoff"] == "2025-05-31" and got["tests"][0]["standing"].startswith("Laya's FAIL stands")
     assert "1 pairs scored" in got["last_scoring"]["summary"]

@@ -46,12 +46,32 @@ function coverage(c) {
     + (gap ? `; ${gap} not scored, so it is not like for like with a model that scored them all.` : "."));
 }
 
+function cutoffLines(t) {
+  const out = [];
+  if (t.standing) out.push(el("p", { class: "small down" }, `${t.standing}.`));
+  if (t.full_horizons?.length) {
+    out.push(el("p", { class: "small" }, `Full period, days inside the model's training included (not the verdict): `,
+      el("span", { class: tone(t.full_verdict) }, t.full_verdict), "; ",
+      t.full_horizons.map((h) => `${h.horizon}-day IC ${num(h.ic)}, t ${num(h.t, 2)}, ${h.verdict}`).join("; "), "."));
+  }
+  if (t.post_read) {
+    const short = t.post_read.read < t.post_read.needed;
+    out.push(el("p", { class: short ? "small down" : "small" }, `Own headlines after the cutoff read by this model: `
+      + `${t.post_read.read} of ${t.post_read.needed}.`));
+  }
+  return out;
+}
+
 function result(t) {
   const pairs = Object.entries(t.articles).map(([r, n]) => `${r} ${n}`).join(", ");
+  const basis = t.cutoff ? `verdict on days after the model's training cutoff, ${t.cutoff}`
+    : "full period: kept before the training-cutoff rule";
   return el("div", null,
-    el("h3", null, `${t.label}: `, el("span", { class: tone(t.verdict) }, t.verdict)),
+    el("h3", null, `${t.label}: `, el("span", { class: tone(t.verdict) }, t.verdict),
+      el("span", { class: "dim small" }, ` (${basis})`)),
     el("p", { class: "dim small" }, `Model ${t.model}; ${t.start} to ${t.end}; ${t.companies} companies; pairs counted `
       + `${pairs || "none"}. Run ${String(t.run_at).slice(0, 16)}. t-stat: ${t.t_method}.`),
+    ...cutoffLines(t),
     ...(t.own_coverage ? [coverage(t.own_coverage)] : []),
     ...t.horizons.flatMap(horizon),
     el("p", { class: "dim small" }, t.caveat));
@@ -128,7 +148,8 @@ function layaTestSection() {
     el("p", { class: "dim small" }, "Does Laya's reading of the news predict a company's next 5 and 20 trading days "
       + "over its industry? Scored per (article, company) pair over the backfilled history, then judged walk-forward "
       + "in six-month segments from 2022-09-21 against a bar fixed before any result: rank IC above 0 with t above 2 "
-      + "overall and positive in most counted segments, at both horizons. Laya's probabilities are uncalibrated."),
+      + "overall and positive in most counted segments, at both horizons. Only days after the model's training cutoff "
+      + "count; the full period is shown beside. Laya's probabilities are uncalibrated."),
     el("div", { class: "row" }, score, " ", estimate, " ", test(false), " ", test(true)),
     el("div", { class: "row small" }, el("label", null, "Scores of ", model), " ",
       el("label", null, ownOnly, " Own news only (the own feature alone, as the stronger reader read it)")),

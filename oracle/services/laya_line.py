@@ -62,6 +62,12 @@ def laya_verdict(ctx: AppContext, model: str = MODEL_TAG) -> LayaVerdict:
 def _judged(test: LayaTest | None, model: str) -> LayaVerdict:
     if test is None:
         return LayaVerdict(None, False, model, why="no predictive test kept for this model: weight 0")
+    if test.standing:
+        return LayaVerdict("FAIL", False, model, test.id, test.run_at, test.standing)
+    if test.cutoff is None:
+        return LayaVerdict(test.verdict, False, model, test.id, test.run_at,
+                           "kept before the training-cutoff rule, so its days inside the model's training counted: "
+                           "run the test again")
     beats = all(h.beats_baseline and h.beats_momentum for h in test.horizons)
     useful = test.passed and beats
     why = ("passed and beat both baselines" if useful else

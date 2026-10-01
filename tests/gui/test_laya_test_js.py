@@ -55,6 +55,31 @@ def test_the_card_shows_the_kept_table_verdict_segments_left_out_and_the_caveat(
     assert "useful only if it beats both baselines" in text
 
 
+def test_the_card_shows_the_post_cutoff_verdict_with_the_full_period_and_a_standing_fail_beside():
+    text, red = run("""
+        Object.assign(ANSWERS["GET /api/laya/tests"].tests[0], {
+          cutoff: "2025-05-31", full_verdict: "FAIL", post_read: { needed: 40, read: 30 },
+          full_horizons: [{ ...ANSWERS["GET /api/laya/tests"].tests[0].horizons[0], verdict: "FAIL", ic: -0.01 }],
+          standing: "Laya's FAIL stands: judged on the full period" });
+        section.start(); await settle();
+        const red = node.all((n) => n.tag === "p" && n.className.includes("down")).map((n) => n.textContent);
+        console.log(JSON.stringify([node.textContent, red]));
+    """)
+    assert "INCONCLUSIVE (verdict on days after the model's training cutoff, 2025-05-31)" in text
+    assert ("Full period, days inside the model's training included (not the verdict): FAIL; "
+            "5-day IC -0.0100, t +2.40, FAIL.") in text
+    assert "Laya's FAIL stands: judged on the full period." in red
+    assert "Own headlines after the cutoff read by this model: 30 of 40." in red
+
+
+def test_a_result_kept_before_the_rule_says_so():
+    [text] = run("""
+        section.start(); await settle();
+        console.log(JSON.stringify([node.textContent]));
+    """)
+    assert "INCONCLUSIVE (full period: kept before the training-cutoff rule)" in text
+
+
 def test_scoring_asks_for_the_cpu_only_when_the_box_is_ticked():
     [asked] = run("""
         section.start(); await settle();

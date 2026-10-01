@@ -13,6 +13,8 @@ class ArticleText:
     id: int
     title: str
     snippet: str | None
+    known: str | None = None
+    """Published, else fetched (UTC ISO)."""
 
 
 @dataclass(frozen=True)
@@ -57,7 +59,7 @@ class LayaRepo:
         for i in range(0, len(article_ids), 500):
             part = article_ids[i:i + 500]
             out += [ArticleText(*r) for r in self._conn.execute(
-                f"SELECT a.id, a.title, a.snippet FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) "
+                f"SELECT a.id, a.title, a.snippet, COALESCE(a.published_at, a.fetched_at) FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) "
                 "AND NOT EXISTS (SELECT 1 FROM laya_scores s WHERE s.article_id = a.id AND s.symbol = ? "
                 "AND s.model = ?)", (*part, symbol, model))]
         return sorted(out, key=lambda a: a.id)
@@ -72,6 +74,17 @@ class LayaRepo:
                 "(SELECT 1 FROM laya_scores s WHERE s.article_id = a.id AND s.symbol = ? AND s.model = ?)",
                 (*part, symbol, model)).fetchone()[0]
         return n
+
+    def read_marks(self, symbol: str, model: str, article_ids: list[int]) -> list[tuple[str, bool]]:
+        """(published_at, scored for `symbol` by `model`) of each dated one of `article_ids`."""
+        out: list[tuple[str, bool]] = []
+        for i in range(0, len(article_ids), 500):
+            part = article_ids[i:i + 500]
+            out += [(r[0], bool(r[1])) for r in self._conn.execute(
+                f"SELECT a.published_at, EXISTS (SELECT 1 FROM laya_scores s WHERE s.article_id = a.id AND "
+                f"s.symbol = ? AND s.model = ?) FROM articles a WHERE a.id IN ({','.join('?' * len(part))}) "
+                "AND a.published_at IS NOT NULL", (symbol, model, *part))]
+        return out
 
     def save(self, symbol: str, model: str, relation: str, scored: list[tuple[int, LayaScore]], at: str) -> None:
         with transaction(self._conn):

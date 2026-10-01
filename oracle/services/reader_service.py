@@ -14,6 +14,7 @@ import json
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 
 from oracle.research.laya import LayaInput
 from oracle.research.reader import BATCH, OllamaReader, ReaderError, reader_tag
@@ -107,7 +108,9 @@ class _Work:
 
 
 def _needed(ctx: AppContext, groups: Sequence[PairGroup], tag: str) -> tuple[int, list[_Work]]:
-    """Distinct (subject, article) readings, and those not yet stored, in group order."""
+    """Distinct (subject, article) readings, and those not yet stored, newest article first across
+    every subject: a run cut short has read the latest days for every company, not a few
+    companies whole (a cross-section needs every company; the cutoff rule counts only late days)."""
     ids: dict[str, dict[int, None]] = {}
     for g in groups:
         ids.setdefault(laya_service.primary(ctx, g.subject), {}).update(dict.fromkeys(g.ids))
@@ -115,7 +118,12 @@ def _needed(ctx: AppContext, groups: Sequence[PairGroup], tag: str) -> tuple[int
     for subject, wanted in ids.items():
         _, label = laya_service.named(ctx, subject)
         todo += [_Work(subject, label, a) for a in repo.unscored(subject, tag, list(wanted))]
+    todo.sort(key=lambda w: _moment(w.article.known), reverse=True)
     return sum(len(v) for v in ids.values()), todo
+
+
+def _moment(stamp: str | None) -> datetime:
+    return datetime.fromisoformat(stamp).astimezone(timezone.utc) if stamp else datetime.min.replace(tzinfo=timezone.utc)
 
 
 @dataclass(frozen=True)

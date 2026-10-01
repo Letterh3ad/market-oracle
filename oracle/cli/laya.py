@@ -100,13 +100,32 @@ def coverage_line(c: dict | None) -> str | None:
             + (f"; {gap} not scored, so it is not like for like with a model that scored them all" if gap else ""))
 
 
+def verdict_basis(t: LayaTest) -> str:
+    return (f"verdict on days after the model's training cutoff, {t.cutoff.isoformat()}" if t.cutoff
+            else "full period: kept before the training-cutoff rule")
+
+
+def full_period_line(t: LayaTest) -> str | None:
+    if not t.full_horizons:
+        return None
+    return (f"full period, days inside the model's training included (not the verdict): {t.full_verdict}; "
+            + "; ".join(f"{h.horizon}-day IC {_num(h.ic)}, t {_num(h.t, '.2f')}, {h.verdict}" for h in t.full_horizons))
+
+
 def format_test(t: LayaTest) -> str:
-    lines = [f"Laya predictive test, {t.label}: {t.verdict}",
+    lines = [f"Laya predictive test, {t.label}: {t.verdict} ({verdict_basis(t)})",
              f"model {t.model}; {t.start.isoformat()} to {t.end.isoformat()}; {t.companies} companies; pairs counted "
              + ", ".join(f"{r} {n}" for r, n in t.articles.items()),
              f"t-stat: {t.t_method}"]
+    if t.standing:
+        lines.append(t.standing)
+    if line := full_period_line(t):
+        lines.append(line)
     if line := coverage_line(t.own_coverage):
         lines.append(line)
+    if t.post_read:
+        lines.append(f"own headlines after the cutoff read by this model: {t.post_read['read']} of "
+                     f"{t.post_read['needed']}")
     for h in t.horizons:
         beats = {True: "beats", False: "does not beat", None: "cannot be set against"}
         lines += ["", f"{h.horizon}-day excess return (features over {h.lookback} days): {h.verdict}: IC {_num(h.ic)}, "

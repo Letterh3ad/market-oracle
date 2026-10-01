@@ -125,6 +125,19 @@ def test_only_the_newest_main_verdict_for_the_model_that_passed_and_beat_both_ba
     assert laya_verdict(ctx, MODEL).verdict == "FAIL" and not laya_verdict(ctx, MODEL).useful
 
 
+def test_a_result_kept_before_the_cutoff_rule_gives_no_weight_and_lays_fail_stands(ctx):
+    from oracle.research.laya import MODEL_TAG
+
+    market(ctx, signal=True)
+    score_history(ctx, scorer=FakeLaya())
+    kept(ctx, "PASS", cutoff=None)
+    v = laya_verdict(ctx, MODEL)
+    assert v.verdict == "PASS" and not v.useful and "before the training-cutoff rule" in v.why
+    kept(ctx, "PASS", model=MODEL_TAG)
+    v = laya_verdict(ctx, MODEL_TAG)
+    assert v.verdict == "FAIL" and not v.useful and "FAIL stands" in v.why
+
+
 def test_only_a_run_on_the_main_list_from_the_tests_start_gives_weight(ctx):
     market(ctx, signal=True)
     score_history(ctx, scorer=FakeLaya())
