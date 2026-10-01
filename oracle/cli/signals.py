@@ -5,6 +5,7 @@ import asyncio
 
 from oracle.cli.history import PROGRESS_S, _every
 from oracle.services.context import AppContext
+from oracle.services.event_study_service import EventStudy, event_studies, run_and_keep_events
 from oracle.services.signal_test_service import SIGNALS, SignalTest, run_and_keep, signal_tests
 
 
@@ -20,6 +21,13 @@ def register(parser: argparse.ArgumentParser) -> None:
     test.add_argument("--train-only", action="store_true",
                       help="2010-2019 alone: reads no bar after 2019 and computes no confirm, for choosing a rule")
     test.set_defaults(handler=run_test)
+    events = sub.add_parser("events", description="the pre-registered typed-event study (8-K items 2.02, 1.01, 2.01 "
+                                                  "and insider-buy clusters): mean sector-excess return from the next "
+                                                  "session's open at 1, 5, 20, 60 days, train and confirm; kept in "
+                                                  "the research database")
+    events.add_argument("--train-only", action="store_true", help="2010-2019 alone: no confirm")
+    events.add_argument("--show", action="store_true", help="print the newest kept result instead of running")
+    events.set_defaults(handler=run_events)
 
 
 def run_list(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -67,3 +75,33 @@ def print_test(t: SignalTest) -> None:
           "smallest IC it could see at t 2")
     print("Train only: confirm not computed, no verdict" if t.train_only else f"Verdict (confirm): {t.verdict_text}")
     print(f"Caveat: {t.caveat}")
+
+
+def run_events(ctx: AppContext, args: argparse.Namespace) -> int:
+    if args.show:
+        kept = event_studies(ctx).get("train" if args.train_only else "full")
+        if kept is None:
+            print("No event study kept yet")
+            return 0
+        print_events(kept)
+        return 0
+    print_events(asyncio.run(run_and_keep_events(ctx, train_only=args.train_only, on_progress=_every(PROGRESS_S))))
+    return 0
+
+
+def print_events(s: EventStudy) -> None:
+    print(f"Typed-event study, run {s.run_at[:16]} UTC: testbed {s.first_day} to {s.last_day}; insider trades through "
+          f"{s.trades_through or 'none stored'}; missing share train {_num(s.missing_train, '.1%')}, confirm "
+          f"{_num(s.missing_confirm, '.1%')}")
+    print(f"Mean cumulative sector-excess return from the next session's open; t clustered by decision day; primary "
+          f"horizon {s.primary} d (*)")
+    for t in s.types:
+        print(f"{t.name}: {t.label}")
+        print(f"  {'window':<8} {'h':>3} {'events':>7} {'days':>6} {'mean CAR':>9} {'t':>6} {'up':>6}")
+        for w, rows in (("train", t.train), ("confirm", t.confirm)):
+            for r in rows:
+                mark = " *" if r.horizon == s.primary else ""
+                print(f"  {w:<8} {r.horizon:>3} {r.n:>7} {r.days:>6} {_num(r.mean, '+.2%'):>9} {_num(r.t, '.2f'):>6} "
+                      f"{r.positive:>6}{mark}")
+        print(f"  Verdict: {t.verdict}")
+    print(f"PASS: confirm t above 2 at {s.primary} d in the train mean's sign. Caveat: {s.caveat}")

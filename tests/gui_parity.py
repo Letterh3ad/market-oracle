@@ -188,6 +188,16 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{f"testbed fundamentals --{flag}": Exempt("a smoke run on a scratch research DB; the card fetches every member")
        for flag in ("only", "limit")},
     "testbed fundamentals-status": "GET /api/xbrl/coverage",
+    # Same card: "Fetch Form 4s and 8-Ks", "Refetch" and their coverage table.
+    "testbed insiders": "POST /api/jobs/insiders",
+    "testbed insiders --refresh": "POST /api/jobs/insiders",
+    **{f"testbed insiders --{flag}": Exempt("a smoke run on a scratch research DB; the card fetches every member")
+       for flag in ("only", "limit")},
+    "testbed insiders-status": "GET /api/insiders/coverage",
+    # Same card: the typed-event study's "Run event study", "Train only" and its kept tables.
+    "signals events": "POST /api/jobs/event-study",
+    "signals events --train-only": "POST /api/jobs/event-study",
+    "signals events --show": "GET /api/events",
     # Same card: the signals table, each row's "Run test" and its kept result.
     "signals list": "GET /api/signals",
     "signals test": "POST /api/jobs/signal-test",

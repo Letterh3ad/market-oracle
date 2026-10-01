@@ -12,7 +12,7 @@ from oracle.gui.deps import get_ctx, get_runner
 from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
-    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_signal_test, submit_testbed, submit_tick, submit_xbrl, submit_universe_refresh,
+    submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_signal_test, submit_testbed, submit_tick, submit_xbrl, submit_insiders, submit_event_study, submit_universe_refresh,
 )
 from oracle.services.context import AppContext
 from oracle.services.laya_service import MODEL_TAG
@@ -199,6 +199,22 @@ async def signal_test(name: str, train_only: bool = False, ctx: AppContext = Dep
     """The pre-registered test of one signal on the testbed (minutes; `train_only`: 2010-2019 alone),
     kept in the research database; it waits while live work or a testbed build runs."""
     return shapes.job(submit_signal_test(ctx, runner, name, train_only))
+
+
+@router.post("/insiders", status_code=202)
+async def insiders(refresh: bool = False, ctx: AppContext = Depends(get_ctx),
+                   runner: JobRunner = Depends(get_runner)) -> dict:
+    """Fetch the testbed members' Form 4 trades and Form 4 / 8-K filing times and items into the
+    research database (`refresh`: all again); it waits while live work runs and resumes."""
+    return shapes.job(submit_insiders(ctx, runner, refresh))
+
+
+@router.post("/event-study", status_code=202)
+async def event_study(train_only: bool = False, ctx: AppContext = Depends(get_ctx),
+                      runner: JobRunner = Depends(get_runner)) -> dict:
+    """The pre-registered typed-event study on the testbed (`train_only`: 2010-2019 alone), kept in
+    the research database."""
+    return shapes.job(submit_event_study(ctx, runner, train_only))
 
 
 @router.post("/reader", status_code=202)

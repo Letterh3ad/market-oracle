@@ -56,3 +56,25 @@ def test_train_only_is_passed_and_an_unseen_fail_says_what_was_needed(tmp_path, 
     assert seen["train_only"] is True
     assert "FAIL (could not see an IC this small: needed 0.0160)" in out
     assert "Verdict (confirm): FAIL (could not see an IC this small: needed 0.0160)" in out
+
+
+def test_events_runs_the_study_and_show_prints_the_kept_one(tmp_path, capsys, monkeypatch):
+    from oracle.analysts.event_study import EventRow
+    from oracle.services.event_study_service import EventStudy, EventType
+    from datetime import date
+    rows = tuple(EventRow(h, 40, 30, 0.0123, 2.5, 25) for h in (1, 5, 20, 60))
+    study = EventStudy((EventType("2.02", "results", rows, rows, "PASS", True),), 20, (1, 5, 20, 60),
+                       date(2010, 1, 4), date(2026, 9, 30), date(2026, 6, 30), 0.2, 0.05, "2026-10-01T12:00:00+00:00")
+    seen = {}
+
+    async def fake(ctx, **kw):
+        seen.update(kw)
+        return study
+
+    monkeypatch.setattr("oracle.cli.signals.run_and_keep_events", fake)
+    assert main(["--config", str(config(tmp_path)), "signals", "events", "--train-only"]) == 0
+    out = capsys.readouterr().out
+    assert seen["train_only"] is True and "Verdict: PASS" in out and "+1.23%" in out and "   20      40     30" in out
+    monkeypatch.setattr("oracle.cli.signals.event_studies", lambda ctx: {})
+    assert main(["--config", str(config(tmp_path)), "signals", "events", "--show"]) == 0
+    assert "No event study kept yet" in capsys.readouterr().out

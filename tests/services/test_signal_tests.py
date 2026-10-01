@@ -157,7 +157,8 @@ async def test_it_waits_for_live_work_and_stops_when_told(ctx):
 
 def test_the_registry_holds_the_pre_registered_signals():
     assert {n: s.horizons for n, s in SIGNALS.items()} == {"momentum_12_1": (20,), "reversal_1m": (5,), "sue": (60,),
-                                                           "gross_profitability": (20,), "earnings_yield": (20,)}
+                                                           "gross_profitability": (20,), "earnings_yield": (20,),
+                                                           "insider_buys": (20, 60)}
     assert all(s.model is None for s in SIGNALS.values())
     with pytest.raises(InvalidQuery, match="no signal 'x'"):
         check_signal("x")

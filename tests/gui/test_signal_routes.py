@@ -6,7 +6,7 @@ async def test_signals_lists_the_registry_with_no_result_before_a_run(loaded):
     body = (await loaded.get("/api/signals")).json()
     assert [(s["name"], s["horizons"], s["result"]) for s in body["signals"]] == [
         ("momentum_12_1", [20], None), ("reversal_1m", [5], None), ("sue", [60], None),
-        ("gross_profitability", [20], None), ("earnings_yield", [20], None)]
+        ("gross_profitability", [20], None), ("earnings_yield", [20], None), ("insider_buys", [20, 60], None)]
 
 
 async def test_the_fundamentals_fetch_is_a_job_and_its_coverage_reads_the_research_database(loaded):
@@ -50,3 +50,16 @@ async def test_a_train_only_test_is_its_own_job_and_shows_beside_the_full_result
     future = next(s for s in (await loaded.get("/api/signals")).json()["signals"] if s["name"] == "future")
     assert future["result"] is None and future["train_result"]["verdict_text"] == "TRAIN ONLY"
     assert future["train_result"]["train"][0]["verdict_text"] == "PASS"
+
+
+async def test_the_form4_fetch_and_the_event_study_are_jobs_and_their_reads_use_the_research_database(loaded):
+    first = await loaded.post("/api/jobs/insiders")
+    refetch = await loaded.post("/api/jobs/insiders?refresh=true")
+    assert first.status_code == 202 and first.json()["kind"] == "insiders"
+    assert first.json()["label"] == "Fetch Form 4s and 8-Ks" and refetch.json()["label"] == "Refetch Form 4s and 8-Ks"
+    study = await loaded.post("/api/jobs/event-study")
+    train = await loaded.post("/api/jobs/event-study?train_only=true")
+    assert study.json()["kind"] == "event_study" and train.json()["label"] == "Event study, train only"
+    cover = (await loaded.get("/api/insiders/coverage")).json()
+    assert (cover["priced"], cover["years"], cover["quarters"]) == (0, [], {})
+    assert (await loaded.get("/api/events")).json() == {"full": None, "train": None}

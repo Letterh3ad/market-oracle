@@ -271,6 +271,20 @@ def xbrl_coverage(c) -> dict:
             "last_run": {**asdict(run), "summary": run.summary} if run else None}
 
 
+def insider_coverage(c) -> dict:
+    """Form 4 trades and typed filings per year, quarters stored, the last fetch."""
+    run = c.last_run
+    return {"priced": c.priced, "issuers": c.issuers, "no_cik": c.no_cik, "filings_fetched": c.filings_fetched,
+            "quarters": c.quarters, "years": [{"year": y, **row} for y, row in c.years.items()],
+            "late": [asdict(x) for x in c.late],
+            "last_run": {**asdict(run), "summary": run.summary} if run else None}
+
+
+def event_study(s) -> dict | None:
+    """A kept typed-event study, as stored."""
+    return asdict(s) if s is not None else None
+
+
 def testbed_coverage(c: TestbedCoverage) -> dict:
     """The signal testbed's coverage: one row per year, and the members never priced."""
     run, snap = c.last_run, c.snapshot

@@ -19,6 +19,7 @@ from oracle.broker.walk_forward import segments
 from oracle.research.training_cutoffs import training_cutoff
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
+from oracle.services.insider_service import INSIDER_BUYS
 from oracle.services.testbed_service import START, Testbed, research_context
 from oracle.services.xbrl_service import FUNDAMENTAL_SIGNALS
 from oracle.store.db import to_utc_iso
@@ -33,6 +34,8 @@ TRAIN_ONLY = "TRAIN ONLY"
 TRAIN_KEY = ":train"
 """Appended to a train-only result's stored signal name, so it never hides the full result."""
 CONFIRM_START = date(2020, 1, 1)
+EVENT_KEY = "event_study"
+"""The typed-event study keeps its results beside the signals' under this name."""
 CHUNK = 250
 """Decision days scored between two checks for a stop or live work."""
 WAIT_S = 5.0
@@ -46,6 +49,7 @@ SIGNALS: dict[str, Signal] = {s.name: s for s in (
            momentum_12_1),
     Signal("reversal_1m", "1-month reversal: minus the last month's return to the last close", (5,), reversal_1m),
     *FUNDAMENTAL_SIGNALS,
+    INSIDER_BUYS,
 )}
 
 
@@ -202,7 +206,7 @@ def signal_tests(ctx: AppContext, train_only: bool = False) -> dict[str, SignalT
     with research_context(ctx) as r:
         rows = SignalTestRepo(r.conn).latest()
     return {row.signal.removesuffix(TRAIN_KEY): _load(row.result, row.id) for row in rows
-            if row.signal.endswith(TRAIN_KEY) == train_only}
+            if row.signal.endswith(TRAIN_KEY) == train_only and row.signal.removesuffix(TRAIN_KEY) != EVENT_KEY}
 
 
 def _windows(rows: list[dict]) -> tuple[WindowResult, ...]:

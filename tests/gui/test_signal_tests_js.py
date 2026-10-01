@@ -70,6 +70,25 @@ XBRL = {"priced": 609, "with_cik": 590, "with_facts": 585, "without_cik": ["OLDC
                    "events": {"sue": 900, "gross_profitability": 1400, "earnings_yield": 1600}}]}
 
 
+INSIDERS = {"priced": 609, "issuers": 600, "no_cik": 9, "filings_fetched": 600, "quarters": {"2009q1": 10, "2026q2": 20},
+            "last_run": None, "late": [{"ticker": "XOM", "cik": 2115436, "member_from": "2010-01-04",
+                                        "scored_from": None}], "years": [{"year": 2015, "P": 812, "P_issuers": 140, "S": 9100, "4": 30000, "8-K": 6000,
+                                         "8-K 2.02": 2300, "8-K 1.01": 700, "8-K 2.01": 90}]}
+
+
+def row(h, mean, t):
+    return {"horizon": h, "n": 50, "days": 40, "mean": mean, "t": t, "positive": 30}
+
+
+EVENTS = {"full": {"types": [{"name": "2.02", "label": "8-K item 2.02: results", "verdict": "FAIL", "passed": False,
+                              "train": [row(h, 0.001, 0.5) for h in (1, 5, 20, 60)],
+                              "confirm": [row(h, -0.0123, -1.1) for h in (1, 5, 20, 60)]}],
+                   "primary": 20, "horizons": [1, 5, 20, 60], "first_day": "2010-01-04", "last_day": "2026-09-30",
+                   "trades_through": "2026-06-30", "missing_train": 0.2, "missing_confirm": 0.05,
+                   "run_at": "2026-10-01T12:00:00+00:00", "train_only": False, "caveat": "clustered by day", "id": 5},
+          "train": None}
+
+
 def run(body: str):
     script = f"""
         {PRELUDE}
@@ -81,6 +100,12 @@ def run(body: str):
         ANSWERS["GET /api/xbrl/coverage"] = {json.dumps(XBRL)};
         ANSWERS["POST /api/jobs/xbrl"] = {{ id: 11, kind: "xbrl", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/xbrl?refresh=true"] = {{ id: 12, kind: "xbrl", state: "queued", progress: null }};
+        ANSWERS["GET /api/insiders/coverage"] = {json.dumps(INSIDERS)};
+        ANSWERS["GET /api/events"] = {json.dumps(EVENTS)};
+        ANSWERS["POST /api/jobs/insiders"] = {{ id: 13, kind: "insiders", state: "queued", progress: null }};
+        ANSWERS["POST /api/jobs/event-study"] = {{ id: 14, kind: "event_study", state: "queued", progress: null }};
+        ANSWERS["POST /api/jobs/event-study?train_only=true"] = {{ id: 15, kind: "event_study", state: "queued",
+          progress: null }};
         ANSWERS["POST /api/jobs/testbed?refresh=true"] = {{ id: 8, kind: "testbed", state: "queued", progress: null }};
         ANSWERS["POST /api/jobs/testbed?verify=true"] = {{ id: 9, kind: "testbed", state: "queued", progress: null }};
         const {{ signalTestsSection }} = await import({json.dumps((STATIC_DIR / "lib" / "signal_tests.js").as_uri())});
@@ -104,7 +129,7 @@ def test_the_card_shows_the_missing_share_per_year_and_the_members_never_priced(
     assert "126000" in text and "under 50% of their member-days (2)" in text and "not on Yahoo" in text
     assert "priced on 1 of 4170 member-days" in text and "Listed twice: KORS and CPRI" in text
     assert "Its last change is 2026-08-18: to 2026-10-01" in text
-    assert red == ["20.6%", "18.0%", "for review", UNSEEN], "high missing shares, a pair for review, a failed verdict"
+    assert red == ["20.6%", "18.0%", "for review", "FAIL", UNSEEN], "high missing shares, a pair for review, failed verdicts"
     assert "6.1% with renames mapped" in text and "Renames (1 mapped, 1 for review, checked 2026-10-01)" in text
     assert "rejected (swap): cover FERG (not EA)" in text and "for review" in text
 
@@ -185,3 +210,20 @@ def test_the_fundamentals_coverage_shows_per_year_and_fetch_starts_its_job():
     assert "300 / 900" in text and "420 / 1600" in text and "sue: members / filings" in text
     assert "No CIK in SEC's ticker map (1): OLDCO." in text and "No XBRL facts at SEC (1): BANKX." in text
     assert "The fundamentals fetch is queued" in text
+
+
+def test_form4_coverage_and_the_event_study_tables_with_their_jobs():
+    asked, text = run("""
+        section.start(); await settle();
+        asked.length = 0;
+        button(node, "Fetch Form 4s and 8-Ks").fire("click"); await settle();
+        button(node, "Run event study").fire("click"); await settle();
+        button(node, "Event study, train only").fire("click"); await settle();
+        console.log(JSON.stringify([asked, node.textContent]));
+    """)
+    assert asked == ["POST /api/jobs/insiders", "POST /api/jobs/event-study", "POST /api/jobs/event-study?train_only=true"]
+    assert "600 issuers with a CIK (9 members without)" in text and "trades for 2 quarters, 2009q1 to 2026q2" in text
+    assert "9100" in text and "2300" in text
+    assert "Today's CIK starts late (1)" in text and "XOM (CIK 2115436) member from 2010-01-04, scored from never" in text
+    assert "20 d (primary)" in text and "-1.23%, t -1.10" in text and "insider trades through 2026-06-30" in text
+    assert "The Form 4 and 8-K fetch is queued" in text and "The event study is queued" in text
