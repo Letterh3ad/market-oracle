@@ -33,7 +33,9 @@ def test_parse_keeps_wanted_concepts_units_and_forms_only():
 def test_acceptance_times_of_periodic_reports_only():
     cols = {"form": ["10-Q", "4", "10-K/A"], "accessionNumber": ["a", "b", "c"],
             "acceptanceDateTime": ["2020-05-01T18:05:00.000Z", "2020-05-02T10:00:00.000Z", ""]}
-    assert xbrl.parse_acceptances(cols) == {"a": "2020-05-01T18:05"}
+    assert xbrl.parse_acceptances(cols) == {"a": "2020-05-01T14:05"}, "SEC's stamp is UTC; kept in New York time"
+    late = {"form": ["10-K"], "accessionNumber": ["b"], "acceptanceDateTime": ["2020-02-21T01:15:00.000Z"]}
+    assert xbrl.parse_acceptances(late) == {"b": "2020-02-20T20:15"}, "the New York day, not the UTC one"
 
 
 def test_known_day_is_the_acceptance_day_else_the_filing_date():
@@ -131,7 +133,7 @@ def test_splits_put_per_share_figures_in_todays_shares():
     splits = [(D("2020-08-31"), 4.0), (D("2014-06-09"), 7.0)]
     assert xbrl.split_factor(splits, D("2014-01-01")) == 28
     assert xbrl.split_factor(splits, D("2020-08-31")) == 1, "a split on the known day is not after it"
-    [p] = xbrl.todays_shares([q("2020-01-01", "2020-03-31", 2.8, "2020-05-01")], splits)
+    [p] = xbrl.in_todays_shares(periods(q("2020-01-01", "2020-03-31", 2.8, "2020-05-01")), splits).values()
     assert p.value == pytest.approx(0.7)
 
 
@@ -140,3 +142,16 @@ def test_ratio_events_need_a_positive_bottom_at_the_same_end():
     bottom = {D("2019-12-31"): Period(None, D("2019-12-31"), 100, D("2020-02-05"))}
     a, b = xbrl.ratio_events(top, bottom)
     assert (a.value, a.known) == (0.3, D("2020-02-05")) and b.value is None
+
+
+def test_a_split_between_the_nine_months_and_the_year_is_taken_out_before_the_fourth_quarter():
+    facts = [fact("EarningsPerShareDiluted", f"2021-{s}", f"2021-{e}", 1.0, accn=f"q{k}", filed=f)
+             for k, (s, e, f) in enumerate((("01-01", "03-31", "2021-05-01"), ("04-01", "06-30", "2021-08-01"),
+                                            ("07-01", "09-30", "2021-11-01")))]
+    # A 4-for-1 split on 2021-11-18; the 10-K restates the year in new shares: 4.0 old = 1.0 new.
+    facts.append(fact("EarningsPerShareDiluted", "2021-01-01", "2021-12-31", 1.0, accn="k", filed="2022-02-15",
+                      form="10-K"))
+    splits = [(D("2021-11-18"), 4.0)]
+    periods = xbrl.in_todays_shares(xbrl.by_priority(facts, xbrl.EPS, {}), splits)
+    qs = xbrl.quarters(periods)
+    assert [round(p.value, 4) for p in qs] == [0.25, 0.25, 0.25, 0.25]

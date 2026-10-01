@@ -7,10 +7,11 @@ signals. Numbers in, numbers out."""
 from __future__ import annotations
 
 import math
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
+
+from oracle.research.edgar import new_york
 
 COMPANYFACTS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 TAXONOMY = "us-gaap"
@@ -69,24 +70,21 @@ def parse_companyfacts(body: object) -> list[Fact]:
     return out
 
 
-_STAMP = re.compile(r"\d{4}-\d\d-\d\dT\d\d:\d\d")
-
-
 def parse_acceptances(columns: object) -> dict[str, str]:
-    """accession -> acceptance time (YYYY-MM-DDTHH:MM, New York time despite SEC's Z) of the
+    """accession -> acceptance time (YYYY-MM-DDTHH:MM in New York; SEC's stamp is UTC) of the
     FORMS filings in one list of the submissions' parallel columns."""
     columns = columns if isinstance(columns, dict) else {}
     out = {}
     for form, accession, accepted in zip(*(columns.get(k, []) for k in ("form", "accessionNumber",
                                                                          "acceptanceDateTime"))):
-        stamp = str(accepted or "")[:16]
-        if form in FORMS and accession and _STAMP.fullmatch(stamp):
+        stamp = new_york(accepted)
+        if form in FORMS and accession and stamp:
             out[accession] = stamp
     return out
 
 
 def known_day(f: Fact, accepted: Mapping[str, str]) -> date:
-    """The day the fact became public: its filing's acceptance day, else its filing date (which
+    """The day the fact became public: its filing's acceptance day in New York, else its filing date (which
     is the next business day for a filing accepted after 17:30, so never earlier)."""
     stamp = accepted.get(f.accession)
     return date.fromisoformat(stamp[:10]) if stamp else f.filed
@@ -272,9 +270,10 @@ def split_factor(splits: Sequence[tuple[date, float]], after: date) -> float:
     return f
 
 
-def todays_shares(qs: Sequence[Period], splits: Sequence[tuple[date, float]]) -> list[Period]:
-    """Per-share quarters in today's shares: each divided by the splits after it was known."""
-    return [Period(q.start, q.end, q.value / split_factor(splits, q.known), q.known) for q in qs]
+def in_todays_shares(periods: Mapping[Key, Period], splits: Sequence[tuple[date, float]]) -> dict[Key, Period]:
+    """Per-share figures in today's shares, each divided by the splits after its own known day:
+    done before quarters() so a derived fourth quarter never mixes old and new shares."""
+    return {k: Period(p.start, p.end, p.value / split_factor(splits, p.known), p.known) for k, p in periods.items()}
 
 
 LATE = timedelta(days=180)

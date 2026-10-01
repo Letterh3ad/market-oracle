@@ -272,7 +272,7 @@ Timeline = tuple[list[date], list[Event]]
 
 
 def _company(facts, accepted, splits) -> dict[str, list[Event]]:
-    eps = xbrl.todays_shares(xbrl.quarters(xbrl.by_priority(facts, xbrl.EPS, accepted)), splits)
+    eps = xbrl.quarters(xbrl.in_todays_shares(xbrl.by_priority(facts, xbrl.EPS, accepted), splits))
     gp = xbrl.trailing_year(xbrl.quarters(xbrl.gross_profit(facts, accepted)))
     assets = xbrl.instants(xbrl.by_priority(facts, xbrl.ASSETS, accepted))
     return {SUE_NAME: xbrl.timeline(xbrl.sue_events(eps)),

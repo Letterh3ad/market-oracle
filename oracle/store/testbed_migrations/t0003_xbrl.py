@@ -5,7 +5,8 @@ import sqlite3
 from oracle.store.migrations import run_ddl
 
 # xbrl_facts keeps every filing's value of a period (restatements too); readers pick the first
-# filed. start is '' for an instant (a balance). xbrl_accepted holds acceptance times (New York).
+# filed. start is '' for an instant (a balance). xbrl_accepted holds acceptance times converted
+# from SEC's UTC stamp to New York time (YYYY-MM-DDTHH:MM).
 DDL = """
 CREATE TABLE xbrl_tickers (
     ticker     TEXT PRIMARY KEY,

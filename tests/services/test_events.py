@@ -142,6 +142,20 @@ async def test_dates_are_stored_and_refetched_only_after_a_week(priced, web, clo
     assert len(web.requests_to("data.sec.gov")) == calls + 1
 
 
+async def test_dates_stored_before_utc_stamps_were_read_in_new_york_are_refetched(priced, web, sec):
+    import json
+
+    from oracle.store.meta import MetaRepo
+    sec.filings[CIK] = [release("2026-07-30", "10:30")]
+    old = {"source": "SEC 8-K item 2.02", "fetched_at": NOW.isoformat(), "releases": [["2026-07-30", False]]}
+    MetaRepo(priced.conn).set("earnings_dates:AAPL", json.dumps(old))
+    stored = await earnings_study(priced, "AAPL", refresh=False)
+    assert stored.events[0].before_open is False, "never fetching, the old row stands"
+    study = await earnings_study(priced, "AAPL")
+    assert len(web.requests_to("data.sec.gov")) == 1, "fetched again though under a week old"
+    assert study.events[0].before_open is True, "10:30 UTC is 06:30 in New York, before the open"
+
+
 async def test_a_failed_fetch_keeps_the_stored_dates_and_says_why(priced, sec, clock):
     await earnings_study(priced, "AAPL")
     clock.advance(8 * 86400)

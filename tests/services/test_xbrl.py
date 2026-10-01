@@ -96,7 +96,7 @@ async def test_fetch_stores_facts_acceptance_and_splits_in_the_research_database
     sec.facts = {1: body(facts + [("Assets", None, "2014-03-31", 100.0, "q-000", "10-Q", "2014-05-10"),
                                   ("NetIncomeLoss", "2014-01-01", "2014-03-31", 5.0, "q-000", "10-Q", "2014-05-10")]),
                  3: body(facts)}
-    sec.filings = {1: [("10-Q", "2014-05-12", "q-000", "a.htm", "", "", "2014-05-10T18:01:00.000Z"),
+    sec.filings = {1: [("10-Q", "2014-05-12", "q-000", "a.htm", "", "", "2014-05-10T22:01:00.000Z"),
                        ("4", "2014-05-12", "z", "b.htm", "", "", "2014-05-12T10:00:00.000Z")],
                    3: []}
     yahoo.add("AAA", "USD", NY, [bar("2014-01-02", 10.0)])
@@ -111,7 +111,7 @@ async def test_fetch_stores_facts_acceptance_and_splits_in_the_research_database
         assert (m["NOSEC"].facts_note, m["BBB"].facts_note, m["AAA"].facts_note) == (NO_CIK, NO_FACTS, None)
         assert "GONE" not in m, "an unpriced member is never asked for"
         assert len(repo.facts(1)) == 5 and {f.concept for f in repo.facts(1)} == {"EarningsPerShareDiluted", "Assets"}
-        assert repo.accepted(1) == {"q-000": "2014-05-10T18:01"}, "periodic reports only"
+        assert repo.accepted(1) == {"q-000": "2014-05-10T18:01"}, "periodic reports only, in New York time"
         assert repo.splits("AAA") == [(D("2016-05-02"), 2.0)]
     agent = {r.headers["user-agent"] for r in web.requests_to("data.sec.gov")}
     assert agent == {"market-oracle/0.1 Test test@example.com"}
