@@ -22,7 +22,7 @@ from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
 from oracle.services.industry_research_service import live_model_work, research_industry
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import CORE_SAT, REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, frozen, strategy_step, traded_by
+from oracle.services.paper_service import CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, frozen, strategy_step, traded_by
 from oracle.services.prices_service import update_watched
 from oracle.services.regime_service import LineStep, RegimeRun, regime_step
 from oracle.services.replay_score import update_study_prices
@@ -281,6 +281,7 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
                                "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
                                "regime_v2_step": _line_step(REGIME_V2), "core_sat_step": _line_step(CORE_SAT),
+                               "laya_step": _line_step(LAYA),
                                "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step,
                                "industry": _industry}
 OFF = "AI account off"

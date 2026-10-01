@@ -35,7 +35,7 @@ def register(parser: argparse.ArgumentParser) -> None:
                       help="strategy trades the leans, ai the research verdicts, regime the regime blend, "
                            "regime-ai the blend with the day's model tilt (frozen: steps nothing), regime-v2 the "
                            "blend without hold padding and with its rotation, core-sat its equal-weight core's yearly "
-                           "rebalance and its satellite on the blend")
+                           "rebalance and its satellite on the blend, laya Laya's daily news score alone")
     step.set_defaults(handler=step_cmd)
     log = sub.add_parser("log", help="an account's recent decisions")
     log.add_argument("--account", choices=TRADERS, default="strategy")

@@ -73,9 +73,9 @@ def use_stub(monkeypatch, **kwargs) -> list[StubBook]:
     """Every step builds a StubBook with `kwargs`; returns the books built, newest last."""
     built: list[StubBook] = []
 
-    def build(ctx, history, inputs, tilt=None, account="regime"):
+    def build(ctx, history, inputs, tilt=None, account="regime", laya=None):
         built.append(StubBook(history, inputs, tilt=tilt, **kwargs))
-        built[-1].account = account
+        built[-1].account, built[-1].laya = account, laya
         return built[-1]
 
     monkeypatch.setattr("oracle.services.regime_service.build_book", build)
