@@ -177,16 +177,38 @@ async def test_the_job_waits_for_model_work_anywhere_and_a_scheduled_tick(ctx, r
     assert _reader_waits(ctx, runner) == "research", "another process's research"
 
 
-def test_the_reader_and_laya_history_wait_on_each_others_locks_never_their_own(ctx):
+def test_laya_history_goes_first_the_reader_waits_never_both(ctx):
+    """Both locks held at once: history scoring proceeds and only the reader waits, so the two can
+    never wait on each other."""
     from oracle.services.laya_history_service import JOB as HISTORY_JOB, history_waits_anywhere
 
     assert waits_anywhere(ctx) is None and history_waits_anywhere(ctx) is None
-    with single_flight(ctx, HISTORY_JOB, 60):
+    with single_flight(ctx, HISTORY_JOB, 60), single_flight(ctx, reader_service.JOB, 60):
+        assert history_waits_anywhere(ctx) is None, "history scoring never waits for the reader"
         assert waits_anywhere(ctx) == "laya history"
-        assert history_waits_anywhere(ctx) is None, "not on its own lock"
     with single_flight(ctx, reader_service.JOB, 60):
-        assert history_waits_anywhere(ctx) == "reader"
         assert waits_anywhere(ctx) is None, "not on its own lock"
+
+
+def test_the_reader_resumes_once_laya_history_releases_its_lock(ctx, pairs, monkeypatch):
+    from contextlib import ExitStack
+
+    from oracle.services.laya_history_service import JOB as HISTORY_JOB
+
+    history = ExitStack()
+    history.enter_context(single_flight(ctx, HISTORY_JOB, 60))
+    waits, lines = [], []
+
+    def history_finishes(seconds):
+        waits.append(seconds)
+        if len(waits) == 2:
+            history.close()
+
+    monkeypatch.setattr(laya_service, "wait", history_finishes)
+    fake = FakeReader()
+    run = score_reader(ctx, groups=pairs, reader=fake, busy=lambda: waits_anywhere(ctx), on_progress=lines.append)
+    assert run.stopped is None and run.scored == 5 and len(waits) == 2 and fake.released == 1
+    assert any("waiting for laya history" in line for line in lines)
 
 
 async def test_the_reader_and_laya_history_jobs_wait_for_a_regime_ai_backtest(ctx, runner):

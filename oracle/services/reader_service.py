@@ -20,7 +20,7 @@ from oracle.research.reader import BATCH, OllamaReader, ReaderError, reader_tag
 from oracle.services import laya_service
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, JobAlreadyRunning
-from oracle.services.laya_history_service import HISTORY_WAITS_FOR, JOB as HISTORY_JOB, READER_JOB, PairGroup, history_pairs
+from oracle.services.laya_history_service import HISTORY_WAITS_FOR, JOB as HISTORY_JOB, PairGroup, history_pairs
 from oracle.services.jobs_service import single_flight
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.db import to_utc_iso
@@ -30,9 +30,10 @@ from oracle.store.meta import MetaRepo
 __all__ = ["BAKE_OFF_RATES", "JOB", "PairGroup", "ReaderPlan", "ReaderRun", "last_reader_run", "load_reader",
            "plan_reader", "reader_groups", "reader_tag", "score_reader", "waits_anywhere"]
 
-JOB = READER_JOB
+JOB = "reader"
 READER_WAITS_FOR = (*HISTORY_WAITS_FOR, HISTORY_JOB)
-"""Job locks (any process) the reader gives way to: what Laya's history scoring waits for, and that scoring."""
+"""Job locks (any process) the reader gives way to: what Laya's history scoring waits for, and that scoring
+(which goes first: it never waits for the reader, so the two cannot wait on each other)."""
 LEASE_S = 1800.0
 LAST_RUN = "reader_last_run"
 BAKE_OFF_RATES = {"qwen3:4b-instruct-2507-q8_0": 16.6, "gemma4:12b": 3.79, "qwen2.5:32b": 1.02}
