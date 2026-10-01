@@ -33,11 +33,13 @@ from oracle.services.laya_service import MODEL_TAG, ScoredArticle
 from oracle.services.watch_service import DEFAULT_LIST
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.industry_news import IndustryNewsRepo
 from oracle.store.laya_tests import LayaTestRepo
 
 __all__ = ["CAVEAT", "FIT_DAYS", "HORIZONS", "MAIN", "SENSITIVITY", "TEST_START", "FeatureIC", "HorizonResult",
-           "LayaTest", "Panel", "SegmentRow", "build_panel", "horizon_result", "keep_laya_test", "laya_tests",
-           "relation_for", "run_laya_test"]
+           "LayaTest", "MAIN_RELATIONS", "Obs", "Panel", "SegmentRow", "build_panel", "horizon_result",
+           "keep_laya_test", "latest_verdict", "laya_tests", "observations", "relation_for", "run_laya_test",
+           "trailing_fit"]
 
 TEST_START = date(2022, 9, 21)
 HORIZONS = ((5, 7), (20, 28))
@@ -99,8 +101,16 @@ class Panel:
 
 
 def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: bool = False, start: date = TEST_START,
-                end: date | None = None, model: str = MODEL_TAG,
+                end: date | None = None, model: str = MODEL_TAG, research: bool = False,
                 say: Callable[[str], None] = lambda _: None) -> Panel:
+    """With `research`, each company's articles are its backfill plus what the daily industry
+    research found for it (Laya's live score, ticket 08); the test reads the backfill alone."""
+    news = IndustryNewsRepo(ctx.conn)
+
+    def ids(symbol: str) -> list[int]:
+        own = company_history(ctx, symbol)
+        return list(dict.fromkeys(own + news.recent(symbol, ""))) if research else own
+
     companies = history_companies(ctx, watchlist)
     mains = [c.symbol for c in companies if c.main]
     end = end or ctx.clock.utcnow().date()
@@ -112,10 +122,10 @@ def build_panel(ctx: AppContext, watchlist: str = DEFAULT_LIST, *, sensitivity: 
         subjects: list[MapSubject] = map_subjects(ctx, m, companies)
         about: dict[int, list[Related]] = {}
         for s in subjects:
-            for i in company_history(ctx, s.symbol):
+            for i in ids(s.symbol):
                 about.setdefault(i, []).append(s.related)
         rows = daily_features(ctx, m, first, end, model=model, history=True,
-                              relation_for=relation_for(set(company_history(ctx, m)), about, sensitivity),
+                              relation_for=relation_for(set(ids(m)), about, sensitivity),
                               day_for=lambda s, m=m: usable_day(m, known_moment(s.known_at)))
         days: dict[date, dict[str, tuple[int, float, float]]] = {}
         for r in rows:
@@ -227,11 +237,14 @@ def _coverage_why(cov: Coverage | None, start: date, end: date) -> str | None:
     return None if good >= COVERAGE_SHARE else f"thin coverage: {good:.0%} of company quarters usable"
 
 
-def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, date]], relations: Sequence[str],
-                   cov: Coverage | None) -> HorizonResult:
-    """The test at one horizon over `spans`, reading only `panel`."""
-    in_score, secondary = _features(relations)
-    names = in_score + secondary
+Obs = dict[date, list[tuple[dict[str, float], float, date]]]
+"""Decision day -> per company (features, industry-excess return, exit day)."""
+
+
+def observations(panel: Panel, h: int, lb: int, first: date, last: date, relations: Sequence[str],
+                 names: Sequence[str]) -> tuple[Obs, dict[str, dict[date, float]]]:
+    """Every decision day from `first` to `last` with each main company's features and its
+    `h`-day return over its industry, and each of `names`' daily IC. Reads only `panel`."""
     dates = {s: [b.date for b in bars] for s, bars in panel.bars.items()}
     cache: dict[tuple[str, date, date, bool], float | None] = {}
 
@@ -254,9 +267,8 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
                 return None
         return own - sum(bench) / len(bench)
 
-    first, last = spans[0][0] - timedelta(days=FIT_DAYS), spans[-1][1]
     days = sorted({d for m in panel.mains for d in dates.get(m, []) if first <= d <= last})
-    obs: dict[date, list[tuple[dict[str, float], float, date]]] = {}
+    obs: Obs = {}
     for t in days:
         today = []
         for m in panel.mains:
@@ -267,7 +279,8 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
             if (y := excess(m, t, exit_day)) is None:
                 continue
             x = lookback(panel.daily.get(m, {}), t, lb, relations)
-            x[MOMENTUM] = excess(m, t - timedelta(days=lb), t, trailing=True) or 0.0
+            if MOMENTUM in names:
+                x[MOMENTUM] = excess(m, t - timedelta(days=lb), t, trailing=True) or 0.0
             today.append((x, y, exit_day))
         if today:
             obs[t] = today
@@ -277,13 +290,28 @@ def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, da
         for f in names:
             if (ic := spearman([x[f] for x, _, _ in rows], ys)) is not None:
                 ics[f][t] = ic
+    return obs, ics
+
+
+def trailing_fit(obs: Obs, ics: dict[str, dict[date, float]], start: date, names: Sequence[str]) -> dict[str, float]:
+    """`names`' weights for a segment starting on `start`: fitted on the FIT_DAYS before it, only
+    on decision days whose every exit (plus the peers' slack) came before it."""
+    train = [t for t in obs if start - timedelta(days=FIT_DAYS) <= t < start
+             and max(x[2] for x in obs[t]) + timedelta(days=PEER_SLACK_DAYS) < start]
+    return fit_weights({f: [ics[f][t] for t in train if t in ics[f]] for f in names})
+
+
+def horizon_result(panel: Panel, h: int, lb: int, spans: Sequence[tuple[date, date]], relations: Sequence[str],
+                   cov: Coverage | None) -> HorizonResult:
+    """The test at one horizon over `spans`, reading only `panel`."""
+    in_score, secondary = _features(relations)
+    names = in_score + secondary
+    obs, ics = observations(panel, h, lb, spans[0][0] - timedelta(days=FIT_DAYS), spans[-1][1], relations, names)
     out_segments, counted_ics = [], []
     counted_base: dict[str, list[tuple[date, float]]] = {b: [] for b in BASELINES}
     for s, e in spans:
-        train = [t for t in obs if s - timedelta(days=FIT_DAYS) <= t < s
-                 and max(x[2] for x in obs[t]) + timedelta(days=PEER_SLACK_DAYS) < s]
-        w = fit_weights({f: [ics[f][t] for t in train if t in ics[f]] for f in in_score})
-        signs = {b: fit_weights({b: [ics[b][t] for t in train if t in ics[b]]})[b] for b in BASELINES}
+        w = trailing_fit(obs, ics, s, in_score)
+        signs = {b: trailing_fit(obs, ics, s, [b])[b] for b in BASELINES}
         seg = []
         if any(w.values()):
             for t in sorted(x for x in obs if s <= x <= e):
@@ -360,6 +388,12 @@ def laya_tests(ctx: AppContext) -> list[LayaTest]:
     """The latest kept result of each run (main first)."""
     rows = LayaTestRepo(ctx.conn).latest()
     return sorted((_load(r.result, r.id) for r in rows), key=lambda t: t.run != MAIN)
+
+
+def latest_verdict(ctx: AppContext, model: str = MODEL_TAG, run: str = MAIN) -> LayaTest | None:
+    """The newest kept result of `run` for `model`, if any."""
+    row = LayaTestRepo(ctx.conn).latest_for(run, model)
+    return _load(row.result, row.id) if row else None
 
 
 def _load(raw: str, test_id: int) -> LayaTest:
