@@ -171,6 +171,12 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "history name": "GET /api/history/coverage",
     **{f"history name --{flag}": "PUT /api/history/names/{symbol}" for flag in ("query", "alias", "skip")},
     "history name --clear": "DELETE /api/history/names/{symbol}",
+    # Ledgers tab, Signal tests card: "Build testbed", "Refresh testbed" and its coverage table.
+    "testbed build": "POST /api/jobs/testbed",
+    "testbed build --refresh": "POST /api/jobs/testbed",
+    **{f"testbed build --{flag}": Exempt("a smoke run on a scratch research DB; the card builds the whole testbed")
+       for flag in ("only", "limit", "from", "to")},
+    "testbed status": "GET /api/testbed/coverage",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},

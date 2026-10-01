@@ -31,8 +31,12 @@ def major_unit(currency: str) -> tuple[str, int]:
     return _SUB_UNITS.get(currency, (currency, 1))
 
 
+EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
 def local_date(epoch_s: float, tz_name: str) -> date:
-    return datetime.fromtimestamp(epoch_s, timezone.utc).astimezone(ZoneInfo(tz_name)).date()
+    # Not fromtimestamp: on Windows it raises OSError for a time before 1970 (a first trade day in 1962).
+    return (EPOCH + timedelta(seconds=epoch_s)).astimezone(ZoneInfo(tz_name)).date()
 
 
 # Weekdays a last bar may trail today before it counts as stale: today's bar may not
