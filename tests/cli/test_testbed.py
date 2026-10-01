@@ -35,6 +35,7 @@ def test_aliases_lists_the_accepted_then_those_kept_for_review_and_verify_runs_t
     out = capsys.readouterr().out
     assert "1 accepted, 1 kept for review (never applied)" in out
     assert out.index("FB     -> META") < out.index("EA     -> FERG")
+    assert "FB     -> META   2010-01-05 accepted" in out
     seen = {}
 
     async def fake(ctx, **kw):

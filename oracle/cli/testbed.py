@@ -61,7 +61,7 @@ def print_aliases(c: TestbedCoverage) -> None:
     print(f"Renames checked {c.renames_checked or 'never'}: {len(accepted)} accepted, "
           f"{len(c.aliases) - len(accepted)} kept for review (never applied)")
     for a in c.aliases:
-        print(f"  {a.old:<6} -> {a.new:<6} {a.effective_day or '':<10} {a.evidence}")
+        print(f"  {a.old:<6} -> {a.new:<6} {str(a.effective_day or ''):<10} {a.evidence}")
 
 
 def run_status(ctx: AppContext, args: argparse.Namespace) -> int:

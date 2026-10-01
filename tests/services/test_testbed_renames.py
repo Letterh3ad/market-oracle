@@ -68,6 +68,7 @@ def env(tmp_path):
     yahoo.quotes["GPS"] = [quote("GPSI34.SA", "The Gap, Inc."), quote("GPSC.BK", "Global Power Synergy")]
     sec.companies = {t: (cik, {"GAP": "Gap Inc", "SUN": "Sunoco LP"}.get(t, f"{t} Corp")) for t, cik in CIKS.items()}
     sec.companies["EA"] = (712515, "Electronic Arts Inc")
+    sec.companies["GPSX"] = (7777, "Global Power Synergy Inc")
     reports(sec, CIKS["META"], [("2011-10-26", "FB"), ("2012-01-05", "FB"), ("2012-04-26", "META")])
     reports(sec, CIKS["FERG"], [("2011-12-01", "FERG"), ("2012-06-01", "FERG")])
     reports(sec, CIKS["GEN"], [("2011-02-01", "SYMC"), ("2011-08-01", "NLOK"), ("2012-02-01", "NLOK"),
@@ -143,6 +144,7 @@ async def test_a_company_renamed_after_it_left_is_found_by_name_and_checked_the_
     await build_testbed(ctx)
     found = aliases(ctx)
     assert not found[("GPS", "CCC")].accepted, "its same-day replacement is another company"
+    assert ("GPS", "GPSX") not in found, "a name match neither source backs is not kept for review"
     gap = found[("GPS", "GAP")]
     assert gap.accepted and gap.effective_day == date(2012, 6, 1), gap.evidence
     assert "renamed after leaving" in gap.evidence and "GPS" in yahoo.searched

@@ -240,7 +240,7 @@ class Renames:
             if c.old in found:
                 continue
             self.progress(f"renames: {c.old} -> {c.new} ({i}/{len(swaps)})")
-            alias = await self._verify(c, found, cik_of)
+            alias, _ = await self._verify(c, found, cik_of)
             if alias.accepted:
                 found[c.old] = alias
             if alias.accepted or c.one_for_one:
@@ -249,8 +249,10 @@ class Renames:
             if (self.members[t].bars_note or "").startswith(NOT_ON_YAHOO):
                 for new in await self._named(t):
                     self.progress(f"renames after leaving: {t} -> {new}")
-                    alias = await self._verify(Candidate(t, new, None, False), found, cik_of)
-                    kept.append(alias)
+                    alias, partly = await self._verify(Candidate(t, new, None, False), found, cik_of)
+                    # A name match neither source backs is another company of a similar name: not worth review.
+                    if partly:
+                        kept.append(alias)
                     if alias.accepted:
                         found[t] = alias
                         break
@@ -268,14 +270,15 @@ class Renames:
                 out.append((cik, t))
         return [t for _, t in out][:NAMED]
 
-    async def _verify(self, c: Candidate, found: dict[str, Alias], cik_of: dict[str, int]) -> Alias:
+    async def _verify(self, c: Candidate, found: dict[str, Alias], cik_of: dict[str, int]) -> tuple[Alias, bool]:
+        """The pair checked, and whether either source backed it."""
         final, chain = c.new, [c.new]
         while final in found:
             final = found[final].new
             chain.append(final)
         cik = cik_of.get(c.new) or await self.sec.cik(c.new) or await self.sec.cik(final)
         effective = c.day
-        sec_ok, sec_said = False, f"SEC: no filer has {c.new} or {final} today"
+        sec_ok, sec_said = False, f"SEC: no filer has {' or '.join(dict.fromkeys((c.new, final)))} today"
         if cik:
             title = await self.sec.title(cik)
             pivot = c.day or self.last_day(c.old)
@@ -304,7 +307,7 @@ class Renames:
         evidence = (f"{'accepted' if accepted else 'rejected'} ({how}{', chain ' + ' -> '.join([c.old, *chain]) if len(chain) > 1 else ''}): "
                     f"{sec_said}. {yahoo_said}")
         return Alias(c.old, final, effective, accepted, evidence, self.at,
-                     self.last_day(c.old) + self.tail if accepted else None)
+                     self.last_day(c.old) + self.tail if accepted else None), sec_ok or yahoo_ok
 
     async def _after(self, cik: int, old: str, new: str, reports: list[edgar.Report]):
         """The first report after the change naming a ticker other than `old`: a cover can still name the
