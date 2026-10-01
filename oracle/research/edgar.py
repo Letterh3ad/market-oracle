@@ -312,6 +312,8 @@ def _fit(sections: list[str], cap: int) -> str:
 # filers usually start with the ticker (fb-20211231.htm), though not always and not exactly at a change.
 REPORTS = frozenset({"10-K", "10-Q", "20-F", "40-F"})
 _SYMBOL_CELL = re.compile(r"defref_dei_TradingSymbol.*?</td>\s*<td[^>]*>\s*([^<]*?)\s*<", re.S)
+# The page's definitions pane repeats the element's name (dei_TradingSymbol) after the values.
+_SYMBOL = re.compile(r"[A-Z][A-Z0-9.\- ]{0,11}")
 _DOCUMENT_TICKER = re.compile(r"([a-z]{1,6})-\d")
 
 
@@ -390,4 +392,4 @@ def cover_url(cik: int, accession: str) -> str:
 def trading_symbols(cover_html: str) -> tuple[str, ...]:
     """The cover's dei:TradingSymbol values (one per listed class), upper case."""
     found = (html.unescape(v).strip().upper() for v in _SYMBOL_CELL.findall(cover_html))
-    return tuple(dict.fromkeys(v for v in found if v))
+    return tuple(dict.fromkeys(v for v in found if _SYMBOL.fullmatch(v)))

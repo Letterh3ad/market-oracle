@@ -68,7 +68,7 @@ def env(tmp_path):
     yahoo.quotes["GPS"] = [quote("GPSI34.SA", "The Gap, Inc."), quote("GPSC.BK", "Global Power Synergy")]
     sec.companies = {t: (cik, {"GAP": "Gap Inc", "SUN": "Sunoco LP"}.get(t, f"{t} Corp")) for t, cik in CIKS.items()}
     sec.companies["EA"] = (712515, "Electronic Arts Inc")
-    reports(sec, CIKS["META"], [("2011-10-26", "FB"), ("2012-04-26", "META")])
+    reports(sec, CIKS["META"], [("2011-10-26", "FB"), ("2012-01-05", "FB"), ("2012-04-26", "META")])
     reports(sec, CIKS["FERG"], [("2011-12-01", "FERG"), ("2012-06-01", "FERG")])
     reports(sec, CIKS["GEN"], [("2011-02-01", "SYMC"), ("2011-08-01", "NLOK"), ("2012-02-01", "NLOK"),
                                ("2012-08-01", "GEN")])

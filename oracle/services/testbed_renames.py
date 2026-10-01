@@ -282,7 +282,7 @@ class Renames:
             before = await self.sec.first_reading(cik, list(reversed(await self.sec.reports(cik, pivot - REACH,
                                                                                           pivot - timedelta(1)))))
             if c.day:
-                after = await self.sec.first_reading(cik, await self.sec.reports(cik, c.day, c.day + REACH))
+                after = await self._after(cik, c.old, c.new, await self.sec.reports(cik, c.day, c.day + REACH))
             else:
                 after = await self._first_naming(cik, c.new, pivot)
                 effective = after[0].filed if after else None
@@ -305,6 +305,15 @@ class Renames:
                     f"{sec_said}. {yahoo_said}")
         return Alias(c.old, final, effective, accepted, evidence, self.at,
                      self.last_day(c.old) + self.tail if accepted else None)
+
+    async def _after(self, cik: int, old: str, new: str, reports: list[edgar.Report]):
+        """The first report after the change naming a ticker other than `old`: a cover can still name the
+        old ticker for a report filed days after the change (Ball's 10-Q of 2022-05-05 says BLL)."""
+        for r in reports[:2 * TRIES]:
+            symbols, how = await self.sec.reading(cik, r)
+            if symbols and not (normal(old) in map(normal, symbols) and normal(new) not in map(normal, symbols)):
+                return r, symbols, how
+        return None
 
     async def _first_naming(self, cik: int, new: str, since: date):
         """The first report from `since` naming `new` (reports name the old ticker, then the new one)."""

@@ -63,7 +63,10 @@ def cover(*symbols: str) -> str:
         '<tr class="re"><td class="pl" style="border-bottom: 0px;" valign="top"><a class="a" href="javascript:void(0);" '
         "onclick=\"top.Show.showAR( this, 'defref_dei_TradingSymbol', window );\">Trading Symbol</a></td>\n"
         f'<td class="text">{s}<span></span>\n</td>\n<td class="text">&#160;<span></span>\n</td></tr>\n' for s in symbols)
-    return f"<html><body><table><tr><th>Document and Entity Information</th></tr>{rows}</table></body></html>"
+    # The definitions pane after the table names the element again.
+    pane = ('<div id="defref_dei_TradingSymbol"><table><tr><td><strong> Name:</strong></td>\n'
+            '<td style="white-space:nowrap;">dei_TradingSymbol</td></tr></table></div>')
+    return f"<html><body><table><tr><th>Document and Entity Information</th></tr>{rows}</table>{pane}</body></html>"
 
 
 def _columns(rows: list[tuple]) -> dict:
