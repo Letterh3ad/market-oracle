@@ -164,7 +164,7 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
 
 
 def laya_test(t: LayaTest) -> dict:
-    return asdict(t)
+    return {**asdict(t), "standing": t.standing}
 
 
 def _result(j: Job) -> dict | None:
