@@ -138,12 +138,12 @@ def test_the_report_gives_core_sats_mood_and_its_sleeves(tmp_path):
     w.http.routes[f"{APP}/api/ledgers"] = {"base_currency": "GBP", "accounts": []}
     w.http.routes[f"{APP}/api/ledgers/core-sat"] = {
         "day": "2026-09-29", "note": None, "state": {"mood": "calm_up", "flags": []}, "decisions": [],
-        "sleeves": {"core": {"cash": 1200.0, "holdings": 748800.0, "next_rebalance": "2027-09-30"},
-                    "satellite": {"cash": 60000.0, "holdings": 190000.0}}}
+        "sleeves": {"core": {"cash": 1200.0, "holdings": 998800.0, "rebalance": None},
+                    "satellite": {"cash": 0.0, "holdings": 0.0, "note": "satellite weight 0: no signal has passed"}}}
     text = build_report(w)
     assert "Core-sat mood on 2026-09-29: calm_up" in text
-    assert ("Core-sat sleeves: core cash 1,200 + holdings 748,800 GBP; satellite cash 60,000 + holdings 190,000 GBP; "
-            "core rebalances on or after 2027-09-30") in text
+    assert ("Core-sat sleeves: core cash 1,200 + holdings 998,800 GBP; satellite cash 0 + holdings 0 GBP; "
+            "satellite weight 0: no signal has passed") in text
 
 
 def test_the_report_gives_the_laya_lines_mood_and_its_verdict_with_the_weight_in_core_sat(tmp_path):

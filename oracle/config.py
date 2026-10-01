@@ -198,8 +198,8 @@ class RegimeV2AccountConfig:
 
 @dataclass(frozen=True)
 class CoreSatAccountConfig:
-    """The paper account that holds 75% in an equal-weight buy and hold of the main list and
-    trades 25% by the regime blend. On by default, so its record starts the day it ships."""
+    """The paper account that holds an equal-weight buy and hold of the main list, never
+    rebalanced, beside a regime-blend satellite at weight 0 until a signal earns it. On by default."""
 
     enabled: bool = True
 

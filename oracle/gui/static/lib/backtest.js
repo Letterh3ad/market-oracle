@@ -22,7 +22,7 @@ function shiftYears(day, years) {
 const DEFAULT_YEARS = 5;
 
 // Runs kept before the momentum or regime lines have fewer lines, so each is found by name.
-const RUN_LINES = ["strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya", "regime_wf", "regime_ai"];
+const RUN_LINES = ["index", "spy", "strategy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat", "core_sat_laya", "regime_wf", "regime_ai"];
 
 function runLabel(r) {
   const figures = RUN_LINES.map((name) => r.lines.find((l) => l.name === name)).filter((l) => l)
@@ -252,11 +252,13 @@ function backtestSection() {
   const node = el("div", { class: "card" },
     el("h2", null, tip("Backtest", "backtest")),
     el("p", { class: "dim small" }, "Replays the strategy account's fixed rules over prices already stored, day by "
-      + "day as if it had been trading then, and sets that against simply buying the same companies and holding "
-      + "them, against holding the ones with the strongest momentum, re-picked each month, and against the regime "
+      + "day as if it had been trading then, and sets that against holding ACWI and SPY (the honest \"do nothing\", "
+      + "shown first), against simply buying the same companies and holding them (today's list, so survivorship "
+      + "flatters it), against holding the ones with the strongest momentum, re-picked each month, and against the regime "
       + "lines: a blend of known methods weighted by the market's mood, and regime-v2, the same blend without the "
-      + "hold padding and with a rotation out of long-held, clearly weaker holdings, and core-sat: three quarters "
-      + "an equal-weight buy and hold rebalanced yearly, one quarter the regime blend, and core-sat-laya: the same with "
+      + "hold padding and with a rotation out of long-held, clearly weaker holdings, and core-sat: an equal-weight "
+      + "buy and hold bought once and never rebalanced, its regime satellite at weight 0 until a signal earns it, "
+      + "and core-sat-laya: the same with "
       + "Laya's daily news score in the satellite at the weight its kept predictive test gives (0 unless it passed, "
       + "so then it is core-sat exactly; each caption names the inputs "
       + "it had). Fake "

@@ -148,9 +148,10 @@ tilt_cap = 0.5         # the AI tilt keeps each weight's multiplier within 1 min
 [regime_v2_account]
 enabled = true             # false: the regime-v2 account decides nothing each tick
 
-# The core-sat paper account: 75% in an equal-weight buy and hold of the main list (companies
-# only, never a fund or Tesla), set back to equal weight once a year, and 25% traded by the
-# regime blend within its own cash. Split and rebalance fixed a priori, not settings.
+# The core-sat paper account: an equal-weight buy and hold of the main list (companies only,
+# never a fund or Tesla), bought once and never rebalanced, beside a satellite traded by the regime
+# blend whose share is 0 until a signal passes the confirm test and six months of paper trading.
+# Fixed a priori, not settings.
 [core_sat_account]
 enabled = true             # false: the core-sat account decides nothing each tick
 

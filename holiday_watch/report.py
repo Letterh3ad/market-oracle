@@ -92,14 +92,14 @@ def _laya(card: dict) -> list[str]:
 
 
 def _sleeves(card: dict, base: str | None) -> list[str]:
-    """core-sat's core and satellite: each one's cash and holdings, and the core's next rebalance."""
+    """core-sat's core and satellite: each one's cash and holdings, and why the satellite holds nothing."""
     s = card.get("sleeves") or {}
     parts = [f"{name} cash {x.get('cash', 0):,.0f} + holdings {x.get('holdings', 0):,.0f} {base}"
              for name, x in (("core", s.get("core")), ("satellite", s.get("satellite"))) if x]
     if not parts:
         return []
-    nxt = (s.get("core") or {}).get("next_rebalance")
-    return [f"Core-sat sleeves: {'; '.join(parts)}" + (f"; core rebalances on or after {nxt}" if nxt else "")]
+    why = (s.get("satellite") or {}).get("note")
+    return [f"Core-sat sleeves: {'; '.join(parts)}" + (f"; {why}" if why else "")]
 
 
 def _mood(name: str, card: dict) -> list[str]:

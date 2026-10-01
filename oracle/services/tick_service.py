@@ -1,4 +1,4 @@
-"""The daily routine as one run: prices, FX, fills, analysis, the regime lines' steps, discovery,
+"""The daily routine as one run: prices, FX, fills, analysis, the index and regime lines' steps, discovery,
 AI research, strategy step, AI step, then industry research (Laya). Each stage runs even when an earlier one failed, since each works from
 whatever is stored. The midday pass reuses the discovery and research stages, with the auto
 questions answered again between them."""
@@ -20,9 +20,12 @@ from oracle.services.discovery_chat_service import TYPICAL_ANSWER_MIN, answer_au
 from oracle.services.discovery_service import DISCOVERED_LIST, RELATION_AUTO, DiscoveryRun, discover, discovered
 from oracle.services.errors import JobAlreadyRunning, ServiceError
 from oracle.services.fx_service import update_fx
+from oracle.services.index_service import index_step, update_index_prices
 from oracle.services.industry_research_service import live_model_work, research_industry
 from oracle.services.jobs_service import single_flight
-from oracle.services.paper_service import CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, ai_step, fill_pending, frozen, strategy_step, traded_by
+from oracle.services.paper_service import (
+    CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, STRATEGY, ai_step, fill_pending, frozen, strategy_step, traded_by,
+)
 from oracle.services.prices_service import update_watched
 from oracle.services.regime_service import LineStep, RegimeRun, regime_step
 from oracle.services.replay_score import update_study_prices
@@ -56,7 +59,7 @@ it is, for a long stage's progress."""
 async def _prices(ctx: AppContext, _: Say, with_study: bool = True) -> tuple[str, str | None]:
     """With `with_study`, the replay study's prices too (the tick's; a fill pass keeps to its own)."""
     run = await update_watched(ctx, fx=False)
-    study = await _study_prices(ctx) if with_study else ""
+    study = (await _study_prices(ctx) + await update_index_prices(ctx)) if with_study else ""
     if not run.listings:
         return "nothing watched" + study, None
     added = sum(o.added for o in run.listings)
@@ -107,7 +110,18 @@ async def _analyse(ctx: AppContext, _: Say) -> tuple[str, str | None]:
 
 
 async def _step(ctx: AppContext, _: Say) -> tuple[str, str | None]:
-    return _decided(ctx, "strategy", strategy_step(ctx)), None
+    decisions = strategy_step(ctx)
+    if decisions is None:
+        return f"{STRATEGY} account frozen: nothing decided", None
+    return _decided(ctx, STRATEGY, decisions), None
+
+
+async def _index(ctx: AppContext, _: Say) -> tuple[str, str | None]:
+    decisions = index_step(ctx)
+    if not decisions:
+        return "held, or its buy waits: nothing decided", None
+    d = decisions[0]
+    return f"{d.action.value} {d.symbol}" + (f" for {d.cash:,.2f}" if d.cash else "") + f" ({d.reason})", None
 
 
 def discover_cap_min(ctx: AppContext, budget_min: float | None = None) -> float:
@@ -279,7 +293,7 @@ def _decided(ctx: AppContext, account: str, decisions: list[Decision]) -> str:
 # The regime steps run straight after analysis (its risk sizes), before discovery and the long
 # research stage, so a tick stopped part way through research has still stepped them.
 STAGES: dict[str, StageRun] = {"prices": _prices, "fx": _fx, "fill": _fill, "analyse": _analyse,
-                               "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
+                               "index_step": _index, "regime_step": _line_step(REGIME), "regime_ai_step": _line_step(REGIME_AI),
                                "regime_v2_step": _line_step(REGIME_V2), "core_sat_step": _line_step(CORE_SAT),
                                "laya_step": _line_step(LAYA),
                                "discover": _discover, "research": _research, "step": _step, "ai_step": _ai_step,

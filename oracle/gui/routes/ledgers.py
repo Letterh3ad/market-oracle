@@ -11,9 +11,10 @@ from oracle.services.activity_service import JobRunner, queue_stale_research, st
 from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
-    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
-    equity_history, fill_pending, pending_orders, place_buy, place_sell, sells, strategy_step,
+    ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, STRATEGY, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
+    equity_history, fill_pending, frozen_note, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
+from oracle.services.index_service import index_step
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
 from oracle.services.settings_service import (
@@ -61,9 +62,17 @@ async def fill(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
 
 
 @router.post("/step")
-async def step(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
-    """Run the strategy rules over the watched listings' leans and queue what they decide."""
-    return [asdict(d) for d in strategy_step(ctx)]
+async def step(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Run the strategy rules over the watched listings' leans and queue what they decide, unless frozen."""
+    decisions = strategy_step(ctx)
+    return {"off": frozen_note(STRATEGY) if decisions is None else None,
+            "decisions": [asdict(d) for d in decisions or []]}
+
+
+@router.post("/index/step")
+async def step_index(ctx: AppContext = Depends(get_ctx)) -> list[dict]:
+    """Buy ACWI with the index account's cash when it holds nothing and nothing waits."""
+    return [asdict(d) for d in index_step(ctx)]
 
 
 @router.post("/ai/step")

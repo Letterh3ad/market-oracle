@@ -31,7 +31,8 @@ from oracle.store.universe import UniverseRepo
 from oracle.universe.exchanges import exchange_country
 
 __all__ = [
-    "ACCOUNTS", "AI_OFF", "CORE_SAT", "LAYA", "DISCOVERED_OFF", "FROZEN", "Sleeve", "frozen", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
+    "ACCOUNTS", "AI_OFF", "CORE_SAT", "INDEX", "LAYA", "DISCOVERED_OFF", "FROZEN", "STRATEGY", "Sleeve", "frozen",
+    "frozen_note", "sleeve_orders", "DISCOVERY_TRADERS", "NEVER_BUY", "REGIME", "REGIME_AI", "REGIME_LINES", "REGIME_V2", "LINE_NAMES",
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
@@ -49,12 +50,20 @@ REGIME_LINES = (REGIME, REGIME_AI, REGIME_V2, CORE_SAT, LAYA)
 """The accounts that trade the regime blend: rules only, with the daily model tilt (frozen), v2 (no
 hold padding, rotation), core-sat's satellite beside its equal-weight core, and laya (the book
 weighing Laya's daily news score alone, for evidence whatever its test said)."""
-FROZEN = frozenset({REGIME_AI})
-"""Accounts that no longer step and record no equity; their history stays (spec decision 9)."""
+STRATEGY = "strategy"
+INDEX = "index"
+"""Buy and hold of a broad world index fund (`index_service`): the honest "do nothing" every line is
+measured against (next-signals spec 4)."""
+NOT_AN_EDGE = "buy and hold beat it; the real-money plan is the index (next-signals spec 9, 11)"
+FROZEN_WHY = {REGIME_AI: "its model tilt measured as noise, not an edge", REGIME: NOT_AN_EDGE,
+              REGIME_V2: NOT_AN_EDGE, STRATEGY: NOT_AN_EDGE}
+FROZEN = frozenset(FROZEN_WHY)
+"""Accounts that no longer step and record no equity; their history stays (spec decision 9;
+next-signals spec 11)."""
 LINE_NAMES = {REGIME: "Regime", REGIME_AI: "Regime-AI", REGIME_V2: "Regime-v2", CORE_SAT: "Core-sat", LAYA: "Laya"}
 """Each regime line's name on buttons, jobs and printed steps."""
-ACCOUNTS = ("strategy", "ai", "manual", *REGIME_LINES)
-TRADERS = ("strategy", "ai", *REGIME_LINES)
+ACCOUNTS = (INDEX, STRATEGY, "ai", "manual", *REGIME_LINES)
+TRADERS = (INDEX, STRATEGY, "ai", *REGIME_LINES)
 """The accounts that trade by themselves."""
 DISCOVERY_TRADERS = ("ai", *REGIME_LINES)
 """The accounts that trade discovered listings while `[discovery] ai_trades` is on."""
@@ -215,9 +224,12 @@ def _sellable(ctx: AppContext, repo: PaperRepo, account: str, symbol: str) -> st
         return held
 
 
-def strategy_step(ctx: AppContext) -> list[Decision]:
+def strategy_step(ctx: AppContext) -> list[Decision] | None:
     """Run the strategy rules over every watched listing's latest lean and queue the
-    resulting orders on the strategy account. Every decision, skips included, is logged."""
+    resulting orders on the strategy account. Every decision, skips included, is logged.
+    None, deciding nothing, while it is frozen."""
+    if frozen(STRATEGY):
+        return None
     found, skips = _usable_leans(ctx, LeanRepo(ctx.conn), traded_by(ctx, "strategy"))
     return step_account(ctx, "strategy", found, skips, {})
 
@@ -426,12 +438,14 @@ CAPTIONS = {
     "strategy": "Strategy: trades the leans under the fixed rules.",
     "ai": "AI: trades the research verdicts under the same rules.",
     "manual": "Manual: your own buys and sells.",
+    INDEX: ("Index: all its cash in ACWI (a world index fund) at the next open with costs, then held: the honest "
+            "\"do nothing\" every line is measured against."),
     REGIME: "Regime: trades a blend of known methods weighted by the market's mood, under the same rules.",
     REGIME_AI: "Regime-AI: the same blend with its weights tilted once a day by a local model, under the same rules.",
     REGIME_V2: ("Regime-v2: the same blend with no hold padding and a rotation out of long-held, clearly weaker "
                 "holdings, under the same rules."),
-    CORE_SAT: ("Core-sat: 75% in an equal-weight buy and hold of the main list, set back to equal weight yearly; "
-               "25% traded by the regime blend within its own cash."),
+    CORE_SAT: ("Core-sat: an equal-weight buy and hold of the main list, bought once and never rebalanced, beside "
+               "a regime-blend satellite whose share is 0 until a signal passes its confirm test."),
     LAYA: ("Laya: trades Laya's daily news score alone on the main list's companies, under the same rules, as "
            "evidence whatever its predictive test said."),
 }
@@ -505,11 +519,15 @@ def _benchmark_caption(symbol: str, start: date | None) -> str:
 def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date | None) -> Line:
     since = start or (history[0][0] if history else None)
     if since is None:
-        return Line(name, CAPTIONS[name], (), 0.0, 0, 0.0)
+        return Line(name, _caption(name), (), 0.0, 0, 0.0)
     kept = [(d, v) for d, v in history if d >= since]
     fills = [f for f in PaperRepo(ctx.conn).fills(name) if f.date >= since]
-    return Line(name, CAPTIONS[name], tuple(returns_since(kept, since)), max_fall(kept), len(fills),
+    return Line(name, _caption(name), tuple(returns_since(kept, since)), max_fall(kept), len(fills),
                 sum(_cost(f) for f in fills))
+
+
+def _caption(account: str) -> str:
+    return CAPTIONS[account] + (" Frozen: it no longer steps or records equity." if frozen(account) else "")
 
 
 def sleeve_orders(orders: list[Order], sleeve: Sleeve | None) -> list[Order]:
@@ -529,6 +547,12 @@ def _record_equity(ctx: AppContext) -> None:
 
 def frozen(account: str) -> bool:
     return account in FROZEN
+
+
+def frozen_note(account: str) -> str:
+    """Why a frozen account decided nothing."""
+    return (f"the {account} account is frozen: it no longer steps or records equity, and its history and holdings "
+            f"stay as they were ({FROZEN_WHY.get(account, 'frozen')})")
 
 
 def account_on(ctx: AppContext, account: str) -> bool:

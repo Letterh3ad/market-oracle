@@ -8,6 +8,11 @@ from datetime import date
 
 from oracle.analysts.risk import Series, max_drawdown
 
+INDEX_SYMBOL, SPY_SYMBOL = "ACWI", "SPY"
+INDEX_LINES = (("index", INDEX_SYMBOL, "Index (ACWI)"), ("spy", SPY_SYMBOL, "SPY"))
+"""The broad-index buy-and-holds every table leads with (name, symbol, label): the honest "do
+nothing" (next-signals spec 4). The index paper account holds the first."""
+
 
 def returns_since(series: Series, start: date) -> list[tuple[date, float]]:
     """Each day's value against the first one on or after `start` (0.0 there)."""

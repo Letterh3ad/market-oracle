@@ -162,18 +162,20 @@ def test_the_ledgers_tab_module_loads():
 
 
 CORE_SAT_CARD = {**CARD, "account": "core-sat", "sleeves": {
-    "core": {"capital": 750000.0, "cash": 1200.0, "holdings": 748800.0, "positions": 50, "pending": 0, "listings": 50,
-             "next_rebalance": "2027-09-30", "phase": None},
-    "satellite": {"capital": 250000.0, "cash": 60000.0, "holdings": 190000.0, "positions": 8, "pending": 1}}}
+    "core": {"capital": 1000000.0, "cash": 1200.0, "holdings": 998800.0, "positions": 50, "pending": 0, "listings": 50,
+             "rebalance": None, "phase": None},
+    "satellite": {"capital": 0.0, "cash": 0.0, "holdings": 0.0, "positions": 0, "pending": 0, "share": 0.0,
+                  "note": "satellite weight 0: no signal has passed the confirm test"}}}
 
 
-def test_the_core_sat_card_shows_both_sleeves_the_next_rebalance_and_saves_its_own_switch():
+def test_the_core_sat_card_shows_both_sleeves_no_rebalance_why_the_satellite_is_empty_and_saves_its_switch():
     text, puts = run("""
         const box = labelled(node, "Core-sat account on");
         box.checked = false; box.fire("change"); await settle();
         console.log(JSON.stringify([node.textContent, asked]));
     """, CORE_SAT_CARD)
-    for piece in ("Core-sat reading", "Core (50 companies)", "Satellite", "on or after 2027-09-30",
+    for piece in ("Core-sat reading", "Core (50 companies)", "Satellite", "never set back to equal weight",
+                  "Satellite: satellite weight 0: no signal has passed the confirm test.",
                   "equal-weight buy and hold of the main list", "Core-sat decisions"):
         assert piece in text, piece
     assert puts == ["PUT /api/ledgers/core-sat"]
@@ -211,7 +213,8 @@ def test_the_core_sat_card_shows_laya_s_verdict_and_weight():
     passed = {**FAILED, "verdict": "PASS", "useful": True,
               "note": "Laya's predictive test: PASS (test 8, 2026-10-01); passed and beat both baselines: weighs in "
                       "core-sat's satellite (calm_up 0.125)"}
-    text = run("console.log(JSON.stringify(node.textContent));", {**CORE_SAT_CARD, "laya": passed})
+    text = run("console.log(JSON.stringify(node.textContent));", {**CORE_SAT_CARD, "laya": passed, "sleeves": {**CORE_SAT_CARD["sleeves"], "satellite": {
+        **CORE_SAT_CARD["sleeves"]["satellite"], "note": None}}})
     assert "Laya PASS" in text and "weight 0" not in text and "calm_up 0.125" in text
     text = run("console.log(JSON.stringify(node.textContent));", {**CORE_SAT_CARD, "laya": FAILED})
     assert "Laya FAIL: weight 0 in core-sat" in text

@@ -1,11 +1,12 @@
-"""Core-satellite: most of the money in an equal-weight buy-and-hold of the main list (the core),
-set back to equal weight once a year, the rest (the satellite) traded by the regime blend under
-the strategy's rules within its own cash. Fixed a priori (spec decision 7): 75/25, equal weight,
-yearly. The rebalance planning is shared by the replayed line and the live account.
+"""Core-satellite: the core, an equal-weight buy-and-hold of the main list bought once and never
+rebalanced, and the satellite, traded by the regime blend under the strategy's rules within its own
+cash. The satellite's share is 0 until a signal earns weight (next-signals spec 9, 10), so the core
+holds it all. The planning is shared by the replayed line and the live account.
 
-A rebalance is two steps: the day it falls due, sells trim the overweights and drop listings no
-longer in the core; once they have filled, buys top the underweights up from the core's cash only.
-With nothing to trim (the first day) the buys go the same day."""
+A rebalance (only with `rebalance_years` set, which no line does now) is two steps: the day it falls
+due, sells trim the overweights and drop listings no longer in the core; once they have filled, buys
+top the underweights up from the core's cash only. With nothing to trim (the first day) the buys go
+the same day."""
 
 from __future__ import annotations
 
@@ -21,10 +22,13 @@ from oracle.broker.fills import buy_fill, sell_fill
 from oracle.broker.orders import Action, Side
 from oracle.broker.rules import Decision, Rules
 
-CORE_SHARE = 0.75
-"""The core's share of the starting capital; the satellite has the rest."""
-REBALANCE_YEARS = 1
-REBALANCE = "core rebalance"
+SATELLITE_SHARE = 0.0
+"""The satellite's share of the starting capital; the core has the rest. 0 until a signal passes
+the confirm and then its own six months of paper trading (spec 10), and never over SATELLITE_CAP."""
+SATELLITE_CAP = 0.20
+REBALANCE_YEARS: int | None = None
+"""None: the core is bought once and held, never set back to equal weight (spec 9)."""
+REBALANCE = "core"
 """How every core order's reason starts."""
 STALE = timedelta(days=7)
 """A holding or member whose last close is older than this on a rebalance day is left out of it:
@@ -65,13 +69,16 @@ class CoreSat:
         return tuple(sorted(set(self.core.unfilled) | set(self.satellite.unfilled)))
 
 
-def rebalance_days(days: Sequence[date]) -> list[date]:
-    """The first of `days` (sorted market days) and the first on or after each yearly anniversary of it."""
+def rebalance_days(days: Sequence[date], years: int | None = REBALANCE_YEARS) -> list[date]:
+    """The first of `days` (sorted market days), and with `years` the first on or after each
+    anniversary every `years` years of it."""
     if not days:
         return []
     out, k = [days[0]], 1
+    if years is None:
+        return out
     for day in days:
-        if day >= add_years(days[0], k * REBALANCE_YEARS):
+        if day >= add_years(days[0], k * years):
             out.append(day)
             k += 1
     return out
@@ -128,12 +135,14 @@ def _target(members: Collection[str], held: Mapping[str, tuple[int, float]], cas
 
 def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, capital: float,
                 members: Collection[str], slippage: float, commission: float,
-                fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None) -> Replay:
+                fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None,
+                rebalance_years: int | None = REBALANCE_YEARS) -> Replay:
     """The core alone over `history` (as `backtest.replay` takes it): `members` bought in equal
-    amounts, set back to equal weight on each `rebalance_days` day, filling like the traded lines
-    (the next bar's open or close, with the same costs). Decisions on a day read only its bars."""
+    amounts, set back to equal weight on each `rebalance_days` day (the first only, unless
+    `rebalance_years`), filling like the traded lines (the next bar's open or close, with the same
+    costs). Decisions on a day read only its bars."""
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
-    due = set(rebalance_days(days))
+    due = set(rebalance_days(days, rebalance_years))
     seen = dict.fromkeys(history, 0)
     last: dict[str, tuple[date, float]] = {}
     held: dict[str, int] = {}
@@ -211,15 +220,18 @@ def _fill(order: CoreOrder, p: Priced, price: float, cash: float, held: Mapping[
 def core_sat_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, rules: Rules,
                     risk: Mapping[str, float], members: Collection[str], slippage: float, commission: float,
                     lean: LeanSource, cap: LeanCap | None = None, fill_at: Literal["open", "close"] = "open",
-                    venues: Mapping[str, Venue] | None = None) -> CoreSat:
-    """`risk["account"]` split CORE_SHARE to the core, the rest to the satellite: `lean` (the
-    regime book's, with any extra methods its inputs carry) traded under `rules` within the
+                    venues: Mapping[str, Venue] | None = None, satellite_share: float = SATELLITE_SHARE,
+                    rebalance_years: int | None = REBALANCE_YEARS) -> CoreSat:
+    """`risk["account"]` split `satellite_share` to the satellite, the rest to the core: `lean`
+    (the regime book's, with any extra methods its inputs carry) traded under `rules` within the
     satellite's own cash, its risk sizes and cash floor a share of the satellite alone. The two
-    never share cash."""
+    never share cash. At share 0 the satellite trades nothing and the core holds it all."""
     capital = risk["account"]
-    c = core_replay(history, start, end, capital=capital * CORE_SHARE, members=members, slippage=slippage,
-                    commission=commission, fill_at=fill_at, venues=venues)
-    s = replay(history, start, end, rules=rules, risk={**risk, "account": capital * (1 - CORE_SHARE)},
-               slippage=slippage, commission=commission, lean=lean, fill_at=fill_at, venues=venues, cap=cap)
+    c = core_replay(history, start, end, capital=capital * (1 - satellite_share), members=members,
+                    slippage=slippage, commission=commission, fill_at=fill_at, venues=venues,
+                    rebalance_years=rebalance_years)
+    s = (replay(history, start, end, rules=rules, risk={**risk, "account": capital * satellite_share},
+                slippage=slippage, commission=commission, lean=lean, fill_at=fill_at, venues=venues, cap=cap)
+         if satellite_share > 0 else Replay(tuple((d, 0.0) for d, _ in c.equity), (), (), (), ()))
     sat = dict(s.equity)
     return CoreSat(tuple((d, v + sat[d]) for d, v in c.equity), c, s)

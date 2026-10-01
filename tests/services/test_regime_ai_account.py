@@ -13,7 +13,8 @@ from oracle.broker.orders import Action
 from oracle.services.paper_service import ACCOUNTS, TRADERS, account_view, decision_log, fill_pending, traded_by
 from oracle.store.paper import DecisionRepo, EquityRepo, LoggedDecision
 from oracle.store.regime import RegimeStateRepo
-from oracle.services.regime_service import FROZEN_NOTE, REGIME_AI_OFF, lag_warning, regime_card, regime_step
+from oracle.services.paper_service import frozen_note
+from oracle.services.regime_service import REGIME_AI_OFF, lag_warning, regime_card, regime_step
 from oracle.services.watch_service import watch
 from oracle.store.regime import TiltRepo
 from tests.fakes.regime import thaw, use_stub
@@ -44,7 +45,7 @@ def test_frozen_it_steps_nothing_asks_no_model_records_no_equity_and_keeps_its_h
     fill_pending(ctx)
     assert EquityRepo(ctx.conn).history("regime-ai") == [] and EquityRepo(ctx.conn).history("regime") != []
     card = regime_card(ctx, account="regime-ai")
-    assert card.frozen and not card.enabled and card.note.startswith(FROZEN_NOTE.format("regime-ai"))
+    assert card.frozen and not card.enabled and card.note.startswith(frozen_note("regime-ai"))
     assert card.state == {"mood": "calm_up"} and [d.reason for d in card.decisions] == ["before the freeze"]
     assert "regime-ai" in ACCOUNTS
 

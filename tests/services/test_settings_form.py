@@ -162,3 +162,11 @@ def test_laya_is_switched_and_its_device_picked_in_settings_live(ctx):
     assert (ctx.config.laya.device, ctx.config.laya.enabled) == ("cpu", False)
     with pytest.raises(InvalidQuery, match="laya.device must be one of auto, gpu, cpu"):
         set_setting(ctx, "laya", "device", "tpu")
+
+
+@pytest.mark.frozen_lines
+def test_a_frozen_lines_switch_says_it_is_ignored(ctx):
+    for section, account in (("regime_account", "regime"), ("regime_ai_account", "regime-ai"),
+                             ("regime_v2_account", "regime-v2")):
+        assert row(ctx, section, "enabled")["ignored"].startswith(f"ignored: the {account} account is frozen")
+    assert "ignored" not in row(ctx, "core_sat_account", "enabled")

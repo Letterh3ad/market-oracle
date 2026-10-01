@@ -1,5 +1,6 @@
 """A backtest: the strategy's fixed rules replayed over a watchlist's stored history, in
-memory, against an equal-weight buy-and-hold, the momentum baseline and the regime lines. It only reads: the paper
+memory, against ACWI and SPY bought and held (the honest "do nothing"), an equal-weight buy-and-hold
+of today's list (survivorship), the momentum baseline and the regime lines. It only reads: the paper
 accounts, leans, signals and decision log never change. AI verdicts are never backtested.
 
 On request it adds the regime_ai line: the regime book with the live regime-ai tilt asked of
@@ -26,6 +27,7 @@ from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segment
 from oracle.services import regime_tilt
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
+from oracle.services.index_service import INDEX_LINES, index_caption, index_closes, index_equity, index_missing
 from oracle.services.laya_line import laya_input
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
@@ -65,8 +67,9 @@ class Backtest:
     listings: tuple[str, ...]
     """The list's listings with prices in the range; the rest are named in the notes."""
     lines: tuple[Line, ...]
-    """The strategy, buy and hold, the momentum baseline, then the regime lines (runs kept before
-    any of them have fewer), and the regime_ai line when asked for, each as its return since the first day."""
+    """ACWI and SPY held, the strategy, buy and hold of today's list, the momentum baseline, then the
+    regime lines (runs kept before any of them have fewer), and the regime_ai line when asked for, each
+    as its return since the first day."""
     equity: tuple[tuple[date, float], ...]
     """The strategy's cash plus positions at each day's close, base currency."""
     trades: tuple[Trade, ...]
@@ -165,10 +168,21 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
-    held_line = Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'}, bought "
-                                     f"at the first close from {start.isoformat()} and never sold, with no costs.",
-                     tuple(returns_since(held, start)) if held else (), max_fall(held), 0, 0.0)
+    held_line = Line("buy_and_hold", f"Buy and hold (survivorship: today's list): equal amounts of the {n} "
+                                     f"listing{'' if n == 1 else 's'}, bought at the first close from "
+                                     f"{start.isoformat()} and never sold, with no costs. Today's list leaves out the "
+                                     "companies that failed or were taken over, so it flatters the past.",
+                     tuple(returns_since(held, start)) if held else (), max_fall(held), 0, 0.0,
+                     "Buy and hold (today's list)")
+    indexes = index_closes(ctx, end)
+    priced = [(name, symbol) for name, symbol, _ in INDEX_LINES
+              if any(d >= start and c is not None for d, c in indexes[symbol])]
+    index_lines = tuple(Line(name, index_caption(symbol, label, start), tuple(returns_since(e, start)) if e else (),
+                             max_fall(e), 0, 0.0, label)
+                        for name, symbol, label in INDEX_LINES
+                        for e in [index_equity(indexes, symbol, start, end, capital)])
     notes = _notes(ctx, name, start, end, slippage_bps, commission, rules.min_probability, history)
+    notes += index_missing(indexes, start)
     notes += [f"Left out, no longer in the universe: {', '.join(gone)}."] if gone else []
     notes += [f"Left out, no stored prices from {start.isoformat()} to {end.isoformat()}: {', '.join(no_prices)}."
               ] if no_prices else []
@@ -182,7 +196,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
     walked = None
     if spans:
-        sources = {"strategy": lambda a, b: run(first=a, last=b),
+        sources = {**{n: (lambda a, b, s=symbol: index_equity(indexes, s, a, b, capital)) for n, symbol in priced},
+                   "strategy": lambda a, b: run(first=a, last=b),
                    "buy_and_hold": lambda a, b: _held(closes, a, b, capital),
                    "momentum": lambda a, b: run(momentum_leans, first=a, last=b),
                    **{n: (lambda a, b, x=x: run_line(x, a, b)) for n, x in blends.items()}}
@@ -191,7 +206,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
                      for day, presets in blends[REGIME_WF_LINE].book.fits)
         walked = WalkForward(MONTHS, tuple(spans), judge(equities, "buy_and_hold"), fits)
         notes.append(_walk_note(spans, end, capital, base))
-    return Backtest(name, start, end, slippage_bps, commission, tuple(history), (strategy, held_line, momentum, *regimes),
+    return Backtest(name, start, end, slippage_bps, commission, tuple(history),
+                    (*index_lines, strategy, held_line, momentum, *regimes),
                     r.equity, r.trades, tuple(notes), walked)
 
 
@@ -215,9 +231,10 @@ def _walk_note(spans: list[tuple[date, date]], end: date, capital: float, base: 
             "windows closed before it, so its first fits read less than two years when less is stored. Buy and "
             "hold here re-buys equal amounts at each segment's start, so its compounded figure is not the "
             "whole run's buy and hold; each traded line starts every segment in cash and holds its cash "
-            "floor too, core-sat's within its satellite's quarter. Core-sat's core is set back to equal weight "
-            "once a year, longer than a segment, so its segment figures test its satellite and entry costs only, "
-            "never the yearly rebalance: that shows only in the whole run." + left)
+            "floor too. Core-sat's core is bought once and never rebalanced, and its satellite holds nothing until "
+            "a signal earns weight, so its segments test the equal-weight core and its entry costs. ACWI and SPY "
+            "are bought afresh at each segment's start like buy and hold, which stays the line each is judged "
+            "against." + left)
 
 
 def rotation_note(v2: tuple[Trade, ...], v1: tuple[Trade, ...]) -> str:

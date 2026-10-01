@@ -25,7 +25,8 @@ from oracle.broker.rules import Decision, Lean
 from oracle.research.llm import ChatModel
 from oracle.services.context import AppContext
 from oracle.services.core_sat_service import (
-    core_card, core_listings, core_step, satellite_inputs, satellite_settings, satellite_traded, sleeves,
+    core_card, core_listings, core_step, satellite_exit, satellite_inputs, satellite_settings, satellite_share,
+    satellite_traded, sleeves,
 )
 from oracle.services.laya_line import (
     METHOD, LayaInput, laya_input, laya_live, laya_only, laya_verdict, verdict_note, with_laya,
@@ -33,7 +34,7 @@ from oracle.services.laya_line import (
 from oracle.services.laya_test_service import TEST_START
 from oracle.services.models_service import slot_profile
 from oracle.services.paper_service import (
-    CORE_SAT, GONE, LAYA, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, frozen, step_account, traded_by,
+    CORE_SAT, GONE, LAYA, LINE_NAMES, REGIME, REGIME_AI, REGIME_V2, account_on, discovered_off, frozen, frozen_note, step_account, traded_by,
     verdict_history,
 )
 from oracle.services.prices_service import ConvertedBar
@@ -45,15 +46,13 @@ from oracle.store.paper import DecisionRepo, LoggedDecision, PaperRepo
 from oracle.store.regime import RegimeStateRepo, StoredTilt, TiltRepo
 from oracle.store.universe import UniverseRepo
 
-__all__ = ["CORE_SAT_OFF", "LAYA_OFF", "NO_LAYA_HELD", "laya_card", "laya_traded", "FROZEN_NOTE", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
+__all__ = ["CORE_SAT_OFF", "LAYA_OFF", "NO_LAYA_HELD", "laya_card", "laya_traded", "OFF", "off_note", "REGIME", "REGIME_AI", "REGIME_AI_OFF", "REGIME_OFF", "REGIME_V2", "REGIME_V2_OFF", "LineStep", "RegimeCard", "RegimeRun",
            "build_book", "lag_warning", "regime_card", "regime_step"]
 
 REGIME_OFF = ("the regime account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
               "([regime_account] enabled)")
 REGIME_AI_OFF = ("the regime-ai account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
                  "([regime_ai_account] enabled)")
-FROZEN_NOTE = ("the {} account is frozen: it no longer steps or records equity, and its history and holdings stay "
-               "as they were (its model tilt measured as noise, not an edge)")
 REGIME_V2_OFF = ("the regime-v2 account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
                  "([regime_v2_account] enabled)")
 CORE_SAT_OFF = ("the core-sat account is off: nothing was decided. Turn it on on the Ledgers tab or in Settings "
@@ -141,7 +140,7 @@ class RegimeCard:
 
 def off_note(account: str) -> str:
     """Why the account decided nothing: frozen, or switched off."""
-    return FROZEN_NOTE.format(account) if frozen(account) else OFF[account]
+    return frozen_note(account) if frozen(account) else OFF[account]
 
 
 def build_book(ctx: AppContext, history: Mapping[str, list[ConvertedBar]], inputs: RegimeInputs,
@@ -182,6 +181,8 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     laya = _laya(ctx, account, leaned, day)
     book = build_book(ctx, history, regime_inputs(ctx, history, today, _verdicts(ctx, traded)), tilt, account, laya)
     state = book.state(day) if day else None
+    # At satellite weight 0 its waiting buys go before the core steps, so the core sees that cash free.
+    exits = satellite_exit(ctx, day) if account == CORE_SAT and day and not satellite_share() else None
     sleeve, core = (sleeves(ctx)[1], core_step(ctx, day, history) if day else []) if account == CORE_SAT else (None, [])
     found, skips, why = _leans(ctx, book, state, day, leaned, history, NO_LAYA if account == LAYA else NO_SCORE)
     if account == LAYA and state is not None:
@@ -189,7 +190,10 @@ def regime_step(ctx: AppContext, account: str = REGIME, model: ChatModel | None 
     outside = NOT_CORE if account == CORE_SAT else NOT_MAIN
     skips += [Decision(s, Action.SKIP, None, outside) for s in traded if s not in leaned]
     skips += [Decision(s, Action.SKIP, None, DISCOVERED[account]) for s in discovered_only(ctx) if s not in traded]
-    decisions = core + step_account(ctx, account, found, skips, {}, why, book.cap, sleeve)
+    cap = book.cap
+    if exits is not None:
+        found, skips, why, cap = exits, [], {}, None
+    decisions = core + step_account(ctx, account, found, skips, {}, why, cap, sleeve)
     if day is not None:
         reading = ({**_plain(state), "unscored": _unscored(state, why), "signs": _signs(state)} if state
                    else {"mood": None, "note": NO_MOOD})

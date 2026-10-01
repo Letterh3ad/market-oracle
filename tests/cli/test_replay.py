@@ -158,7 +158,7 @@ def test_report_prints_the_score_and_its_limits_without_fetching(cfg, capsys, tm
     body = json.loads(capsys.readouterr().out)
     assert body["verdicts"] == 3 and body["horizons"][0]["horizon"] == "1m" and body["limits"]
     assert [line["name"] for line in body["account"]["lines"]] == [
-        "ai", "all_buy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat"]
+        "index", "spy", "ai", "all_buy", "buy_and_hold", "momentum", "regime", "regime_v2", "core_sat"]
 
 
 def test_report_prints_the_account_against_buy_and_hold(cfg, capsys, tmp_path, no_fetch):
@@ -219,8 +219,8 @@ def test_report_splits_the_headline_numbers_by_size(cfg, capsys, tmp_path, no_fe
     assert "    All                  3     67%       56%      100%           56%          +6.67%" in out
     assert "    Large                2    100%      100%      100%          100%         +10.00%" in out
     assert "    Mid/small            1      0%      100%      100%          100%" in out
-    assert "  Account return          AI  Every verdict a buy  Buy and hold" in out
-    assert "    Large             +0.00%               +0.00%       +20.52%" in out
+    assert "  Account return    Index (ACWI)       SPY        AI  Every verdict a buy  Buy and hold" in out
+    assert "    +0.00%               +0.00%       +20.52%" in out
     replay(cfg, "report", "--json")
     body = json.loads(capsys.readouterr().out)
     assert [z["size"] for z in body["by_size"]] == ["large", "mid-small"]
