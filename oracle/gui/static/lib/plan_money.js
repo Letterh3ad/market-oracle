@@ -60,13 +60,17 @@ function mixTable(t) {
 }
 
 function contributionResult(t, charts) {
-  const pts = t.series.points;
   const holder = el("div", { class: "compare-chart" });
   charts.push(() => linesChart(holder, [{ colour: "--accent", title: "Lump ahead of drip", percent: true,
     points: t.starts.map(([day, lead]) => ({ time: day, value: lead * 100 })) }], 200));
   const c = t.cash;
   const parts = [
-    el("p", { class: "small" }, `On ${t.series.label}, month ends ${pts[0][0]} to ${pts[pts.length - 1][0]}; fees: ${t.fees}.`),
+    el("p", { class: "small" }, `On ${t.series.label} (${t.series.source}; GBP, accumulating, after its `
+      + `${(t.series.ter * 100).toFixed(2)}% TER, ${t.series.kind}); fees: ${t.fees}.`),
+    el("p", { class: "small", "data-span": "" }, `Whole months ${t.first} to ${t.last} (${t.months} months, all fund `
+      + `comparison has stored). Lump vs drip: ${t.starts.length} start months`
+      + (t.start_span ? `, ${t.start_span[0]} to ${t.start_span[1]}` : "") + `. Monthly: ${t.window_count} windows of `
+      + `${t.years} years` + (t.window_span ? `, starting ${t.window_span[0]} to ${t.window_span[1]}` : "") + "."),
     table([["Test"], ["Starts", null, 1], ["Above 0", null, 1], ["Median", null, 1], ["P10", null, 1], ["P90", null, 1],
       ["Worst", null, 1], ["Best", null, 1]], [
       spreadRow(`Lump ${gbp(t.amount)} vs 12-month drip`, t.lump),
@@ -76,7 +80,7 @@ function contributionResult(t, charts) {
     el("h3", null, "Lump ahead of drip, by start month"), holder,
   ];
   if (t.mixes.length) {
-    parts.push(el("h3", null, `Rebalancing ${Math.round(t.weight * 100)}% ${t.series.symbol} / `
+    parts.push(el("h3", null, `Rebalancing ${Math.round(t.weight * 100)}% ${t.series.label} / `
       + `${Math.round((1 - t.weight) * 100)}% ${t.second.label}, ${t.mix_span[0]} to ${t.mix_span[1]}`), mixTable(t));
   }
   parts.push(el("p", { class: "small", "data-cash": "" }, `Cash drag: ${Math.round(c.share * 100)}% of the pot in cash `
@@ -86,8 +90,16 @@ function contributionResult(t, charts) {
 }
 
 function planMoneySection() {
+  const sayer = (note) => (text, bad = true) => {
+    note.className = bad ? "form-note down" : "form-note";
+    note.replaceChildren(text);
+  };
   const note = el("div", { class: "form-note" });
-  const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
+  const feeNote = el("div", { class: "form-note" });
+  const testNote = el("div", { class: "form-note" });
+  const say = sayer(note);
+  const sayFees = sayer(feeNote);
+  const sayTests = sayer(testNote);
   const platformForm = el("div", { class: "row wrap" });
   const feeBody = el("div");
   const contributionBody = el("div");
@@ -108,10 +120,9 @@ function planMoneySection() {
     const save = el("button", { type: "button", onclick: async () => {
       save.disabled = true;
       try {
-        for (const [, input, key] of inputs) {
-          const v = key === "platform" ? input.value : Number(input.value);
-          await sendJson("/api/settings", { section: "plan", key, value: v }, "PUT");
-        }
+        const body = Object.fromEntries(inputs.map(([, input, key]) => [key, key === "platform" ? input.value
+          : Number(input.value)]));
+        await sendJson("/api/plan/platform", body, "PUT");
         say("Platform saved.", false);
       } catch (err) {
         say(err.message);
@@ -130,8 +141,9 @@ function planMoneySection() {
     try {
       const q = new URLSearchParams({ monthly: feeMonthly.value, years: years.value, growth: growth.value, start: start.value });
       feeBody.replaceChildren(...feeResult(await api(`/api/plan/fees?${q}`)));
+      sayFees("", false);
     } catch (err) {
-      say(err.message);
+      sayFees(err.message);
     }
   } }, "Work out fees");
   const feeForm = el("div", { class: "row wrap" }, feeMonthlyLabel, yearsLabel, growthLabel, startLabel, feeButton);
@@ -140,8 +152,9 @@ function planMoneySection() {
     monthly: field("monthly", "GBP a month", 500, { type: "number", min: "0", step: "any" }),
     lump: field("lump", "Lump (GBP, blank 12 months')", "", { type: "number", min: "0", step: "any" }),
     years: field("years", "Window (years)", 10, { type: "number", min: "1", max: "40" }),
-    second: field("second", "Second fund", "CUKX.L"),
-    weight: field("weight", "% in ACWI", 75, { type: "number", min: "1", max: "99" }),
+    fund: field("fund", "Fund", "all_world"),
+    second: field("second", "Second fund (or none)", "uk"),
+    weight: field("weight", "% in the first fund", 75, { type: "number", min: "1", max: "99" }),
     band: field("band", "Band (points)", 5, { type: "number", min: "1", max: "49" }),
     cash: field("cash", "% left in cash", 5, { type: "number", min: "0", max: "99" }),
     cash_rate: field("cash_rate", "Cash rate (% a year)", 0, { type: "number", step: "any" }),
@@ -156,8 +169,9 @@ function planMoneySection() {
       const charts = [];
       contributionBody.replaceChildren(...contributionResult(t, charts));
       drawn = charts.map((draw) => draw());
+      sayTests("", false);
     } catch (err) {
-      say(err.message);
+      sayTests(err.message);
     } finally {
       run.disabled = false;
     }
@@ -167,11 +181,12 @@ function planMoneySection() {
   const node = el("div", { class: "card" },
     el("h2", null, "Fees and contributions"),
     el("p", { class: "dim small" }, "Your platform's prices (no presets: copy them from its price list), what fees "
-      + "take over a horizon, and contribution habits tested on every start month of ACWI's total return in GBP "
-      + "(a proxy for an all-world fund), after your fees. Amounts are never stored."),
+      + "take over a horizon, and contribution habits tested on every start month of fund comparison's series "
+      + "(GBP, accumulating, after TER, from long-history proxies: run Compare funds first), after your fees. "
+      + "Funds: all_world, developed, sp500, uk, uk_mix. Amounts are never stored."),
     el("h3", null, "Your platform"), platformForm, note,
-    el("h3", null, "Fee calculator"), feeForm, feeBody,
-    el("h3", null, "Contribution tests"), contributionForm, contributionBody);
+    el("h3", null, "Fee calculator"), feeForm, feeNote, feeBody,
+    el("h3", null, "Contribution tests"), contributionForm, testNote, contributionBody);
 
   function startSection() {
     if (started) return Promise.resolve();

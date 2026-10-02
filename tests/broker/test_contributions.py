@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from oracle.broker.contributions import (
-    BANDS, NONE, YEARLY, Rebalance, align, cash_drag, lump_vs_drip, mix, rolling_monthly, spread,
+    BANDS, NONE, YEARLY, Rebalance, align, cash_drag, lump_vs_drip, mix, rolling_monthly, spread, whole_months,
 )
 from oracle.broker.projection import FeeModel
 
@@ -130,3 +130,20 @@ def test_cash_drag_by_hand():
     assert d.invested == pytest.approx(1.10)
     assert d.held == pytest.approx(1.09)
     assert d.given_up == pytest.approx(1.10 ** 12 - 1.09 ** 12)
+
+
+def test_a_rebalance_cost_above_the_pot_leaves_it_empty_not_negative():
+    a, b = two_funds()
+    r = mix(a, b, 0.5, Rebalance(BANDS, 0.05), FeeModel(dealing=100.0), start=100.0)
+    assert r.value == 0.0 and r.fees == pytest.approx(150.0)
+
+
+def test_a_drip_eaten_by_dealing_has_no_lead():
+    [s] = lump_vs_drip(months(*([1.0] * 13)), 60.0, FeeModel(dealing=10.0))
+    assert s.drip == 0.0 and s.lead is None
+
+
+def test_whole_months_drop_a_first_day_inside_its_month_and_the_running_month():
+    pts = [(date(2008, 3, 28), 1.0), (date(2008, 3, 31), 1.1), (date(2008, 4, 30), 1.2), (date(2008, 5, 2), 1.3)]
+    assert whole_months(pts, date(2008, 5, 3)) == [(date(2008, 3, 31), 1.1), (date(2008, 4, 30), 1.2)]
+    assert whole_months(pts[1:3], date(2008, 6, 1)) == pts[1:3]

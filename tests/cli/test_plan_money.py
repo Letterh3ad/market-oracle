@@ -1,7 +1,7 @@
+import asyncio
+
 from oracle.cli.main import main
-from oracle.config import Config
-from oracle.services.context import open_context
-from tests.services.test_plan_money import store
+from tests.services.test_plan_money import seed
 
 
 def config(tmp_path, plan: str = 'percent_fee = 0.25\nflat_fee = 4.99\n'):
@@ -24,19 +24,25 @@ def test_fees_says_when_flat_never_wins(tmp_path, capsys):
     assert "Flat never beats percentage" in capsys.readouterr().out
 
 
-def test_contributions_prints_the_distributions_mix_and_cash_drag(tmp_path, capsys):
-    cfg = config(tmp_path)
-    with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
-        store(c, "ACWI", [100.0 * 1.01 ** i for i in range(40)])
-        store(c, "CUKX.L", [100.0] * 40)
-    assert main(["--config", str(cfg), "plan", "contributions", "--monthly", "100", "--years", "2"]) == 0
+def test_contributions_print_the_span_distributions_mix_and_cash_drag(tmp_path, capsys):
+    asyncio.run(seed(tmp_path))
+    assert main(["--config", str(config(tmp_path)), "plan", "contributions", "--monthly", "100", "--years", "2"]) == 0
     out = capsys.readouterr().out
-    assert "ACWI total return in GBP (proxy)" in out
-    assert "Lump £1,200 vs 12-mo drip" in out and "    28 " in out
-    assert "5-point bands" in out and "yearly" in out
+    assert "All-world (proxy: ACWI" in out and "0.19% TER" in out
+    assert "Whole months 2018-01-31 to 2020-12-31 (35 months" in out
+    assert "Lump vs drip: 24 start months, 2018-01-31 to 2019-12-31." in out
+    assert "Monthly: 12 windows of 2 years, starting 2018-01-31 to 2018-12-31." in out
+    assert "Lump £1,200 vs 12-mo drip" in out
+    assert "5-point bands" in out and "UK shares" in out
     assert "Cash drag: 5% of the pot" in out
 
 
-def test_contributions_without_prices_is_an_error_not_a_crash(tmp_path, capsys):
+def test_contributions_without_history_say_which_job_to_run(tmp_path, capsys):
     assert main(["--config", str(config(tmp_path)), "plan", "contributions", "--monthly", "100"]) != 0
-    assert "ACWI" in capsys.readouterr().err
+    assert "run the fund comparison first" in capsys.readouterr().err
+
+
+def test_a_zero_lump_is_refused_cleanly(tmp_path, capsys):
+    asyncio.run(seed(tmp_path))
+    assert main(["--config", str(config(tmp_path)), "plan", "contributions", "--monthly", "100", "--lump", "0"]) != 0
+    assert "lump must be above 0" in capsys.readouterr().err

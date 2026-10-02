@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 
 from oracle.broker.projection import (
-    NO_FEES, FeeModel, Month, crossover, drip_schedule, month_ends, monthly_returns, project, steady,
+    NO_FEES, FeeModel, Month, crossover, drip_schedule, monthly_returns, project, steady,
 )
 
 
@@ -98,12 +98,6 @@ def test_contributions_beyond_the_series_are_refused():
         project(months(100, 100), [1.0, 1.0])
 
 
-def test_month_ends_keep_each_months_last_close_and_skip_gaps():
-    daily = [(date(2024, 1, 30), 1.0), (date(2024, 1, 31), 2.0), (date(2024, 2, 1), None),
-             (date(2024, 2, 28), 3.0), (date(2024, 2, 29), None)]
-    assert month_ends(daily) == [(date(2024, 1, 31), 2.0), (date(2024, 2, 28), 3.0)]
-
-
 def test_steady_series_compounds_a_yearly_rate_monthly():
     s = steady(0.05, 12, date(2026, 1, 31))
     assert len(s) == 13
@@ -123,3 +117,15 @@ def test_drip_schedule_spreads_the_cash_and_its_interest():
 
 def test_no_fees_is_free():
     assert NO_FEES.platform(1e6) == 0.0 and NO_FEES.buying(1e6) == 0.0
+
+
+def test_buying_costs_above_the_money_in_take_it_all_and_never_more():
+    path = project(months(100, 100, 100), [5.0, 5.0], FeeModel(dealing=10.0))
+    assert [m.value for m in path] == [0.0, 0.0]
+    assert [m.fees for m in path] == pytest.approx([5.0, 10.0])
+
+
+def test_a_platform_fee_never_takes_more_than_the_pot_nor_pays_it_back():
+    path = project(months(100, 100, 100), [3.0, 0.0], FeeModel(flat=4.99))
+    assert [m.value for m in path] == [0.0, 0.0]
+    assert [m.fees for m in path] == pytest.approx([3.0, 3.0])

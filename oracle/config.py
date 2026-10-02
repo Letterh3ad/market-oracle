@@ -822,7 +822,7 @@ def _apply(raw: dict, strict: bool = False) -> Config:
             values[name] = _data_checks(value)
             continue
         if name == "plan":
-            values[name] = _plan(value)
+            values[name] = check_plan(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -1088,7 +1088,8 @@ def _data_checks(raw: object) -> DataChecksConfig:
     return config
 
 
-def _plan(raw: object) -> PlanConfig:
+def check_plan(raw: object) -> PlanConfig:
+    """`[plan]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
     if not isinstance(raw, dict):
         raise ConfigError("plan must be a [plan] table")
     _reject_unknown(raw, PlanConfig, "[plan]")

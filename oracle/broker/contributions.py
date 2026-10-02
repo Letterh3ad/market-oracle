@@ -25,9 +25,10 @@ class Start:
     drip: float
 
     @property
-    def lead(self) -> float:
-        """How far the lump sum ends ahead of the drip, as a share of the drip."""
-        return self.lump / self.drip - 1
+    def lead(self) -> float | None:
+        """How far the lump sum ends ahead of the drip, as a share of the drip; None when costs
+        took the whole drip."""
+        return self.lump / self.drip - 1 if self.drip > 0 else None
 
 
 def lump_vs_drip(series: Series, amount: float, fees: FeeModel = NO_FEES, cash_rate: float = 0.0,
@@ -139,7 +140,7 @@ def mix(a: Series, b: Series, weight: float, rule: Rebalance, fees: FeeModel = N
         own = contributions[i] if i < len(contributions) else 0.0
         for k in (0, 1):
             put = own * targets[k]
-            cost = fees.buying(put)
+            cost = min(fees.buying(put), put)
             held[k] += put - cost
             charged += cost
         paid += own
@@ -157,7 +158,7 @@ def mix(a: Series, b: Series, weight: float, rule: Rebalance, fees: FeeModel = N
         if _due(rule, i + 1, held, weight):
             pot = sum(held)
             moved = abs(held[0] - pot * weight)
-            cost = fees.dealing * 2 + moved * fees.fx
+            cost = min(fees.dealing * 2 + moved * fees.fx, pot)
             pot -= cost
             held = [pot * weight, pot * (1 - weight)]
             charged += cost
@@ -183,6 +184,17 @@ def _due(rule: Rebalance, month: int, held: Sequence[float], weight: float) -> b
     if rule.kind == BANDS:
         return drift > rule.points
     return False
+
+
+def whole_months(series: Series, today: date) -> list[tuple[date, float]]:
+    """Month-end points cut to whole months: a first point inside the same month as the next (a
+    series' first day) and a last point in `today`'s month (a month still running) are dropped."""
+    out = list(series)
+    if len(out) > 1 and (out[0][0].year, out[0][0].month) == (out[1][0].year, out[1][0].month):
+        out = out[1:]
+    if out and (out[-1][0].year, out[-1][0].month) == (today.year, today.month):
+        out = out[:-1]
+    return out
 
 
 def align(a: Series, b: Series) -> tuple[list[tuple[date, float]], list[tuple[date, float]]]:

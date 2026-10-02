@@ -14,8 +14,8 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, ScheduleConfig, Setting,
-    check_ai_account, check_peers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, PlanConfig, ScheduleConfig, Setting,
+    check_ai_account, check_peers, check_plan, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
 from oracle.services.context import AppContext
@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account", "set_core_sat_account", "set_laya_account",
-    "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
+    "set_peer_count", "set_plan", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
 LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "data_checks", "plan", "analysts", "universe", "discovery", "models")
@@ -46,6 +46,15 @@ def set_peer_count(ctx: AppContext, count: int) -> Path:
     path = _save(ctx, "analysts", {"peers": count})
     ctx.config = replace(ctx.config, analysts=replace(ctx.config.analysts, peers=count))
     return path
+
+
+def set_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
+    """The whole [plan] platform in one write: checked first, then saved together, so a refused
+    value leaves every key as it was."""
+    plan = _check(check_plan, dict(values))
+    _save(ctx, "plan", dict(values))
+    ctx.config = replace(ctx.config, plan=plan)
+    return plan
 
 
 def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:

@@ -206,12 +206,12 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "plan trend": "POST /api/jobs/plan-trend",
     "plan trend --show": "GET /api/plan/trend",
     # Ledgers tab, Fees and contributions card (moves to the Plan tab): its two forms; the platform
-    # fees themselves are [plan] settings, edited in the card's Platform form (PUT /api/settings).
+    # fees themselves are [plan] settings, saved together by the card's Platform form (PUT /api/plan/platform).
     **{key: "GET /api/plan/fees" for key in (
         "plan fees", *(f"plan fees --{flag}" for flag in ("monthly", "years", "growth", "start")))},
     **{key: "GET /api/plan/contributions" for key in (
         "plan contributions", *(f"plan contributions --{flag}" for flag in (
-            "monthly", "lump", "years", "second", "weight", "band", "cash", "cash-rate")))},
+            "monthly", "lump", "years", "fund", "second", "weight", "band", "cash", "cash-rate")))},
     # Ledgers tab, Fund comparison card (moves to the Plan tab): "Compare funds" and its kept result.
     "plan funds": "POST /api/jobs/plan-funds",
     "plan funds --show": "GET /api/plan/funds",

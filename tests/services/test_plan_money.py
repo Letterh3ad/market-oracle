@@ -6,15 +6,15 @@ from datetime import date, datetime, timezone
 import pytest
 
 from oracle.config import Config, PlanConfig
-from oracle.market.bars import Bar
-from oracle.market.dividends import Dividend
 from oracle.services.context import open_context
-from oracle.services.contributions_service import GrowthSeries, contribution_tests, growth_series
+from oracle.services.contributions_service import contribution_tests, plan_series
 from oracle.services.errors import InvalidQuery, NoPrices
 from oracle.services.fees_service import fee_drag, project, user_fees
-from oracle.store.bars import BarRepo
-from oracle.store.dividends import DividendRepo
+from oracle.services.fund_compare_service import FundSeries, update_fund_data
 from tests.fakes.clock import FakeClock
+from tests.fakes.web import FakeWeb
+from tests.fakes.yahoo import FakeYahoo
+from tests.services.test_fund_compare_service import market
 
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=timezone.utc)
 STAMP = "2026-10-03T12:00:00+00:00"
@@ -24,19 +24,28 @@ def month_end_days(n: int) -> list[date]:
     return [date(2015 + i // 12, i % 12 + 1, 25) for i in range(n)]
 
 
-def store(ctx, symbol: str, closes: list[float], dividends=()) -> None:
-    days = month_end_days(len(closes))
-    BarRepo(ctx.conn).upsert([Bar(symbol, d, c, c, c, c, None, 0, "GBP", "test") for d, c in zip(days, closes)], STAMP)
-    repo = DividendRepo(ctx.conn)
-    repo.replace(symbol, [Dividend(d, a, "GBP") for d, a in dividends], days[0], days[-1], "test", STAMP)
-    repo.cover(symbol, days[0], days[-1], replace=True)
+PLAN = PlanConfig(platform="percentage", percent_fee=0.25, flat_fee=4.99)
 
 
 @pytest.fixture
 def ctx(tmp_path):
-    plan = PlanConfig(platform="percentage", percent_fee=0.25, flat_fee=4.99)
-    with open_context(Config(db_path=tmp_path / "o.db", plan=plan), None, FakeClock(NOW)) as c:
+    with open_context(Config(db_path=tmp_path / "o.db", research_db_path=tmp_path / "r.db", plan=PLAN), None,
+                      FakeClock(NOW)) as c:
         yield c
+
+
+async def seed(tmp_path, end: date = date(2020, 12, 31)) -> None:
+    """Fund comparison's proxies (2018-01-02 on, EWU for the UK fund) fetched into the research DB."""
+    yahoo = FakeYahoo()
+    market(yahoo, end)
+    config = Config(db_path=tmp_path / "o.db", research_db_path=tmp_path / "r.db")
+    with open_context(config, None, FakeClock(datetime(2021, 1, 4, tzinfo=timezone.utc)), FakeWeb(yahoo).transport) as c:
+        await update_fund_data(c)
+
+
+def fund(n: int, step: float = 1.0) -> FundSeries:
+    return FundSeries("x", "Fund X", "proxy: X", "total return", 0.0,
+                      tuple((d, step ** i) for i, d in enumerate(month_end_days(n))))
 
 
 def test_user_fees_follow_the_plan_settings(ctx):
@@ -67,44 +76,53 @@ def test_fee_drag_refuses_nonsense(ctx):
         fee_drag(ctx, -1.0, 10)
 
 
-def test_growth_series_is_total_return_at_month_ends(ctx):
-    store(ctx, "ACWI", [100.0] * 13, [(date(2015, 6, 25), 2.0)])
-    g = growth_series(ctx)
-    assert g.kind == "total return" and "proxy" in g.label
-    assert g.points[-1][1] / g.points[0][1] == pytest.approx(1.02)
+async def test_the_series_is_fund_comparisons_cut_to_whole_months(ctx, tmp_path):
+    await seed(tmp_path)
+    s = plan_series(ctx, "all_world")
+    assert s.points[0][0] == date(2018, 1, 31), "the first day (2018-01-02) inside January is dropped"
+    assert s.points[-1][0] == date(2020, 12, 31) and "ACWI" in s.source and s.kind == "total return"
 
 
-def test_too_little_history_is_said(ctx):
-    store(ctx, "ACWI", [100.0] * 5)
-    with pytest.raises(NoPrices):
-        growth_series(ctx)
+async def test_the_running_month_is_not_a_month_end(tmp_path):
+    await seed(tmp_path, end=date(2020, 12, 2))
+    config = Config(db_path=tmp_path / "o.db", research_db_path=tmp_path / "r.db")
+    with open_context(config, None, FakeClock(datetime(2020, 12, 3, tzinfo=timezone.utc))) as c:
+        assert plan_series(c, "all_world").points[-1][0] == date(2020, 11, 30)
 
 
-def test_contribution_tests_cover_every_start_and_say_a_missing_second_fund(ctx):
-    store(ctx, "ACWI", [100.0 * 1.01 ** i for i in range(40)])
+def test_no_history_says_which_job_fetches_it(ctx):
+    with pytest.raises(NoPrices, match="fund comparison"):
+        plan_series(ctx, "all_world")
+    with pytest.raises(InvalidQuery):
+        plan_series(ctx, "nope")
+
+
+async def test_contribution_tests_run_on_fund_comparisons_series_and_say_their_span(ctx, tmp_path):
+    await seed(tmp_path)
     t = contribution_tests(ctx, 100.0, years=2)
-    assert len(t.starts) == 39 - 12 + 1 and t.lump.count == len(t.starts)
-    assert t.lump.wins == 1.0
-    assert t.window_count == 39 - 24 + 1
-    assert t.mixes == () and any("CUKX.L" in n for n in t.notes)
-    assert t.amount == 1200.0
+    assert (t.first, t.last, t.months) == (date(2018, 1, 31), date(2020, 12, 31), 35)
+    assert len(t.starts) == 35 - 12 + 1 and t.lump.count == len(t.starts)
+    assert t.window_count == 35 - 24 + 1 and t.window_span == (date(2018, 1, 31), date(2018, 12, 31))
+    assert t.second.key == "uk" and [m.rule for m in t.mixes] == ["none", "yearly", "5-point bands"]
+    assert t.mix_span == (date(2018, 1, 31), date(2020, 12, 31))
+    assert t.amount == 1200.0 and any("TER" in n for n in t.notes)
+
+
+def test_a_missing_second_fund_is_said_not_raised(ctx):
+    t = contribution_tests(ctx, 100.0, years=1, growth=fund(30, 1.01))
+    assert t.mixes == () and any("No rebalancing test" in n and "fund comparison" in n for n in t.notes)
 
 
 def test_contribution_tests_rebalance_the_two_fund_mix(ctx):
-    store(ctx, "ACWI", [100.0 * 1.02 ** i for i in range(30)])
-    store(ctx, "CUKX.L", [100.0] * 30)
-    t = contribution_tests(ctx, 100.0, years=1)
-    assert [m.rule for m in t.mixes] == ["none", "yearly", "5-point bands"]
+    t = contribution_tests(ctx, 100.0, years=1, growth=fund(30, 1.02), second=fund(30))
     none, yearly, bands = (m.result for m in t.mixes)
     assert none.weight > yearly.weight
     assert bands.rebalanced and yearly.rebalanced
-    assert t.mix_span == (date(2015, 1, 25), date(2017, 6, 25))
 
 
 def test_contribution_tests_take_any_growth_series(ctx):
-    pts = tuple((d, 1.0) for d in month_end_days(14))
-    t = contribution_tests(ctx, 50.0, years=1, growth=GrowthSeries("X", "fund X", "total return", pts), second=None)
-    assert t.series.symbol == "X" and t.lump.count == 2
+    t = contribution_tests(ctx, 50.0, years=1, growth=fund(14), second=None)
+    assert t.series.key == "x" and t.lump.count == 2
     assert t.cash.given_up == pytest.approx(0.0)
 
 
@@ -116,7 +134,18 @@ def test_the_projection_takes_an_extra_inflow(ctx):
 
 
 def test_the_drips_waiting_cash_earns_the_cash_rate(ctx):
-    store(ctx, "ACWI", [100.0] * 14)
-    plain = contribution_tests(ctx, 100.0, years=1, second=None)
-    paid = contribution_tests(ctx, 100.0, years=1, second=None, cash_rate=0.05)
+    plain = contribution_tests(ctx, 100.0, years=1, growth=fund(14), second=None)
+    paid = contribution_tests(ctx, 100.0, years=1, growth=fund(14), second=None, cash_rate=0.05)
     assert paid.lump.median < plain.lump.median <= 0
+
+
+@pytest.mark.parametrize("kwargs", [{"amount": 0.0}, {"amount": -5.0}, {"cash_rate": -1.0}, {"monthly": 0.0}])
+def test_nonsense_amounts_are_refused(ctx, kwargs):
+    with pytest.raises(InvalidQuery):
+        contribution_tests(ctx, **{"monthly": 100.0, **kwargs}, growth=fund(14), second=None)
+
+
+def test_fees_eating_the_whole_drip_are_refused_not_divided_by(ctx):
+    ctx.config = replace(ctx.config, plan=replace(PLAN, dealing_fee=10.0))
+    with pytest.raises(InvalidQuery, match="drip tranche"):
+        contribution_tests(ctx, 100.0, amount=60.0, years=1, growth=fund(14), second=None)

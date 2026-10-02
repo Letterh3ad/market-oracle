@@ -22,11 +22,13 @@ FEES = {"monthly": 500, "years": 20, "growth": 0.05, "start": 0, "contributed": 
 SPREAD = {"count": 200, "wins": 0.68, "median": 0.03, "p10": -0.04, "p90": 0.12, "worst": -0.2, "best": 0.3}
 MIX = {"value": 150000, "contributed": 120000, "fees": 10, "trades": 4, "rebalanced": [], "weight": 0.75,
        "worst_fall": 0.3, "growth": 2.5}
-TESTS = {"series": {"symbol": "ACWI", "label": "ACWI total return in GBP (proxy)", "kind": "total return",
-                    "points": [["2008-04-30", 1.0], ["2026-09-30", 4.0]]},
+TESTS = {"series": {"key": "all_world", "label": "All-world", "source": "proxy: ACWI (iShares MSCI ACWI ETF)",
+                    "kind": "total return", "ter": 0.0019, "points": [["2008-04-30", 1.0], ["2026-09-30", 4.0]]},
+         "first": "2008-04-30", "last": "2026-09-30", "months": 221, "start_span": ["2008-04-30", "2025-09-30"],
+         "window_span": ["2008-04-30", "2016-09-30"],
          "fees": "flat £4.99 a month", "amount": 6000, "monthly": 500, "years": 10,
          "starts": [["2008-04-30", 0.05], ["2008-05-30", -0.02]], "lump": SPREAD, "windows": SPREAD,
-         "window_count": 100, "second": {"symbol": "CUKX.L", "label": "CUKX.L total return in GBP"}, "weight": 0.75,
+         "window_count": 100, "second": {"key": "uk", "label": "UK shares (part of the mix)"}, "weight": 0.75,
          "mixes": [{"rule": "none", "result": MIX}, {"rule": "yearly", "result": MIX},
                    {"rule": "5-point bands", "result": MIX}], "mix_span": ["2008-04-30", "2026-09-30"],
          "cash": {"share": 0.05, "cash_rate": 0.0, "invested": 4.0, "held": 3.8, "given_up": 0.004},
@@ -39,7 +41,7 @@ def run(body: str):
         ANSWERS["GET /api/settings"] = {json.dumps(SETTINGS)};
         ANSWERS["GET /api/plan/fees"] = {json.dumps(FEES)};
         ANSWERS["GET /api/plan/contributions"] = {json.dumps(TESTS)};
-        ANSWERS["PUT /api/settings"] = {{}};
+        ANSWERS["PUT /api/plan/platform"] = {{}};
         const {{ planMoneySection }} = await import({json.dumps((STATIC_DIR / "lib" / "plan_money.js").as_uri())});
         const section = planMoneySection();
         const node = section.node;
@@ -56,9 +58,10 @@ def test_the_platform_form_shows_the_plan_settings_and_saves_each():
         const shown = [named("platform").value, named("percent_fee").value, named("flat_fee").value, named("fx_fee").value];
         named("fx_fee").value = "0.5";
         button(node, "Save platform").fire("click"); await settle();
-        console.log(JSON.stringify([asked.filter((a) => a.startsWith("PUT")).length, shown]));
+        const puts = asked.filter((a) => a.startsWith("PUT"));
+        console.log(JSON.stringify([puts, shown]));
     """)
-    assert asked == 6
+    assert asked == ["PUT /api/plan/platform"]
     assert values == ["flat", "0.25", "4.99", "0"]
 
 
@@ -81,6 +84,19 @@ def test_the_contribution_tests_show_both_spreads_the_mix_and_cash_drag():
         console.log(JSON.stringify([node.textContent, asked.find((a) => a.includes("/api/plan/contributions"))]));
     """)
     assert "6,000 vs 12-month drip" in shown and "68%" in shown and "+3.00%" in shown
-    assert "5-point bands" in shown and "75% ACWI / 25% CUKX.L total return in GBP" in shown
+    assert "5-point bands" in shown and "75% All-world / 25% UK shares (part of the mix)" in shown
+    assert "Whole months 2008-04-30 to 2026-09-30 (221 months" in shown
+    assert "2 start months, 2008-04-30 to 2025-09-30" in shown and "100 windows of 10 years" in shown
     assert "gives up 0.40 points a year" in shown
-    assert "second=CUKX.L" in url and "lump=" not in url
+    assert "fund=all_world" in url and "second=uk" in url and "lump=" not in url
+
+
+def test_a_failed_fee_calculation_is_said_beside_the_calculator():
+    shown = run("""
+        ANSWERS["GET /api/plan/fees"] = { status: 400, error: "years must be from 1 to 60" };
+        section.start(); await settle();
+        button(node, "Work out fees").fire("click"); await settle();
+        const notes = node.all((n) => n.className?.includes("form-note"));
+        console.log(JSON.stringify(notes.map((n) => n.textContent)));
+    """)
+    assert shown == ["", "years must be from 1 to 60", ""]

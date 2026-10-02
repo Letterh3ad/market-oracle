@@ -59,7 +59,8 @@ def project(growth: Series, contributions: Sequence[float], fees: FeeModel = NO_
             extra: Extra | None = None, start: float = 0.0) -> list[Month]:
     """The pot month by month: each month's contribution (and extra inflow) arrives at the month's
     first close less buying costs, grows to the next close, then the platform fee comes off. One row
-    per month of `growth`; months past the end of `contributions` add nothing."""
+    per month of `growth`; months past the end of `contributions` add nothing. Costs above the money
+    they are charged on take all of it and no more, so the pot never goes below 0."""
     months = len(growth) - 1
     if len(contributions) > months:
         raise ValueError(f"{len(contributions)} contributions for a series of {max(months, 0)} months")
@@ -68,7 +69,7 @@ def project(growth: Series, contributions: Sequence[float], fees: FeeModel = NO_
     for i in range(months):
         own = contributions[i] if i < len(contributions) else 0.0
         more = extra(i, own) if extra else 0.0
-        cost = fees.buying(own + more)
+        cost = min(fees.buying(own + more), own + more)
         pot += own + more - cost
         pot *= growth[i + 1][1] / growth[i][1]
         fee = min(fees.platform(pot), pot)
@@ -86,15 +87,6 @@ def crossover(percentage: FeeModel, flat: FeeModel) -> float | None:
     if percentage.percent <= 0 or (percentage.cap is not None and percentage.cap <= yearly_flat):
         return None
     return yearly_flat / percentage.percent
-
-
-def month_ends(daily: Sequence[tuple[date, float | None]]) -> list[tuple[date, float]]:
-    """Each calendar month's last close (missing closes skipped)."""
-    out: dict[tuple[int, int], tuple[date, float]] = {}
-    for day, close in daily:
-        if close is not None:
-            out[day.year, day.month] = (day, close)
-    return list(out.values())
 
 
 def steady(yearly: float, months: int, first: date) -> list[tuple[date, float]]:
