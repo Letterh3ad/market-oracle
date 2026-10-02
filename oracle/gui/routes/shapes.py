@@ -23,6 +23,7 @@ from oracle.services.schedule_service import ScheduleView, Upcoming
 from oracle.services.signal_test_service import SignalTest
 from oracle.services.testbed_service import UNDER_PRICED, TestbedCoverage
 from oracle.services.tick_service import KIND_LABELS, TickRun
+from oracle.services.fund_compare_service import FundComparison
 from oracle.services.trend_service import TrendLine, TrendTest, TrendWindow
 
 
@@ -306,6 +307,14 @@ def _trend_window(w: TrendWindow) -> dict:
 
     return {k: v for k, v in asdict(w).items() if k not in ("trend", "held")} | {
         "lines": [line(w.trend, w.switches), line(w.held, 0)]}
+
+
+def fund_comparison(c: FundComparison | None) -> dict | None:
+    """A kept fund comparison, each fund a line in the compare chart's shape, labelled a proxy."""
+    if c is None:
+        return None
+    return {**asdict(c), "rows": [{**asdict(r), "name": r.key, "label": f"{r.label} (proxy)", "return": r.ret,
+                                   "trades": 0} for r in c.rows]}
 
 
 def testbed_coverage(c: TestbedCoverage) -> dict:

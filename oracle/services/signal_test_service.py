@@ -17,6 +17,7 @@ from oracle.analysts.signal_test import (
 )
 from oracle.broker.walk_forward import segments
 from oracle.research.training_cutoffs import training_cutoff
+from oracle.services import fund_compare_service, trend_service
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.insider_service import INSIDER_BUYS
@@ -35,6 +36,8 @@ TRAIN_KEY = ":train"
 """Appended to a train-only result's stored signal name, so it never hides the full result."""
 CONFIRM_START = date(2020, 1, 1)
 EVENT_KEY = "event_study"
+OTHER_TESTS = frozenset({EVENT_KEY, trend_service.KEY, fund_compare_service.KEY})
+"""Kept beside the signal tests in the same table, but not signal tests."""
 """The typed-event study keeps its results beside the signals' under this name."""
 CHUNK = 250
 """Decision days scored between two checks for a stop or live work."""
@@ -206,7 +209,7 @@ def signal_tests(ctx: AppContext, train_only: bool = False) -> dict[str, SignalT
     with research_context(ctx) as r:
         rows = SignalTestRepo(r.conn).latest()
     return {row.signal.removesuffix(TRAIN_KEY): _load(row.result, row.id) for row in rows
-            if row.signal.endswith(TRAIN_KEY) == train_only and row.signal.removesuffix(TRAIN_KEY) != EVENT_KEY}
+            if row.signal.endswith(TRAIN_KEY) == train_only and row.signal.removesuffix(TRAIN_KEY) not in OTHER_TESTS}
 
 
 def _windows(rows: list[dict]) -> tuple[WindowResult, ...]:

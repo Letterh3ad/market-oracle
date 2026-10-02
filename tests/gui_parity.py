@@ -212,6 +212,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{key: "GET /api/plan/contributions" for key in (
         "plan contributions", *(f"plan contributions --{flag}" for flag in (
             "monthly", "lump", "years", "second", "weight", "band", "cash", "cash-rate")))},
+    # Ledgers tab, Fund comparison card (moves to the Plan tab): "Compare funds" and its kept result.
+    "plan funds": "POST /api/jobs/plan-funds",
+    "plan funds --show": "GET /api/plan/funds",
     # Ledgers tab, Data health card: "Run data checks", its counts and each check's flagged rows.
     "data check": "POST /api/jobs/data-check",
     "data check --check": OUTPUT_ONLY,
