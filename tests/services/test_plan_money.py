@@ -113,3 +113,10 @@ def test_the_projection_takes_an_extra_inflow(ctx):
     path = project(pts, [100.0] * 3, user_fees(ctx), extra=lambda i, paid: 25.0)
     assert path[-1].extra == pytest.approx(75.0)
     assert path[-1].value < 375.0
+
+
+def test_the_drips_waiting_cash_earns_the_cash_rate(ctx):
+    store(ctx, "ACWI", [100.0] * 14)
+    plain = contribution_tests(ctx, 100.0, years=1, second=None)
+    paid = contribution_tests(ctx, 100.0, years=1, second=None, cash_rate=0.05)
+    assert paid.lump.median < plain.lump.median <= 0

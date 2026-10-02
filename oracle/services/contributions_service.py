@@ -91,7 +91,7 @@ def contribution_tests(ctx: AppContext, monthly: float, amount: float | None = N
     series = growth or growth_series(ctx)
     fees, lump = user_fees(ctx), amount if amount is not None else monthly * 12
     points = list(series.points)
-    starts = lump_vs_drip(points, lump, fees)
+    starts = lump_vs_drip(points, lump, fees, cash_rate)
     windows = rolling_monthly(points, monthly, years, fees)
     notes = [_fees_note(ctx)]
     if not windows:
