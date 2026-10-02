@@ -140,7 +140,7 @@ function planMoneySection() {
     monthly: field("monthly", "GBP a month", 500, { type: "number", min: "0", step: "any" }),
     lump: field("lump", "Lump (GBP, blank 12 months')", "", { type: "number", min: "0", step: "any" }),
     years: field("years", "Window (years)", 10, { type: "number", min: "1", max: "40" }),
-    second: field("second", "Second fund", "ISF.L"),
+    second: field("second", "Second fund", "CUKX.L"),
     weight: field("weight", "% in ACWI", 75, { type: "number", min: "1", max: "99" }),
     band: field("band", "Band (points)", 5, { type: "number", min: "1", max: "49" }),
     cash: field("cash", "% left in cash", 5, { type: "number", min: "0", max: "99" }),

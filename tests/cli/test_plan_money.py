@@ -28,7 +28,7 @@ def test_contributions_prints_the_distributions_mix_and_cash_drag(tmp_path, caps
     cfg = config(tmp_path)
     with open_context(Config(db_path=tmp_path / "o.db"), None) as c:
         store(c, "ACWI", [100.0 * 1.01 ** i for i in range(40)])
-        store(c, "ISF.L", [100.0] * 40)
+        store(c, "CUKX.L", [100.0] * 40)
     assert main(["--config", str(cfg), "plan", "contributions", "--monthly", "100", "--years", "2"]) == 0
     out = capsys.readouterr().out
     assert "ACWI total return in GBP (proxy)" in out

@@ -19,8 +19,8 @@ async def test_fees_refuses_nonsense_with_a_message(client):
 
 async def test_contributions_returns_the_starts_spreads_mix_and_cash(client, ctx):
     store(ctx, "ACWI", [100.0 * 1.01 ** i for i in range(40)])
-    store(ctx, "ISF.L", [100.0] * 40)
-    body = (await client.get("/api/plan/contributions", params={"monthly": 100, "years": 2, "second": "isf.l"})).json()
+    store(ctx, "CUKX.L", [100.0] * 40)
+    body = (await client.get("/api/plan/contributions", params={"monthly": 100, "years": 2, "second": "cukx.l"})).json()
     assert len(body["starts"]) == 28 and body["starts"][0][0] == "2015-01-25"
     assert body["lump"]["count"] == 28 and body["window_count"] == 16
     assert [m["rule"] for m in body["mixes"]] == ["none", "yearly", "5-point bands"]

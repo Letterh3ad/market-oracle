@@ -86,13 +86,13 @@ def test_contribution_tests_cover_every_start_and_say_a_missing_second_fund(ctx)
     assert len(t.starts) == 39 - 12 + 1 and t.lump.count == len(t.starts)
     assert t.lump.wins == 1.0
     assert t.window_count == 39 - 24 + 1
-    assert t.mixes == () and any("ISF.L" in n for n in t.notes)
+    assert t.mixes == () and any("CUKX.L" in n for n in t.notes)
     assert t.amount == 1200.0
 
 
 def test_contribution_tests_rebalance_the_two_fund_mix(ctx):
     store(ctx, "ACWI", [100.0 * 1.02 ** i for i in range(30)])
-    store(ctx, "ISF.L", [100.0] * 30)
+    store(ctx, "CUKX.L", [100.0] * 30)
     t = contribution_tests(ctx, 100.0, years=1)
     assert [m.rule for m in t.mixes] == ["none", "yearly", "5-point bands"]
     none, yearly, bands = (m.result for m in t.mixes)

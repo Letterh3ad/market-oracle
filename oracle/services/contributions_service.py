@@ -22,8 +22,9 @@ from oracle.services.fees_service import user_fees
 __all__ = ["ContributionTests", "GrowthSeries", "MixLine", "PROXY", "SECOND", "contribution_tests", "growth_series"]
 
 PROXY = "ACWI"
-SECOND = "ISF.L"
-"""The default second fund: FTSE 100 in GBP, for a UK home-bias mix."""
+SECOND = "CUKX.L"
+"""The default second fund, for a UK home-bias mix: an accumulating FTSE 100 fund in GBP, so its total
+return needs no dividend record (Yahoo's list for the distributing ISF.L starts in 2013)."""
 MIN_MONTHS = 13
 
 

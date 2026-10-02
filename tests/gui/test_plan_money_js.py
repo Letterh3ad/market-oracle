@@ -26,7 +26,7 @@ TESTS = {"series": {"symbol": "ACWI", "label": "ACWI total return in GBP (proxy)
                     "points": [["2008-04-30", 1.0], ["2026-09-30", 4.0]]},
          "fees": "flat £4.99 a month", "amount": 6000, "monthly": 500, "years": 10,
          "starts": [["2008-04-30", 0.05], ["2008-05-30", -0.02]], "lump": SPREAD, "windows": SPREAD,
-         "window_count": 100, "second": {"symbol": "ISF.L", "label": "ISF.L total return in GBP"}, "weight": 0.75,
+         "window_count": 100, "second": {"symbol": "CUKX.L", "label": "CUKX.L total return in GBP"}, "weight": 0.75,
          "mixes": [{"rule": "none", "result": MIX}, {"rule": "yearly", "result": MIX},
                    {"rule": "5-point bands", "result": MIX}], "mix_span": ["2008-04-30", "2026-09-30"],
          "cash": {"share": 0.05, "cash_rate": 0.0, "invested": 4.0, "held": 3.8, "given_up": 0.004},
@@ -81,6 +81,6 @@ def test_the_contribution_tests_show_both_spreads_the_mix_and_cash_drag():
         console.log(JSON.stringify([node.textContent, asked.find((a) => a.includes("/api/plan/contributions"))]));
     """)
     assert "6,000 vs 12-month drip" in shown and "68%" in shown and "+3.00%" in shown
-    assert "5-point bands" in shown and "75% ACWI / 25% ISF.L total return in GBP" in shown
+    assert "5-point bands" in shown and "75% ACWI / 25% CUKX.L total return in GBP" in shown
     assert "gives up 0.40 points a year" in shown
-    assert "second=ISF.L" in url and "lump=" not in url
+    assert "second=CUKX.L" in url and "lump=" not in url
