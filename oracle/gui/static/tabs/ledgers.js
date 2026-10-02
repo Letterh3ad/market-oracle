@@ -44,6 +44,7 @@ function metrics(a, base) {
     row("Unrealised", "unrealised", signed(a.unrealised), tone(a.unrealised)),
     row("Costs paid", "costs", money(a.costs)),
     row("Dividends", "dividends", money(a.dividends_total)),
+    row("Dividends owed", "receivable", money(a.receivable)),
     row("Largest fall", "max_fall", pct(a.max_fall), a.max_fall < 0 ? "down" : "")));
 }
 

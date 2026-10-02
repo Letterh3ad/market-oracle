@@ -1,6 +1,8 @@
 """Cash dividends owed to a holder: the one rule the paper ledgers and the backtest engines share.
 A dividend is owed for the shares held at the close before its ex-date and paid as cash on its
-pay date, or, when no source gives one, an assumed lag after the ex-date. Numbers in, numbers out."""
+pay date, or, when no source gives one, an assumed lag after the ex-date. From the ex-date to the
+pay day it is a receivable: counted in equity (amount and shares are known, so no look-ahead), but
+not spendable. Numbers in, numbers out."""
 
 from __future__ import annotations
 
@@ -52,10 +54,17 @@ Changes = Sequence[tuple[date, int]]
 
 def credits(changes: Changes, payouts: Sequence[Payout], upto: date) -> list[Credit]:
     """Every payout paid by `upto` with shares held at the close before its ex-date."""
+    return _held(changes, [p for p in payouts if p.pay_day <= upto])
+
+
+def owed(changes: Changes, payouts: Sequence[Payout], day: date) -> list[Credit]:
+    """Every payout gone ex by `day` but not paid by then: the receivable on `day`."""
+    return _held(changes, [p for p in payouts if p.ex_date <= day < p.pay_day])
+
+
+def _held(changes: Changes, payouts: Sequence[Payout]) -> list[Credit]:
     out = []
     for p in payouts:
-        if p.pay_day > upto:
-            continue
         shares = sum(n for d, n in changes if d < p.ex_date)
         if shares > 0:
             out.append(Credit(p, shares))
@@ -64,7 +73,7 @@ def credits(changes: Changes, payouts: Sequence[Payout], upto: date) -> list[Cre
 
 class DividendBook:
     """For a day-by-day engine: record each fill, then ask on each day which payouts are now
-    paid. Each payout is paid once."""
+    paid (`due`, each once) and which are owed but not yet paid (`owed`, for equity)."""
 
     def __init__(self, payouts: Mapping[str, Sequence[Payout]] | None) -> None:
         self._waiting = {s: sorted(ps, key=lambda p: p.pay_day) for s, ps in (payouts or {}).items() if ps}
@@ -84,3 +93,6 @@ class DividendBook:
                 out += [(s, c) for c in credits(self._changes.get(s, ()), waiting[:paid], day)]
                 del waiting[:paid]
         return out
+
+    def owed(self, day: date) -> list[tuple[str, Credit]]:
+        return [(s, c) for s, waiting in self._waiting.items() for c in owed(self._changes.get(s, ()), waiting, day)]

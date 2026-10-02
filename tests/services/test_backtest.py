@@ -592,7 +592,7 @@ def test_acwi_and_spy_held_lead_the_table_and_buy_and_hold_says_it_is_todays_lis
     held = next(x for x in r.lines if x.name == "buy_and_hold")
     assert held.label == "Buy and hold (today's list) total return" and "survivorship" in held.caption
     [note] = [n for n in r.notes if n.startswith("Every line counts dividends")]
-    assert "paid them as cash on the pay date" in note and "not fetched" not in note
+    assert "owed from the ex-date" in note and "not fetched" not in note
     assert not any("No stored" in n for n in r.notes)
     assert "ACWI" not in r.listings, "a benchmark is never one of the list's traded listings"
 

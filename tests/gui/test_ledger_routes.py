@@ -17,7 +17,7 @@ async def test_every_account_starts_level_side_by_side(loaded):
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
         assert (a["positions"], a["pending"], a["sells"], a["history"]) == ([], [], [], [])
-        assert (a["dividends"], a["dividends_total"]) == ([], 0)
+        assert (a["dividends"], a["dividends_total"], a["receivable"]) == ([], 0, 0)
     assert body["discovery"].startswith("Discovery: 0 discovered companies, traded by the AI account")
 
 

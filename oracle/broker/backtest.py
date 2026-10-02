@@ -16,7 +16,7 @@ from oracle.analysts.risk import risk as risk_signal
 from oracle.analysts.signals import AnalystSignal
 from oracle.analysts.technicals import price_signals
 from oracle.broker.baseline import baseline_lean
-from oracle.broker.dividends import DividendBook, Payout
+from oracle.broker.dividends import Credit, DividendBook, Payout
 from oracle.broker.fills import Costs, Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side
 from oracle.broker.rules import BUY_LABELS, Decision, Lean, Position, Rules, decide
@@ -94,7 +94,8 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
     listing's size band and the fee table for its venue, dearest without one), and
     `slippage` and `commission` are not used. `cap` sees each day's leans with the holdings
     and pending buys before the rules do. `dividends` (each listing's, in its own currency) are
-    paid as cash by `dividends.credits`' rule, at the pay day's rate less the FX spread."""
+    paid as cash by `dividends.credits`' rule, at the pay day's rate less the FX spread, and
+    counted in equity from the ex-date (`DividendBook.owed`)."""
     lean = lean or technicals_lean
     capital = risk["account"]
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
@@ -120,7 +121,7 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
                 rates[s] = rows[seen[s] - 1].rate
             while base_seen[s] < len(base[s]) and base[s][base_seen[s]][0] <= day:
                 base_seen[s] += 1
-        got = dividend_cash(book, day, rates, venues)
+        got = in_base(book.due(day), rates, venues)
         cash, paid = cash + got, paid + got
         waiting = []
         for order in pending:
@@ -149,7 +150,8 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
                 last_value[s] = p.bar.close / p.rate
         positions = {s: Position(s, n, cost, n * last_value[s] if s in last_value else None)
                      for s, (n, cost) in held.items()}
-        total = cash + sum(p.value for p in positions.values() if p.value is not None)
+        total = (cash + sum(p.value for p in positions.values() if p.value is not None)
+                 + in_base(book.owed(day), rates, venues))
         equity.append((day, total))
         # Nothing decided on the last day could fill inside the replay.
         if day == days[-1]:
@@ -178,13 +180,13 @@ def replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, r
                   tuple(sorted({o.decision.symbol for o in pending})), paid)
 
 
-def dividend_cash(book: DividendBook, day: date, rates: Mapping[str, float],
-                  venues: Mapping[str, Venue] | None) -> float:
-    """What `book` pays on `day`, in the base currency at each listing's latest rate; with
-    `venues`, less the paper accounts' FX spread on a foreign listing. A listing with no rate yet
-    was never bought, so is owed nothing."""
+def in_base(owed: Sequence[tuple[str, Credit]], rates: Mapping[str, float],
+            venues: Mapping[str, Venue] | None) -> float:
+    """Dividend credits (a book's `due` or `owed`) in the base currency at each listing's latest
+    rate; with `venues`, less the paper accounts' FX spread on a foreign listing. A listing with no
+    rate yet was never bought, so is owed nothing."""
     total = 0.0
-    for s, credit in book.due(day):
+    for s, credit in owed:
         rate = rates.get(s)
         if not rate:
             continue

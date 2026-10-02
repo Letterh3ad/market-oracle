@@ -41,7 +41,7 @@ const GLOSSARY = {
   score: "From -1 (strongly down) to +1 (strongly up). Between -0.2 and +0.2 counts as no clear direction.",
   confidence: "How much the analyst's own inputs agree with each other, from 0% to 100%.",
   manual_account: "Your own paper trades, scored the same way, so you can compare your picks with the strategy.",
-  equity: "Cash plus every position at its last closing price, in your base currency.",
+  equity: "Cash plus every position at its last closing price plus dividends owed, in your base currency.",
   return: "Equity now against the starting amount: +5% means 10,000 has become 10,500.",
   cash: "Money not in any position. Waiting buys have not spent theirs yet.",
   position_cost: "What the shares cost, fees and other costs included (the average if bought more than once).",
@@ -51,8 +51,10 @@ const GLOSSARY = {
   dividends: "Cash dividends credited on the pay date, for the shares held at the close before the ex-date, at "
     + "that day's exchange rate less the FX spread. The price source gives no pay dates, so each is assumed: a "
     + "typical upper bound for the market after the ex-date (30 days for dollar listings, 45 for sterling, euro, "
-    + "Swiss franc and Australian dollar, 95 for yen, 130 for won, 90 elsewhere), marked assumed. The account dips "
-    + "on the ex-date and the cash arrives later, while buy and hold and the benchmarks reinvest on the ex-date.",
+    + "Swiss franc and Australian dollar, 95 for yen, 130 for won, 90 elsewhere), marked assumed. From the ex-date "
+    + "to the pay date the dividend is owed: counted in equity at today's rate, not spendable until paid.",
+  receivable: "Dividends gone ex but not paid yet, at today's exchange rate less the FX spread. Counted in equity; "
+    + "the cash arrives on the pay date.",
   unrealised: "Profit or loss on shares still held, if they were sold at the last close (before selling costs).",
   costs:
     "Everything trading has cost: broker fees, UK stamp duty on London buys, the currency exchange spread " +

@@ -270,7 +270,7 @@ def _account(ctx: AppContext, name: str, view: AccountView) -> dict:
     score = account_score(ctx, name)
     return {
         "name": name, "equity": score.equity, "start": score.start, "return": score.return_,
-        "cash": view.cash, "realised": score.realised, "unrealised": score.unrealised,
+        "cash": view.cash, "receivable": view.receivable, "realised": score.realised, "unrealised": score.unrealised,
         "costs": score.costs, "max_fall": score.max_fall,
         "positions": [asdict(p) for p in view.positions],
         "pending": [asdict(o) for o in view.pending],

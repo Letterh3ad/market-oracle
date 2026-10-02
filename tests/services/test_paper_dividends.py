@@ -133,3 +133,26 @@ async def test_each_sleeve_is_credited_for_its_own_shares_and_cash(ctx, yahoo, c
     paid = sum(c.cash for c in dividend_credits(ctx, CORE_SAT) if c.source == "manual-sleeve")
     spent = sum(f.cash for f in PaperRepo(ctx.conn).fills(CORE_SAT, "manual-sleeve"))
     assert account_view(ctx, CORE_SAT, Sleeve("manual-sleeve", 1000.0)).cash == pytest.approx(1000.0 + spent + paid)
+
+
+async def test_from_the_ex_date_a_dividend_owed_is_in_equity_but_not_in_spendable_cash(ctx, yahoo, clock):
+    await hold_12_aapl(ctx, yahoo, clock)
+    dividend(ctx, yahoo)
+    await advance_to(ctx, yahoo, clock, EX - timedelta(days=1))
+    fill_pending(ctx)
+    before = account_view(ctx, "manual")
+    assert before.receivable == 0.0
+    await advance_to(ctx, yahoo, clock, EX)
+    fill_pending(ctx)
+    owed = account_view(ctx, "manual")
+    assert owed.receivable == pytest.approx(12 * 0.5 * (1 - 0.002) / 1.25)
+    assert owed.cash == pytest.approx(before.cash), "not spendable before the pay day"
+    assert owed.equity == pytest.approx(owed.cash + owed.holdings + owed.receivable)
+    from oracle.services.paper_service import equity_history
+    assert equity_history(ctx, "manual")[-1][1] == pytest.approx(owed.equity), "recorded with the receivable"
+    assert account_view(ctx, "manual", Sleeve("manual", 1000.0)).receivable == pytest.approx(owed.receivable)
+    await advance_to(ctx, yahoo, clock, PAY)
+    fill_pending(ctx)
+    paid = account_view(ctx, "manual")
+    [c] = dividend_credits(ctx, "manual")
+    assert paid.receivable == 0.0 and paid.cash == pytest.approx(before.cash + c.cash), "counted once"

@@ -221,10 +221,10 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
 def dividend_note(unpaid: list[str]) -> str:
     """How every line counts dividends, naming the listings whose dividends were never fetched."""
     return ("Every line counts dividends: buy and hold, ACWI and SPY reinvest them at each ex-date's close; the "
-            "traded lines (strategy, momentum, the regime lines and core-sat) are paid them as cash on the pay date "
-            "(when no source gives it, a typical lag for the market after the ex-date: 30 days for dollar listings, "
-            "45 for sterling and euro, 90 or more elsewhere) for the shares held at the close before the ex-date, "
-            "as the paper ledgers are." + (f" Price only, dividends not fetched yet: {', '.join(unpaid)}."
+            "traded lines (strategy, momentum, the regime lines and core-sat) count them as owed from the ex-date, "
+            "for the shares held at the close before it, and can spend the cash from the pay date (when no source "
+            "gives it, a typical lag for the market after the ex-date: 30 days for dollar listings, 45 for sterling "
+            "and euro, 90 or more elsewhere), as the paper ledgers do." + (f" Price only, dividends not fetched yet: {', '.join(unpaid)}."
                                           if unpaid else ""))
 
 

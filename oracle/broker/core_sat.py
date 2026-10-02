@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from typing import Literal
 
 from oracle.analysts.risk import Priced
-from oracle.broker.backtest import (LeanCap, LeanSource, Replay, Trade, Venue, _charges, _price, dividend_cash, fill_costs,
+from oracle.broker.backtest import (LeanCap, LeanSource, Replay, Trade, Venue, _charges, _price, fill_costs, in_base,
                                     replay)
 from oracle.broker.dividends import DividendBook, Payout
 from oracle.broker.fills import buy_fill, sell_fill
@@ -169,7 +169,7 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
                 today[s] = rows[seen[s] - 1]
             if seen[s] and rows[seen[s] - 1].rate:
                 rates[s] = rows[seen[s] - 1].rate
-        got = dividend_cash(book, day, rates, venues)
+        got = in_base(book.due(day), rates, venues)
         cash, paid = cash + got, paid + got
         waiting = []
         for placed, order in sorted(pending, key=lambda x: x[1].side != Side.SELL):
@@ -196,7 +196,8 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
         for s, p in today.items():
             if p.rate:
                 last[s] = (day, p.bar.close / p.rate)
-        equity.append((day, cash + sum(n * last[s][1] for s, n in held.items() if s in last)))
+        equity.append((day, cash + sum(n * last[s][1] for s, n in held.items() if s in last)
+                       + in_base(book.owed(day), rates, venues)))
         if day == days[-1]:
             continue
         fresh = {s: close for s, (on, close) in last.items() if day - on <= STALE}

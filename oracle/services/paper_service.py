@@ -4,13 +4,14 @@ pessimistic costs."""
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 
 from oracle.broker.backtest import LeanCap
 from oracle.broker import core_sat
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
-from oracle.broker.dividends import Payout, credits
+from oracle.broker.dividends import Changes, Credit, Payout, credits, owed
 from oracle.broker.fills import COSTS, Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
@@ -109,6 +110,9 @@ class AccountView:
     rate_sources: tuple[str, ...] = ()
     """Where the rates behind its figures came from (position values and past fills), for
     attribution."""
+    receivable: float = 0.0
+    """Dividends gone ex but not yet paid, base currency at today's rate after the FX spread:
+    equity, not spendable cash."""
 
     @property
     def holdings(self) -> float:
@@ -117,7 +121,7 @@ class AccountView:
 
     @property
     def equity(self) -> float:
-        return self.cash + self.holdings
+        return self.cash + self.holdings + self.receivable
 
 
 @dataclass(frozen=True)
@@ -433,30 +437,54 @@ def credit_dividends(ctx: AppContext) -> list[PaperDividend]:
     after the ex-date) at that day's rate, less the FX spread. A dividend waits while no rate is
     stored for its pay day; a frozen or switched-off account is never credited."""
     today = ctx.clock.utcnow().date()
-    paper, stored, repo = PaperRepo(ctx.conn), DividendRepo(ctx.conn), PaperDividendRepo(ctx.conn)
+    paper, repo = PaperRepo(ctx.conn), PaperDividendRepo(ctx.conn)
     out = []
     for account in ACCOUNTS:
         if not account_on(ctx, account):
             continue
-        done = repo.credited(account)
         for source in paper.fill_sources(account):
-            fills = paper.fills(account, source)
-            for symbol in sorted({f.symbol for f in fills}):
-                mine = [(f.date, f.shares if f.side == Side.BUY else -f.shares) for f in fills if f.symbol == symbol]
-                owed = [Payout(d.ex_date, d.amount, d.currency, d.pay_date)
-                        for d in stored.history(symbol, mine[0][0] + timedelta(days=1), today)
-                        if (source, symbol, d.ex_date) not in done]
-                for c in credits(mine, owed, today):
-                    p = c.payout
-                    rate = _rate(ctx, p.currency, p.pay_day)
-                    if rate is None:
-                        continue
-                    spread = COSTS.fx_spread if p.currency != ctx.config.base_currency else 0.0
-                    row = PaperDividend(account, source, symbol, p.ex_date, p.pay_day, p.pay_date is not None, c.shares,
-                                        p.amount, p.currency, rate, c.cash * (1 - spread) / rate)
-                    if repo.record(row):
-                        out.append(row)
+            for symbol, c in _uncredited(ctx, account, source, today, credits):
+                p = c.payout
+                rate = _rate(ctx, p.currency, p.pay_day)
+                if rate is None:
+                    continue
+                row = PaperDividend(account, source, symbol, p.ex_date, p.pay_day, p.pay_date is not None, c.shares,
+                                    p.amount, p.currency, rate, _after_spread(ctx, c) / rate)
+                if repo.record(row):
+                    out.append(row)
     return out
+
+
+def _receivable(ctx: AppContext, account: str, source: str | None) -> float:
+    """Dividends gone ex and not yet credited, at today's rate: owed, plus any paid but waiting for
+    its pay day's rate."""
+    today = ctx.clock.utcnow().date()
+    total = 0.0
+    for s in [source] if source else PaperRepo(ctx.conn).fill_sources(account):
+        for _, c in [*_uncredited(ctx, account, s, today, owed), *_uncredited(ctx, account, s, today, credits)]:
+            rate = _rate(ctx, c.payout.currency, today)
+            if rate is not None:
+                total += _after_spread(ctx, c) / rate
+    return total
+
+
+def _uncredited(ctx: AppContext, account: str, source: str, today: date,
+                rule: Callable[[Changes, Sequence[Payout], date], list[Credit]]) -> list[tuple[str, Credit]]:
+    """`rule`'s credits (`credits` or `owed`) for what `source` held, not already in the ledger."""
+    fills = PaperRepo(ctx.conn).fills(account, source)
+    done = PaperDividendRepo(ctx.conn).credited(account)
+    out = []
+    for symbol in sorted({f.symbol for f in fills}):
+        mine = [(f.date, f.shares if f.side == Side.BUY else -f.shares) for f in fills if f.symbol == symbol]
+        payouts = [Payout(d.ex_date, d.amount, d.currency, d.pay_date)
+                   for d in DividendRepo(ctx.conn).history(symbol, mine[0][0] + timedelta(days=1), today)
+                   if (source, symbol, d.ex_date) not in done]
+        out += [(symbol, c) for c in rule(mine, payouts, today)]
+    return out
+
+
+def _after_spread(ctx: AppContext, c: Credit) -> float:
+    return c.cash * (1 - (COSTS.fx_spread if c.payout.currency != ctx.config.base_currency else 0.0))
 
 
 def dividend_credits(ctx: AppContext, account: str) -> list[PaperDividend]:
@@ -595,7 +623,8 @@ def _record_equity(ctx: AppContext) -> None:
         if not account_on(ctx, account):
             continue
         view = account_view(ctx, account)
-        EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
+        # Stored with the holdings: the table has no receivable column, and history reads cash + holdings.
+        EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings + view.receivable)
 
 
 def frozen(account: str) -> bool:
@@ -645,7 +674,7 @@ def account_view(ctx: AppContext, account: str, sleeve: Sleeve | None = None) ->
             + sum(c.cash for c in PaperDividendRepo(ctx.conn).credits(account, source))
             if sleeve else _cash(ctx, repo, account))
     return AccountView(account, cash, tuple(positions), tuple(sleeve_orders(repo.pending(account), sleeve)),
-                       realised, tuple(sorted(sources)))
+                       realised, tuple(sorted(sources)), _receivable(ctx, account, source))
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
