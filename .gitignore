@@ -16,3 +16,6 @@ models/
 # Holiday watch: real settings and its logs and reports stay local.
 /holiday_watch/config.toml
 /holiday-reports/
+
+# Holiday watchdog output (local reports, state, fix-run logs)
+/holiday-reports/
