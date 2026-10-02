@@ -127,4 +127,5 @@ def _fees_label(ctx: AppContext) -> str:
 
 def _fees_note(ctx: AppContext) -> str:
     return (f"After your {ctx.config.plan.platform} platform's fees ({_fees_label(ctx)}). The funds' own costs "
-            "(the proxy ETF's TER) are already inside their prices. No tax: an ISA.")
+            "(the proxy ETF's TER) are already inside their prices. A drip's waiting cash pays no platform fee and "
+            "earns the cash rate. No tax: an ISA.")
