@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
-from datetime import date, timedelta
+from datetime import date
 
 from oracle.broker.fills import COSTS
 from oracle.broker.trend_overlay import (MONTHS, CrashRow, Run, Session, crash_rows, figures, judge, simulate)
@@ -117,15 +117,15 @@ def _cash_yield(r: AppContext) -> dict[date, float] | None:
 
 
 async def update_trend_series(ctx: AppContext, series: TrendSeries = SERIES) -> str | None:
-    """Fetch the series' days after the last stored into the research database; None when done,
-    else why it could not (the stored days still count)."""
+    """Fetch the series from its last stored day on into the research database (that day again, as
+    it may have been stored mid-session); None when done, else why it could not."""
     with research_context(ctx) as r:
         repo = BarRepo(r.conn)
         last = repo.last_date(series.symbol)
         try:
             async with open_client(r) as client:
                 chart = await YahooPrices(client).daily_chart(
-                    Instrument(series.symbol, None), last + timedelta(days=1) if last else FIRST_FETCH,
+                    Instrument(series.symbol, None), last or FIRST_FETCH,
                     ctx.clock.utcnow())
         except NoData:
             return None
@@ -152,15 +152,16 @@ def _window(name: str, run: Run, judged: bool, label: str) -> TrendWindow:
 
 
 def run_trend(ctx: AppContext, series: TrendSeries = SERIES) -> TrendTest:
-    """Both windows from what is stored. Choose sees no session after 2007; each window's first
-    state comes from the month ends before it, so no session inside it decides its own start."""
+    """Both windows from what is stored, up to the session before the run day (the run day's close
+    may not be final). Choose sees no session after 2007; each window's first state comes from the
+    month ends before it, so no session inside it decides its own start."""
+    today = ctx.clock.utcnow().date()
     with research_context(ctx) as r:
-        sessions = trend_sessions(r, series)
+        sessions = [s for s in trend_sessions(r, series) if s.day < today]
         cash = _cash_yield(r)
     if not any(s.day >= CONFIRM_START for s in sessions) or not any(s.day <= CHOOSE_END for s in sessions):
         raise NoPrices(f"no stored {series.symbol} history from 1988 to after 2008: update the trend series first")
     kw = {"cost": COSTS.slippage, "cash_yield": cash}
-    today = ctx.clock.utcnow().date()
     choose = simulate([s for s in sessions if s.day <= CHOOSE_END], CHOOSE_START, CHOOSE_END, **kw)
     confirm = simulate(sessions, CONFIRM_START, today, **kw)
     cw = _window("confirm", confirm, series.judged, series.label)

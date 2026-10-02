@@ -20,7 +20,7 @@ from tests.fakes.clock import FakeClock
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo
 
-NOW = datetime(2012, 12, 31, 22, 0, tzinfo=timezone.utc)
+NOW = datetime(2013, 1, 1, 12, 0, tzinfo=timezone.utc)
 NY = "America/New_York"
 
 
@@ -76,13 +76,24 @@ async def test_the_run_fetches_into_the_research_database_only_and_keeps_the_res
     assert kept is not None and kept.id and kept.confirm == t.confirm and kept.choose == t.choose
 
 
-async def test_a_second_run_asks_only_for_days_after_the_last_stored(env):
+async def test_a_second_run_asks_again_from_the_last_stored_day_so_a_part_day_is_replaced(env):
     ctx, web = env
     await run_and_keep_trend(ctx)
     await run_and_keep_trend(ctx)
     asked = [r for r in web.requests if "/chart/" in r.url.path]
     assert len(asked) == 2
-    assert int(asked[1].url.params["period1"]) > int(asked[0].url.params["period1"])
+    last = datetime(2012, 12, 31, tzinfo=timezone.utc).timestamp()
+    assert int(asked[1].url.params["period1"]) == int(last)
+
+
+async def test_the_run_days_session_is_left_out_as_its_close_may_not_be_final(tmp_path):
+    yahoo = FakeYahoo()
+    yahoo.add(SERIES.symbol, "USD", NY, bars(weekdays(date(1988, 1, 4), date(2013, 1, 2))), kind="INDEX")
+    config = Config(db_path=tmp_path / "live.db", research_db_path=tmp_path / "research.db")
+    with open_context(config, None, FakeClock(datetime(2013, 1, 2, 18, 0, tzinfo=timezone.utc)),
+                      FakeWeb(yahoo).transport) as ctx:
+        t = await run_and_keep_trend(ctx)
+    assert t.confirm.end == date(2013, 1, 1) and t.last_day == date(2013, 1, 1)
 
 
 async def test_the_choose_window_reads_no_session_after_2007(env, monkeypatch):
