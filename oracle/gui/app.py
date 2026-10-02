@@ -15,6 +15,7 @@ from oracle.gui.routes import (
     models, plan, questions, reader, replay, schedule as tick_schedule, settings, status, testbed, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
+from oracle.gui.routes import plan_money
 from oracle.gui.routes import laya as laya_routes
 from oracle.services.activity_service import JobRunner, nightly_data_check, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
@@ -88,6 +89,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(history.router)
     app.include_router(testbed.router)
     app.include_router(plan.router)
+    app.include_router(plan_money.router)
     app.include_router(data_routes.router)
     app.include_router(reader.router)
     app.include_router(laya_routes.router)

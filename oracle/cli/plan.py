@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import textwrap
 
+from oracle.cli import plan_money
 from oracle.services.context import AppContext
 from oracle.services.trend_service import TrendTest, TrendWindow, run_and_keep_trend, trend_tests
 
@@ -17,6 +18,7 @@ def register(parser: argparse.ArgumentParser) -> None:
                                                 "the research database and keeps the result there")
     trend.add_argument("--show", action="store_true", help="print the newest kept result instead of running")
     trend.set_defaults(handler=run_trend)
+    plan_money.register(sub)
 
 
 def run_trend(ctx: AppContext, args: argparse.Namespace) -> int:
