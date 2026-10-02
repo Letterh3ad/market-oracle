@@ -101,6 +101,12 @@ class PaperRepo:
             "AND (:s IS NULL OR o.source = :s) ORDER BY f.date, f.order_id", {"a": account, "s": source})
         return [FillRow(*r[:3], Side(r[3]), date.fromisoformat(r[4]), *r[5:]) for r in rows]
 
+    def fill_sources(self, account: str) -> list[str]:
+        """The sources of the account's filled orders (its sleeves, or just itself), sorted."""
+        return [r[0] for r in self._conn.execute(
+            "SELECT DISTINCT o.source FROM paper_fills f JOIN paper_orders o ON o.id = f.order_id WHERE f.account = ? "
+            "ORDER BY o.source", (account,))]
+
     def orders(self, account: str, source: str) -> list[Order]:
         """Every order `source` placed on the account, whatever became of it, oldest first."""
         rows = self._conn.execute(f"SELECT {_ORDER} FROM paper_orders WHERE account = ? AND source = ? ORDER BY id",

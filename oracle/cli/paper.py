@@ -6,6 +6,7 @@ from oracle.cli.common import print_fills, print_lines
 from oracle.services.context import AppContext
 from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, CORE_SAT, INDEX, LAYA, LINE_NAMES, REGIME_LINES, STRATEGY, TRADERS, UNVALIDATED, Order, Side, account_score, account_view, ai_step, comparison,
+    dividend_credits,
     decision_log, equity_history, fill_pending, frozen_note, place_buy, place_sell, strategy_step,
 )
 from oracle.services.regime_service import laya_card, off_note
@@ -75,13 +76,17 @@ def show_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
         view, score = account_view(ctx, name), account_score(ctx, name)
         print(f"{name}: equity {score.equity:,.2f} {base} ({score.return_:+.2%} since start), cash {view.cash:,.2f}")
         print(f"  realised {score.realised:+,.2f}  unrealised {score.unrealised:+,.2f}  costs paid {score.costs:,.2f}"
-              f"  largest fall {score.max_fall:.1%}")
+              f"  dividends {score.dividends:,.2f}  largest fall {score.max_fall:.1%}")
         for p in view.positions:
             value = f"{p.value:,.2f}" if p.value is not None else "n/a"
             print(f"  {p.symbol:<12}{p.shares:>8} shares  cost {p.cost:>12,.2f}  value {value:>12}")
         for o in view.pending:
             note = f" ({o.note})" if o.note else ""
             print(f"  pending {o.side} {o.symbol}, {_size(o, base)}, placed {o.placed_on.isoformat()}{note}")
+        for c in dividend_credits(ctx, name):
+            when = c.pay_date.isoformat() + ("" if c.pay_known else " (assumed)")
+            print(f"  dividend {c.symbol} paid {when}, ex {c.ex_date.isoformat()}: {c.shares} x {c.amount:g} {c.currency}"
+                  f" = {c.cash:,.2f} {base}")
     return 0
 
 

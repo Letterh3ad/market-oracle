@@ -14,7 +14,9 @@ from oracle.services import replay_account
 from oracle.services.context import open_context
 from oracle.services import replay_score
 from oracle.services.replay_score import replay_report, score_study
+from oracle.market.dividends import Dividend
 from oracle.store.bars import BarRepo
+from oracle.store.dividends import DividendRepo
 from oracle.store.fx import FxRepo
 from oracle.store.universe import UniverseRepo
 from oracle.store.meta import MetaRepo
@@ -443,7 +445,27 @@ def test_acwi_and_spy_held_lead_the_account_and_a_missing_one_is_named(ctx):
     make_study(ctx, all_buy())
     account = replay_report(ctx).account
     index, spy = account.lines[:2]
-    assert (index.name, index.label, spy.name, spy.label) == ("index", "Index (ACWI)", "spy", "SPY")
+    assert (index.name, index.label, spy.name, spy.label) == ("index", "Index (ACWI) price only", "spy",
+                                                              "SPY price only")
     assert index.return_ > 0 and (index.trades, index.costs) == (0, 0.0) and spy.points == ()
     assert any(n.startswith("No stored SPY prices") for n in account.notes)
-    assert lines(account)["buy_and_hold"].label == "Buy and hold (today's list)"
+    assert lines(account)["buy_and_hold"].label == "Buy and hold (today's list) price only"
+
+
+def test_held_lines_reinvest_stored_dividends_in_their_own_currency(ctx):
+    flat = path(lambda day: 0.0)
+    store(ctx, "ACWI", flat)
+    for s in SYMBOLS:
+        store(ctx, s, flat)
+    ex = date(2026, 7, 1)
+    for s in ("ACWI", *SYMBOLS):
+        first, last = BarRepo(ctx.conn).span([s])
+        DividendRepo(ctx.conn).upsert(s, [Dividend(ex, 2.0, "USD")], "yahoo", "t")
+        DividendRepo(ctx.conn).cover(s, first, last)
+    make_study(ctx, all_buy())
+    account = replay_report(ctx).account
+    index, held = account.lines[0], lines(account)["buy_and_hold"]
+    assert index.label == "Index (ACWI) total return"
+    assert index.return_ == pytest.approx(2.0 / flat[ex])
+    assert held.label == "Buy and hold (today's list) total return" and "reinvested" in held.caption
+    assert held.return_ > 0.015, "the dividend outweighs the costs on flat prices"

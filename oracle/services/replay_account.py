@@ -21,7 +21,9 @@ from oracle.broker.regime import LABEL_SCORES, DatedScores
 from oracle.broker.rules import Lean, Rules
 from oracle.market.bars import Bar, major_unit
 from oracle.services.context import AppContext
-from oracle.services.index_service import INDEX_LINES, index_caption, index_closes, index_equity, index_missing
+from oracle.services.dividends_service import TotalReturn, held_kind, held_note, reinvested
+from oracle.services.index_service import (INDEX_LINES, index_caption, index_closes, index_equity, index_label,
+                                           index_missing)
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar
 from oracle.services.regime_lines import LINE_LABELS, RegimeLine, regime_lines
@@ -104,12 +106,13 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
 
     ai = run(_verdicts(calls, max_age))
     regime = regime or regime_lines(ctx, start, end, rules, rows, regime_verdicts(calls))
-    held, held_costs, entered = _buy_and_hold(rows, first, venues, start, capital)
+    held_rows, returned = _reinvested_rows(ctx, history, rates, rows)
+    held, held_costs, entered = _buy_and_hold(held_rows, first, venues, start, capital)
     n, unjudged = len(rows), [s for s in rows if not calls.get(s)]
     indexes = index_closes(ctx, end, local=True)
     lines = (
-        *(Line(name, index_caption(symbol, label, start) + " In its own currency, as every line here is.",
-               _returns(e, capital), max_fall(e), 0, 0.0, label)
+        *(Line(name, index_caption(symbol, label, start, indexes) + " In its own currency, as every line here is.",
+               _returns(e, capital), max_fall(e), 0, 0.0, index_label(label, indexes, symbol))
           for name, symbol, label in INDEX_LINES for e in [index_equity(indexes, symbol, start, end, capital)]),
         line("ai", "The replay verdicts, traded under the AI account's rules, risk sizes and costs.", ai),
         line("all_buy", "Every verdict a buy: the same replays and rules, each verdict taken as a buy at its "
@@ -118,8 +121,9 @@ def simulate(ctx: AppContext, history: Mapping[str, Sequence[Bar]], first: Mappi
              "Every verdict a buy"),
         Line("buy_and_hold", f"Buy and hold (survivorship: today's picks): equal amounts of the {n} "
                              f"listing{'' if n == 1 else 's'}, bought at the first close after the first as-of day, "
-                             "paying the same costs, and never sold.",
-             _returns(held, capital), max_fall(held), entered, held_costs, "Buy and hold (today's list)"),
+                             f"paying the same costs, and never sold, {held_note(returned)}.",
+             _returns(held, capital), max_fall(held), entered, held_costs,
+             f"Buy and hold (today's list) {held_kind(returned)}"),
         *(line(name, caption, run(lean), label) for name, make in BASELINES.items()
           for label, caption, lean in [make({s: [p.bar for p in r] for s, r in rows.items()}, rules)]),
         *(line(name, x.caption, x.run(rows, start, end, rules=rules, risk=risk, **fills), LINE_LABELS[name]) for name, x in regime.items()))
@@ -233,21 +237,41 @@ def _rates(ctx: AppContext, history: Mapping[str, Sequence[Bar]], start: date) -
     return out, unrated
 
 
-def _priced(bars: Sequence[Bar], rate: float) -> list[ConvertedBar]:
-    """In the major currency unit, on adjusted closes when every bar has one."""
-    adjusted = all(b.adj_close is not None and b.adj_close > 0 for b in bars)
+def _priced(bars: Sequence[Bar], rate: float, adjusted: bool | None = None) -> list[ConvertedBar]:
+    """In the major currency unit, on adjusted closes when every bar has one (or as `adjusted` says)."""
+    if adjusted is None:
+        adjusted = all(b.adj_close is not None and b.adj_close > 0 for b in bars)
 
     def scaled(b: Bar) -> Bar:
         currency, units = major_unit(b.currency)
-        k = (b.adj_close / b.close if adjusted else 1.0) / units
-
-        def by(v: float | None) -> float | None:
-            return v * k if v is not None else None
-
-        return replace(b, open=by(b.open), high=by(b.high), low=by(b.low), close=b.close * k, adj_close=b.close * k,
-                       currency=currency)
+        return replace(_scaled(b, (b.adj_close / b.close if adjusted else 1.0) / units), currency=currency)
 
     return [ConvertedBar(s, rate, s.close / rate) for s in map(scaled, bars)]
+
+
+def _scaled(b: Bar, k: float) -> Bar:
+    def by(v: float | None) -> float | None:
+        return v * k if v is not None else None
+
+    return replace(b, open=by(b.open), high=by(b.high), low=by(b.low), close=b.close * k, adj_close=b.close * k)
+
+
+def _reinvested_rows(ctx: AppContext, history: Mapping[str, Sequence[Bar]], rates: Mapping[str, float],
+                     rows: Mapping[str, Sequence[ConvertedBar]]
+                     ) -> tuple[dict[str, Sequence[ConvertedBar]], dict[str, TotalReturn]]:
+    """Buy and hold's prices: plain closes with the stored dividends reinvested, every price of a
+    day scaled alike so a buy pays what the line then values. A listing whose dividends were never
+    fetched keeps the traded lines' prices (adjusted closes carry the dividends inside one fetch)."""
+    out, returned = {}, {}
+    for s, bars in history.items():
+        plain = _priced(bars, rates[s], adjusted=False)
+        tr = returned[s] = reinvested(ctx, s, plain, local=True)
+        if not tr.covered:
+            out[s] = rows[s]
+            continue
+        out[s] = [ConvertedBar(b, rates[s], b.close / rates[s])
+                  for p, (_, c) in zip(plain, tr.closes) for b in [_scaled(p.bar, c / p.bar.close)]]
+    return out, returned
 
 
 def _entry(rows: Sequence[ConvertedBar], first: date) -> ConvertedBar | None:

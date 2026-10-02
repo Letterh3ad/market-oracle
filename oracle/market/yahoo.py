@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timezone
 from urllib.parse import quote
 
 from oracle.market import sources
 from oracle.market.bars import Bar, local_date, major_unit
+from oracle.market.dividends import Dividend
 from oracle.market.sources import Instrument, NoData, SourceFailed
 from oracle.net.client import RateLimitedClient
 
@@ -32,8 +33,9 @@ class YahooPrices:
         return (await self.daily_chart(instrument, since, now)).bars
 
     async def daily_chart(self, instrument: Instrument, since: date | None, now: datetime) -> Chart:
-        """The bars with what the chart says the symbol is: its instrument type and first trade day."""
-        params = {"interval": "1d", "includeAdjustedClose": "true"}
+        """The bars with what the chart says the symbol is: its instrument type and first trade day,
+        and its cash dividends in the same window."""
+        params = {"interval": "1d", "includeAdjustedClose": "true", "events": "div"}
         if since is None:
             params["range"] = f"{sources.HISTORY_YEARS}y"
         else:
@@ -46,7 +48,16 @@ class YahooPrices:
         first = meta.get("firstTradeDate")
         tz = meta.get("exchangeTimezoneName") or "UTC"
         return Chart(_parse(instrument.symbol, body), meta.get("instrumentType"), meta.get("currency"),
-                     local_date(first, tz) if isinstance(first, (int, float)) else None)
+                     local_date(first, tz) if isinstance(first, (int, float)) else None, _dividends(body))
+
+    async def dividends(self, instrument: Instrument, since: date, now: datetime) -> list[Dividend]:
+        """Cash dividends with an ex-date from `since`, without the bars (monthly, so a small answer)."""
+        params = {"interval": "1mo", "events": "div", "period1": str(_epoch(since)), "period2": str(int(now.timestamp()))}
+        url = CHART_URL.format(symbol=quote(instrument.symbol, safe=""))
+        resp = await sources.get(self._client, SOURCE, url, params)
+        if not resp.json()["chart"]["result"]:
+            raise NoData("no data")
+        return _dividends(resp.json())
 
 
     async def splits(self, instrument: Instrument, since: date, now: datetime) -> list[tuple[date, float]]:
@@ -79,6 +90,8 @@ class Chart:
     currency: str | None
     first_trade: date | None
     """The first day the symbol's current instrument traded, when Yahoo says."""
+    dividends: list[Dividend] = field(default_factory=list)
+    """Ex-dates in the chart's window, oldest first."""
 
 
 def _parse(symbol: str, body: dict) -> list[Bar]:
@@ -107,6 +120,27 @@ def _parse(symbol: str, body: dict) -> list[Bar]:
             currency=currency, source=SOURCE,
         ))
     return bars
+
+
+def _dividends(body: dict) -> list[Dividend]:
+    """The chart's dividend events (Yahoo's `date` is the ex-date), in the major unit of its
+    quoted currency. Checked 2026-10-02 for London lines: VWRL.L's and VUSA.L's yearly sums match
+    the sterling distributions justETF lists (VUSA.L 2022-2025: 0.85, 0.89, 0.90, 0.92 GBP), and
+    HSBA.L's are HSBC's dollar dividends converted to pence, so they are in the quoted currency."""
+    r = (body["chart"]["result"] or [{}])[0]
+    meta = r.get("meta") or {}
+    currency, per_unit = major_unit(meta.get("currency") or "")
+    tz = meta.get("exchangeTimezoneName") or "UTC"
+    out = {}
+    for e in ((r.get("events") or {}).get("dividends") or {}).values():
+        try:
+            amount = float(e["amount"])
+            if amount > 0:
+                day = local_date(e["date"], tz)
+                out[day] = out.get(day, 0.0) + amount / per_unit
+        except (KeyError, TypeError, ValueError):
+            continue
+    return [Dividend(d, a, currency) for d, a in sorted(out.items())]
 
 
 def _epoch(day: date) -> int:

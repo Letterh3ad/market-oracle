@@ -8,7 +8,9 @@ from oracle.config import PRICE_SOURCES
 from oracle.market import registry
 from oracle.market.bars import Bar
 from oracle.market.fx import RateSeries
-from oracle.market.sources import REFETCH_OVERLAP, AllFailed, Instrument, first_success
+from oracle.market.dividends import Dividend
+from oracle.market.sources import HISTORY, REFETCH_OVERLAP, AllFailed, Instrument, NoData, SourceFailed, first_success
+from oracle.market.yahoo import YahooPrices
 from oracle.net.client import RateLimitedClient
 from oracle.services.context import AppContext
 from oracle.services.errors import PriceUnavailable, UnknownSymbol
@@ -18,6 +20,7 @@ from oracle.services.jobs_service import single_flight
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.dividends import DividendRepo
 from oracle.store.fx import FxRepo
 from oracle.store.health import HealthRepo, ListingHealth
 from oracle.store.paper import PaperRepo
@@ -248,9 +251,9 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str, since
     instrument = Instrument(listing.symbol, listing.currency)
     now = ctx.clock.utcnow()
     try:
-        bars, source = await first_success(
+        fetched, source = await first_success(
             registry.price_sources(ctx.config.prices.sources, client, ctx.config.keys),
-            lambda s: s.daily_bars(instrument, since, now),
+            lambda s: _fetch(s, instrument, since, now),
             # The window starts before the last stored bar, so a source still serving the
             # listing always returns at least that bar: empty means it has lost it.
             empty_is_no_data=True,
@@ -263,8 +266,54 @@ async def _update(ctx: AppContext, client: RateLimitedClient, symbol: str, since
     health = HealthRepo(ctx.conn)
     if health.clear(listing.symbol):
         UniverseRepo(ctx.conn).repick_primary(listing.company_key, health.dead_symbols())
-    added = repo.upsert(bars, to_utc_iso(now))
+    added = repo.upsert(fetched.bars, to_utc_iso(now))
+    await _store_dividends(ctx, client, instrument, fetched.dividends, since, now)
     return PriceUpdate(listing.symbol, added, repo.last_date(listing.symbol), source)
+
+
+@dataclass(frozen=True)
+class _Fetched:
+    bars: list[Bar]
+    dividends: list[Dividend] | None
+    """None from a source that does not give them."""
+
+    def __bool__(self) -> bool:
+        return bool(self.bars)
+
+
+async def _fetch(source, instrument: Instrument, since: date | None, now) -> _Fetched:
+    if isinstance(source, YahooPrices):
+        chart = await source.daily_chart(instrument, since, now)
+        return _Fetched(chart.bars, chart.dividends)
+    return _Fetched(await source.daily_bars(instrument, since, now), None)
+
+
+async def _store_dividends(ctx: AppContext, client: RateLimitedClient, instrument: Instrument,
+                           found: list[Dividend] | None, since: date | None, now) -> None:
+    """Keep the window's dividends and the days they cover. Once the covered days stop short of
+    the first stored bar (a listing priced before dividends were kept, a refetch from a later
+    day, or a source without them), Yahoo is asked for every dividend from that bar, once. A
+    failure there is left for the next update: the prices still count."""
+    symbol, today, repo = instrument.symbol, now.date(), DividendRepo(ctx.conn)
+    stamp = to_utc_iso(now)
+    if found is not None:
+        window = since or today - HISTORY
+        repo.replace(symbol, found, window, today, "yahoo", stamp)
+        repo.cover(symbol, window, today)
+    first = (BarRepo(ctx.conn).span([symbol]) or (today, today))[0]
+    span = repo.span(symbol)
+    if span is not None and span[0] <= first and span[1] >= today:
+        return
+    if "yahoo" not in ctx.config.prices.sources:
+        return
+    # Only the days not yet asked: the whole history once, then (bars from EODHD) the tail since the last ask.
+    ask = first if span is None or span[0] > first else span[1]
+    try:
+        topped = await YahooPrices(client).dividends(instrument, ask, now)
+    except (NoData, SourceFailed, KeyError, IndexError, TypeError, ValueError):
+        return
+    repo.replace(symbol, topped, ask, today, "yahoo", stamp)
+    repo.cover(symbol, ask, today, replace=ask == first)
 
 
 def _note_no_data(ctx: AppContext, listing: Resolved, day: date) -> None:

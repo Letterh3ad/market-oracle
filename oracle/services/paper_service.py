@@ -4,13 +4,15 @@ pessimistic costs."""
 from __future__ import annotations
 
 import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from oracle.broker.backtest import LeanCap
 from oracle.broker import core_sat
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
-from oracle.broker.fills import Fill, buy_fill, costs_for, sell_fill
+from oracle.broker.dividends import Changes, Credit, Payout, credits, owed
+from oracle.broker.fills import COSTS, Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
 from oracle.market.fx import RateSeries, pick_rate
@@ -18,11 +20,14 @@ from oracle.research.trace import UNVALIDATED
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownSymbol
 from oracle.services.never_list import never_company, refuse_never
-from oracle.services.prices_service import benchmark_history_in_base, price_history_in_base
+from oracle.services.dividends_service import (PRICE_ONLY, REINVESTED, TotalReturn, held_kind, held_note, reinvested,
+                                               total_return_closes)
+from oracle.services.prices_service import price_history_in_base
 from oracle.services.universe_service import resolve_symbol
 from oracle.services.watch_service import discovered_only, own_picks
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
+from oracle.store.dividends import DividendRepo, PaperDividend, PaperDividendRepo
 from oracle.store.fx import FxRepo
 from oracle.store.leans import LeanRepo
 from oracle.store.paper import DecisionRepo, EquityRepo, FillRow, LoggedDecision, Order, PaperRepo
@@ -37,7 +42,8 @@ __all__ = [
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
-    "comparison", "decision_log", "discovered_off", "equity_history", "fill_pending", "held_since",
+    "PaperDividend", "comparison", "credit_dividends", "decision_log", "discovered_off", "dividend_credits",
+    "equity_history", "fill_pending", "held_since",
     "pending_orders", "place_buy", "place_sell", "sells", "step_account", "verdict_history",
     "strategy_rules", "strategy_step", "traded_by",
 ]
@@ -104,6 +110,9 @@ class AccountView:
     rate_sources: tuple[str, ...] = ()
     """Where the rates behind its figures came from (position values and past fills), for
     attribution."""
+    receivable: float = 0.0
+    """Dividends gone ex but not yet paid, base currency at today's rate after the FX spread:
+    equity, not spendable cash."""
 
     @property
     def holdings(self) -> float:
@@ -112,7 +121,7 @@ class AccountView:
 
     @property
     def equity(self) -> float:
-        return self.cash + self.holdings
+        return self.cash + self.holdings + self.receivable
 
 
 @dataclass(frozen=True)
@@ -127,6 +136,8 @@ class AccountScore:
     """Fees, stamp duty, FX spread and slippage paid, base currency."""
     max_fall: float
     """Largest fall from a peak in the daily equity record, as a negative ratio."""
+    dividends: float = 0.0
+    """Cash dividends credited, base currency."""
 
     @property
     def return_(self) -> float:
@@ -414,8 +425,71 @@ def fill_pending(ctx: AppContext) -> list[FillOutcome]:
         outcome = _try_fill(ctx, repo, order)
         if outcome is not None:
             out.append(outcome)
+    credit_dividends(ctx)
     _record_equity(ctx)
     return out
+
+
+def credit_dividends(ctx: AppContext) -> list[PaperDividend]:
+    """Credit every cash dividend now paid to each acting account, by `broker.dividends.credits`
+    (the backtest engines' rule too): for the shares each order source (a sleeve, or the account)
+    held at the close before the ex-date, as cash on the pay date (or the market's assumed lag
+    after the ex-date) at that day's rate, less the FX spread. A dividend waits while no rate is
+    stored for its pay day; a frozen or switched-off account is never credited."""
+    today = ctx.clock.utcnow().date()
+    paper, repo = PaperRepo(ctx.conn), PaperDividendRepo(ctx.conn)
+    out = []
+    for account in ACCOUNTS:
+        if not account_on(ctx, account):
+            continue
+        for source in paper.fill_sources(account):
+            for symbol, c in _uncredited(ctx, account, source, today, credits):
+                p = c.payout
+                rate = _rate(ctx, p.currency, p.pay_day)
+                if rate is None:
+                    continue
+                row = PaperDividend(account, source, symbol, p.ex_date, p.pay_day, p.pay_date is not None, c.shares,
+                                    p.amount, p.currency, rate, _after_spread(ctx, c) / rate)
+                if repo.record(row):
+                    out.append(row)
+    return out
+
+
+def _receivable(ctx: AppContext, account: str, source: str | None) -> float:
+    """Dividends gone ex and not yet credited, at today's rate: owed, plus any paid but waiting for
+    its pay day's rate."""
+    today = ctx.clock.utcnow().date()
+    total = 0.0
+    for s in [source] if source else PaperRepo(ctx.conn).fill_sources(account):
+        for _, c in [*_uncredited(ctx, account, s, today, owed), *_uncredited(ctx, account, s, today, credits)]:
+            rate = _rate(ctx, c.payout.currency, today)
+            if rate is not None:
+                total += _after_spread(ctx, c) / rate
+    return total
+
+
+def _uncredited(ctx: AppContext, account: str, source: str, today: date,
+                rule: Callable[[Changes, Sequence[Payout], date], list[Credit]]) -> list[tuple[str, Credit]]:
+    """`rule`'s credits (`credits` or `owed`) for what `source` held, not already in the ledger."""
+    fills = PaperRepo(ctx.conn).fills(account, source)
+    done = PaperDividendRepo(ctx.conn).credited(account)
+    out = []
+    for symbol in sorted({f.symbol for f in fills}):
+        mine = [(f.date, f.shares if f.side == Side.BUY else -f.shares) for f in fills if f.symbol == symbol]
+        payouts = [Payout(d.ex_date, d.amount, d.currency, d.pay_date)
+                   for d in DividendRepo(ctx.conn).history(symbol, mine[0][0] + timedelta(days=1), today)
+                   if (source, symbol, d.ex_date) not in done]
+        out += [(symbol, c) for c in rule(mine, payouts, today)]
+    return out
+
+
+def _after_spread(ctx: AppContext, c: Credit) -> float:
+    return c.cash * (1 - (COSTS.fx_spread if c.payout.currency != ctx.config.base_currency else 0.0))
+
+
+def dividend_credits(ctx: AppContext, account: str) -> list[PaperDividend]:
+    """The account's dividend credits, oldest pay date first: its ledger history beside its fills."""
+    return PaperDividendRepo(ctx.conn).credits(account)
 
 
 def account_score(ctx: AppContext, account: str) -> AccountScore:
@@ -424,7 +498,8 @@ def account_score(ctx: AppContext, account: str) -> AccountScore:
     unrealised = sum(p.value - p.cost for p in view.positions if p.value is not None)
     costs = sum(_cost(f) for f in fills)
     return AccountScore(account, view.equity, ctx.config.risk.account, view.realised, unrealised, costs,
-                        max_fall(EquityRepo(ctx.conn).history(account)))
+                        max_fall(EquityRepo(ctx.conn).history(account)),
+                        sum(c.cash for c in dividend_credits(ctx, account)))
 
 
 def _cost(f: FillRow) -> float:
@@ -469,21 +544,22 @@ def comparison(ctx: AppContext) -> Comparison:
     if start is None:
         notes = ("The AI account has no history yet: each account is shown from its own first record, and buy and "
                  "hold starts once the AI account has one.", NOT_VALIDATED)
-        lines.append(Line("buy_and_hold", "Buy and hold: starts with the AI account.", (), 0.0, 0, 0.0))
+        lines.append(Line("buy_and_hold", "Buy and hold (total return): starts with the AI account.", (), 0.0, 0, 0.0))
         lines += [_benchmark_line(ctx, s, None) for s in ctx.config.compare.benchmarks]
         return Comparison(None, tuple(lines), (), notes)
-    closes = {}
+    returned: dict[str, TotalReturn] = {}
     for symbol in own_picks(ctx):
         try:
-            closes[symbol] = [(c.bar.date, c.close_base) for c in price_history_in_base(ctx, symbol)]
+            returned[symbol] = reinvested(ctx, symbol, price_history_in_base(ctx, symbol))
         except UnknownSymbol:
-            closes[symbol] = []
-    held, left_out = buy_and_hold(closes, start, ctx.config.risk.account)
-    n = len(closes) - len(left_out)
-    lines.append(Line("buy_and_hold", f"Buy and hold: equal amounts of the {n} listing{'' if n == 1 else 's'} "
-                                      f"watched today, bought at the first close from {start.isoformat()} and never "
-                                      "sold, with no costs.",
-                      tuple(returns_since(held, start)), max_fall(held), 0, 0.0))
+            returned[symbol] = TotalReturn([], True, 0)
+    held, left_out = buy_and_hold({s: r.closes for s, r in returned.items()}, start, ctx.config.risk.account)
+    n = len(returned) - len(left_out)
+    lines.append(Line("buy_and_hold", f"Buy and hold ({held_kind(returned)}): equal amounts of the {n} "
+                                      f"listing{'' if n == 1 else 's'} watched today, bought at the first close from "
+                                      f"{start.isoformat()} and never sold, with no costs, {held_note(returned)}.",
+                      tuple(returns_since(held, start)), max_fall(held), 0, 0.0,
+                      f"Buy and hold (today's list) {held_kind(returned)}"))
     lines += [_benchmark_line(ctx, s, start) for s in ctx.config.compare.benchmarks]
     notes = [f"Each line is the return since {start.isoformat()}, the day the AI account started.", NOT_VALIDATED]
     if left_out:
@@ -498,25 +574,27 @@ def _benchmark_line(ctx: AppContext, symbol: str, start: date | None) -> Line:
     """Holding `symbol` from `start`, no costs: its own line, independent of the watchlist
     and never traded. `start` None (the AI account has no history yet) is an empty line, like
     every other line in that state."""
-    label = _benchmark_label(ctx, symbol)
+    tr = total_return_closes(ctx, symbol)
+    label = f"{_benchmark_label(ctx, symbol)} {tr.kind}"
     if start is None:
-        return Line(symbol, _benchmark_caption(symbol, None), (), 0.0, 0, 0.0, label)
-    closes = [(c.bar.date, c.close_base) for c in benchmark_history_in_base(ctx, symbol)]
-    usable = [(d, c) for d, c in closes if d >= start and c is not None]
-    points = tuple(benchmark_return(closes, start))
-    return Line(symbol, _benchmark_caption(symbol, start), points, max_fall(usable), 0, 0.0, label)
+        return Line(symbol, _benchmark_caption(symbol, None, tr), (), 0.0, 0, 0.0, label)
+    usable = [(d, c) for d, c in tr.closes if d >= start and c is not None]
+    points = tuple(benchmark_return(tr.closes, start))
+    return Line(symbol, _benchmark_caption(symbol, start, tr), points, max_fall(usable), 0, 0.0, label)
 
 
 def _benchmark_label(ctx: AppContext, symbol: str) -> str:
-    found = UniverseRepo(ctx.conn).resolve(symbol)
-    return found.name if found else BENCHMARK_LABELS.get(symbol, symbol)
+    """The listing's own name: a fund's share classes share a company, and the company's name is
+    its primary class's (VWRL.L, distributing, would read as VWRP.L's "USD Accumulation")."""
+    return UniverseRepo(ctx.conn).listing_name(symbol) or BENCHMARK_LABELS.get(symbol, symbol)
 
 
-def _benchmark_caption(symbol: str, start: date | None) -> str:
+def _benchmark_caption(symbol: str, start: date | None, tr: TotalReturn) -> str:
+    kind = REINVESTED if tr.covered else f"{PRICE_ONLY} (its dividends are not fetched yet)"
     if start is None:
-        return f"Holding {symbol} from the AI account's start."
+        return f"Holding {symbol} from the AI account's start, {kind}."
     where = BENCHMARK_DESCRIPTIONS.get(symbol)
-    return f"Holding {symbol}{f' ({where})' if where else ''} from {start.isoformat()}, no costs."
+    return f"Holding {symbol}{f' ({where})' if where else ''} from {start.isoformat()}, no costs, {kind}."
 
 
 def _account_line(ctx: AppContext, name: str, history: list[tuple], start: date | None) -> Line:
@@ -545,7 +623,8 @@ def _record_equity(ctx: AppContext) -> None:
         if not account_on(ctx, account):
             continue
         view = account_view(ctx, account)
-        EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings)
+        # Stored with the holdings: the table has no receivable column, and history reads cash + holdings.
+        EquityRepo(ctx.conn).record(account, today, view.cash, view.holdings + view.receivable)
 
 
 def frozen(account: str) -> bool:
@@ -591,9 +670,11 @@ def account_view(ctx: AppContext, account: str, sleeve: Sleeve | None = None) ->
     held, realised = _replay(repo, account, source)
     positions, sources = _positions(ctx, held)
     sources |= _fill_rate_sources(ctx, repo, account)
-    cash = sleeve.capital + sum(f.cash for f in repo.fills(account, source)) if sleeve else _cash(ctx, repo, account)
+    cash = (sleeve.capital + sum(f.cash for f in repo.fills(account, source))
+            + sum(c.cash for c in PaperDividendRepo(ctx.conn).credits(account, source))
+            if sleeve else _cash(ctx, repo, account))
     return AccountView(account, cash, tuple(positions), tuple(sleeve_orders(repo.pending(account), sleeve)),
-                       realised, tuple(sorted(sources)))
+                       realised, tuple(sorted(sources)), _receivable(ctx, account, source))
 
 
 def _try_fill(ctx: AppContext, repo: PaperRepo, order: Order) -> FillOutcome | None:
@@ -678,7 +759,8 @@ def _fill_rate_sources(ctx: AppContext, repo: PaperRepo, account: str) -> set[st
 
 
 def _cash(ctx: AppContext, repo: PaperRepo, account: str) -> float:
-    return ctx.config.risk.account + sum(f.cash for f in repo.fills(account))
+    return (ctx.config.risk.account + sum(f.cash for f in repo.fills(account))
+            + sum(c.cash for c in PaperDividendRepo(ctx.conn).credits(account)))
 
 
 def _held_shares(repo: PaperRepo, account: str, symbol: str) -> int:

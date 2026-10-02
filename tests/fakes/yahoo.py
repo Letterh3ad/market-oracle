@@ -44,6 +44,11 @@ class FakeYahoo:
         self.profiled: list[str] = []
         self.splits: dict[str, list[tuple[date, float, float]]] = {}
         """symbol -> (day, numerator, denominator), sent as the chart's split events."""
+        self.dividends: dict[str, list[tuple[date, float]]] = {}
+        """symbol -> (ex-date, amount in the quoted unit), sent as the chart's dividend events when asked
+        for (events=div), within period1..period2 like the real one."""
+        self.charts: list[tuple[str, dict]] = []
+        """(symbol, query params) of every chart request."""
 
     def add(self, symbol: str, currency: str | None, tz: str, bars: list[tuple], open_at: time = time(9, 30),
             kind: str = "EQUITY", first_trade: date | None = None) -> None:
@@ -76,6 +81,7 @@ class FakeYahoo:
         if not request.url.path.startswith(prefix):
             return httpx.Response(404)
         symbol = request.url.path.removeprefix(prefix)
+        self.charts.append((symbol, dict(request.url.params)))
         if symbol in self.fail:
             return httpx.Response(self.fail[symbol])
         s = self.series.get(symbol)
@@ -100,10 +106,20 @@ class FakeYahoo:
                 }],
                 "adjclose": [{"adjclose": [b[5] for _, b in stamps]}],
             },
-            **({"events": {"splits": {str(self._stamp(d, s)): {"date": self._stamp(d, s), "numerator": n,
-                                                                "denominator": m, "splitRatio": f"{n}:{m}"}
-                                      for d, n, m in self.splits[symbol]}}} if symbol in self.splits else {}),
+            **self._events(request, symbol, s),
         }]}})
+
+    def _events(self, request: httpx.Request, symbol: str, s: Series) -> dict:
+        events = {}
+        if symbol in self.splits:
+            events["splits"] = {str(self._stamp(d, s)): {"date": self._stamp(d, s), "numerator": n, "denominator": m,
+                                                         "splitRatio": f"{n}:{m}"} for d, n, m in self.splits[symbol]}
+        asked = request.url.params.get("events", "").split(",")
+        p1, p2 = int(request.url.params.get("period1", 0)), int(request.url.params.get("period2", 2**40))
+        divs = [(self._stamp(d, s), a) for d, a in self.dividends.get(symbol, ())]
+        if "div" in asked and (kept := [(t, a) for t, a in divs if p1 <= t < p2]):
+            events["dividends"] = {str(t): {"amount": a, "date": t} for t, a in kept}
+        return {"events": events} if events else {}
 
     def _summary(self, request: httpx.Request) -> httpx.Response:
         unauthorised = httpx.Response(401, json={"finance": {"result": None, "error": {

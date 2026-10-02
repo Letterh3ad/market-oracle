@@ -167,9 +167,9 @@ def test_report_prints_the_account_against_buy_and_hold(cfg, capsys, tmp_path, n
     out = capsys.readouterr().out
     assert "Account: the verdicts traded as the AI account would, 2025-06-02 to 2025-12-31, 2 listings" in out
     # Two months of bars before the study are too few for a risk size, so nothing is bought.
-    assert "costs (GBP)" in out and "  AI                    +0.00%          +0.00%       0          0.00" in out
-    assert "  Every verdict a buy   +0.00%" in out
-    assert "  Buy and hold          +5.08%          -0.40%       2      3,994.01" in out  # +5.5% less entry costs
+    assert "costs (GBP)" in out and "  AI" + " " * 38 + "  +0.00%          +0.00%       0          0.00" in out
+    assert "  Every verdict a buy" + " " * 21 + "  +0.00%" in out
+    assert "  Buy and hold (today's list) price only    +5.08%          -0.40%       2      3,994.01" in out  # +5.5% less entry costs
     assert "returns stay in its own currency" in out and "0.5% stamp duty on LSE buys" in out
 
 
@@ -219,8 +219,9 @@ def test_report_splits_the_headline_numbers_by_size(cfg, capsys, tmp_path, no_fe
     assert "    All                  3     67%       56%      100%           56%          +6.67%" in out
     assert "    Large                2    100%      100%      100%          100%         +10.00%" in out
     assert "    Mid/small            1      0%      100%      100%          100%" in out
-    assert "  Account return    Index (ACWI)       SPY        AI  Every verdict a buy  Buy and hold" in out
-    assert "    +0.00%               +0.00%       +20.52%" in out
+    assert ("  Account return    Index (ACWI) price only  SPY price only        AI  Every verdict a buy  "
+            "Buy and hold (today's list) price only") in out
+    assert "    +0.00%               +0.00%                                 +20.52%" in out
     replay(cfg, "report", "--json")
     body = json.loads(capsys.readouterr().out)
     assert [z["size"] for z in body["by_size"]] == ["large", "mid-small"]

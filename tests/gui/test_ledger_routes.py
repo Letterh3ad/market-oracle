@@ -17,6 +17,7 @@ async def test_every_account_starts_level_side_by_side(loaded):
     for a in body["accounts"]:
         assert (a["equity"], a["start"], a["return"], a["cash"]) == (10_000.0, 10_000.0, 0.0, 10_000.0)
         assert (a["positions"], a["pending"], a["sells"], a["history"]) == ([], [], [], [])
+        assert (a["dividends"], a["dividends_total"], a["receivable"]) == ([], 0, 0)
     assert body["discovery"].startswith("Discovery: 0 discovered companies, traded by the AI account")
 
 
@@ -107,7 +108,8 @@ async def test_the_comparison_waits_for_the_ai_account_history(loaded):
         ("index", [], None), ("strategy", [], None), ("ai", [], None), ("manual", [], None), ("regime", [], None), ("regime-ai", [], None),
         ("regime-v2", [], None), ("core-sat", [], None), ("laya", [], None), ("buy_and_hold", [], None),
         ("VWRL.L", [], None), ("VUSA.L", [], None)]
-    assert [line["label"] for line in compare["lines"][-2:]] == ["World (VWRL.L)", "S&P 500 (VUSA.L)"]
+    assert [line["label"] for line in compare["lines"][-2:]] == ["World (VWRL.L) price only",
+                                                                 "S&P 500 (VUSA.L) price only"]
 
 
 async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, yahoo, clock):
@@ -125,7 +127,8 @@ async def test_the_comparison_charts_every_line_from_the_ai_start(ctx, priced, y
     lines = {line["name"]: line for line in compare["lines"]}
     assert lines["ai"]["points"] == [["2026-09-23", 0.0], ["2026-09-24", 0.0]] and lines["ai"]["return"] == 0.0
     assert lines["buy_and_hold"]["points"] == [["2026-09-23", 0.0]]
-    assert lines["buy_and_hold"]["caption"].startswith("Buy and hold: equal amounts of the 1 listing")
+    assert lines["buy_and_hold"]["caption"].startswith("Buy and hold (total return): equal amounts of the 1 listing")
+    assert lines["buy_and_hold"]["label"] == "Buy and hold (today's list) total return"
     assert all({"max_fall", "trades", "costs"} <= set(line) for line in compare["lines"])
 
 
@@ -145,7 +148,8 @@ async def test_the_comparison_prices_and_includes_a_configured_benchmark_never_w
     # Its own first close on or after the AI account's start (2026-09-23): the 09-22 bar
     # predates it and is dropped, so the line starts flat with nothing later to move it yet.
     assert ko["points"] == [["2026-09-23", 0.0]]
-    assert ko["caption"] == "Holding KO from 2026-09-23, no costs."
+    assert ko["caption"] == "Holding KO from 2026-09-23, no costs, dividends reinvested at each ex-date's close."
+    assert ko["label"] == "The Coca-Cola Company total return"
     watched = {i["symbol"] for i in (await priced.get("/api/watchlists/main")).json()["items"]}
     assert "KO" not in watched
 
