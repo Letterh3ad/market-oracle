@@ -90,7 +90,7 @@ function walkForward(r) {
 
 function backtestSection() {
   let started = false;
-  let chart = null;
+  let compareCtl = null;
   let shown = null; // id of the run on screen
   const note = el("div", { class: "form-note" });
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
@@ -197,7 +197,8 @@ function backtestSection() {
     if (shown !== id) return; // another run was picked meanwhile
     const base = r.base_currency;
     const n = r.listings.length;
-    const lines = compareLines(r.lines, base, "Too few days to draw a chart: pick a longer stretch.");
+    const lines = compareLines(r.lines, base, "Too few days to draw a chart: pick a longer stretch.",
+      `oracle.compare.backtest.${id}`);
     repaint(result, [
       el("h3", null, `The ${r.watchlist} list, ${r.start} to ${r.end}`),
       el("p", { class: "dim small" }, `${n} listing${n === 1 ? "" : "s"}. Fills ${r.slippage_bps} basis points worse `
@@ -211,8 +212,9 @@ function backtestSection() {
         ...r.notes.map((text) => el("li", null, text))),
       el("details", null, el("summary", null, `Trades (${r.trades.length})`), trades(r)),
     ], () => {
-      chart?.remove();
-      chart = lines.draw();
+      compareCtl?.destroy();
+      compareCtl = lines;
+      lines.draw();
     });
   }
 

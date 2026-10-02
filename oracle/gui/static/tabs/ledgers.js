@@ -17,6 +17,7 @@ import { tip, tipText } from "../lib/tip.js";
 import { busyButton, runJob, sendJson } from "../lib/ui.js";
 
 let charts = [];
+let compareCtl = null; // the comparison chart's controller, kept across repaints so its own chart gets destroyed
 let pane = null;
 let root = null; // this tab's container: a late answer repaints only while it is on screen
 let loads = 0; // only the newest load paints
@@ -234,7 +235,8 @@ function column(a, base, rules, ai, stale, discovery) {
 // account started.
 function comparison(c, base) {
   const lines = compareLines(c.lines, base,
-    "The comparison chart starts once the AI account has equity on two different days (Update prices records it).");
+    "The comparison chart starts once the AI account has equity on two different days (Update prices records it).",
+    "oracle.compare.ledgers");
   const card = el("div", { class: "card" },
     el("h2", null, "Since the AI account started"),
     ...c.notes.map((n) => el("p", { class: "dim small" }, n)),
@@ -369,8 +371,9 @@ async function load(mine) {
     replay.node,
   ], () => {
     drawCharts(body.accounts);
-    const chart = compared.draw();
-    if (chart) charts.push(chart);
+    compareCtl?.destroy();
+    compareCtl = compared;
+    compared.draw();
     backtest.start();
     signalTests.start();
     layaTest.start();

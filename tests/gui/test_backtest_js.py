@@ -31,6 +31,16 @@ class Node {
   set textContent(t) { this._text = t; this.children = []; }
   get textContent() { return this._text ?? this.children.map((c) => typeof c === "string" ? c : c.textContent).join(""); }
   all(pred) { return [...(pred(this) ? [this] : []), ...this.children.flatMap((c) => c.all ? c.all(pred) : [])]; }
+  get classList() {
+    const self = this;
+    return { toggle: (c, force) => {
+      const names = new Set(self.className.split(" ").filter(Boolean));
+      const want = force === undefined ? !names.has(c) : !!force;
+      if (want) names.add(c); else names.delete(c);
+      self.className = [...names].join(" ");
+      return want;
+    } };
+  }
 }
 globalThis.document = { createElement: (tag) => new Node(tag), createTextNode: (text) => ({ textContent: text }),
   activeElement: null };

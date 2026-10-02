@@ -85,8 +85,14 @@ h3 { font-size: 14px; margin: 20px 0 8px; color: var(--text-dim); font-weight: 6
 .ledger { flex: 1 1 400px; min-width: 0; }
 .metrics td:first-child { padding-left: 0; }
 .equity-chart { margin: 8px 0; }
-.compare { align-items: flex-start; gap: 16px; }
-.compare-chart { flex: 2 1 400px; min-width: 0; }
+.compare { display: block; }
+.compare-chart { width: 100%; min-height: 120px; margin-bottom: 2px; }
+.compare-chart-resize { width: 100%; height: 8px; margin-bottom: 10px; cursor: ns-resize; }
+.compare-chart-resize::after { content: ""; display: block; width: 40px; height: 3px; margin: 2px auto;
+  background: var(--border); border-radius: 2px; }
+.compare-chips { margin-bottom: 4px; }
+.compare-chips .chip { cursor: pointer; }
+.compare-chips .chip.chip-off { opacity: 0.45; }
 .swatch { display: inline-block; width: 12px; height: 3px; vertical-align: middle; }
 .swatch.dashed { background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px) !important; }
 .trade { margin: 12px 0; padding-top: 8px; border-top: 1px solid var(--border); }

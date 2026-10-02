@@ -25,7 +25,7 @@ function replaySection() {
   const body = el("div");
   let report = null; // the last score fetched, and the status score it was fetched for
   let reportKey = null;
-  let chart = null;
+  let compareCtl = null;
 
   // Every press reloads the card, so it always shows what the store holds.
   const press = (label, path, payload) => busyButton(label, async () => {
@@ -240,8 +240,8 @@ function replaySection() {
   // The chart is drawn once the card is on screen, as it sizes to its box.
   function account(r) {
     const a = r?.account;
-    if (!a) return { node: el("div"), draw: () => null };
-    const lines = compareLines(a.lines, a.currency, "Too few days to draw a chart yet.");
+    if (!a) return { node: el("div"), draw: () => {}, destroy: () => {} };
+    const lines = compareLines(a.lines, a.currency, "Too few days to draw a chart yet.", "oracle.compare.replay");
     const node = el("div", null,
       el("h3", null, "Account"),
       el("p", { class: "dim small" }, `The verdicts traded as the AI account would, in memory, ${a.start} to `
@@ -279,8 +279,9 @@ function replaySection() {
       el("summary", null, "New study"),
       el("p", { class: "dim small" }, "The current study is kept; the new one takes its place here, paused."),
       createForm(r, "Create new study"))] : [createForm(r, "Create study")], () => {
-      chart?.remove();
-      chart = shown.draw();
+      compareCtl?.destroy();
+      compareCtl = shown;
+      shown.draw();
     });
   }
 

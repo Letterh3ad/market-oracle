@@ -3208,3 +3208,19 @@ A simulation of a held-still score (30 panels per case) puts the harness's mean 
 **Context:** 8-K item 1.01 showed a negative confirm drift (20 d -0.28% t -2.21) opposite to train; momentum_12_1, reversal_1m, sue and earnings_yield had positive confirm ICs under the window's observed power ("could not see").
 **Decision:** All five frozen exactly as pre-registered (1.01: 20 d CAR vs sector, expected sign negative; the four signals at their registered horizons). Scored only on decision days after 2026-10-01; judged on 2027-10-01 with the same PASS rules. Nothing built now; days before 2026-10-02 never count.
 **Alternatives:** Drop them (free to keep); a new test on past days (already seen, would be fishing).
+
+## 2026-10-02 - Shared compare chart: resizable, per-line toggles (ticket 06)
+**Context:** Spec 7: the shared compare chart (`oracle/gui/static/lib/compare.js`, used by Ledgers, the
+Backtest card and the Replay account card) goes full width above its table, resizable, with per-line
+toggle chips, height and hidden set remembered per chart in localStorage.
+**Decision:** Toggling a line adds or removes its series on the one chart instance the component already
+owns (`chart.addLineSeries`/`removeSeries`), instead of destroying and recreating the chart; this is what
+makes "rescale y to visible lines" free (the library autoscales to whatever series remain) and keeps the
+chart's identity stable across clicks. `compareLines()` no longer hands its chart object out: `draw()`
+mounts/updates it internally, and callers call `destroy()` (not `chart.remove()`) when the card's node is
+about to be replaced next redraw. All three callers (ledgers.js, backtest.js, replay.js) pass their own
+storage key (`oracle.compare.<ledgers|backtest.<id>|replay>`) so unrelated charts never share height/hidden
+state.
+**Alternatives:** Returning the live chart from `draw()` for the caller to `.remove()` itself, as before
+(rejected: an internal toggle-driven redraw could leave that reference stale, risking a double `.remove()`
+on the next generation's cleanup).
