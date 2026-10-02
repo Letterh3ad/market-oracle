@@ -179,13 +179,19 @@ def _cash_text(cash: dict[date, float]) -> str:
 
 def _notes(sessions: list[Session]) -> tuple[str, ...]:
     flat = [s.day for s in sessions if s.open is not None and s.open == s.close]
+    stale = [s.day for p, s in zip(sessions, sessions[1:]) if s.open is not None and s.open == p.close != s.close]
     out = ["A month end is a month's last stored session. Before the rule has 10 month ends it holds the index.",
            "Buy and hold carries no costs; the overlay pays only on switches, not to take its first state.",
-           "No dealing fee or platform charge here: those are the user's own (fees calculator)."]
+           "No dealing fee or platform charge here: those are the user's own (fees calculator).",
+           "Each crash span runs from the close before it, or from the window's first close when the span starts "
+           "with the window (2008 in confirm)."]
     if flat:
-        out.append(f"{len(flat)} sessions ({flat[0].year} to {flat[-1].year}) have no real open (stored open equals "
-                   "the close): a switch after one of those month ends fills at that session's close, a day late, "
+        out.append(f"{len(flat)} sessions ({flat[0]} to {flat[-1]}) have no real open (stored open equals the "
+                   "close): a switch after one of those month ends fills at that session's close, a day late, "
                    "never earlier than the data allows.")
+    if stale:
+        out.append(f"{len(stale)} sessions ({stale[0]} to {stale[-1]}) open exactly at the previous close, likely a "
+                   "stale open: a switch there fills at the previous close, missing the overnight gap.")
     return tuple(out)
 
 

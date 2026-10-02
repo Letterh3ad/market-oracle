@@ -36,7 +36,7 @@ def print_trend(t: TrendTest) -> None:
           f"{'switches':>8} {'in cash':>8}")
     for w in (t.choose, t.confirm, *t.beside):
         _window(w)
-    print("Crashes (confirm; each span from the close before it)")
+    print("Crashes (confirm; each span from the close before it, or the window's first close)")
     print(f"{'span':<8} {'period':<22} {'overlay':>9} {'b&h':>9} {'overlay fall':>12} {'b&h fall':>9} {'in cash':>8}")
     for c in t.confirm.crashes:
         print(f"{c.name:<8} {c.start} {c.end} {c.trend_return:>+9.1%} {c.held_return:>+9.1%} {c.trend_fall:>12.1%} "

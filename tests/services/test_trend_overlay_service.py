@@ -131,6 +131,24 @@ def test_nothing_kept_yet_is_none(env):
     assert trend_tests(env[0]) is None
 
 
+async def test_notes_count_opens_equal_to_the_close_and_to_the_previous_close(tmp_path):
+    days = weekdays(date(1988, 1, 4), date(2012, 12, 31))
+    rows = []
+    for i, d in enumerate(days):
+        o = level(d) if d.year < 2000 else level(days[i - 1]) if d.year == 2010 else level(d) * 0.999
+        rows.append((d, o, level(d), level(d), level(d), level(d), 0))
+    yahoo = FakeYahoo()
+    yahoo.add(SERIES.symbol, "USD", NY, rows, kind="INDEX")
+    config = Config(db_path=tmp_path / "live.db", research_db_path=tmp_path / "research.db")
+    with open_context(config, None, FakeClock(NOW), FakeWeb(yahoo).transport) as ctx:
+        t = await run_and_keep_trend(ctx)
+    same = sum(d.year < 2000 for d in days)
+    prev = sum(d.year == 2010 for d in days)
+    assert any(n.startswith(f"{same} sessions (1988-01-04 to 1999-12-31) have no real open") for n in t.notes)
+    assert any(n.startswith(f"{prev} sessions (2010-01-01 to 2010-12-31) open exactly at the previous close")
+               for n in t.notes)
+
+
 async def test_a_failed_update_is_a_note_when_days_are_stored(env):
     ctx, web = env
     await run_and_keep_trend(ctx)

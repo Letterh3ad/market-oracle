@@ -47,18 +47,31 @@ function trendSection() {
   const note = el("div", { class: "form-note" });
   const body = el("div");
   let chartsDrawn = [];
+  let started = false;
+  let loads = 0;
+  let loadFailed = false;
 
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
 
+  // Only the newest of overlapping loads (a repaint and a finished job) draws, so no chart is orphaned.
   async function load() {
+    const mine = ++loads;
     let t;
     try {
       t = (await api("/api/plan/trend")).result;
     } catch (err) {
+      if (mine !== loads) return;
+      loadFailed = true;
       say(`Could not load the trend overlay test: ${err.message}`);
       return;
     }
+    if (mine !== loads) return;
+    if (loadFailed) {
+      loadFailed = false;
+      say("", false);
+    }
     chartsDrawn.forEach((c) => c?.remove());
+    chartsDrawn = [];
     if (!t) {
       body.replaceChildren(el("p", { class: "small" }, "Not run yet: press Run trend test."));
       return;
@@ -78,10 +91,13 @@ function trendSection() {
     chartsDrawn = charts.map((draw) => draw());
   }
 
+  const state = (job) => say(el("span", null, `The trend overlay test is ${job.state}`
+    + `${job.progress ? `: ${job.progress}` : ""}. Follow it in the `, el("a", { href: "#activity" }, "Activity tab"), "."),
+  false);
+
   function follow(job) {
-    say(el("span", null, `The trend overlay test is ${job.state}${job.progress ? `: ${job.progress}` : ""}. Follow it in the `,
-      el("a", { href: "#activity" }, "Activity tab"), "."), false);
-    followJob(job, follow).then(() => say("The trend overlay test finished.", false), (err) => say(err.message))
+    state(job);
+    followJob(job, state).then(() => say("The trend overlay test finished.", false), (err) => say(err.message))
       .finally(load);
   }
 
@@ -105,7 +121,13 @@ function trendSection() {
       + "Running fetches the newest index days into the research database."),
     el("div", { class: "row" }, run), note, body);
 
-  return { node, start: load };
+  function start() {
+    if (started) return Promise.resolve();
+    started = true;
+    return load();
+  }
+
+  return { node, start, reload: load };
 }
 
 export { trendSection };

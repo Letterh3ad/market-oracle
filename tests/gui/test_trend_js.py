@@ -58,6 +58,29 @@ def test_the_card_shows_both_windows_the_crashes_and_the_verdict():
     assert verdict == ["FAIL", "down"]
 
 
+def test_start_loads_once_however_often_the_tab_repaints():
+    asked = run("""
+        section.start(); section.start(); await settle(); section.start(); await settle();
+        console.log(JSON.stringify(asked));
+    """)
+    assert asked.count("GET /api/plan/trend") == 1
+
+
+def test_a_failed_load_says_so_and_a_later_good_load_clears_it():
+    first, second = run("""
+        const good = ANSWERS["GET /api/plan/trend"];
+        ANSWERS["GET /api/plan/trend"] = { status: 500, error: "database is locked" };
+        section.start(); await settle();
+        const note = () => find(node, (n) => (n.className ?? "").includes("form-note"));
+        const bad = [note().textContent, note().className];
+        ANSWERS["GET /api/plan/trend"] = good;
+        await section.reload(); await settle();
+        console.log(JSON.stringify([bad, [note().textContent, node.textContent.includes("Verdict on confirm")]]));
+    """)
+    assert "Could not load the trend overlay test" in first[0] and "down" in first[1]
+    assert second == ["", True]
+
+
 def test_nothing_kept_says_so_and_run_queues_the_job():
     text, asked = run("""
         section.start(); await settle();

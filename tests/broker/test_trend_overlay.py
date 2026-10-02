@@ -102,6 +102,17 @@ def test_cash_earns_the_stored_t_bill_yield_when_given():
     assert v[date(2023, 12, 4)] == pytest.approx(v[date(2023, 12, 1)] * 1.0504 ** (1 / 252))
 
 
+def test_cash_earns_nothing_before_the_first_stored_yield_then_the_latest_known():
+    s = month_ends([100.0] * 10 + [50.0], start=date(2023, 1, 31))
+    s += [Session(date(2023, 12, d), 50.0, 50.0) for d in (1, 4, 5, 6)]
+    r = simulate(s, s[0].day, s[-1].day, cost=0.0,
+                 cash_yield={date(2023, 12, 4): 2.52, date(2023, 12, 5): 5.04, date(2023, 12, 9): 9.0})
+    v = [x for _, x in r.equity[-4:]]
+    assert v[1] == v[0]
+    assert v[2] == pytest.approx(v[1] * 1.0252 ** (1 / 252))
+    assert v[3] == pytest.approx(v[2] * 1.0504 ** (1 / 252))
+
+
 def test_figures_cagr_worst_fall_and_cash_share():
     s = daily(date(2001, 1, 1), [100.0, 50.0, 100.0, 200.0])
     r = simulate(s, s[0].day, s[-1].day, cost=0.0)

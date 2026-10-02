@@ -4,6 +4,7 @@ session's open. Numbers in, numbers out: sessions in, equity lines and figures o
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -95,8 +96,8 @@ def simulate(sessions: Sequence[Session], start: date, end: date, cost: float,
 
 
 def _cash(yields: list[tuple[date, float]], day: date) -> float:
-    known = [y for d, y in yields if d <= day]
-    return (1 + known[-1] / 100) ** (1 / TRADING_DAYS) - 1 if known else 0.0
+    k = bisect_right(yields, day, key=lambda x: x[0])
+    return (1 + yields[k - 1][1] / 100) ** (1 / TRADING_DAYS) - 1 if k else 0.0
 
 
 @dataclass(frozen=True)
