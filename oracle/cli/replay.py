@@ -191,7 +191,7 @@ def print_report(s: Score) -> None:
         print(f"  - {line}")
 
 
-LINE_LABELS = {"ai": "AI", "buy_and_hold": "Buy and hold"}
+LINE_LABELS = {"ai": "AI"}
 """Every other line carries its own label."""
 
 
@@ -199,9 +199,9 @@ def print_account(a: Account) -> None:
     n = len(a.listings)
     print(f"Account: the verdicts traded as the AI account would, {a.start.isoformat()} to {a.end.isoformat()}, "
           f"{n} listing{'' if n == 1 else 's'}")
-    print(f"  {'':<20}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
+    print(f"  {'':<40}{'return':>8}{'largest fall':>16}{'trades':>8}{f'costs ({a.currency})':>14}")
     for line in a.lines:
-        print(f"  {_line_label(line):<20}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
+        print(f"  {_line_label(line):<40}{_pct(line.return_, True):>8}{_pct(line.max_fall, True):>16}"
               f"{line.trades:>8}{line.costs:>14,.2f}")
     for line in a.lines:
         print(f"  - {line.caption}")

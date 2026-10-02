@@ -13,6 +13,7 @@ def test_each_migrations_number_is_its_place_in_the_list():
     assert [n[:5] for n in names] == [f"m{i:04d}" for i in range(1, len(names) + 1)]
     assert names[45:49] == ["m0046_history_backfill", "m0047_link_candidates", "m0048_industry_research",
                             "m0049_laya_tests"]
+    assert names[49] == "m0050_dividends"
 
 
 def _tables(conn) -> set[str]:

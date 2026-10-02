@@ -24,13 +24,14 @@ const BENCH_COLOURS = ["--bench1", "--bench2"];
 
 // Every account and buy_and_hold has a fixed entry above; a benchmark's name is whichever
 // symbol is configured, so its label and colour come from the line itself and its order
-// among the other benchmarks, dashed like buy and hold (another line held, not traded).
+// among the other benchmarks, dashed like buy and hold (another line held, not traded). A
+// line's own label wins, so a held line says whether it is total return.
 function lineInfos(lines) {
   const out = {};
   let bench = 0;
   for (const l of lines) {
-    out[l.name] = LINES[l.name] ?? { label: l.label || l.name, colour: BENCH_COLOURS[bench++ % BENCH_COLOURS.length],
-      dashed: true };
+    const known = LINES[l.name] ?? { label: l.name, colour: BENCH_COLOURS[bench++ % BENCH_COLOURS.length], dashed: true };
+    out[l.name] = l.label ? { ...known, label: l.label } : known;
   }
   return out;
 }

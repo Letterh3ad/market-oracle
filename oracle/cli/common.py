@@ -50,4 +50,5 @@ def print_lines(lines: Sequence[Line], base: str) -> None:
     print(f"{'line':<14}{'return':>9}{'largest fall':>14}{'trades':>8}{costs:>13}")
     for line in lines:
         gain = f"{line.return_:+.2%}" if line.return_ is not None else "none yet"
-        print(f"{line.name:<14}{gain:>9}{line.max_fall:>14.1%}{line.trades:>8}{line.costs:>13,.2f}")
+        label = f"  {line.label}" if line.label else ""
+        print(f"{line.name:<14}{gain:>9}{line.max_fall:>14.1%}{line.trades:>8}{line.costs:>13,.2f}{label}")

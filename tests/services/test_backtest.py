@@ -16,7 +16,9 @@ from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, Unkn
 from oracle.services.paper_service import place_buy
 from oracle.services.regime_lines import core_members
 from oracle.services.watch_service import watch
+from oracle.market.dividends import Dividend
 from oracle.store.bars import BarRepo
+from oracle.store.dividends import DividendRepo
 from oracle.store.meta import MetaRepo
 from oracle.store.signals import SignalRepo
 from oracle.store.universe import UniverseRepo
@@ -560,26 +562,52 @@ async def test_a_walk_forward_regime_ai_job_keeps_both_on_retry_and_stays_out_of
         await r.stop()
 
 
-def index_bars(ctx, daily=0.0005):
+def index_bars(ctx, daily=0.0005, dividends=True):
     universe = UniverseRepo(ctx.conn)
     for symbol in ("ACWI", "SPY"):
         universe.add(Listing(symbol, f"{symbol} ETF", "ETF", "United States", "NGM", currency="USD",
                              company_key=symbol.lower(), is_primary=True))
         BarRepo(ctx.conn).upsert(rising(len(BARS), symbol, daily=daily), "2026-09-24T00:00:00Z")
+        if dividends:
+            asked(ctx, symbol)
+
+
+def asked(ctx, symbol, paid=()):
+    """`symbol`'s dividends fetched over all its stored bars, as a price update keeps them."""
+    first, last = BarRepo(ctx.conn).span([symbol])
+    DividendRepo(ctx.conn).upsert(symbol, [Dividend(d, a, "USD") for d, a in paid], "yahoo", "t")
+    DividendRepo(ctx.conn).cover(symbol, first, last)
 
 
 def test_acwi_and_spy_held_lead_the_table_and_buy_and_hold_says_it_is_todays_list(make_ctx):
     ctx = make_ctx({"UP": BARS})
+    asked(ctx, "UP")
     index_bars(ctx)
     r = run_backtest(ctx, "tech", START, END)
     index, spy, *_ = r.lines
-    assert [(x.name, x.label) for x in (index, spy)] == [("index", "Index (ACWI)"), ("spy", "SPY")]
+    assert [(x.name, x.label) for x in (index, spy)] == [("index", "Index (ACWI) total return"),
+                                                         ("spy", "SPY total return")]
     assert index.points[0] == (START, 0.0) and 0 < index.return_ and (index.trades, index.costs) == (0, 0.0)
-    assert index.caption.startswith("Index (ACWI): all the capital in ACWI")
+    assert index.caption.startswith("Index (ACWI): all the capital in ACWI") and "Total return" in index.caption
     held = next(x for x in r.lines if x.name == "buy_and_hold")
-    assert held.label == "Buy and hold (today's list)" and "survivorship" in held.caption
+    assert held.label == "Buy and hold (today's list) total return" and "survivorship" in held.caption
+    assert any("traded lines" in n and "price only" in n for n in r.notes)
     assert not any("No stored" in n for n in r.notes)
     assert "ACWI" not in r.listings, "a benchmark is never one of the list's traded listings"
+
+
+def test_held_lines_reinvest_dividends_and_say_price_only_when_none_were_fetched(make_ctx):
+    ctx = make_ctx({"UP": BARS})
+    index_bars(ctx, daily=0.0, dividends=False)
+    asked(ctx, "ACWI", [(BARS[350].date, 1.0)])
+    r = run_backtest(ctx, "tech", START, END)
+    index, spy, *_ = r.lines
+    close = BarRepo(ctx.conn).close_on("ACWI", BARS[350].date)
+    assert (1 + index.return_) / (1 + spy.return_) == pytest.approx(1 + 1.0 / close), "reinvested at the ex-date"
+    assert spy.label == "SPY price only"
+    assert "Price only" in spy.caption
+    held = next(x for x in r.lines if x.name == "buy_and_hold")
+    assert held.label == "Buy and hold (today's list) price only" and "price only for UP" in held.caption
 
 
 def test_without_index_prices_the_lines_are_empty_and_a_note_says_so(make_ctx):

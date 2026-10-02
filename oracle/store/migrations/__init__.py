@@ -70,6 +70,7 @@ from oracle.store.migrations import (  # noqa: E402
     m0047_link_candidates,
     m0048_industry_research,
     m0049_laya_tests,
+    m0050_dividends,
 )
 
 MIGRATIONS = [
@@ -122,4 +123,5 @@ MIGRATIONS = [
     m0047_link_candidates,
     m0048_industry_research,
     m0049_laya_tests,
+    m0050_dividends,
 ]

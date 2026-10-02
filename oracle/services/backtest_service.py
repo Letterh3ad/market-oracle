@@ -27,7 +27,9 @@ from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segment
 from oracle.services import regime_tilt
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
-from oracle.services.index_service import INDEX_LINES, index_caption, index_closes, index_equity, index_missing
+from oracle.services.dividends_service import held_kind, held_note, reinvested
+from oracle.services.index_service import (INDEX_LINES, index_caption, index_closes, index_equity, index_label,
+                                           index_missing)
 from oracle.services.laya_line import laya_input
 from oracle.services.paper_service import Line, strategy_rules
 from oracle.services.prices_service import ConvertedBar, price_history_in_base
@@ -165,20 +167,23 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     if tilt:
         captions[REGIME_AI_LINE] = _ai_caption(label) + captions[REGIME_AI_LINE].removeprefix("Regime: ")
     regimes = tuple(traded(name, captions[name], x, LINE_LABELS[name]) for name, x in runs.items())
-    closes = {s: [(c.bar.date, c.close_base) for c in rows] for s, rows in history.items()}
+    returned = {s: reinvested(ctx, s, rows) for s, rows in history.items()}
+    closes = {s: r.closes for s, r in returned.items()}
     held, no_rate = buy_and_hold(closes, start, capital)
     n = len(history) - len(no_rate)
     held_line = Line("buy_and_hold", f"Buy and hold (survivorship: today's list): equal amounts of the {n} "
                                      f"listing{'' if n == 1 else 's'}, bought at the first close from "
-                                     f"{start.isoformat()} and never sold, with no costs. Today's list leaves out the "
-                                     "companies that failed or were taken over, so it flatters the past.",
+                                     f"{start.isoformat()} and never sold, with no costs, {held_note(returned)}. "
+                                     "Today's list leaves out the companies that failed or were taken over, so it "
+                                     "flatters the past.",
                      tuple(returns_since(held, start)) if held else (), max_fall(held), 0, 0.0,
-                     "Buy and hold (today's list)")
+                     f"Buy and hold (today's list) {held_kind(returned)}")
     indexes = index_closes(ctx, end)
     priced = [(name, symbol) for name, symbol, _ in INDEX_LINES
-              if any(d >= start and c is not None for d, c in indexes[symbol])]
-    index_lines = tuple(Line(name, index_caption(symbol, label, start), tuple(returns_since(e, start)) if e else (),
-                             max_fall(e), 0, 0.0, label)
+              if any(d >= start and c is not None for d, c in indexes[symbol].closes)]
+    index_lines = tuple(Line(name, index_caption(symbol, label, start, indexes),
+                             tuple(returns_since(e, start)) if e else (), max_fall(e), 0, 0.0,
+                             index_label(label, indexes, symbol))
                         for name, symbol, label in INDEX_LINES
                         for e in [index_equity(indexes, symbol, start, end, capital)])
     notes = _notes(ctx, name, start, end, slippage_bps, commission, rules.min_probability, history)
@@ -194,6 +199,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
         notes += [f"{could} not fill: {note}." for note in x.rejected]
         notes += [f"{still} waiting to fill on the last day: {', '.join(x.unfilled)}."] if x.unfilled else []
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
+    notes.append(PRICE_ONLY_TRADED)
     walked = None
     if spans:
         sources = {**{n: (lambda a, b, s=symbol: index_equity(indexes, s, a, b, capital)) for n, symbol in priced},
@@ -209,6 +215,11 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
     return Backtest(name, start, end, slippage_bps, commission, tuple(history),
                     (*index_lines, strategy, held_line, momentum, *regimes),
                     r.equity, r.trades, tuple(notes), walked)
+
+
+PRICE_ONLY_TRADED = ("Buy and hold, ACWI and SPY are total return (dividends reinvested at each ex-date's close); "
+                     "the traded lines (strategy, momentum, the regime lines and core-sat) are still price only, so "
+                     "they miss the dividends of what they hold and read slightly low against them.")
 
 
 def _equity(x) -> list[tuple[date, float]]:

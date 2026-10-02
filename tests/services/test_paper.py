@@ -547,7 +547,7 @@ async def test_with_no_ai_history_the_accounts_are_compared_from_their_own_start
                           "VWRL.L", "VUSA.L"]
     assert lines["strategy"].points == ((date(2026, 9, 18), 0.0), (date(2026, 9, 21), pytest.approx(0.05)))
     assert lines["ai"].points == () and lines["ai"].return_ is None and lines["buy_and_hold"].points == ()
-    assert lines["VWRL.L"].points == () and lines["VWRL.L"].label == "World (VWRL.L)"
+    assert lines["VWRL.L"].points == () and lines["VWRL.L"].label == "World (VWRL.L) price only"
 
 
 async def test_lines_since_the_ai_started_with_buy_and_hold_of_the_watchlist_by_hand(ctx, yahoo, clock):
@@ -614,11 +614,12 @@ async def test_a_benchmark_line_is_held_from_the_ai_start_with_fx_and_a_caption(
     fill_pending(ctx)  # records the AI account's first equity on 2026-09-21
     lines = {line.name: line for line in comparison(ctx).lines}
     assert lines["VWRL.L"].points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), pytest.approx(0.1)))
-    assert lines["VWRL.L"].caption == "Holding VWRL.L (the whole world market) from 2026-09-21, no costs."
-    assert lines["VWRL.L"].label == "World (VWRL.L)"
+    assert lines["VWRL.L"].caption == ("Holding VWRL.L (the whole world market) from 2026-09-21, no costs, price "
+                                       "only (its dividends are not fetched yet).")
+    assert lines["VWRL.L"].label == "World (VWRL.L) price only"
     assert lines["IUSA"].points == ((date(2026, 9, 21), 0.0), (date(2026, 9, 22), pytest.approx(0.1)))
-    assert lines["IUSA"].caption == "Holding IUSA from 2026-09-21, no costs."
-    assert lines["IUSA"].label == "IUSA"
+    assert lines["IUSA"].caption == "Holding IUSA from 2026-09-21, no costs, price only (its dividends are not fetched yet)."
+    assert lines["IUSA"].label == "IUSA price only"
     assert (lines["VWRL.L"].trades, lines["VWRL.L"].costs) == (0, 0.0)
 
 
@@ -633,7 +634,7 @@ async def test_a_benchmark_with_no_bars_shows_no_history_yet(ctx):
 async def test_a_benchmarks_label_prefers_the_universe_name_when_it_resolves(ctx):
     ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VOD.L",)))
     line = {line.name: line for line in comparison(ctx).lines}["VOD.L"]
-    assert line.label == "Vodafone"  # VOD.L is already in this fixture's universe
+    assert line.label == "Vodafone total return"  # VOD.L is already in this fixture's universe, priced with dividends
 
 
 async def test_a_benchmark_is_priced_but_never_traded_researched_or_watched(ctx, yahoo, clock):

@@ -119,7 +119,7 @@ def test_history_compares_every_line_since_the_ai_started(run):
     run("prices", "update")
     code, out, _ = run("paper", "history")
     assert code == 0 and "since 2026-09-18, the day the AI account started" in out
-    assert "validated yet" in out and "Buy and hold: equal amounts of the 1 listing watched" in out
+    assert "validated yet" in out and "Buy and hold (total return): equal amounts of the 1 listing watched" in out
     [hold] = [line for line in out.splitlines() if line.startswith("buy_and_hold")]
     assert hold.split()[1:5] == ["+10.00%", "0.0%", "0", "0.00"]
     assert "2026-09-21" in out and "+10.00%" in out

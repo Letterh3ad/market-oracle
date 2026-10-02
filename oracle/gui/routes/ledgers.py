@@ -12,7 +12,7 @@ from oracle.services.context import AppContext
 from oracle.services.fx_service import credits
 from oracle.services.paper_service import (
     ACCOUNTS, AI_OFF, CORE_SAT, LAYA, REGIME, REGIME_AI, REGIME_V2, STRATEGY, TRADERS, UNVALIDATED, AccountView, account_score, account_view, ai_step, comparison, decision_log,
-    equity_history, fill_pending, frozen_note, pending_orders, place_buy, place_sell, sells, strategy_step,
+    dividend_credits, equity_history, fill_pending, frozen_note, pending_orders, place_buy, place_sell, sells, strategy_step,
 )
 from oracle.services.models_service import check_model_profile
 from oracle.services.regime_service import regime_card
@@ -275,5 +275,7 @@ def _account(ctx: AppContext, name: str, view: AccountView) -> dict:
         "positions": [asdict(p) for p in view.positions],
         "pending": [asdict(o) for o in view.pending],
         "sells": [{**asdict(s), "realised": s.realised} for s in reversed(sells(ctx, name))],
+        "dividends": [asdict(c) for c in reversed(dividend_credits(ctx, name))],
+        "dividends_total": score.dividends,
         "history": equity_history(ctx, name),
     }

@@ -55,6 +55,8 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "wikipedia": SourceConfig(rate_per_second=0.2),
     # Raw files on GitHub other than FinanceDatabase's (the S&P 500 membership history).
     "github": SourceConfig(rate_per_second=0.5),
+    # Dividend pay dates for US listings a paper ledger is owed: a handful a quarter.
+    "nasdaq": SourceConfig(rate_per_second=0.5, max_retries=1),
 }
 PATH_KEYS = ("db_path", "research_db_path")
 

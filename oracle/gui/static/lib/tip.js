@@ -48,6 +48,9 @@ const GLOSSARY = {
   position_value: "The shares at their last closing price, converted at that day's exchange rate.",
   proceeds: "Cash received for the shares sold, after fees, the exchange spread and slippage.",
   realised: "Profit or loss locked in by selling, after every cost.",
+  dividends: "Cash dividends credited on the pay date, for the shares held at the close before the ex-date, at "
+    + "that day's exchange rate less the FX spread. Without a known pay date (only US listings have one) it is "
+    + "credited 90 days after the ex-date, marked assumed.",
   unrealised: "Profit or loss on shares still held, if they were sold at the last close (before selling costs).",
   costs:
     "Everything trading has cost: broker fees, UK stamp duty on London buys, the currency exchange spread " +

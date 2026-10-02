@@ -43,6 +43,7 @@ function metrics(a, base) {
     row("Realised", "realised", signed(a.realised), tone(a.realised)),
     row("Unrealised", "unrealised", signed(a.unrealised), tone(a.unrealised)),
     row("Costs paid", "costs", money(a.costs)),
+    row("Dividends", "dividends", money(a.dividends_total)),
     row("Largest fall", "max_fall", pct(a.max_fall), a.max_fall < 0 ? "down" : "")));
 }
 
@@ -210,6 +211,12 @@ function column(a, base, rules, ai, stale, discovery) {
       el("td", { class: "num" }, String(s.shares)), el("td", { class: "num" }, money(s.proceeds)),
       el("td", { class: `num ${tone(s.realised)}` }, signed(s.realised)))),
     "Nothing sold yet.");
+  const paid = table([["Paid"], ["Symbol"], ["Ex-date"], ["Shares", null, 1], ["Per share", null, 1],
+    [`Cash (${base})`, "dividends", 1]],
+    a.dividends.map((d) => el("tr", null, el("td", null, d.pay_known ? d.pay_date : `${d.pay_date} (assumed)`),
+      el("td", null, companyLink(d.symbol)), el("td", null, d.ex_date), el("td", { class: "num" }, String(d.shares)),
+      el("td", { class: "num" }, `${d.amount} ${d.currency}`), el("td", { class: "num" }, money(d.cash)))),
+    "No dividends paid yet.");
   const title = manual ? tip("Manual", "manual_account")
     : a.name === "ai" ? tipText("AI", aiRules(rules, ai))
       : a.name === "regime" ? tipText("Regime", regimeRules(rules))
@@ -227,7 +234,8 @@ function column(a, base, rules, ai, stale, discovery) {
     el("div", { class: "equity-chart", dataset: { account: a.name } }),
     el("h3", null, tip("Positions", "unrealised")), positions,
     el("h3", null, tip("Waiting", "pending")), pending,
-    el("h3", null, tip("Sells", "realised")), sold);
+    el("h3", null, tip("Sells", "realised")), sold,
+    el("h3", null, tip("Dividends", "dividends")), paid);
 }
 
 // Every account, buy-and-hold and configured benchmark, each as its return since the AI
