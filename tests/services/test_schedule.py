@@ -305,3 +305,22 @@ def test_changing_the_warning_keeps_the_schedule_and_is_saved(ctx):
     assert "warn_minutes = 5" in ctx.config_source.read_text(encoding="utf-8")
     with pytest.raises(InvalidQuery, match="warn_minutes"):
         set_tick_warning(ctx, 500, True, 20)
+
+
+async def test_a_scheduled_tick_hands_over_to_the_after_tick_work_once(ctx):
+    after: list[str] = []
+    s = Scheduler(ctx, JobRunner(ctx), tz=LONDON, after_tick=lambda: after.append("data checks"))
+    assert await s.check() is None and after == []
+    ctx.clock.advance(90 * 60)
+    assert (await s.check()).trigger == "scheduled" and after == ["data checks"]
+    ctx.clock.advance(60)
+    assert await s.check() is None and after == ["data checks"]
+
+
+async def test_after_tick_work_that_fails_never_stops_scheduling(ctx, caplog):
+    def boom():
+        raise RuntimeError("no")
+
+    s = Scheduler(ctx, JobRunner(ctx), tz=LONDON, after_tick=boom)
+    ctx.clock.advance(90 * 60)
+    assert (await s.check()).trigger == "scheduled" and "after the tick" in caplog.text

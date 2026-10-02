@@ -388,3 +388,16 @@ def test_fill_times_half_an_hour_clear_of_every_run_are_kept_in_order():
     from oracle.config import check_schedule
     raw = {"time": "22:30", "midday_time": "", "fill_times": ["15:15", "09:30", "12:30"]}
     assert check_schedule(raw, strict=True).fill_times == ("09:30", "12:30", "15:15")
+
+
+def test_data_checks_run_nightly_and_explain_nothing_by_default(tmp_path):
+    d = load_config(None, cwd=tmp_path)[0].data_checks
+    assert (d.nightly, d.explain, d.explain_model) == (True, False, "")
+    path = tmp_path / "oracle.toml"
+    path.write_text('[data_checks]\nnightly = false\nexplain = true\nexplain_model = "small"\n', encoding="utf-8")
+    d = load_config(path, cwd=tmp_path)[0].data_checks
+    assert (d.nightly, d.explain, d.explain_model) == (False, True, "small")
+    for line in ('explain = "yes"', "nightly = 1", "explain_model = 3", "other = true"):
+        path.write_text(f"[data_checks]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="data_checks"):
+            load_config(path, cwd=tmp_path)

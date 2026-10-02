@@ -226,6 +226,18 @@ class LayaConfig:
 
 
 @dataclass(frozen=True)
+class DataChecksConfig:
+    """The data-error checks (`oracle data check`): flags only, never edits market data."""
+
+    nightly: bool = True
+    """Run them after each scheduled tick."""
+    explain: bool = False
+    """Ask a local Ollama model for a one-paragraph explanation of each flag (capped per run)."""
+    explain_model: str = ""
+    """The model profile that explains; "" is the research slot's. It must be an Ollama profile."""
+
+
+@dataclass(frozen=True)
 class LayaAccountConfig:
     """The paper account that trades Laya's daily news score alone, for evidence whatever its
     predictive test said. On by default, so its record starts the day it ships."""
@@ -534,6 +546,7 @@ class Config:
     core_sat_account: CoreSatAccountConfig = field(default_factory=CoreSatAccountConfig)
     laya_account: LayaAccountConfig = field(default_factory=LayaAccountConfig)
     laya: LayaConfig = field(default_factory=LayaConfig)
+    data_checks: DataChecksConfig = field(default_factory=DataChecksConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -781,6 +794,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
             continue
         if name == "discovery":
             values[name] = _discovery(value)
+            continue
+        if name == "data_checks":
+            values[name] = _data_checks(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -1030,6 +1046,19 @@ def _laya(raw: object) -> LayaConfig:
     for key, (low, high) in (("industry_requests", INDUSTRY_REQUESTS_RANGE), ("industry_minutes", INDUSTRY_MINUTES_RANGE)):
         if not _whole(getattr(config, key), low, high):
             raise ConfigError(f"laya.{key} must be a whole number from {low} to {high}, got {getattr(config, key)!r}")
+    return config
+
+
+def _data_checks(raw: object) -> DataChecksConfig:
+    if not isinstance(raw, dict):
+        raise ConfigError("data_checks must be a [data_checks] table")
+    _reject_unknown(raw, DataChecksConfig, "[data_checks]")
+    config = replace(DataChecksConfig(), **raw)
+    for key in ("nightly", "explain"):
+        if not isinstance(getattr(config, key), bool):
+            raise ConfigError(f"data_checks.{key} must be true or false, got {getattr(config, key)!r}")
+    if not isinstance(config.explain_model, str):
+        raise ConfigError(f"data_checks.explain_model must be a model profile name, got {config.explain_model!r}")
     return config
 
 

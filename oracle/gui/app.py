@@ -11,12 +11,12 @@ from fastapi.staticfiles import StaticFiles
 
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import (
-    activity, backtests, companies, cutoff, discovery, factors, fx, history, holiday as holiday_routes, jobs, ledgers,
+    activity, backtests, companies, cutoff, data as data_routes, discovery, factors, fx, history, holiday as holiday_routes, jobs, ledgers,
     models, plan, questions, reader, replay, schedule as tick_schedule, settings, status, testbed, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
 from oracle.gui.routes import laya as laya_routes
-from oracle.services.activity_service import JobRunner, sweep_leftovers
+from oracle.services.activity_service import JobRunner, nightly_data_check, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
 from oracle.services.context import AppContext
 from oracle.services.holiday_service import Holiday
@@ -44,7 +44,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     running when the server stops are interrupted. `control` restarts the server; by default
     it starts this server's own command. `holiday` arms the holiday watch; by default the real one."""
     runner = JobRunner(ctx, ThreadExecutor(ctx))
-    scheduler = Scheduler(ctx, runner=runner)
+    scheduler = Scheduler(ctx, runner=runner, after_tick=lambda: nightly_data_check(ctx, runner))
     pacer = ReplayPacer(ctx, runner, scheduler)
 
     @asynccontextmanager
@@ -88,6 +88,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(history.router)
     app.include_router(testbed.router)
     app.include_router(plan.router)
+    app.include_router(data_routes.router)
     app.include_router(reader.router)
     app.include_router(laya_routes.router)
     app.include_router(replay.router)

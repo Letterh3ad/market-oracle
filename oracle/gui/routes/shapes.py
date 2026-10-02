@@ -9,6 +9,7 @@ from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
 from oracle.services.backtest_service import KeptBacktest
 from oracle.services.cutoff_service import CutoffProbe, ReplayCutoff
+from oracle.services.data_check_service import DataCheckRun
 from oracle.services.discovery_chat_service import AnswerView
 from oracle.services.discovery_service import DiscoveryEvidence
 from oracle.services.fx_service import FxUpdate, credits
@@ -163,7 +164,12 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
             "history": asdict, "laya": asdict, "edges": asdict, "reader": lambda r: {**asdict(r), "summary": r.summary},
             "industry": lambda r: {**asdict(r), "summary": r.summary},
             "laya_history": lambda r: {**asdict(r), "summary": r.summary, "ms_per_pair": r.ms_per_pair},
-            "laya_test": lambda r: laya_test(r), "signal_test": lambda r: signal_test(r)}
+            "laya_test": lambda r: laya_test(r), "signal_test": lambda r: signal_test(r),
+            "data_check": lambda r: data_check(r)}
+
+
+def data_check(run: DataCheckRun | None) -> dict | None:
+    return None if run is None else {**asdict(run), "total": run.total, "summary": run.summary}
 
 
 def laya_test(t: LayaTest) -> dict:

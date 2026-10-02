@@ -13,6 +13,7 @@ import { regimeCard } from "../lib/regime.js";
 import { replaySection } from "../lib/replay.js";
 import { signalTestsSection } from "../lib/signal_tests.js";
 import { trendSection } from "../lib/trend.js";
+import { dataHealthSection } from "../lib/data_health.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
 import { busyButton, runJob, sendJson } from "../lib/ui.js";
@@ -28,6 +29,7 @@ let replay = null; // this render's Replay study card, kept across repaints like
 let history = null; // this render's History coverage card, kept the same way
 let signalTests = null; // this render's Signal tests card, kept the same way
 let trend = null; // this render's Trend overlay test card, until the Plan tab takes it
+let dataHealth = null; // this render's Data health card
 let reader = null; // this render's Stronger reader card
 let layaTest = null; // this render's Laya predictive test card, kept the same way
 let timer = null;
@@ -368,6 +370,7 @@ async function load(mine) {
     backtest.node,
     signalTests.node,
     trend.node,
+    dataHealth.node,
     layaTest.node,
     history.node,
     reader.node,
@@ -380,6 +383,7 @@ async function load(mine) {
     backtest.start();
     signalTests.start();
     trend.start();
+    dataHealth.start();
     layaTest.start();
     history.start();
     reader.show();
@@ -398,6 +402,7 @@ function render(target) {
   history = historySection();
   signalTests = signalTestsSection();
   trend = trendSection();
+  dataHealth = dataHealthSection();
   reader = readerSection();
   layaTest = layaTestSection();
   clearInterval(timer);
