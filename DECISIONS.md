@@ -3252,3 +3252,43 @@ state.
 **Alternatives:** Returning the live chart from `draw()` for the caller to `.remove()` itself, as before
 (rejected: an internal toggle-driven redraw could leave that reference stale, risking a double `.remove()`
 on the next generation's cleanup).
+
+
+## 2026-10-02 - Data-error checks keep their newest run in meta, no migration
+**Context:** ai-track 03 needs the checks' results stored for the Data health card and `oracle data show`;
+m0050 is taken by an unmerged branch.
+**Decision:** The newest run is one JSON value under `meta.data_checks_last_run` in the live database: counts
+per check in full, flagged rows capped at 500 per check. Each run replaces the last. Market data in either
+database is only read.
+**Alternatives:** An m0051 table of runs and flags (rejected for now: history of flags has no reader yet and
+would collide with the m0050 numbering); storing in the research database (rejected: the live checks would
+then need it to exist).
+
+## 2026-10-02 - What each data check counts as an error
+**Context:** The checks must flag real errors in Yahoo-sourced bars without drowning them in normal market
+behaviour; tuned on a copy of the live databases.
+**Decision:** Split-sized jump: a day-to-day close ratio within 3% of 2, 3, 4, 5, 8, 10, 20, 50 or 100 (or
+the inverse), bars at most 10 days apart, no `tb_splits` row within 5 days. Not 3:2: every 1.5x or 0.67x
+day on the live copy was real news. Repeated bars: 5 or more in a row with identical OHLC. Stale: a watched
+listing, benchmark or current testbed member whose last bar is over 7 days behind the newest. Dividends: a
+step in adj_close/close over 1e-5 is an ex-dividend day (NVDA's $0.01 is under 1e-4); a series with 4 or more
+steps is a payer; a gap over 400 days between steps (or to the last bar) is flagged, and a live series with
+adj_close == close on 250+ bars while the research copy shows 2+ steps in its span. Research series are
+checked only inside the windows the testbed reads (member spans plus the 120-day tail, a rename's new ticker
+up to priced_to, benchmarks whole); former members are judged by ticker alone, since today's name on a
+reused ticker is a later holder's. Duplicate share class: one SEC CIK (or a known pair) as members on the
+same days; watchlists holding two listings of one company_key.
+**Alternatives:** Checking every stored research bar (rejected: 2,400 flags, nearly all reused tickers and
+illiquid swap candidates no test reads); a dividend data source to know payers (none stored; a suspension
+reads as a gap, noted as the main false positive).
+
+## 2026-10-02 - Data checks run nightly through a scheduler hook; explanations Ollama only
+**Context:** The ticket wants the checks nightly after the tick and on demand, with an optional local-LLM
+explanation per flag off by default (spec decisions 2 and 11).
+**Decision:** `Scheduler(after_tick=...)` is called once each scheduled tick has run or been recorded
+skipped; the GUI app passes `nightly_data_check`, which submits an automatic `data_check` job unless
+`[data_checks] nightly` or automation is off. `[data_checks] explain` (default false) asks the
+`explain_model` profile (default the research slot's) for one paragraph on the first 25 flags a run, a
+check at a time; a profile whose provider is not `ollama` is refused with a note, never called.
+**Alternatives:** Running the checks inside the tick's own stages (rejected: a slow check would hold the
+tick's lock and its banner); explaining every flag (rejected: hundreds of model calls a night).

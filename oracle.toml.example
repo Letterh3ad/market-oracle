@@ -162,6 +162,14 @@ enabled = true             # false: the core-sat account decides nothing each ti
 [laya_account]
 enabled = true             # false: the laya account decides nothing each tick
 
+# The data-error checks (Ledgers tab, Data health; `oracle data check`): split-sized jumps, stale
+# or repeated bars, bad prices, fund or junk tickers, missing dividends, rename gaps, duplicate
+# share classes and testbed member-days missing. They flag only; market data is never edited.
+[data_checks]
+nightly = true             # run them after each scheduled tick
+explain = false            # true: a local Ollama model writes a one-paragraph explanation per flag (the first 25 a run)
+explain_model = ""         # the model profile that explains ("" the research slot's); only an Ollama profile is used
+
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]
 rotation_min_hold_days = 20   # trading days a holding is kept before it can be rotated out (1 to 250)

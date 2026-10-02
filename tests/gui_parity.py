@@ -205,6 +205,13 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Ledgers tab, Trend overlay test card (moves to the Plan tab): "Run trend test" and its kept result.
     "plan trend": "POST /api/jobs/plan-trend",
     "plan trend --show": "GET /api/plan/trend",
+    # Ledgers tab, Data health card: "Run data checks", its counts and each check's flagged rows.
+    "data check": "POST /api/jobs/data-check",
+    "data check --check": OUTPUT_ONLY,
+    "data check --limit": OUTPUT_ONLY,
+    "data show": "GET /api/data/checks",
+    "data show --check": OUTPUT_ONLY,
+    "data show --limit": OUTPUT_ONLY,
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},

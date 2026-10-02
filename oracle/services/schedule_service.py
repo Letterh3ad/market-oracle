@@ -5,6 +5,7 @@ the due time, so a changed setting or a woken laptop is noticed within a poll.""
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
 
@@ -103,9 +104,12 @@ class Upcoming:
 
 
 class Scheduler:
-    def __init__(self, ctx: AppContext, runner: JobRunner, tz: tzinfo | None = None) -> None:
-        """A due tick runs as a job on `runner`, so Activity lists it and can cancel it."""
+    def __init__(self, ctx: AppContext, runner: JobRunner, tz: tzinfo | None = None,
+                 after_tick: Callable[[], object] | None = None) -> None:
+        """A due tick runs as a job on `runner`, so Activity lists it and can cancel it. `after_tick`
+        is called once each scheduled tick has run or been recorded skipped (the nightly data checks)."""
         self._ctx = ctx
+        self._after_tick = after_tick
         self._tz = tz
         self._runner = runner
         self._settings = self._live_settings()
@@ -136,6 +140,11 @@ class Scheduler:
             return None
         for kind, hhmm in self._slots():
             if (run := await self._fire(kind, hhmm, now)) is not None:
+                if kind == TICK and self._after_tick is not None:
+                    try:
+                        self._after_tick()
+                    except Exception:
+                        log.exception("work after the tick failed")
                 return run
         return None
 

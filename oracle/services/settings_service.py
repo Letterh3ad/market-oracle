@@ -29,7 +29,7 @@ __all__ = [
     "set_peer_count", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "data_checks", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 SWITCHES = {"regime_account": "regime", "regime_ai_account": "regime-ai", "regime_v2_account": "regime-v2"}
