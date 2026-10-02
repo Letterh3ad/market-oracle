@@ -7,7 +7,7 @@ from oracle.store.migrations import run_ddl
 # Cash dividends per listing (boring-plan ticket 01), the span of days they were asked for (a
 # listing with no row was never asked, so its total return is unknown, not price only), and
 # the paper ledgers' dividend credits, one per account, order source, listing and ex-date.
-DDL = """
+DIVIDENDS_DDL = """
 CREATE TABLE dividends (
     symbol      TEXT NOT NULL,
     ex_date     TEXT NOT NULL,
@@ -24,7 +24,9 @@ CREATE TABLE dividend_spans (
     first      TEXT NOT NULL,
     last       TEXT NOT NULL
 ) WITHOUT ROWID;
+"""
 
+PAPER_DDL = """
 CREATE TABLE paper_dividends (
     account   TEXT    NOT NULL,
     source    TEXT    NOT NULL,
@@ -43,4 +45,4 @@ CREATE TABLE paper_dividends (
 
 
 def up(conn: sqlite3.Connection) -> None:
-    run_ddl(conn, DDL)
+    run_ddl(conn, DIVIDENDS_DDL + PAPER_DDL)
