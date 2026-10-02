@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from oracle.gui.errors import install_error_handlers
 from oracle.gui.routes import (
     activity, backtests, companies, cutoff, discovery, factors, fx, history, holiday as holiday_routes, jobs, ledgers,
-    models, questions, reader, replay, schedule as tick_schedule, settings, status, testbed, universe, watchlists,
+    models, plan, questions, reader, replay, schedule as tick_schedule, settings, status, testbed, universe, watchlists,
 )
 from oracle.gui.routes import control as app_control
 from oracle.gui.routes import laya as laya_routes
@@ -87,6 +87,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(backtests.router)
     app.include_router(history.router)
     app.include_router(testbed.router)
+    app.include_router(plan.router)
     app.include_router(reader.router)
     app.include_router(laya_routes.router)
     app.include_router(replay.router)
