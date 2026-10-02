@@ -22,6 +22,7 @@ from oracle.services.schedule_service import ScheduleView, Upcoming
 from oracle.services.signal_test_service import SignalTest
 from oracle.services.testbed_service import UNDER_PRICED, TestbedCoverage
 from oracle.services.tick_service import KIND_LABELS, TickRun
+from oracle.services.trend_service import TrendLine, TrendTest, TrendWindow
 
 
 def lean(lean, stale: bool) -> dict | None:
@@ -283,6 +284,22 @@ def insider_coverage(c) -> dict:
 def event_study(s) -> dict | None:
     """A kept typed-event study, as stored."""
     return asdict(s) if s is not None else None
+
+
+def trend_test(t: TrendTest | None) -> dict | None:
+    """A kept trend overlay test, each window's two lines in the compare chart's shape."""
+    if t is None:
+        return None
+    return {**asdict(t), "choose": _trend_window(t.choose), "confirm": _trend_window(t.confirm),
+            "beside": [_trend_window(w) for w in t.beside]}
+
+
+def _trend_window(w: TrendWindow) -> dict:
+    def line(l: TrendLine, trades: int) -> dict:
+        return {**asdict(l), "return": l.ret, "trades": trades}
+
+    return {k: v for k, v in asdict(w).items() if k not in ("trend", "held")} | {
+        "lines": [line(w.trend, w.switches), line(w.held, 0)]}
 
 
 def testbed_coverage(c: TestbedCoverage) -> dict:

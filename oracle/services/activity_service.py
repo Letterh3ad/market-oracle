@@ -46,6 +46,7 @@ from oracle.services.testbed_service import build_testbed
 from oracle.services.xbrl_service import fetch_fundamentals
 from oracle.services.insider_service import fetch_insiders
 from oracle.services.event_study_service import run_and_keep_events
+from oracle.services.trend_service import run_and_keep_trend
 from oracle.services.routine_service import update_listing_prices, update_prices
 from oracle.services.paper_service import LINE_NAMES, REGIME_LINES
 from oracle.services.tick_service import (
@@ -59,7 +60,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
            "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
-           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_insiders", "submit_event_study", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_insiders", "submit_event_study", "submit_plan_trend", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -689,6 +690,25 @@ def _retry_event_study(ctx: AppContext, runner: JobRunner, job) -> Job:
 TRAIN_PART = "train"
 
 
+PLAN_TREND_SUBJECT = "plan_trend"
+
+
+def submit_plan_trend(ctx: AppContext, runner: JobRunner) -> Job:
+    """The pre-registered trend overlay test: fetch the newest ^SP500TR days into the research
+    database, run both windows and keep the result there (seconds)."""
+    stage: list[str] = []
+
+    async def work(c: AppContext):
+        return await run_and_keep_trend(c, say=stage.append)
+
+    return runner.submit("plan_trend", "Trend overlay test", work, subject=PLAN_TREND_SUBJECT, link="#ledgers",
+                         progress=lambda: stage[-1] if stage else None)
+
+
+def _retry_plan_trend(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_plan_trend(ctx, runner)
+
+
 def submit_signal_test(ctx: AppContext, runner: JobRunner, name: str, train_only: bool = False) -> Job:
     """The pre-registered signal test of `name` on the testbed (with `train_only`, 2010-2019 alone,
     confirm never read), kept in the research database (minutes). It reads only, waits while live
@@ -1082,7 +1102,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "universe": _retry_universe, "merges": _retry_merges, "fx": _retry_fx, "discover": _retry_discover,
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history, "testbed": _retry_testbed, "signal_test": _retry_signal_test, "xbrl": _retry_xbrl,
-    "insiders": _retry_insiders, "event_study": _retry_event_study,
+    "insiders": _retry_insiders, "event_study": _retry_event_study, "plan_trend": _retry_plan_trend,
     "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,
 }

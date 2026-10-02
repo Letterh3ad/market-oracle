@@ -202,6 +202,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "signals list": "GET /api/signals",
     "signals test": "POST /api/jobs/signal-test",
     "signals test --train-only": "POST /api/jobs/signal-test",
+    # Ledgers tab, Trend overlay test card (moves to the Plan tab): "Run trend test" and its kept result.
+    "plan trend": "POST /api/jobs/plan-trend",
+    "plan trend --show": "GET /api/plan/trend",
     **{key: "POST /api/jobs/backtest" for key in (
         "backtest", "backtest --list", "backtest --from", "backtest --to", "backtest --slippage-bps",
         "backtest --commission", "backtest --regime-ai", "backtest --walk-forward")},
