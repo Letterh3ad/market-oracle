@@ -30,6 +30,7 @@ const BENCH_COLOURS = ["--bench1", "--bench2"];
 const DEFAULT_HEIGHT = 360;
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 800;
+const DBLCLICK_MS = 300; // a click's toggle waits this long for a second click to turn it into a dblclick
 
 // Every account and buy_and_hold has a fixed entry above; a benchmark's name is whichever
 // symbol is configured, so its label and colour come from the line itself and its order
@@ -111,6 +112,9 @@ function compareLines(lines, base, emptyChart, storageKey) {
 
   let chart = null;
   const series = new Map(); // name -> series currently on the chart
+  const pendingClicks = new Set(); // deferred single-click toggles, cancelled by a dblclick or destroy()
+  let onPointerMove = null;
+  let onPointerUp = null;
 
   const box = el("div", { class: "compare-chart" });
   box.style.height = `${state.height}px`;
@@ -161,10 +165,30 @@ function compareLines(lines, base, emptyChart, storageKey) {
     if (changed) chart.timeScale().fitContent();
   }
 
+  // Safe to call whether or not a drag is in progress: removing a listener that was never (or
+  // no longer) attached is a no-op. onPointerMove/onPointerUp are set once, below, and reused
+  // across every drag on this chart, so this never has to re-create or null them out.
+  function stopDrag() {
+    if (onPointerMove) document.removeEventListener("pointermove", onPointerMove);
+    if (onPointerUp) document.removeEventListener("pointerup", onPointerUp);
+  }
+
+  // Internal: drops the chart when toggling leaves nothing visible. Does not touch drag
+  // listeners or pending click timers, both unrelated to any one render.
   function disposeChart() {
     chart?.remove();
     chart = null;
     series.clear();
+  }
+
+  // Public: this card's node is about to be discarded. Nothing of this chart's instance should
+  // outlive it, including a drag in progress or a single-click toggle still waiting to see
+  // whether a dblclick follows.
+  function destroy() {
+    stopDrag();
+    for (const t of pendingClicks) clearTimeout(t);
+    pendingClicks.clear();
+    disposeChart();
   }
 
   function render() {
@@ -190,21 +214,37 @@ function compareLines(lines, base, emptyChart, storageKey) {
     for (const l of chartable) {
       const chip = el("button", { type: "button", class: "chip", dataset: { line: l.name } },
         swatch(info[l.name]), " ", info[l.name].label);
-      chip.addEventListener("click", () => toggle(afterClick(state.hidden, l.name)));
-      chip.addEventListener("dblclick", () => toggle(afterDoubleClick(names, l.name)));
+      // A double-click fires click, click, dblclick: without deferring, the two leading clicks
+      // would each toggle and persist before the dblclick's solo wins, flickering the series
+      // and writing storage twice for nothing. Deferring the single-click toggle by the
+      // dblclick interval, cancelled here if one arrives, makes a real double-click a single
+      // state change.
+      let clickTimer = null;
+      chip.addEventListener("click", () => {
+        if (clickTimer) { clearTimeout(clickTimer); pendingClicks.delete(clickTimer); }
+        clickTimer = setTimeout(() => {
+          pendingClicks.delete(clickTimer);
+          clickTimer = null;
+          toggle(afterClick(state.hidden, l.name));
+        }, DBLCLICK_MS);
+        pendingClicks.add(clickTimer);
+      });
+      chip.addEventListener("dblclick", () => {
+        if (clickTimer) { clearTimeout(clickTimer); pendingClicks.delete(clickTimer); clickTimer = null; }
+        toggle(afterDoubleClick(names, l.name));
+      });
       chips.append(chip);
     }
 
     let dragStartY = 0;
     let dragStartHeight = 0;
-    const onPointerMove = (e) => {
+    onPointerMove = (e) => {
       state.height = clampHeight(dragStartHeight + (e.clientY - dragStartY));
       box.style.height = `${state.height}px`;
       chart?.resize?.(box.clientWidth, state.height);
     };
-    const onPointerUp = () => {
-      document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerup", onPointerUp);
+    onPointerUp = () => {
+      stopDrag();
       persist();
     };
     handle.addEventListener("pointerdown", (e) => {
@@ -224,7 +264,7 @@ function compareLines(lines, base, emptyChart, storageKey) {
       [`Costs (${base})`, "costs", 1]], rows, ""),
     el("ul", { class: "dim small" }, ...lines.map((l) => el("li", null, l.caption))));
 
-  return { node, draw: render, destroy: disposeChart };
+  return { node, draw: render, destroy };
 }
 
 export { compareLines, lineInfos, table };

@@ -88,6 +88,10 @@ function rowFor(node, name) {
 function handle(node) {
   return node.findAll((n) => n.className === "compare-chart-resize")[0];
 }
+// A single click's toggle is deferred (DBLCLICK_MS in compare.js) so a real double-click's
+// click,click,dblclick sequence collapses to one state change; tests of a genuine single
+// click wait past that window for it to land.
+const settle = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 """
 
 
@@ -107,6 +111,7 @@ def test_click_hides_a_line_and_greys_its_table_row():
     out = run("""
         const c = compareLines(LINES, "USD", "empty", "k1");
         chipFor(c.node, "manual").dispatch("click");
+        await settle();
         console.log(JSON.stringify({
           chipOff: chipFor(c.node, "manual").classList.contains("chip-off"),
           rowFaded: rowFor(c.node, "manual").classList.contains("faded"),
@@ -120,7 +125,9 @@ def test_click_again_shows_the_line_again():
     out = run("""
         const c = compareLines(LINES, "USD", "empty", "k2");
         chipFor(c.node, "manual").dispatch("click");
+        await settle(); // past the window, so this is a second, separate single click
         chipFor(c.node, "manual").dispatch("click");
+        await settle();
         console.log(JSON.stringify({
           chipOff: chipFor(c.node, "manual").classList.contains("chip-off"),
           rowFaded: rowFor(c.node, "manual").classList.contains("faded"),
@@ -159,6 +166,7 @@ def test_hidden_set_and_height_are_remembered_per_chart():
     out = run("""
         const c = compareLines(LINES, "USD", "empty", "k5");
         chipFor(c.node, "manual").dispatch("click");
+        await settle();
         handle(c.node).dispatch("pointerdown", { clientY: 100 });
         document.dispatch("pointermove", { clientY: 180 });
         document.dispatch("pointerup", {});
@@ -201,6 +209,7 @@ def test_a_storage_write_failure_during_a_click_does_not_throw():
         failStorage();
         const c = compareLines(LINES, "USD", "empty", "k8");
         chipFor(c.node, "manual").dispatch("click"); // writeState throws internally; must not propagate
+        await settle();
         console.log(JSON.stringify(chipFor(c.node, "manual").classList.contains("chip-off")));
     """)
     assert out is True
@@ -212,6 +221,57 @@ def test_nothing_stored_renders_every_line_visible():
         console.log(JSON.stringify(LINES.map((l) => chipFor(c.node, l.name).classList.contains("chip-off"))));
     """)
     assert out == [False, False]
+
+
+def test_a_real_double_click_sequence_toggles_storage_once_and_ends_up_soloed():
+    # Browsers fire click, click, dblclick for one double-click: the two leading clicks must not
+    # each flicker the chart and write storage before the dblclick's solo wins (gate 06 r1, L2).
+    out = run("""
+        const c = compareLines(LINES, "USD", "empty", "k10");
+        const writes = [];
+        const originalSet = localStorage.setItem.bind(localStorage);
+        localStorage.setItem = (k, v) => { writes.push(v); originalSet(k, v); };
+        const chip = chipFor(c.node, "manual");
+        chip.dispatch("click");
+        chip.dispatch("click");
+        chip.dispatch("dblclick");
+        const immediately = {
+          writes: writes.length,
+          manualOff: chip.classList.contains("chip-off"),
+          strategyOff: chipFor(c.node, "strategy").classList.contains("chip-off"),
+        };
+        await settle(); // nothing further should land once the deferred clicks are cancelled
+        console.log(JSON.stringify({ immediately, writes: writes.length }));
+    """)
+    assert out == {"immediately": {"writes": 1, "manualOff": False, "strategyOff": True}, "writes": 1}
+
+
+def test_destroy_mid_drag_removes_the_document_pointer_listeners():
+    # Gate 06 r1, L1: a repaint can destroy() this chart while a drag is in progress; the
+    # pointermove/pointerup listeners it put on `document` must not outlive it.
+    out = run("""
+        const c = compareLines(LINES, "USD", "empty", "k11");
+        const box = c.node.findAll((n) => n.className === "compare-chart")[0];
+        handle(c.node).dispatch("pointerdown", { clientY: 100 });
+        c.destroy();
+        const heightAtDestroy = box.style.height;
+        document.dispatch("pointermove", { clientY: 900 }); // must be a no-op: the listener is gone
+        document.dispatch("pointerup", {});
+        const stillAttached = Object.values(document._listeners).some((fns) => fns.length > 0);
+        console.log(JSON.stringify({ unchanged: box.style.height === heightAtDestroy, stillAttached }));
+    """)
+    assert out == {"unchanged": True, "stillAttached": False}
+
+
+def test_destroy_mid_drag_cancels_a_pending_click_toggle_too():
+    out = run("""
+        const c = compareLines(LINES, "USD", "empty", "k12");
+        chipFor(c.node, "manual").dispatch("click"); // deferred, not yet applied
+        c.destroy();
+        await settle();
+        console.log(JSON.stringify(storeRaw("k12") ?? null));
+    """)
+    assert out is None
 
 
 # The Ledgers comparison and the Backtest card both feed compareLines() the accounts,

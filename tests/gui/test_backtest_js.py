@@ -43,7 +43,9 @@ class Node {
   }
 }
 globalThis.document = { createElement: (tag) => new Node(tag), createTextNode: (text) => ({ textContent: text }),
-  activeElement: null };
+  activeElement: null, _listeners: {},
+  addEventListener(type, fn) { (this._listeners[type] ??= []).push(fn); },
+  removeEventListener(type, fn) { this._listeners[type] = (this._listeners[type] || []).filter((f) => f !== fn); } };
 globalThis.window = { scrollX: 0, scrollY: 0, scrollTo() {} };
 const asked = [];
 const RUN = { id: 7, ran_at: "2026-09-24T20:00:00Z", base_currency: "GBP", watchlist: "main", start: "2025-03-03",
