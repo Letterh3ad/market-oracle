@@ -401,3 +401,19 @@ def test_data_checks_run_nightly_and_explain_nothing_by_default(tmp_path):
         path.write_text(f"[data_checks]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="data_checks"):
             load_config(path, cwd=tmp_path)
+
+
+def test_plan_fees_assume_nothing_and_take_the_users_platform(tmp_path):
+    p = load_config(None, cwd=tmp_path)[0].plan
+    assert (p.platform, p.percent_fee, p.percent_cap, p.flat_fee, p.dealing_fee, p.fx_fee) == ("percentage", 0, 0, 0, 0, 0)
+    path = tmp_path / "oracle.toml"
+    path.write_text('[plan]\nplatform = "flat"\npercent_fee = 0.25\npercent_cap = 45\nflat_fee = 4.99\n'
+                    'dealing_fee = 1.5\nfx_fee = 0.5\n', encoding="utf-8")
+    p = load_config(path, cwd=tmp_path)[0].plan
+    assert (p.platform, p.percent_fee, p.percent_cap, p.flat_fee, p.dealing_fee, p.fx_fee) == (
+        "flat", 0.25, 45, 4.99, 1.5, 0.5)
+    for line in ('platform = "cheap"', "percent_fee = -1", 'flat_fee = "4"', "fx_fee = true", "percent_fee = 101",
+                 "other = 1"):
+        path.write_text(f"[plan]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="plan"):
+            load_config(path, cwd=tmp_path)
