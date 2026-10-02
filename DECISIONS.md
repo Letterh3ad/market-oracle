@@ -3236,3 +3236,19 @@ headline reader is dropped. (5) Boring plan gains a guardrails panel (drawdown p
 **Alternatives:** stop searching for alpha entirely (kept as the real-money plan regardless); finish
 the 32B reader (rejected: cannot see large-cap effects in 16 post-cutoff months); prompted LLM
 verdicts (already failed); XGBoost on the old weak features (replaced by the characteristic library).
+
+## 2026-10-02 - Shared compare chart: resizable, per-line toggles (ticket 06)
+**Context:** Spec 7: the shared compare chart (`oracle/gui/static/lib/compare.js`, used by Ledgers, the
+Backtest card and the Replay account card) goes full width above its table, resizable, with per-line
+toggle chips, height and hidden set remembered per chart in localStorage.
+**Decision:** Toggling a line adds or removes its series on the one chart instance the component already
+owns (`chart.addLineSeries`/`removeSeries`), instead of destroying and recreating the chart; this is what
+makes "rescale y to visible lines" free (the library autoscales to whatever series remain) and keeps the
+chart's identity stable across clicks. `compareLines()` no longer hands its chart object out: `draw()`
+mounts/updates it internally, and callers call `destroy()` (not `chart.remove()`) when the card's node is
+about to be replaced next redraw. All three callers (ledgers.js, backtest.js, replay.js) pass their own
+storage key (`oracle.compare.<ledgers|backtest.<id>|replay>`) so unrelated charts never share height/hidden
+state.
+**Alternatives:** Returning the live chart from `draw()` for the caller to `.remove()` itself, as before
+(rejected: an internal toggle-driven redraw could leave that reference stale, risking a double `.remove()`
+on the next generation's cleanup).
