@@ -205,6 +205,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Ledgers tab, Trend overlay test card (moves to the Plan tab): "Run trend test" and its kept result.
     "plan trend": "POST /api/jobs/plan-trend",
     "plan trend --show": "GET /api/plan/trend",
+    # Ledgers tab, Fund comparison card (moves to the Plan tab): "Compare funds" and its kept result.
+    "plan funds": "POST /api/jobs/plan-funds",
+    "plan funds --show": "GET /api/plan/funds",
     # Ledgers tab, Data health card: "Run data checks", its counts and each check's flagged rows.
     "data check": "POST /api/jobs/data-check",
     "data check --check": OUTPUT_ONLY,
