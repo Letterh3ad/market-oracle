@@ -3218,3 +3218,21 @@ A simulation of a held-still score (30 panels per case) puts the harness's mean 
 **Context:** Ticket 04 needs a CLI, a card and a seam for the GBP ACWI proxy (ticket 02) and the shared total-return loader (ticket 01).
 **Decision:** ^SP500TR bars go in the research database's bars table; `trend_sessions()` is the one place the series is read, so ticket 01's loader can replace it. The test is a `plan_trend` job (fetch newest days, run, keep; retryable) kept beside signal tests under key `trend_overlay`; `GET /api/plan/trend` reads it. CLI `plan trend` (run) and `plan trend --show`. The card sits on the Ledgers tab until ticket 05's Plan tab. Other series go in the result's `beside` windows, shown never judged.
 **Alternatives:** Computing on every page load (needs the network for fresh days); storing the series in the live database (the plan keeps research data apart).
+
+## 2026-10-02 - Next ideas: ai-track, stricter PASS bar, boring-plan additions
+
+**Context:** Every pre-registered stock signal and every AI signal so far failed. A 185-method
+research archive (`.scratch/next-ideas/research-archive.md`) rated each by its chance of real benefit;
+only wrapper, fee, fund and behaviour items rated 7+. The user believes AI could work if tested fairly.
+**Decision:** (1) New ai-track stream: ChronoBERT (yearly-cutoff models, no look-ahead) embeddings of
+10-K/10-Q sections and 8-K 2.02 press releases, ridge fitted on 2010-2019, confirmed 2020+; it must add
+information beyond Lazy Prices and a ~30-characteristic library, which also gets its own ML verdict
+(ridge + LightGBM). (2) PASS bar for tests registered from ai-track 01 on: t >= max(3.0, two-sided
+Bonferroni 5% over all registered tests); a scoreboard lists every test; deflated Sharpe on backtest
+lines; Open Source Asset Pricing triage before any new signal build. Earlier tests, including
+boring-plan 04, keep the rules they were judged by. (3) Data-error catcher (flags only). (4) The 32B
+headline reader is dropped. (5) Boring plan gains a guardrails panel (drawdown preview, no-sell rule,
+7-day cool-off) and an ISA vs Nest pension vs LISA comparator (LISA off by default).
+**Alternatives:** stop searching for alpha entirely (kept as the real-money plan regardless); finish
+the 32B reader (rejected: cannot see large-cap effects in 16 post-cutoff months); prompted LLM
+verdicts (already failed); XGBoost on the old weak features (replaced by the characteristic library).
