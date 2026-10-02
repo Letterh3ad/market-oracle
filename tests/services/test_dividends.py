@@ -12,11 +12,7 @@ from oracle.services.prices_service import update_listing
 from oracle.services.universe_service import refresh_universe
 from oracle.store.bars import BarRepo
 from oracle.store.dividends import DividendRepo
-from oracle.services.http import open_client
-from oracle.services.pay_dates import find_pay_dates
-from oracle.store.paper import FillRow, PaperRepo
 from tests.fakes.clock import FakeClock
-from tests.fakes.nasdaq import FakeNasdaq
 from tests.fakes.financedatabase import FakeFinanceDatabase, equity
 from tests.fakes.web import FakeWeb
 from tests.fakes.yahoo import FakeYahoo, bar
@@ -38,15 +34,10 @@ def yahoo():
 
 
 @pytest.fixture
-def nasdaq():
-    return FakeNasdaq()
-
-
-@pytest.fixture
-async def ctx(tmp_path, yahoo, nasdaq):
+async def ctx(tmp_path, yahoo):
     universe = [equity("AAPL", "Apple Inc.", currency="USD"),
                 equity("VOD.L", "Vodafone", "United Kingdom", "LSE", currency="GBP")]
-    web = FakeWeb(FakeFinanceDatabase(universe), yahoo, nasdaq)
+    web = FakeWeb(FakeFinanceDatabase(universe), yahoo)
     manager = open_context(Config(db_path=tmp_path / "o.db"), None, FakeClock(NOW), web.transport)
     c = manager.__enter__()
     await refresh_universe(c)
@@ -105,34 +96,27 @@ def test_a_symbol_with_no_bars_has_an_empty_series(ctx):
     assert tr.closes == [] and not tr.covered
 
 
-def traded(ctx, symbol, currency="USD"):
-    repo = PaperRepo(ctx.conn)
-    order = repo.add_order("manual", symbol, "buy", 100.0, None, "t", date(2026, 9, 1), "manual")
-    repo.record_fill(FillRow(order.id, "manual", symbol, "buy", date(2026, 9, 2), 1, 100.0, currency, 1.25, -80.0,
-                             0, 0, 0, 0))
 
-
-async def test_pay_dates_come_from_nasdaq_once_a_day_for_traded_us_listings(ctx, nasdaq):
+async def test_a_refetch_is_the_truth_for_its_window_so_a_moved_dividend_counts_once(ctx, yahoo):
     await update_listing(ctx, "AAPL")
-    await update_listing(ctx, "VOD.L")
-    traded(ctx, "AAPL")
-    traded(ctx, "VOD.L", "GBP")
-    nasdaq.add("AAPL", "stocks", [(date(2026, 9, 15), 1.0, date(2026, 9, 18)), (date(2026, 6, 1), 1.0, None)])
-    async with open_client(ctx) as client:
-        assert await find_pay_dates(ctx, client, NOW.date()) == []
-        assert await find_pay_dates(ctx, client, NOW.date()) == []
-    assert DividendRepo(ctx.conn).history("AAPL")[0].pay_date == date(2026, 9, 18)
-    assert nasdaq.asked == [("AAPL", "stocks")], "once, and never for a London line"
-
-
-async def test_an_etf_is_found_under_its_asset_class_and_a_miss_waits_a_day(ctx, nasdaq):
+    yahoo.dividends["AAPL"] = [(date(2026, 9, 16), 1.0)]
+    yahoo.series["AAPL"].bars.append(bar("2026-09-22", 111.0))
     await update_listing(ctx, "AAPL")
-    traded(ctx, "AAPL")
+    assert [d.ex_date for d in DividendRepo(ctx.conn).history("AAPL")] == [date(2026, 9, 16)]
+    yahoo.dividends["AAPL"] = []
+    await update_listing(ctx, "AAPL")
+    assert DividendRepo(ctx.conn).history("AAPL") == [], "a cancelled one is dropped"
+
+
+async def test_bars_from_another_source_ask_yahoo_only_for_the_days_not_yet_asked(ctx, yahoo):
+    await update_listing(ctx, "AAPL")
+    DividendRepo(ctx.conn).cover("AAPL", date(2026, 9, 1), date(2026, 9, 18), replace=True)
+    yahoo.charts.clear()
+    from oracle.services.http import open_client
+    from oracle.services.prices_service import _store_dividends
+    from oracle.market.sources import Instrument
     async with open_client(ctx) as client:
-        await find_pay_dates(ctx, client, NOW.date())
-        assert nasdaq.asked == [("AAPL", "stocks"), ("AAPL", "etf")]
-        await find_pay_dates(ctx, client, NOW.date())
-        assert len(nasdaq.asked) == 2
-        nasdaq.add("AAPL", "etf", [(date(2026, 9, 15), 1.0, date(2026, 9, 18))])
-        await find_pay_dates(ctx, client, date(2026, 9, 22))
-    assert DividendRepo(ctx.conn).history("AAPL")[0].pay_date == date(2026, 9, 18)
+        await _store_dividends(ctx, client, Instrument("AAPL", "USD"), None, None, NOW)
+    [(_, params)] = yahoo.charts
+    assert params["interval"] == "1mo" and int(params["period1"]) >= int(datetime(2026, 9, 18, tzinfo=timezone.utc).timestamp())
+    assert DividendRepo(ctx.conn).span("AAPL") == (date(2026, 9, 1), NOW.date())

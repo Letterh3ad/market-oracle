@@ -46,3 +46,11 @@ def test_a_ledger_credit_is_recorded_once(tmp_path):
     assert r.credits("index") == [credit]
     assert r.credits("index", "other") == []
     assert r.credited("index") == {("index", "ACWI", date(2026, 6, 15))}
+
+
+def test_a_fetch_replaces_its_window_but_keeps_its_first_day(tmp_path):
+    r = DividendRepo(repo(tmp_path))
+    r.upsert("X", [Dividend(date(2026, 1, 5), 1.0, "USD"), Dividend(date(2026, 2, 5), 1.0, "USD"),
+                   Dividend(date(2026, 3, 5), 1.0, "USD")], "yahoo", "t1")
+    r.replace("X", [Dividend(date(2026, 3, 6), 1.0, "USD")], date(2026, 1, 5), date(2026, 3, 31), "yahoo", "t2")
+    assert [d.ex_date for d in r.history("X")] == [date(2026, 1, 5), date(2026, 3, 6)]

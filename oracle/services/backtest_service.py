@@ -27,7 +27,7 @@ from oracle.broker.walk_forward import MONTHS, Figures, WalkLine, judge, segment
 from oracle.services import regime_tilt
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices, UnknownBacktest, UnknownSymbol
-from oracle.services.dividends_service import held_kind, held_note, reinvested
+from oracle.services.dividends_service import held_kind, held_note, reinvested, traded_payouts
 from oracle.services.index_service import (INDEX_LINES, index_caption, index_closes, index_equity, index_label,
                                            index_missing)
 from oracle.services.laya_line import laya_input
@@ -139,7 +139,8 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
 
     spans = segments(start, end, MONTHS) if walk_forward else []
 
-    fills = {"slippage": slippage_bps / BPS, "commission": commission}
+    paid, unpaid = traded_payouts(ctx, history)
+    fills = {"slippage": slippage_bps / BPS, "commission": commission, "dividends": paid}
 
     def run(lean=None, cap=None, first=start, last=end):
         return replay(history, first, last, rules=rules, risk=asdict(ctx.config.risk), lean=lean, cap=cap, **fills)
@@ -199,7 +200,7 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
         notes += [f"{could} not fill: {note}." for note in x.rejected]
         notes += [f"{still} waiting to fill on the last day: {', '.join(x.unfilled)}."] if x.unfilled else []
     notes.append(rotation_note(runs[REGIME_V2_LINE].trades, runs[REGIME_LINE].trades))
-    notes.append(PRICE_ONLY_TRADED)
+    notes.append(dividend_note(unpaid))
     walked = None
     if spans:
         sources = {**{n: (lambda a, b, s=symbol: index_equity(indexes, s, a, b, capital)) for n, symbol in priced},
@@ -217,9 +218,14 @@ def run_backtest(ctx: AppContext, watchlist: str, start: date, end: date, slippa
                     r.equity, r.trades, tuple(notes), walked)
 
 
-PRICE_ONLY_TRADED = ("Buy and hold, ACWI and SPY are total return (dividends reinvested at each ex-date's close); "
-                     "the traded lines (strategy, momentum, the regime lines and core-sat) are still price only, so "
-                     "they miss the dividends of what they hold and read slightly low against them.")
+def dividend_note(unpaid: list[str]) -> str:
+    """How every line counts dividends, naming the listings whose dividends were never fetched."""
+    return ("Every line counts dividends: buy and hold, ACWI and SPY reinvest them at each ex-date's close; the "
+            "traded lines (strategy, momentum, the regime lines and core-sat) are paid them as cash on the pay date "
+            "(when no source gives it, a typical lag for the market after the ex-date: 30 days for dollar listings, "
+            "45 for sterling and euro, 90 or more elsewhere) for the shares held at the close before the ex-date, "
+            "as the paper ledgers are." + (f" Price only, dividends not fetched yet: {', '.join(unpaid)}."
+                                          if unpaid else ""))
 
 
 def _equity(x) -> list[tuple[date, float]]:

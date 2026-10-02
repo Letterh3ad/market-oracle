@@ -14,7 +14,6 @@ CREATE TABLE dividends (
     amount      REAL NOT NULL,
     currency    TEXT NOT NULL,
     pay_date    TEXT,
-    pay_checked TEXT,
     source      TEXT NOT NULL,
     fetched_at  TEXT NOT NULL,
     PRIMARY KEY (symbol, ex_date)

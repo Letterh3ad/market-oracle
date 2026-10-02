@@ -17,7 +17,6 @@ from oracle.services.errors import PriceUnavailable, UnknownSymbol
 from oracle.services.fx_service import FxUpdate, update_fx
 from oracle.services.http import open_client
 from oracle.services.jobs_service import single_flight
-from oracle.services.pay_dates import find_pay_dates
 from oracle.services.universe_service import resolve_symbol
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -86,8 +85,6 @@ class ListingOutcome:
 class WatchedUpdate:
     listings: tuple[ListingOutcome, ...]
     fx: tuple[FxUpdate, ...]
-    pay_dates: tuple[str, ...] = ()
-    """Pay-date lookups that failed (they are tried again the next day)."""
 
     @property
     def failed(self) -> list[ListingOutcome]:
@@ -176,11 +173,9 @@ async def update_watched(ctx: AppContext, fx: bool = True) -> WatchedUpdate:
                     outcomes.append(ListingOutcome(symbol, 0, None, str(exc)))
                 else:
                     outcomes.append(ListingOutcome(r.symbol, r.added, r.source, None))
-            lease.check()
-            pay = await find_pay_dates(ctx, client, ctx.clock.utcnow().date())
         lease.check()
         rates = await update_fx(ctx) if fx and any(o.skipped is None for o in outcomes) else []
-    return WatchedUpdate(tuple(outcomes), tuple(rates), tuple(pay))
+    return WatchedUpdate(tuple(outcomes), tuple(rates))
 
 
 def price_history(ctx: AppContext, symbol: str, days: int | None = None) -> list[Bar]:
@@ -302,20 +297,23 @@ async def _store_dividends(ctx: AppContext, client: RateLimitedClient, instrumen
     symbol, today, repo = instrument.symbol, now.date(), DividendRepo(ctx.conn)
     stamp = to_utc_iso(now)
     if found is not None:
-        repo.upsert(symbol, found, "yahoo", stamp)
-        repo.cover(symbol, since or today - HISTORY, today)
+        window = since or today - HISTORY
+        repo.replace(symbol, found, window, today, "yahoo", stamp)
+        repo.cover(symbol, window, today)
     first = (BarRepo(ctx.conn).span([symbol]) or (today, today))[0]
     span = repo.span(symbol)
     if span is not None and span[0] <= first and span[1] >= today:
         return
     if "yahoo" not in ctx.config.prices.sources:
         return
+    # Only the days not yet asked: the whole history once, then (bars from EODHD) the tail since the last ask.
+    ask = first if span is None or span[0] > first else span[1]
     try:
-        topped = await YahooPrices(client).dividends(instrument, first, now)
+        topped = await YahooPrices(client).dividends(instrument, ask, now)
     except (NoData, SourceFailed, KeyError, IndexError, TypeError, ValueError):
         return
-    repo.upsert(symbol, topped, "yahoo", stamp)
-    repo.cover(symbol, first, today, replace=True)
+    repo.replace(symbol, topped, ask, today, "yahoo", stamp)
+    repo.cover(symbol, ask, today, replace=ask == first)
 
 
 def _note_no_data(ctx: AppContext, listing: Resolved, day: date) -> None:

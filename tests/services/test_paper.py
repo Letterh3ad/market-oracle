@@ -637,6 +637,18 @@ async def test_a_benchmarks_label_prefers_the_universe_name_when_it_resolves(ctx
     assert line.label == "Vodafone total return"  # VOD.L is already in this fixture's universe, priced with dividends
 
 
+async def test_a_benchmarks_label_is_its_own_share_class_not_its_companys_primary(ctx):
+    from oracle.universe.listings import Listing
+    universe = UniverseRepo(ctx.conn)
+    universe.add(Listing("VWRP.L", "Vanguard FTSE All-World UCITS ETF USD Accumulation", "ETF", "United Kingdom",
+                         "LSE", currency="GBP", company_key="vwrl", is_primary=True))
+    universe.add(Listing("VWRL.L", "Vanguard FTSE All-World UCITS ETF", "ETF", "United Kingdom", "LSE",
+                         currency="GBP", company_key="vwrl", is_primary=False))
+    ctx.config = replace(ctx.config, compare=replace(ctx.config.compare, benchmarks=("VWRL.L",)))
+    line = {line.name: line for line in comparison(ctx).lines}["VWRL.L"]
+    assert line.label == "Vanguard FTSE All-World UCITS ETF price only"
+
+
 async def test_a_benchmark_is_priced_but_never_traded_researched_or_watched(ctx, yahoo, clock):
     from oracle.store.watchlists import WatchlistRepo
 

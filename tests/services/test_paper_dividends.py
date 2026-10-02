@@ -5,9 +5,10 @@ from datetime import date, timedelta
 
 import pytest
 
+from oracle.broker.dividends import assumed_lag
 from oracle.market.dividends import Dividend
 from oracle.services.paper_service import (
-    CORE_SAT, PAY_LAG, Sleeve, account_score, account_view, credit_dividends, dividend_credits, fill_pending, place_buy, place_sell,
+    CORE_SAT, Sleeve, account_score, account_view, credit_dividends, dividend_credits, fill_pending, place_buy, place_sell,
 )
 from oracle.services.prices_service import update_listing
 from oracle.store.dividends import DividendRepo
@@ -37,7 +38,9 @@ async def advance_to(ctx, yahoo, clock, day: date):
     await update_fx(ctx)
 
 
-def dividend(ctx, ex=EX, pay=PAY, amount=0.5):
+def dividend(ctx, yahoo, ex=EX, pay=PAY, amount=0.5):
+    """Listed by the fake Yahoo too, so a refetch keeps it (a fetch is the truth for its window)."""
+    yahoo.dividends.setdefault("AAPL", []).append((ex, amount))
     DividendRepo(ctx.conn).upsert("AAPL", [Dividend(ex, amount, "USD")], "yahoo", "t")
     if pay:
         DividendRepo(ctx.conn).set_pay_dates("AAPL", {ex: pay})
@@ -45,7 +48,7 @@ def dividend(ctx, ex=EX, pay=PAY, amount=0.5):
 
 async def test_a_known_dividend_is_credited_on_its_pay_date_for_the_shares_held_before_the_ex_date(ctx, yahoo, clock):
     await hold_12_aapl(ctx, yahoo, clock)
-    dividend(ctx)
+    dividend(ctx, yahoo)
     before = account_view(ctx, "manual").cash
     await advance_to(ctx, yahoo, clock, EX)
     assert credit_dividends(ctx) == [], "on the ex-date it is owed, not paid"
@@ -61,14 +64,14 @@ async def test_a_known_dividend_is_credited_on_its_pay_date_for_the_shares_held_
 
 
 async def test_shares_bought_on_the_ex_date_earn_nothing_and_shares_sold_on_it_still_do(ctx, yahoo, clock):
-    dividend(ctx, ex=date(2026, 9, 22), pay=date(2026, 9, 24))
+    dividend(ctx, yahoo, ex=date(2026, 9, 22), pay=date(2026, 9, 24))
     place_buy(ctx, "AAPL", 1000.0)
     await next_day(ctx, yahoo, clock)
     fill_pending(ctx)  # filled at the 22nd's open: the ex-date
     await advance_to(ctx, yahoo, clock, date(2026, 9, 24))
     assert credit_dividends(ctx) == []
 
-    dividend(ctx, ex=date(2026, 9, 25), pay=date(2026, 9, 29))
+    dividend(ctx, yahoo, ex=date(2026, 9, 25), pay=date(2026, 9, 29))
     place_sell(ctx, "AAPL", None)
     await advance_to(ctx, yahoo, clock, date(2026, 9, 25))
     fill_pending(ctx)  # sold at the 25th's open: the ex-date, after holding through the 24th's close
@@ -80,8 +83,8 @@ async def test_shares_bought_on_the_ex_date_earn_nothing_and_shares_sold_on_it_s
 
 async def test_without_a_pay_date_it_is_credited_the_assumed_lag_after_the_ex_date(ctx, yahoo, clock):
     await hold_12_aapl(ctx, yahoo, clock)
-    dividend(ctx, pay=None)
-    due = EX + PAY_LAG
+    dividend(ctx, yahoo, pay=None)
+    due = EX + assumed_lag("USD")
     await advance_to(ctx, yahoo, clock, due - timedelta(days=1))
     assert credit_dividends(ctx) == []
     await advance_to(ctx, yahoo, clock, due)
@@ -91,7 +94,7 @@ async def test_without_a_pay_date_it_is_credited_the_assumed_lag_after_the_ex_da
 
 async def test_a_pay_date_before_the_ex_date_never_credits_before_the_ex_date(ctx, yahoo, clock):
     await hold_12_aapl(ctx, yahoo, clock)
-    dividend(ctx, ex=date(2026, 9, 25), pay=date(2026, 9, 23))
+    dividend(ctx, yahoo, ex=date(2026, 9, 25), pay=date(2026, 9, 23))
     await advance_to(ctx, yahoo, clock, date(2026, 9, 24))
     assert credit_dividends(ctx) == []
     await advance_to(ctx, yahoo, clock, date(2026, 9, 25))
@@ -101,7 +104,7 @@ async def test_a_pay_date_before_the_ex_date_never_credits_before_the_ex_date(ct
 
 async def test_the_fill_pass_credits_dividends_before_it_records_equity(ctx, yahoo, clock):
     await hold_12_aapl(ctx, yahoo, clock)
-    dividend(ctx)
+    dividend(ctx, yahoo)
     await advance_to(ctx, yahoo, clock, PAY)
     fill_pending(ctx)
     [c] = dividend_credits(ctx, "manual")
@@ -113,7 +116,7 @@ async def test_the_fill_pass_credits_dividends_before_it_records_equity(ctx, yah
 
 async def test_a_frozen_or_off_account_is_not_credited(ctx, yahoo, clock, monkeypatch):
     await hold_12_aapl(ctx, yahoo, clock)
-    dividend(ctx)
+    dividend(ctx, yahoo)
     await advance_to(ctx, yahoo, clock, PAY)
     monkeypatch.setattr("oracle.services.paper_service.FROZEN", frozenset({"manual"}))
     assert credit_dividends(ctx) == []
@@ -124,7 +127,7 @@ async def test_each_sleeve_is_credited_for_its_own_shares_and_cash(ctx, yahoo, c
     place_buy(ctx, "AAPL", 500.0, CORE_SAT, source="manual-sleeve")
     await next_day(ctx, yahoo, clock)
     fill_pending(ctx)
-    dividend(ctx)
+    dividend(ctx, yahoo)
     await advance_to(ctx, yahoo, clock, PAY)
     assert {c.source: c.shares for c in credit_dividends(ctx)} == {CORE_SAT: 12, "manual-sleeve": 6}
     paid = sum(c.cash for c in dividend_credits(ctx, CORE_SAT) if c.source == "manual-sleeve")

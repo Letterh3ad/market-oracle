@@ -124,8 +124,9 @@ def _parse(symbol: str, body: dict) -> list[Bar]:
 
 def _dividends(body: dict) -> list[Dividend]:
     """The chart's dividend events (Yahoo's `date` is the ex-date), in the major unit of its
-    quoted currency. Yahoo states some London funds' dividends in the fund's own currency (VWRL.L
-    in USD), which it does not say; they are read as quoted."""
+    quoted currency. Checked 2026-10-02 for London lines: VWRL.L's and VUSA.L's yearly sums match
+    the sterling distributions justETF lists (VUSA.L 2022-2025: 0.85, 0.89, 0.90, 0.92 GBP), and
+    HSBA.L's are HSBC's dollar dividends converted to pence, so they are in the quoted currency."""
     r = (body["chart"]["result"] or [{}])[0]
     meta = r.get("meta") or {}
     currency, per_unit = major_unit(meta.get("currency") or "")

@@ -26,6 +26,22 @@ class DividendRepo:
                 "source = excluded.source, fetched_at = excluded.fetched_at",
                 [(symbol, d.ex_date.isoformat(), d.amount, d.currency, source, fetched_at) for d in dividends])
 
+    def replace(self, symbol: str, dividends: Sequence[Dividend], first: date, last: date, source: str,
+                fetched_at: str) -> None:
+        """A fetch is the whole truth for its window: store its dividends and drop the stored ones
+        with an ex-date after `first` to `last` it no longer lists (moved or cancelled), so none
+        counts twice. `first` itself is kept: the window opens at midnight UTC, so a market east of
+        UTC can stamp that day's dividend before it. A paper ledger's credit of a dropped one stays
+        in its history."""
+        kept = {d.ex_date.isoformat() for d in dividends}
+        with transaction(self._conn):
+            stale = [e for (e,) in self._conn.execute(
+                "SELECT ex_date FROM dividends WHERE symbol = ? AND ex_date > ? AND ex_date <= ?",
+                (symbol, first.isoformat(), last.isoformat())) if e not in kept]
+            self._conn.executemany("DELETE FROM dividends WHERE symbol = ? AND ex_date = ?",
+                                   [(symbol, e) for e in stale])
+            self.upsert(symbol, dividends, source, fetched_at)
+
     def history(self, symbol: str, start: date | None = None, end: date | None = None) -> list[Dividend]:
         """Oldest first, ex-dates from `start` to `end` (both included)."""
         rows = self._conn.execute(
@@ -39,20 +55,6 @@ class DividendRepo:
             return sum(self._conn.execute(
                 "UPDATE dividends SET pay_date = ? WHERE symbol = ? AND ex_date = ?",
                 (pay.isoformat(), symbol, ex.isoformat())).rowcount for ex, pay in pay_dates.items())
-
-    def unpaid(self, symbol: str, since: date) -> list[Dividend]:
-        """Ex-dates from `since` with no pay date yet."""
-        return [d for d in self.history(symbol, since) if d.pay_date is None]
-
-    def mark_checked(self, symbol: str, day: date) -> None:
-        with transaction(self._conn):
-            self._conn.execute("UPDATE dividends SET pay_checked = ? WHERE symbol = ? AND pay_date IS NULL",
-                               (day.isoformat(), symbol))
-
-    def checked_on(self, symbol: str, day: date) -> bool:
-        """Some unpaid dividend of `symbol` was looked up on `day` already."""
-        return self._conn.execute("SELECT 1 FROM dividends WHERE symbol = ? AND pay_date IS NULL AND pay_checked = ?",
-                                  (symbol, day.isoformat())).fetchone() is not None
 
     def span(self, symbol: str) -> tuple[date, date] | None:
         """The days dividends were asked for, first and last; None when never asked."""

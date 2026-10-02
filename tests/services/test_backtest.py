@@ -591,9 +591,29 @@ def test_acwi_and_spy_held_lead_the_table_and_buy_and_hold_says_it_is_todays_lis
     assert index.caption.startswith("Index (ACWI): all the capital in ACWI") and "Total return" in index.caption
     held = next(x for x in r.lines if x.name == "buy_and_hold")
     assert held.label == "Buy and hold (today's list) total return" and "survivorship" in held.caption
-    assert any("traded lines" in n and "price only" in n for n in r.notes)
+    [note] = [n for n in r.notes if n.startswith("Every line counts dividends")]
+    assert "paid them as cash on the pay date" in note and "not fetched" not in note
     assert not any("No stored" in n for n in r.notes)
     assert "ACWI" not in r.listings, "a benchmark is never one of the list's traded listings"
+
+
+def test_traded_lines_are_paid_dividends_as_cash_in_the_backtest_and_the_walk_forward(make_ctx):
+    plain_ctx = make_ctx({"UP": BARS}, name="plain.db")
+    asked(plain_ctx, "UP")
+    paid_ctx = make_ctx({"UP": BARS}, name="paid.db")
+    asked(paid_ctx, "UP", [(BARS[360].date, 3.0)])
+    plain, paid = run_backtest(plain_ctx, "tech", START, END), run_backtest(paid_ctx, "tech", START, END)
+    lines = lambda r: {x.name: x for x in r.lines}  # noqa: E731
+    strategy = [t for t in plain.trades if t.symbol == "UP" and t.day < BARS[360].date and t.side == "buy"]
+    assert strategy, "the strategy held UP over the ex-date"
+    assert lines(paid)["strategy"].return_ > lines(plain)["strategy"].return_
+    assert lines(paid)["core_sat"].return_ > lines(plain)["core_sat"].return_
+
+
+def test_a_traded_listing_without_fetched_dividends_is_named(make_ctx):
+    r = run_backtest(make_ctx({"UP": BARS}), "tech", START, END)
+    [note] = [n for n in r.notes if n.startswith("Every line counts dividends")]
+    assert note.endswith("Price only, dividends not fetched yet: UP.")
 
 
 def test_held_lines_reinvest_dividends_and_say_price_only_when_none_were_fetched(make_ctx):
@@ -607,7 +627,8 @@ def test_held_lines_reinvest_dividends_and_say_price_only_when_none_were_fetched
     assert spy.label == "SPY price only"
     assert "Price only" in spy.caption
     held = next(x for x in r.lines if x.name == "buy_and_hold")
-    assert held.label == "Buy and hold (today's list) price only" and "price only for UP" in held.caption
+    assert held.label == "Buy and hold (today's list) price only"
+    assert "price only (dividends not fetched yet)" in held.caption and "reinvested" not in held.caption
 
 
 def test_without_index_prices_the_lines_are_empty_and_a_note_says_so(make_ctx):

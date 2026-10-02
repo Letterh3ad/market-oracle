@@ -101,10 +101,6 @@ class PaperRepo:
             "AND (:s IS NULL OR o.source = :s) ORDER BY f.date, f.order_id", {"a": account, "s": source})
         return [FillRow(*r[:3], Side(r[3]), date.fromisoformat(r[4]), *r[5:]) for r in rows]
 
-    def traded_symbols(self) -> list[str]:
-        """Every symbol any account has had a fill of, held now or not, sorted."""
-        return [r[0] for r in self._conn.execute("SELECT DISTINCT symbol FROM paper_fills ORDER BY symbol")]
-
     def fill_sources(self, account: str) -> list[str]:
         """The sources of the account's filled orders (its sleeves, or just itself), sorted."""
         return [r[0] for r in self._conn.execute(

@@ -49,8 +49,10 @@ const GLOSSARY = {
   proceeds: "Cash received for the shares sold, after fees, the exchange spread and slippage.",
   realised: "Profit or loss locked in by selling, after every cost.",
   dividends: "Cash dividends credited on the pay date, for the shares held at the close before the ex-date, at "
-    + "that day's exchange rate less the FX spread. Without a known pay date (only US listings have one) it is "
-    + "credited 90 days after the ex-date, marked assumed.",
+    + "that day's exchange rate less the FX spread. The price source gives no pay dates, so each is assumed: a "
+    + "typical upper bound for the market after the ex-date (30 days for dollar listings, 45 for sterling, euro, "
+    + "Swiss franc and Australian dollar, 95 for yen, 130 for won, 90 elsewhere), marked assumed. The account dips "
+    + "on the ex-date and the cash arrives later, while buy and hold and the benchmarks reinvest on the ex-date.",
   unrealised: "Profit or loss on shares still held, if they were sold at the last close (before selling costs).",
   costs:
     "Everything trading has cost: broker fees, UK stamp duty on London buys, the currency exchange spread " +

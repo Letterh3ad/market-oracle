@@ -381,6 +381,12 @@ class UniverseRepo:
         rows = self._conn.execute("SELECT symbol FROM listings WHERE company_key = ?", (company_key,))
         return [r[0] for r in rows]
 
+    def listing_name(self, symbol: str) -> str | None:
+        """The listing's own name (not its company's), None if not listed or unnamed."""
+        row = self._conn.execute("SELECT NULLIF(name, '') FROM listings WHERE symbol = ? COLLATE NOCASE "
+                                 "ORDER BY symbol = ? DESC LIMIT 1", (symbol.strip(), symbol.strip())).fetchone()
+        return row[0] if row else None
+
     def resolve(self, symbol: str) -> Resolved | None:
         """A symbol in any case, as stored, with its company; None if not listed."""
         row = self._conn.execute(

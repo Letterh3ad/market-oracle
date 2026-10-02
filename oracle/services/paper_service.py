@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from oracle.broker.backtest import LeanCap
 from oracle.broker import core_sat
 from oracle.broker.compare import benchmark_return, buy_and_hold, max_fall, returns_since
+from oracle.broker.dividends import Payout, credits
 from oracle.broker.fills import COSTS, Fill, buy_fill, costs_for, sell_fill
 from oracle.broker.orders import Action, Side, Status
 from oracle.broker.rules import Decision, Lean, Position, Rules, decide
@@ -40,7 +41,7 @@ __all__ = [
     "UNVALIDATED", "AccountScore",
     "AccountView", "Action", "Comparison", "FillOutcome", "Line",
     "Order", "Position", "Sell", "Side", "Status", "TRADERS", "account_on", "account_score", "account_view", "ai_step",
-    "PAY_LAG", "PaperDividend", "comparison", "credit_dividends", "decision_log", "discovered_off", "dividend_credits",
+    "PaperDividend", "comparison", "credit_dividends", "decision_log", "discovered_off", "dividend_credits",
     "equity_history", "fill_pending", "held_since",
     "pending_orders", "place_buy", "place_sell", "sells", "step_account", "verdict_history",
     "strategy_rules", "strategy_step", "traded_by",
@@ -425,41 +426,36 @@ def fill_pending(ctx: AppContext) -> list[FillOutcome]:
     return out
 
 
-PAY_LAG = timedelta(days=90)
-"""When no source gives a dividend's pay date (only Nasdaq does, for US listings), it is credited
-this long after the ex-date: late rather than early for nearly every market (Japan's year-end
-dividends pay about 85 days after; a Korean year-end one can pay later)."""
-
-
 def credit_dividends(ctx: AppContext) -> list[PaperDividend]:
-    """Credit every cash dividend now paid to each acting account: for the shares each order
-    source (a sleeve, or the account) held at the close before the ex-date, as cash on the pay
-    date at that day's rate, less the FX spread. A dividend waits while its pay date is ahead or
-    no rate is stored for it; a frozen or switched-off account is never credited."""
+    """Credit every cash dividend now paid to each acting account, by `broker.dividends.credits`
+    (the backtest engines' rule too): for the shares each order source (a sleeve, or the account)
+    held at the close before the ex-date, as cash on the pay date (or the market's assumed lag
+    after the ex-date) at that day's rate, less the FX spread. A dividend waits while no rate is
+    stored for its pay day; a frozen or switched-off account is never credited."""
     today = ctx.clock.utcnow().date()
-    paper, stored, credits = PaperRepo(ctx.conn), DividendRepo(ctx.conn), PaperDividendRepo(ctx.conn)
+    paper, stored, repo = PaperRepo(ctx.conn), DividendRepo(ctx.conn), PaperDividendRepo(ctx.conn)
     out = []
     for account in ACCOUNTS:
         if not account_on(ctx, account):
             continue
-        done = credits.credited(account)
+        done = repo.credited(account)
         for source in paper.fill_sources(account):
             fills = paper.fills(account, source)
             for symbol in sorted({f.symbol for f in fills}):
-                mine = [f for f in fills if f.symbol == symbol]
-                for d in stored.history(symbol, mine[0].date + timedelta(days=1), today):
-                    if (source, symbol, d.ex_date) in done:
+                mine = [(f.date, f.shares if f.side == Side.BUY else -f.shares) for f in fills if f.symbol == symbol]
+                owed = [Payout(d.ex_date, d.amount, d.currency, d.pay_date)
+                        for d in stored.history(symbol, mine[0][0] + timedelta(days=1), today)
+                        if (source, symbol, d.ex_date) not in done]
+                for c in credits(mine, owed, today):
+                    p = c.payout
+                    rate = _rate(ctx, p.currency, p.pay_day)
+                    if rate is None:
                         continue
-                    shares = sum(f.shares if f.side == Side.BUY else -f.shares for f in mine if f.date < d.ex_date)
-                    pay = max(d.pay_date or d.ex_date + PAY_LAG, d.ex_date)
-                    rate = _rate(ctx, d.currency, pay)
-                    if shares <= 0 or pay > today or rate is None:
-                        continue
-                    spread = COSTS.fx_spread if d.currency != ctx.config.base_currency else 0.0
-                    c = PaperDividend(account, source, symbol, d.ex_date, pay, d.pay_date is not None, shares, d.amount,
-                                      d.currency, rate, shares * d.amount * (1 - spread) / rate)
-                    if credits.record(c):
-                        out.append(c)
+                    spread = COSTS.fx_spread if p.currency != ctx.config.base_currency else 0.0
+                    row = PaperDividend(account, source, symbol, p.ex_date, p.pay_day, p.pay_date is not None, c.shares,
+                                        p.amount, p.currency, rate, c.cash * (1 - spread) / rate)
+                    if repo.record(row):
+                        out.append(row)
     return out
 
 
@@ -560,8 +556,9 @@ def _benchmark_line(ctx: AppContext, symbol: str, start: date | None) -> Line:
 
 
 def _benchmark_label(ctx: AppContext, symbol: str) -> str:
-    found = UniverseRepo(ctx.conn).resolve(symbol)
-    return found.name if found else BENCHMARK_LABELS.get(symbol, symbol)
+    """The listing's own name: a fund's share classes share a company, and the company's name is
+    its primary class's (VWRL.L, distributing, would read as VWRP.L's "USD Accumulation")."""
+    return UniverseRepo(ctx.conn).listing_name(symbol) or BENCHMARK_LABELS.get(symbol, symbol)
 
 
 def _benchmark_caption(symbol: str, start: date | None, tr: TotalReturn) -> str:

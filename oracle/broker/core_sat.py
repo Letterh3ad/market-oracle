@@ -17,7 +17,9 @@ from datetime import date, timedelta
 from typing import Literal
 
 from oracle.analysts.risk import Priced
-from oracle.broker.backtest import LeanCap, LeanSource, Replay, Trade, Venue, _charges, _price, fill_costs, replay
+from oracle.broker.backtest import (LeanCap, LeanSource, Replay, Trade, Venue, _charges, _price, dividend_cash, fill_costs,
+                                    replay)
+from oracle.broker.dividends import DividendBook, Payout
 from oracle.broker.fills import buy_fill, sell_fill
 from oracle.broker.orders import Action, Side
 from oracle.broker.rules import Decision, Rules
@@ -142,11 +144,12 @@ def _target(members: Collection[str], held: Mapping[str, tuple[int, float]], cas
 def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date, *, capital: float,
                 members: Collection[str], slippage: float, commission: float,
                 fill_at: Literal["open", "close"] = "open", venues: Mapping[str, Venue] | None = None,
-                rebalance_years: int | None = REBALANCE_YEARS) -> Replay:
+                rebalance_years: int | None = REBALANCE_YEARS,
+                dividends: Mapping[str, Sequence[Payout]] | None = None) -> Replay:
     """The core alone over `history` (as `backtest.replay` takes it): `members` bought in equal
     amounts, set back to equal weight on each `rebalance_days` day (the first only, unless
     `rebalance_years`), filling like the traded lines (the next bar's open or close, with the same
-    costs). Decisions on a day read only its bars."""
+    costs). Decisions on a day read only its bars. `dividends` are paid as `backtest.replay` pays them."""
     days = sorted({p.bar.date for rows in history.values() for p in rows if start <= p.bar.date <= end})
     due = set(rebalance_days(days, rebalance_years))
     seen = dict.fromkeys(history, 0)
@@ -156,6 +159,7 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
     pending: list[tuple[date, CoreOrder]] = []
     buying_next = False
     equity, trades, orders, rejected = [], [], [], []
+    book, rates, paid = DividendBook(dividends), {}, 0.0
     for day in days:
         today = {}
         for s, rows in history.items():
@@ -163,6 +167,10 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
                 seen[s] += 1
             if seen[s] and rows[seen[s] - 1].bar.date == day:
                 today[s] = rows[seen[s] - 1]
+            if seen[s] and rows[seen[s] - 1].rate:
+                rates[s] = rows[seen[s] - 1].rate
+        got = dividend_cash(book, day, rates, venues)
+        cash, paid = cash + got, paid + got
         waiting = []
         for placed, order in sorted(pending, key=lambda x: x[1].side != Side.SELL):
             p = today.get(order.symbol)
@@ -178,7 +186,9 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
                 rejected.append(f"{day.isoformat()} {order.symbol}: the core's buy buys no whole share after costs")
                 continue
             cash += trade.cash
-            held[trade.symbol] = held.get(trade.symbol, 0) + (trade.shares if trade.side == Side.BUY else -trade.shares)
+            change = trade.shares if trade.side == Side.BUY else -trade.shares
+            book.fill(trade.symbol, trade.day, change)
+            held[trade.symbol] = held.get(trade.symbol, 0) + change
             if held[trade.symbol] <= 0:
                 held.pop(trade.symbol)
             trades.append(trade)
@@ -206,7 +216,7 @@ def core_replay(history: Mapping[str, Sequence[Priced]], start: date, end: date,
             orders.append((day, Decision(order.symbol, Action.BUY if order.side == Side.BUY else Action.SELL,
                                          order.cash, order.reason)))
     return Replay(tuple(equity), tuple(trades), tuple(orders), tuple(rejected),
-                  tuple(sorted({o.symbol for _, o in pending})))
+                  tuple(sorted({o.symbol for _, o in pending})), paid)
 
 
 def _fill(order: CoreOrder, p: Priced, price: float, cash: float, held: Mapping[str, int], charges) -> Trade | None:
@@ -227,7 +237,8 @@ def core_sat_replay(history: Mapping[str, Sequence[Priced]], start: date, end: d
                     risk: Mapping[str, float], members: Collection[str], slippage: float, commission: float,
                     lean: LeanSource, cap: LeanCap | None = None, fill_at: Literal["open", "close"] = "open",
                     venues: Mapping[str, Venue] | None = None, satellite_share: float = SATELLITE_SHARE,
-                    rebalance_years: int | None = REBALANCE_YEARS) -> CoreSat:
+                    rebalance_years: int | None = REBALANCE_YEARS,
+                    dividends: Mapping[str, Sequence[Payout]] | None = None) -> CoreSat:
     """`risk["account"]` split `satellite_share` to the satellite, the rest to the core: `lean`
     (the regime book's, with any extra methods its inputs carry) traded under `rules` within the
     satellite's own cash, its risk sizes and cash floor a share of the satellite alone. The two
@@ -235,9 +246,10 @@ def core_sat_replay(history: Mapping[str, Sequence[Priced]], start: date, end: d
     capital = risk["account"]
     c = core_replay(history, start, end, capital=capital * (1 - satellite_share), members=members,
                     slippage=slippage, commission=commission, fill_at=fill_at, venues=venues,
-                    rebalance_years=rebalance_years)
+                    rebalance_years=rebalance_years, dividends=dividends)
     s = (replay(history, start, end, rules=rules, risk={**risk, "account": capital * satellite_share},
-                slippage=slippage, commission=commission, lean=lean, fill_at=fill_at, venues=venues, cap=cap)
+                slippage=slippage, commission=commission, lean=lean, fill_at=fill_at, venues=venues, cap=cap,
+                dividends=dividends)
          if satellite_share > 0 else Replay(tuple((d, 0.0) for d, _ in c.equity), (), (), (), ()))
     sat = dict(s.equity)
     return CoreSat(tuple((d, v + sat[d]) for d, v in c.equity), c, s)
