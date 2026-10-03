@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date
 
+from oracle.analysts.predictive import T_BAR
 from oracle.analysts.signal_test import (
     Panel, SegmentRow, Signal, WindowResult, daily_ics, momentum_12_1, overall, reversal_1m, unseen_text,
     window_result,
@@ -21,6 +22,7 @@ from oracle.services import fund_compare_service, trend_service
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.insider_service import INSIDER_BUYS
+from oracle.services.lab_registry import require_committed
 from oracle.services.testbed_service import START, Testbed, research_context
 from oracle.services.xbrl_service import FUNDAMENTAL_SIGNALS
 from oracle.store.db import to_utc_iso
@@ -88,6 +90,9 @@ class SignalTest:
     id: int | None = None
     train_only: bool = False
     """Bars to TRAIN_END only and no confirm (a rule still being chosen must not see it)."""
+    bar: float = T_BAR
+    """The t its registration set (kept results from before the lab needed t above 2)."""
+    bar_inclusive: bool = False
 
     @property
     def verdict_text(self) -> str:
@@ -140,7 +145,9 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
                           on_progress: Callable[[str], None] = lambda _: None) -> SignalTest | None:
     """The test of `name` as pre-registered, over the testbed to `end` (default today); reads only.
     Between chunks of days it waits while `busy` names live work, and returns None when `stop`.
-    `train_only` loads nothing after TRAIN_END and computes no confirm."""
+    `train_only` loads nothing after TRAIN_END and computes no confirm. Refused unless the signal's
+    pre-registration is committed; it runs the registered horizons (never the code's) and its
+    verdict needs the bar the registration froze."""
     signal = check_signal(name, registry)
     say = on_progress
 
@@ -155,6 +162,9 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
         say(label)
 
     with research_context(ctx) as r:
+        reg = require_committed(r, [signal.name])[signal.name]
+        bar, inclusive = (T_BAR, False) if reg.bar is None else (reg.bar, reg.bar_inclusive)
+        horizons = reg.horizons
         tb = Testbed(r)
         try:
             await turn("loading the testbed")
@@ -171,23 +181,24 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
             train_spans, confirm_spans = segments(START, min(TRAIN_END, last)), segments(CONFIRM_START, last)
             missing = {"train": missing_share(p, START, TRAIN_END), "confirm": missing_share(p, CONFIRM_START, last)}
             train, confirm = [], []
-            for h in signal.horizons:
+            for h in horizons:
                 ics: dict = {}
                 for i in range(1, len(p.days), CHUNK):
                     await turn(f"{signal.name}, {h}-day horizon: {p.days[i]}")
                     ics.update(daily_ics(p, signal.score, h, i, i + CHUNK))
-                train.append(window_result("train", ics, train_spans, h, missing["train"], cutoff))
+                train.append(window_result("train", ics, train_spans, h, missing["train"], cutoff, bar, inclusive))
                 if not train_only:
-                    confirm.append(window_result("confirm", ics, confirm_spans, h, missing["confirm"], cutoff))
+                    confirm.append(window_result("confirm", ics, confirm_spans, h, missing["confirm"], cutoff, bar,
+                                                 inclusive))
         except _Stopped:
             return None
         snap = tb.snapshot()
     verdict = TRAIN_ONLY if train_only else overall([w.verdict for w in confirm])
-    return SignalTest(signal.name, signal.label, signal.horizons, signal.model, cutoff, tuple(train), tuple(confirm),
+    return SignalTest(signal.name, signal.label, horizons, signal.model, cutoff, tuple(train), tuple(confirm),
                       overall([w.verdict for w in train]), verdict, verdict == "PASS", p.days[0], last,
                       len(set().union(*p.members)),
                       f"{snap.source} at {(snap.revision or 'unknown')[:7]}, last change {snap.last_day}" if snap else None,
-                      to_utc_iso(ctx.clock.utcnow()), train_only=train_only)
+                      to_utc_iso(ctx.clock.utcnow()), train_only=train_only, bar=bar, bar_inclusive=inclusive)
 
 
 def keep_signal_test(ctx: AppContext, test: SignalTest) -> SignalTest:

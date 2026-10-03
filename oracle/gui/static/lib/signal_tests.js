@@ -329,6 +329,9 @@ function signalTestsSection() {
       + "apart from the live one. A renamed member is priced from the ticker it became when SEC and Yahoo agree "
       + "(Check renames asks them again); delisted members have no bars: the missing share below is printed beside "
       + "every result."),
+    el("p", { class: "small" }, "Every registered test, the bar it is judged by and its verdict: the ",
+      el("a", { href: "#research" }, "Research tab"), "'s scoreboard. A test runs only once its pre-registration "
+      + "is committed."),
     el("div", { class: "row" }, startButton("Build testbed", ""), " ", startButton("Refresh testbed", "?refresh=true"),
       " ", startButton("Check renames", "?verify=true")),
     note, snapshot, lastRun, summary, body,

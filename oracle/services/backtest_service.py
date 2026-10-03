@@ -16,6 +16,7 @@ from dataclasses import asdict, dataclass
 from datetime import date, datetime
 
 from oracle.analysts.indicators import YEAR
+from oracle.analysts.lab import Moments, deflated_sharpe, moments
 from oracle.broker.backtest import Trade, replay
 from oracle.broker.baseline import ceiling
 from oracle.broker.compare import buy_and_hold, max_fall, returns_since
@@ -39,8 +40,9 @@ from oracle.services.watch_service import watchlist_symbols
 from oracle.store.backtests import BacktestRepo
 from oracle.store.bars import BarRepo
 
-__all__ = ["KEEP", "Backtest", "Figures", "KeptBacktest", "Line", "Trade", "WalkForward", "check_backtest",
-           "keep_backtest", "kept_backtest", "kept_backtests", "run_backtest", "stored_span"]
+__all__ = ["KEEP", "TRADED_VARIANTS", "Backtest", "Deflated", "Figures", "KeptBacktest", "Line", "Trade", "WalkForward",
+           "check_backtest", "deflated", "keep_backtest", "kept_backtest", "kept_backtests", "run_backtest",
+           "stored_span", "variants_tried"]
 
 BPS = 10_000
 KEEP = 10
@@ -78,6 +80,48 @@ class Backtest:
     notes: tuple[str, ...]
     walk_forward: WalkForward | None = None
     """Only when asked for; runs kept before it have none."""
+
+
+TRADED_VARIANTS = 8
+"""Every traded line a backtest sets side by side (strategy, momentum, regime, regime-v2, core-sat,
+core-sat-laya, regime-wf, regime-ai): taking the best of them is a pick among 8 variants."""
+BENCHMARKS = frozenset({*(name for name, _, _ in INDEX_LINES), "buy_and_hold"})
+"""Held, never picked: one variant each."""
+
+
+def variants_tried(line: str) -> int:
+    return 1 if line in BENCHMARKS else TRADED_VARIANTS
+
+
+@dataclass(frozen=True)
+class Deflated:
+    name: str
+    sharpe: float | None
+    """Annualised over YEAR days at a zero rate."""
+    variants: int
+    dsr: float | None
+    """The deflated Sharpe probability (Bailey and Lopez de Prado): the chance the line's Sharpe beats
+    the best of `variants` skill-free tries; None under 3 daily returns."""
+
+
+def _deflated(name: str, m: Moments | None) -> Deflated:
+    n = variants_tried(name)
+    return Deflated(name, None if m is None else m.sharpe * math.sqrt(YEAR), n,
+                    None if m is None else deflated_sharpe(m, n))
+
+
+def _daily(points) -> list[float]:
+    return [(1 + b) / (1 + a) - 1 for (_, a), (_, b) in zip(points, points[1:]) if 1 + a > 0]
+
+
+def deflated(b: Backtest) -> tuple[tuple[Deflated, ...], tuple[Deflated, ...]]:
+    """The deflated Sharpe of each line over the whole run, and of each walk-forward line over
+    its pooled segments (empty for a run kept before it was recorded, or without a walk-forward)."""
+    lines = tuple(_deflated(x.name, moments(_daily(x.points))) for x in b.lines)
+    wf = b.walk_forward
+    walked = () if wf is None or not any(x.overall.moments for x in wf.lines) else tuple(
+        _deflated(x.name, x.overall.moments) for x in wf.lines)
+    return lines, walked
 
 
 def stored_span(ctx: AppContext, watchlist: str) -> tuple[str, date | None, date | None]:
@@ -298,6 +342,11 @@ def kept_backtest(ctx: AppContext, run_id: int) -> KeptBacktest:
     return _kept(run_id, value)
 
 
+def _figures(f: dict) -> Figures:
+    m = f.get("moments")
+    return Figures(**{**f, "moments": Moments(**m) if m else None})
+
+
 def _iso(value: date) -> str:
     return value.isoformat()
 
@@ -311,7 +360,7 @@ def _kept(run_id: int, value: str) -> KeptBacktest:
     wf = b.get("walk_forward")
     walked = None if wf is None else WalkForward(
         wf["months"], tuple((day(a), day(z)) for a, z in wf["segments"]),
-        tuple(WalkLine(x["name"], tuple(Figures(**f) for f in x["segments"]), Figures(**x["overall"]), x["beat"])
+        tuple(WalkLine(x["name"], tuple(Figures(**f) for f in x["segments"]), _figures(x["overall"]), x["beat"])
               for x in wf["lines"]),
         tuple((day(d), presets) for d, presets in wf["fits"]))
     backtest = Backtest(

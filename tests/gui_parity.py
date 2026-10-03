@@ -202,6 +202,12 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "signals list": "GET /api/signals",
     "signals test": "POST /api/jobs/signal-test",
     "signals test --train-only": "POST /api/jobs/signal-test",
+    # Research tab, Scoreboard: the table, a row's Registration (Record commit, Drop), Register a test.
+    "lab scoreboard": "GET /api/lab/scoreboard",
+    "lab show": "GET /api/lab/tests/{key}",
+    "lab register": "POST /api/lab/tests",
+    "lab commit": "PUT /api/lab/tests/{key}/commit",
+    "lab drop": "DELETE /api/lab/tests/{key}",
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",

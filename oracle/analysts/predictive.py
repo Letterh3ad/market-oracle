@@ -128,14 +128,16 @@ class Verdict:
     counted: int
 
 
-def verdict(ic: float | None, t: float | None, segments: Sequence[SegmentIC]) -> Verdict:
-    """PASS only with the overall IC above 0, t above T_BAR and the IC positive in more than half
-    of the counted segments; fewer than MIN_COUNTED counted is inconclusive."""
+def verdict(ic: float | None, t: float | None, segments: Sequence[SegmentIC], bar: float = T_BAR,
+            inclusive: bool = False) -> Verdict:
+    """PASS only with the overall IC above 0, t above `bar` (or at it, `inclusive`) and the IC
+    positive in more than half of the counted segments; fewer than MIN_COUNTED counted is
+    inconclusive."""
     counted = [s for s in segments if s.counted]
     positive = sum(1 for s in counted if s.ic is not None and s.ic > 0)
     if len(counted) < MIN_COUNTED or ic is None:
         return Verdict("INCONCLUSIVE", False, ic, t, positive, len(counted))
-    ok = ic > 0 and t is not None and t > T_BAR and positive * 2 > len(counted)
+    ok = ic > 0 and t is not None and (t >= bar if inclusive else t > bar) and positive * 2 > len(counted)
     return Verdict("PASS" if ok else "FAIL", ok, ic, t, positive, len(counted))
 
 

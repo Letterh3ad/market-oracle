@@ -113,3 +113,11 @@ class UnknownLink(ServiceError):
 
 class UnknownCorrection(ServiceError):
     pass
+
+
+class UnknownLabTest(ServiceError):
+    pass
+
+
+class NotRegistered(InvalidQuery):
+    """A data run of a test with no committed pre-registration."""
