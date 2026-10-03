@@ -56,13 +56,17 @@ def test_a_research_db_with_the_insider_tables_gains_fx_and_dividends_for_the_fu
     conn.close()
 
 
-def test_a_research_db_with_the_fund_data_gains_the_literature_index_and_keeps_its_rows(tmp_path):
+def test_a_research_db_with_the_registry_gains_the_literature_index_and_keeps_its_rows(tmp_path):
+    from oracle.store.testbed_migrations import t0007_lab_registry, t0008_literature
+    assert MIGRATIONS.index(t0007_lab_registry) == 10 and MIGRATIONS.index(t0008_literature) == 11
     conn = connect(tmp_path / "research.db")
-    migrate(conn, MIGRATIONS[:10])
+    migrate(conn, MIGRATIONS[:11])
     conn.execute("INSERT INTO signal_tests (signal, verdict, result, run_at) VALUES ('sue', 'FAIL', '{}', 'x')")
     conn.commit()
+    registered = conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0]
     migrate(conn, MIGRATIONS)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 11
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 12
+    assert conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0] == registered > 0
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"lit_sources", "lit_source_ids", "lit_methods", "lit_method_sources", "lit_marks", "lit_searches",
             "lit_search_sources"} <= tables

@@ -1,6 +1,4 @@
-"""The research lab's literature index: lookup, the method list, one method, marks, recording a source and
-the search log. Each call opens the research database on a thread of its own. Marks and records made
-here are the user's."""
+"""The Research tab's scoreboard and test registry (research-lab 01)."""
 
 from __future__ import annotations
 
@@ -8,76 +6,60 @@ import asyncio
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictInt, StrictStr
 
 from oracle.gui.deps import get_ctx
-from oracle.services import lab_service as lab
 from oracle.services.context import AppContext
+from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
+from oracle.services.lab_service import bar_text, scoreboard
 
 router = APIRouter(prefix="/api/lab")
-USER = "user"
 
 
-class Mark(BaseModel):
-    how: str
-    note: str = ""
+@router.get("/scoreboard")
+async def get_scoreboard(ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(scoreboard(ctx))
 
 
-class Record(BaseModel):
-    id: str | None = None
-    title: str | None = None
-    authors: str | None = None
-    year: int | None = None
-    quality: str | None = None
-    note: str | None = None
-    read_on: str | None = None
-    methods: list[str] = []
-    new_method: str | None = None
-    family: str = ""
-    definition: str = ""
-    aliases: list[str] = []
+@router.get("/tests/{key}")
+async def get_test(key: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    r = registration(ctx, key)
+    return {**asdict(r), "bar_text": bar_text(r)}
 
 
-class SearchLog(BaseModel):
-    query: str
-    where: str
-    found: list[str] = []
-    note: str = ""
+class TemplateBody(BaseModel):
+    key: StrictStr
+    label: StrictStr
+    kind: StrictStr
+    horizons: list[StrictInt]
+    rule: StrictStr
+    universe: StrictStr
+    expected_sign: StrictStr
+    expected_size: StrictStr
+    source: StrictStr
+    power: StrictStr
+    costs: StrictStr
+    kill_stage: StrictStr
+    parent: StrictStr | None = None
+    different_because: StrictStr | None = None
 
 
-@router.get("/lookup")
-async def lookup(q: str, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.lookup, ctx, q))
+@router.post("/tests")
+async def post_test(body: TemplateBody, ctx: AppContext = Depends(get_ctx)) -> dict:
+    data = body.model_dump()
+    return asdict(register_test(ctx, Template(**{**data, "horizons": tuple(data["horizons"])})))
 
 
-@router.get("/methods")
-async def methods(status: str | None = None, ctx: AppContext = Depends(get_ctx)) -> dict:
-    rows = await asyncio.to_thread(lab.methods, ctx, status or None)
-    return {"methods": [asdict(m) for m in rows], "statuses": list(lab.STATUSES), "marks": sorted(lab.MARKS)}
+class CommitBody(BaseModel):
+    hash: StrictStr
 
 
-@router.get("/methods/{ref}")
-async def method(ref: str, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.method, ctx, ref))
+@router.put("/tests/{key}/commit")
+async def put_commit(key: str, body: CommitBody, ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(await asyncio.to_thread(commit_test, ctx, key, body.hash))
 
 
-@router.post("/methods/{ref}/mark")
-async def mark(ref: str, body: Mark, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.mark, ctx, ref, body.how, USER, body.note))
-
-
-@router.post("/sources")
-async def record(body: Record, ctx: AppContext = Depends(get_ctx)) -> dict:
-    fields = body.model_dump()
-    ident = fields.pop("id")
-    return asdict(await asyncio.to_thread(lambda: lab.record(ctx, ident, by=USER, **fields)))
-
-
-@router.get("/searches")
-async def searches(ctx: AppContext = Depends(get_ctx)) -> dict:
-    return {"searches": [asdict(s) for s in await asyncio.to_thread(lab.searches, ctx)]}
-
-
-@router.post("/searches")
-async def log_search(body: SearchLog, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.log_search, ctx, body.query, body.where, body.found, body.note, USER))
+@router.delete("/tests/{key}")
+async def delete_test(key: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    drop_test(ctx, key)
+    return {"dropped": key}

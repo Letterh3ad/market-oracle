@@ -44,6 +44,20 @@ function trades(r) {
 
 const ratio = (v) => (v == null ? "n/a" : v.toFixed(2));
 
+// The deflated Sharpe beside each line: the chance its Sharpe beats the best of its variants tried by luck.
+function deflatedTable(rows, label) {
+  return table([["Line"], ["Sharpe", null, 1], ["Variants tried", null, 1], ["Deflated Sharpe", null, 1]],
+    rows.map((d) => el("tr", null, el("td", null, label(d.name)), el("td", { class: "num" }, ratio(d.sharpe)),
+      el("td", { class: "num" }, String(d.variants)),
+      el("td", { class: `num${d.dsr != null && d.dsr >= 0.95 ? " up" : ""}` }, d.dsr == null ? "n/a" : d.dsr.toFixed(3)))),
+    "Not recorded for this run.");
+}
+
+const DEFLATED_NOTE = "Deflated Sharpe (Bailey and Lopez de Prado): the chance a line's Sharpe is above the best that "
+  + "luck alone would give over its variants tried, allowing for the days, skew and fat tails. Every traded line "
+  + "counts as one of the variants a backtest sets side by side; the index and buy-and-hold lines are held, never "
+  + "picked, so they count once. A strategy test passes only at 0.95 or more.";
+
 // Each line per segment, then over all of them, and regime_wf's weights at each segment's start.
 function walkForward(r) {
   const wf = r.walk_forward;
@@ -81,6 +95,9 @@ function walkForward(r) {
     el("p", { class: "dim small" }, "Segment returns compounded; Sharpe from every segment's daily equity at a zero "
       + "rate, a year of 252 days; the worst segment's fall; return over that fall."),
     overall,
+    el("h3", null, "Deflated Sharpe over all segments"),
+    el("p", { class: "dim small" }, DEFLATED_NOTE),
+    deflatedTable(r.walk_deflated ?? [], (n) => info[n]?.label ?? n),
     el("h3", null, "Regime-wf weights fitted at each segment's start"),
     el("p", { class: "dim small" }, "Each mood's method weights, fitted from the two years of pick windows closed "
       + "before the segment began and held through it."),
@@ -204,6 +221,9 @@ function backtestSection() {
       el("p", { class: "dim small" }, `${n} listing${n === 1 ? "" : "s"}. Fills ${r.slippage_bps} basis points worse `
         + `than the opening price, plus ${money(r.commission)} ${base} per trade. Run ${String(r.ran_at).slice(0, 10)}.`),
       lines.node,
+      el("h3", null, "Deflated Sharpe over the whole run"),
+      el("p", { class: "dim small" }, DEFLATED_NOTE),
+      deflatedTable(r.deflated ?? [], (n) => lineInfos(r.lines)[n]?.label ?? n),
       ...(r.walk_forward ? walkForward(r) : []),
       el("h3", null, "Read this before trusting the numbers"),
       el("ul", { class: "small" },

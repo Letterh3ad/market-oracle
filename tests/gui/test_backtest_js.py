@@ -275,3 +275,23 @@ def test_a_run_without_a_walk_forward_shows_no_table():
         console.log(JSON.stringify(node.textContent));
     """)
     assert "Walk-forward:" not in text
+
+
+def test_each_line_shows_its_deflated_sharpe_and_variants_tried():
+    text = run("""
+        ANSWERS["GET /api/backtests/7"] = { ...RUN, deflated: [
+          { name: "strategy", sharpe: 0.8, variants: 8, dsr: 0.412 },
+          { name: "buy_and_hold", sharpe: 1.1, variants: 1, dsr: 0.97 }] };
+        section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "Deflated Sharpe over the whole run" in text and "0.412" in text and "0.970" in text
+    assert "variants tried" in text.lower() and "0.95 or more" in text
+
+
+def test_a_run_kept_before_the_deflated_sharpe_says_so():
+    text = run("""
+        section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "Not recorded for this run." in text

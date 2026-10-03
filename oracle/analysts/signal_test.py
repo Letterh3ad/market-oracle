@@ -177,13 +177,13 @@ def daily_ics(p: Panel, score: Score, h: int, first: int = 1, last: int | None =
     return out
 
 
-def power(names: float, days: int, h: int) -> float | None:
-    """The smallest mean IC whose t reaches T_BAR, with `names` per day over `days` IC days: a
+def power(names: float, days: int, h: int, bar: float = T_BAR) -> float | None:
+    """The smallest mean IC whose t reaches `bar`, with `names` per day over `days` IC days: a
     day's IC spreads 1/sqrt(names - 1) by chance, and h-day windows overlap, so `days` / h of them
     are independent (checked against a simulation of a held-still score with a known IC)."""
     if names <= 1 or days <= 0:
         return None
-    return T_BAR * math.sqrt(h / ((names - 1) * days))
+    return bar * math.sqrt(h / ((names - 1) * days))
 
 
 @dataclass(frozen=True)
@@ -212,9 +212,9 @@ class WindowResult:
     """Mean names per counted IC day."""
     effective_days: float
     power: float | None
-    """Smallest IC detectable at t T_BAR from names, effective days and horizon."""
+    """Smallest IC detectable at the bar t from names, effective days and horizon."""
     observed_power: float | None
-    """T_BAR times the counted ICs' own Newey-West standard error."""
+    """The bar t times the counted ICs' own Newey-West standard error."""
     missing_share: float | None
     """Member-days in the window without a bar."""
     segments: tuple[SegmentRow, ...]
@@ -225,7 +225,7 @@ class WindowResult:
 
     @property
     def unseen(self) -> bool:
-        """A FAIL whose IC is above 0 but under what the window's own spread lets it see at t T_BAR."""
+        """A FAIL whose IC is above 0 but under what the window's own spread lets it see at the bar t."""
         return (self.verdict == "FAIL" and self.ic is not None and self.observed_power is not None
                 and 0 < self.ic < self.observed_power)
 
@@ -239,10 +239,12 @@ def unseen_text(needed: float) -> str:
 
 
 def window_result(window: str, ics: Mapping[date, DayIC], spans: Sequence[tuple[date, date]], h: int,
-                  missing_share: float | None, cutoff: date | None = None) -> WindowResult:
+                  missing_share: float | None, cutoff: date | None = None, bar: float = T_BAR,
+                  inclusive: bool = False) -> WindowResult:
     """One window's result from the daily ICs: a day counts in its segment only when its exit day
     is inside the window too (nothing in it reads past its end). With `cutoff`, only later days
-    count: a segment ending on or before it is labelled INSIDE, one across it is trimmed."""
+    count: a segment ending on or before it is labelled INSIDE, one across it is trimmed. `bar`
+    is the t the verdict needs (`inclusive`: at it passes), and the t the power figures assume."""
     end = spans[-1][1] if spans else None
     rows, counted_days = [], []
     for s, e in spans:
@@ -261,12 +263,12 @@ def window_result(window: str, ics: Mapping[date, DayIC], spans: Sequence[tuple[
             counted_days += days
     vals = [ics[d][0] for d in counted_days]
     ic, t = mean(vals), newey_west_t(vals, h)
-    v = verdict(ic, t, [SegmentIC(r.start, r.end, r.ic, r.t, r.days, r.counted, r.why) for r in rows])
+    v = verdict(ic, t, [SegmentIC(r.start, r.end, r.ic, r.t, r.days, r.counted, r.why) for r in rows], bar, inclusive)
     names = mean([ics[d][1] for d in counted_days])
-    observed = T_BAR * abs(ic / t) if ic is not None and t else None
+    observed = bar * abs(ic / t) if ic is not None and t else None
     return WindowResult(window, spans[0][0] if spans else date.min, end or date.min, h, _r(ic), _r(t), len(vals),
                         _r(names, 1), round(len(vals) / h, 1),
-                        _r(power(names, len(vals), h)) if names else None, _r(observed), missing_share,
+                        _r(power(names, len(vals), h, bar)) if names else None, _r(observed), missing_share,
                         tuple(rows), v.label, v.passed, v.positive, v.counted)
 
 

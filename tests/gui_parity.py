@@ -202,13 +202,19 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "signals list": "GET /api/signals",
     "signals test": "POST /api/jobs/signal-test",
     "signals test --train-only": "POST /api/jobs/signal-test",
+    # Research tab, Scoreboard: the table, a row's Registration (Record commit, Drop), Register a test.
+    "lab scoreboard": "GET /api/lab/scoreboard",
+    "lab show": "GET /api/lab/tests/{key}",
+    "lab register": "POST /api/lab/tests",
+    "lab commit": "PUT /api/lab/tests/{key}/commit",
+    "lab drop": "DELETE /api/lab/tests/{key}",
     # Research tab, Literature index card: the lookup box, the method list and its status filter, a
     # method's details and its Go / Drop / Dig deeper buttons, "Record a source" and "Search log".
     # The page acts as the user; --by names another caller (the autopilot).
     "lab lookup": "GET /api/lab/lookup",
     "lab methods": "GET /api/lab/methods",
     "lab methods --status": "GET /api/lab/methods",
-    "lab show": "GET /api/lab/methods/{ref}",
+    "lab method": "GET /api/lab/methods/{ref}",
     "lab mark": "POST /api/lab/methods/{ref}/mark",
     "lab mark --note": "POST /api/lab/methods/{ref}/mark",
     **{key: "POST /api/lab/sources" for key in ("lab record", *(f"lab record --{flag}" for flag in (

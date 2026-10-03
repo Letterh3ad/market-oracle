@@ -18,6 +18,7 @@ from oracle.net.errors import CircuitOpen, RequestFailed
 from oracle.services.context import AppContext
 from oracle.services.errors import NoPrices
 from oracle.services.http import open_client
+from oracle.services.lab_registry import check_committed, require_committed
 from oracle.services.testbed_service import research_context
 from oracle.store.bars import BarRepo
 from oracle.store.db import to_utc_iso
@@ -157,6 +158,7 @@ def run_trend(ctx: AppContext, series: TrendSeries = SERIES) -> TrendTest:
     month ends before it, so no session inside it decides its own start."""
     today = ctx.clock.utcnow().date()
     with research_context(ctx) as r:
+        require_committed(r, [KEY])
         sessions = [s for s in trend_sessions(r, series) if s.day < today]
         cash = _cash_yield(r)
     if not any(s.day >= CONFIRM_START for s in sessions) or not any(s.day <= CHOOSE_END for s in sessions):
@@ -204,6 +206,7 @@ def keep_trend(ctx: AppContext, t: TrendTest) -> TrendTest:
 
 async def run_and_keep_trend(ctx: AppContext, say: Callable[[str], None] | None = None) -> TrendTest:
     """Update the series, run the test and keep it. A failed update is a note when days are stored."""
+    check_committed(ctx, [KEY])
     (say or (lambda _: None))(f"updating {SERIES.symbol}")
     failed = await update_trend_series(ctx)
     (say or (lambda _: None))("running the trend overlay test")

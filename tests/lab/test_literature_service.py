@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 import pytest
 
 from oracle.config import Config
-from oracle.services import lab_service as lab
+from oracle.services import literature_service as lab
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery, UnknownMethod
 from tests.fakes.clock import FakeClock

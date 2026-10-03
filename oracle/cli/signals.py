@@ -72,7 +72,7 @@ def print_test(t: SignalTest) -> None:
             print(f"  {s.start} to {s.end}  IC {_num(s.ic, '+.4f'):>8}  t {_num(s.t, '.2f'):>6}  {s.days:>4} days  "
                   f"{'counted' if s.counted else s.why}")
     print("Power is the formula's (names, effective days, horizon); obs.power is the window's own spread, the "
-          "smallest IC it could see at t 2")
+          f"smallest IC it could see at its bar, t {t.bar:.2f}")
     print("Train only: confirm not computed, no verdict" if t.train_only else f"Verdict (confirm): {t.verdict_text}")
     print(f"Caveat: {t.caveat}")
 
