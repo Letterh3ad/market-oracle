@@ -146,3 +146,10 @@ def test_growth_out_of_range_is_refused(ctx):
     use(ctx)
     with pytest.raises(InvalidQuery, match="growth"):
         wrapper_comparison(ctx, growth=0.9)
+
+
+def test_past_the_pension_age_shows_no_rows_and_says_why(ctx):
+    use(ctx, replace(BASIC, born=1965))
+    c = wrapper_comparison(ctx)
+    assert (c.access_age, c.rows) == (55, ()) and any("draw a pension now" in n for n in c.notes)
+    assert [s.wrapper for s in c.steps] == ["pension"]

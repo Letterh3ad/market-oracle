@@ -193,7 +193,7 @@ def wrapper_comparison(ctx: AppContext, growth: float = ASSUMED_GROWTH) -> Wrapp
                      f"{RATES.lisa_open_before}, so it is left out.")
     years = access - age if access is not None and age is not None else None
     if years is not None and years <= 0:
-        notes.append(f"You can draw a pension now (from {access}): the comparison is for money still to be paid in.")
+        notes.append(f"You can draw a pension now (from {access}): this comparison, of years still to grow, is not shown.")
     elif w.salary and years is not None:
         sacrificed = workplace.gross * 12 if w.sacrifice else 0.0
         table = _Rows(ctx, w, age, access, growth, sacrificed)
