@@ -213,14 +213,14 @@
    "quality": "practitioner"
   },
   {
-   "url": "https://doi.org/10.1111/j.1540-6261.1995.tb05168.x",
+   "url": "https://doi.org/10.1111/j.1540-6261.1995.tb04796.x",
    "title": "Price Reactions to Dividend Initiations and Omissions: Overreaction or Drift?",
    "authors": "Michaely, Thaler, Womack",
    "year": 1995,
    "quality": "peer-reviewed"
   },
   {
-   "url": "https://doi.org/10.1016/0304-405X(93)90024-4",
+   "url": "https://doi.org/10.1016/0304-405X(93)90009-Z",
    "title": "Restructuring Through Spinoffs: The Stock Market Evidence",
    "authors": "Cusatis, Miles, Woolridge",
    "year": 1993,
@@ -262,7 +262,7 @@
    "quality": "peer-reviewed"
   },
   {
-   "url": "https://doi.org/10.1111/j.1540-6261.1990.tb05110.x",
+   "url": "https://doi.org/10.1111/j.1540-6261.1990.tb03731.x",
    "title": "High Stock Returns before Holidays: Existence and Evidence on Possible Causes",
    "authors": "Ariel",
    "year": 1990,
@@ -1125,6 +1125,7 @@
   {
    "url": "https://www.nber.org/papers/w26975",
    "title": "Do Senators and House Members Beat the Stock Market? Evidence from the STOCK Act",
+   "also_titled": "Relief Rally: Senators As Feckless As the Rest of Us at Stock Picking",
    "authors": "Belmont et al.",
    "year": 2022,
    "quality": "working-paper"
@@ -1602,7 +1603,7 @@
    "test_key": null,
    "see_also": [],
    "sources": [
-    "https://doi.org/10.1111/j.1540-6261.1995.tb05168.x"
+    "https://doi.org/10.1111/j.1540-6261.1995.tb04796.x"
    ]
   },
   {
@@ -1621,7 +1622,7 @@
    "test_key": null,
    "see_also": [],
    "sources": [
-    "https://doi.org/10.1016/0304-405X(93)90024-4"
+    "https://doi.org/10.1016/0304-405X(93)90009-Z"
    ]
   },
   {
@@ -1772,7 +1773,7 @@
    "test_key": null,
    "see_also": [],
    "sources": [
-    "https://doi.org/10.1111/j.1540-6261.1990.tb05110.x"
+    "https://doi.org/10.1111/j.1540-6261.1990.tb03731.x"
    ]
   },
   {

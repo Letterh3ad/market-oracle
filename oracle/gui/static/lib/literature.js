@@ -12,7 +12,7 @@ const QUALITIES = ["replicated", "peer-reviewed", "working-paper", "practitioner
 
 function cite(s) {
   const who = [s.authors, s.year].filter(Boolean).join(" ");
-  return `${who ? `${who}, ` : ""}${s.title} (${s.quality}${s.read_on ? `, read ${s.read_on}` : ""})`;
+  return `${who ? `${who}, ` : ""}${s.title}${s.also_titled ? ` (also titled ${s.also_titled})` : ""} (${s.quality}${s.read_on ? `, read ${s.read_on}` : ""})`;
 }
 
 function sourceItem(s, score, open) {
@@ -77,7 +77,7 @@ function literatureSection() {
       el("h3", null, `${m.ref} ${m.name}`),
       el("p", { class: "small dim" }, facts.filter(Boolean).join("; ")),
       ...[["Rule", m.definition], ["Evidence", m.evidence], ["Why", m.why], ["Result", m.result],
-        ["Archive", m.archive_note]]
+        ["Archive", m.archive_note !== m.archive_status ? m.archive_note : ""]]
         .filter(([, text]) => text).map(([label, text]) => el("p", null, el("strong", null, `${label}: `), text)),
       m.aliases.length ? el("p", { class: "small" }, `Also called: ${m.aliases.join(", ")}`) : null,
       m.see_also.length ? el("p", { class: "small" }, "See also: ",

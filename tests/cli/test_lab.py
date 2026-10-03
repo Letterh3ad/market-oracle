@@ -80,3 +80,14 @@ def test_a_blank_title_is_no_title(tmp_path, capsys):
 def test_show_prints_the_archive_note(tmp_path, capsys):
     assert main(["--config", config(tmp_path), "lab", "show", "T-10"]) == 0
     assert "archive: Tried-other (low-vol scorer inside the 51-name regime blend" in capsys.readouterr().out
+
+
+def test_show_skips_an_archive_note_that_only_repeats_the_status(tmp_path, capsys):
+    assert main(["--config", config(tmp_path), "lab", "show", "T-02"]) == 0
+    assert capsys.readouterr().out.count("Untested") == 1
+
+
+def test_lookup_by_a_second_title_shows_both(tmp_path, capsys):
+    assert main(["--config", config(tmp_path), "lab", "lookup", "Relief Rally senators feckless stock picking"]) == 0
+    out = capsys.readouterr().out
+    assert "(also titled Relief Rally: Senators As Feckless" in out and "A-91" in out

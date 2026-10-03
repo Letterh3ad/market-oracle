@@ -10,6 +10,7 @@ DDL = """
 CREATE TABLE lit_sources (
     id       INTEGER PRIMARY KEY,
     title    TEXT NOT NULL,
+    also_titled TEXT NOT NULL DEFAULT '',
     authors  TEXT NOT NULL DEFAULT '',
     year     INTEGER,
     quality  TEXT NOT NULL CHECK (quality IN

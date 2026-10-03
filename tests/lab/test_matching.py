@@ -96,3 +96,17 @@ def test_a_short_query_matches_a_longer_name_it_is_part_of():
 def test_empty_strings_score_zero():
     assert title_score("", "Lazy Prices") == 0.0
     assert title_score("Lazy Prices", "") == 0.0
+
+
+@pytest.mark.parametrize("text", [
+    "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04398.x/abstract;jsessionid=ABC123",
+    "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04398.x;jsessionid=ABC123",
+    "https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04398.x;jsessionid=A1/",
+])
+def test_a_session_path_param_is_not_part_of_the_doi(text):
+    assert source_key(text) == "doi:10.1111/j.1540-6261.1992.tb04398.x"
+
+
+def test_a_sici_doi_keeps_its_semicolon():
+    assert (source_key("https://doi.org/10.1002/(SICI)1097-4571(199806)49:8<693::AID-ASI4>3.0.CO;2-O")
+            == "doi:10.1002/(sici)1097-4571(199806)49:8<693::aid-asi4>3.0.co;2-o")

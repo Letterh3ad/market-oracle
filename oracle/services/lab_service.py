@@ -52,6 +52,7 @@ class Source:
     note: str
     added_at: str
     added_by: str
+    also_titled: str
     keys: tuple[str, ...]
     methods: tuple[str, ...]
     """Refs of the methods it yielded."""
@@ -158,7 +159,8 @@ def _seed(conn, at: str) -> None:
             known = repo.source_by_key(key)
             by_url[s["url"]] = known.id if known else repo.add_source(
                 s["title"], s["authors"], s["year"], s["quality"], s["url"], None,
-                "seeded from the research archive; quality inferred from the link", at, SEED_BY, [key])
+                "seeded from the research archive; quality inferred from the link", at, SEED_BY, [key],
+                s.get("also_titled", ""))
         for m in seed["methods"]:
             new = repo.add_method(m["ref"], m["name"], m["status"], m["origin"], at, SEED_BY, family=m["family"],
                                   definition=m["definition"], rating=m["rating"], archive_status=m["archive_status"],
@@ -170,7 +172,7 @@ def _seed(conn, at: str) -> None:
 
 def _source(repo: LiteratureRepo, s: SourceRow) -> Source:
     return Source(s.id, s.title, s.authors, s.year, s.quality, s.url, s.read_on, s.note, s.added_at, s.added_by,
-                  tuple(repo.keys(s.id)), tuple(m.ref for m in repo.source_methods(s.id)))
+                  s.also_titled, tuple(repo.keys(s.id)), tuple(m.ref for m in repo.source_methods(s.id)))
 
 
 def _method(m: MethodRow, refs: dict[int, str]) -> Method:
@@ -226,10 +228,11 @@ def _nearest(repo: LiteratureRepo, queries: Sequence[str], skip: frozenset[int] 
 
 
 def _source_texts(s: SourceRow) -> tuple[str, ...]:
-    """What a query may name a source by: its title, authors and title, or authors and year."""
+    """What a query may name a source by: its title or other title, authors and title, or authors and year."""
+    titles = (s.title, s.also_titled) if s.also_titled else (s.title,)
     if not s.authors:
-        return (s.title,)
-    return s.title, f"{s.authors} {s.title}", f"{s.authors} {s.year or ''}"
+        return titles
+    return *titles, f"{s.authors} {s.title}", f"{s.authors} {s.year or ''}"
 
 
 def lookup(ctx: AppContext, query: str) -> Lookup:

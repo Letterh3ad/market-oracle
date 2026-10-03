@@ -288,3 +288,22 @@ def test_seeding_twice_is_a_no_op(ctx):
     with research_context(ctx) as r:
         lab._seed(r.conn, "2026-10-03T12:00:00+00:00")
     assert len(lab.methods(ctx)) == 205 and len(lab.sources(ctx)) == 170
+
+
+@pytest.mark.parametrize("doi,ref,wrong", [
+    ("10.1111/j.1540-6261.1990.tb03731.x", "T-30", "10.1111/j.1540-6261.1990.tb05110.x"),
+    ("10.1111/j.1540-6261.1995.tb04796.x", "T-21", "10.1111/j.1540-6261.1995.tb05168.x"),
+    ("10.1016/0304-405X(93)90009-Z", "T-22", "10.1016/0304-405X(93)90024-4"),
+])
+def test_corrected_seed_dois_resolve_to_their_method(ctx, doi, ref, wrong):
+    found = lab.lookup(ctx, f"https://doi.org/{doi}")
+    assert found.note == "exact id match" and ref in [h.ref for h in found.methods]
+    assert lab.lookup(ctx, f"https://doi.org/{wrong}").sources == []
+
+
+def test_the_nber_page_title_finds_the_congress_paper(ctx):
+    found = lab.lookup(ctx, "Relief Rally: Senators As Feckless As the Rest of Us at Stock Picking")
+    assert found.methods[0].ref == "A-91" and found.methods[0].score > 0.9
+    source = found.sources[0].source
+    assert source.title.startswith("Do Senators and House Members Beat the Stock Market?")
+    assert source.also_titled == "Relief Rally: Senators As Feckless As the Rest of Us at Stock Picking"

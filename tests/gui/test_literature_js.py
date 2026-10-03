@@ -167,3 +167,15 @@ def test_a_refused_mark_says_why():
         console.log(JSON.stringify(node.textContent));
     """)
     assert "T-15 has a verdict (fail)" in text
+
+
+def test_the_card_skips_an_archive_note_that_only_repeats_the_status_and_shows_a_second_title():
+    text = run("""
+        ANSWERS["GET /api/lab/methods/T-15"] = { ...ANSWERS["GET /api/lab/methods/T-15"], archive_note: "Untested",
+          sources: [{ ...ANSWERS["GET /api/lab/methods/T-15"].sources[0], also_titled: "Relief Rally" }] };
+        section.start(); await settle();
+        button(node, "T-15").fire("click"); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "archive: Untested" in text and "Archive:" not in text
+    assert "also titled Relief Rally" in text

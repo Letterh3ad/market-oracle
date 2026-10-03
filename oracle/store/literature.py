@@ -23,6 +23,8 @@ class SourceRow:
     note: str
     added_at: str
     added_by: str
+    also_titled: str
+    """Another title the same paper goes by (e.g. its working-paper title), searched like the title."""
 
 
 @dataclass(frozen=True)
@@ -71,7 +73,7 @@ class SearchRow:
     source_ids: tuple[int, ...]
 
 
-_SOURCE = "id, title, authors, year, quality, url, read_on, note, added_at, added_by"
+_SOURCE = "id, title, authors, year, quality, url, read_on, note, added_at, added_by, also_titled"
 _METHOD = ("id, ref, name, family, definition, aliases, status, duplicate_of, origin, rating, archive_status, "
            "archive_note, evidence, why, result, see_also, test_key, status_by, status_at, added_at")
 SOURCE_FIELDS = ("title", "authors", "year", "quality", "url", "read_on", "note")
@@ -93,11 +95,13 @@ class LiteratureRepo:
     # Sources
 
     def add_source(self, title: str, authors: str, year: int | None, quality: str, url: str | None,
-                   read_on: str | None, note: str, at: str, by: str, keys: Iterable[str] = ()) -> int:
+                   read_on: str | None, note: str, at: str, by: str, keys: Iterable[str] = (),
+                   also_titled: str = "") -> int:
         with transaction(self._conn):
             new = self._conn.execute(
-                "INSERT INTO lit_sources (title, authors, year, quality, url, read_on, note, added_at, added_by) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (title, authors, year, quality, url, read_on, note, at, by)).lastrowid
+                "INSERT INTO lit_sources (title, authors, year, quality, url, read_on, note, added_at, added_by, "
+                "also_titled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, authors, year, quality, url, read_on, note, at, by, also_titled)).lastrowid
             self.add_keys(new, keys)
         return new
 

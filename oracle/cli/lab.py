@@ -72,7 +72,8 @@ def _wrap(text: str, indent: str = "  ") -> None:
 
 def _cite(s: Source) -> str:
     who = " ".join(x for x in (s.authors, str(s.year) if s.year else "") if x)
-    return f"{who + ', ' if who else ''}{s.title} ({s.quality}{', read ' + s.read_on if s.read_on else ''})"
+    return (f"{who + ', ' if who else ''}{s.title}{f' (also titled {s.also_titled})' if s.also_titled else ''} "
+            f"({s.quality}{', read ' + s.read_on if s.read_on else ''})")
 
 
 def print_source(s: Source, score: float | None = None) -> None:
@@ -158,7 +159,7 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
           + (f"; archive: {m.archive_status}" if m.archive_status else "")
           + (f"; duplicate of {m.duplicate_of}" if m.duplicate_of else ""))
     for label, text in (("rule", m.definition), ("evidence", m.evidence), ("why", m.why), ("result", m.result),
-                        ("archive", m.archive_note)):
+                        ("archive", m.archive_note if m.archive_note != m.archive_status else "")):
         if text:
             _wrap(f"{label}: {text}")
     if m.aliases:
