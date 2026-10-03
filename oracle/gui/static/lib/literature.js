@@ -4,6 +4,7 @@
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el, safeUrl } from "./dom.js";
+import { tone, value } from "./lab.js";
 import { sendJson } from "./ui.js";
 
 const when = (iso) => iso.slice(0, 16).replace("T", " ");
@@ -72,7 +73,7 @@ function literatureSection() {
     });
     const facts = [m.family, m.origin, `status ${m.status} (by ${m.status_by}, ${when(m.status_at)} UTC)`,
       m.rating != null ? `rating ${m.rating}` : null, m.archive_status ? `archive: ${m.archive_status}` : null,
-      m.test_key ? `test ${m.test_key}` : null, m.duplicate_of ? `duplicate of ${m.duplicate_of}` : null];
+      m.duplicate_of ? `duplicate of ${m.duplicate_of}` : null];
     detail.replaceChildren(el("div", { class: "card" },
       el("h3", null, `${m.ref} ${m.name}`),
       el("p", { class: "small dim" }, facts.filter(Boolean).join("; ")),
@@ -80,6 +81,12 @@ function literatureSection() {
         ["Archive", m.archive_note !== m.archive_status ? m.archive_note : ""]]
         .filter(([, text]) => text).map(([label, text]) => el("p", null, el("strong", null, `${label}: `), text)),
       m.aliases.length ? el("p", { class: "small" }, `Also called: ${m.aliases.join(", ")}`) : null,
+      m.test_keys.length ? el("h3", null, "Registry tests") : null,
+      m.test_keys.length ? el("ul", { class: "small" },
+        ...m.tests.map((t) => el("li", { "data-test": t.key }, el("span", { class: "mono" }, t.key),
+          t.horizon != null ? ` h${t.horizon}` : "", ": ", el("span", { class: tone(t.verdict) }, t.verdict),
+          ` (bar ${t.bar}${t.value != null ? `; ${t.measure} ${value(t)}` : ""}${t.t != null ? `, t ${t.t.toFixed(2)}` : ""})`)),
+        ...m.unregistered.map((k) => el("li", null, el("span", { class: "mono" }, k), ": not in the registry"))) : null,
       m.see_also.length ? el("p", { class: "small" }, "See also: ",
         ...m.see_also.flatMap((ref, i) => [i ? ", " : "", refButton(ref, open)])) : null,
       el("h3", null, "Sources"),
@@ -119,7 +126,7 @@ function literatureSection() {
         table([["Ref"], ["Status"], ["Rating", null, 1], ["Name"], ["Family"], ["Test"]], r.methods.map((m) =>
           el("tr", { "data-ref": m.ref }, el("td", null, refButton(m.ref, open)), el("td", null, m.status),
             el("td", { class: "num" }, m.rating ?? ""), el("td", null, m.name), el("td", { class: "small dim" }, m.family),
-            el("td", { class: "small mono" }, m.test_key ?? ""))), "No methods with this status."));
+            el("td", { class: "small mono" }, m.test_keys.join(", ")))), "No methods with this status."));
     } catch (err) {
       say(`Could not load the methods: ${err.message}`);
     }

@@ -129,4 +129,4 @@ function scoreboardSection() {
   return { node, start: load };
 }
 
-export { scoreboardSection };
+export { scoreboardSection, tone, value };

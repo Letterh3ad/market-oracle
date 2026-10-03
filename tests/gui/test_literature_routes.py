@@ -60,3 +60,10 @@ async def test_a_blank_title_is_refused_and_never_blanks_a_known_one(client):
     kept = (await client.post("/api/lab/sources", json={"id": MCLEAN, "title": " ", "note": "again"})).json()
     assert kept["source"]["title"] == "Does Academic Research Destroy Stock Return Predictability?"
     assert (await client.get("/api/lab/methods/T-10")).json()["archive_note"].startswith("Tried-other")
+
+
+async def test_a_linked_method_carries_its_registry_rows(client):
+    one = (await client.get("/api/lab/methods/X-01")).json()
+    assert one["test_keys"] == ["momentum_12_1", "forward:momentum_12_1"] and one["unregistered"] == []
+    assert [(t["key"], t["bar"]) for t in one["tests"]] == [("momentum_12_1", "t > 2.00"),
+                                                             ("forward:momentum_12_1", "t > 2.00")]

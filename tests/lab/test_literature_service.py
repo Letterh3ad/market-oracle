@@ -62,11 +62,11 @@ def test_five_entries_match_the_archive_text(ctx):
 
 def test_tested_methods_carry_their_results_and_registry_names(ctx):
     x01 = lab.method(ctx, "X-01")
-    assert (x01.name, x01.result, x01.status, x01.test_key) == (
-        "Momentum 12-1 (h20)", "IC +0.008 t 0.50, could not see", "fail", "momentum_12_1")
+    assert (x01.name, x01.result, x01.status, x01.test_keys) == (
+        "Momentum 12-1 (h20)", "IC +0.008 t 0.50, could not see", "fail", ("momentum_12_1", "forward:momentum_12_1"))
     assert lab.method(ctx, "X-13").status == "built" and lab.method(ctx, "X-14").status == "dropped"
     t62 = lab.method(ctx, "T-62")
-    assert (t62.status, t62.test_key) == ("fail", "trend_overlay")
+    assert (t62.status, t62.test_keys) == ("fail", ("trend_overlay",))
     assert lab.method(ctx, "AT-07").see_also == ("A-08",)
 
 
@@ -307,3 +307,29 @@ def test_the_nber_page_title_finds_the_congress_paper(ctx):
     source = found.sources[0].source
     assert source.title.startswith("Do Senators and House Members Beat the Stock Market?")
     assert source.also_titled == "Relief Rally: Senators As Feckless As the Rest of Us at Stock Picking"
+
+
+def test_every_seeded_test_key_names_a_registered_test(ctx):
+    from oracle.services.lab_registry import registrations
+    linked = {k for m in lab.methods(ctx) for k in m.test_keys}
+    assert linked <= {r.key for r in registrations(ctx)}
+    assert lab.method(ctx, "X-07").test_keys == ("event:2.02", "event:2.01", "event:insider_cluster")
+    assert lab.method(ctx, "X-08").test_keys == ("event:1.01", "forward:1.01")
+    assert lab.method(ctx, "X-10").test_keys == ("laya",)
+
+
+def test_a_linked_method_shows_its_registry_bar_and_verdict(ctx):
+    x07 = lab.method(ctx, "X-07")
+    assert [t.key for t in x07.tests] == ["event:2.02", "event:2.01", "event:insider_cluster"]
+    assert {(t.bar, t.verdict) for t in x07.tests} == {("t > 2.00", "not run")}
+    assert lab.method(ctx, "T-15").tests == ()
+
+
+def test_a_linked_method_carries_the_scoreboard_verdict(ctx, monkeypatch):
+    from oracle.services.lab_service import ScoreRow, Scoreboard
+    row = ScoreRow("momentum_12_1", "12-1 momentum", "signal", "2026-10-01", 20, "IC", 0.008, 0.5, "t > 2.00",
+                   "FAIL", 0.01, True, "abc", "2026-10-02T00:00:00+00:00", "")
+    other = ScoreRow(**{**vars(row), "key": "sue"})
+    monkeypatch.setattr(lab, "scoreboard", lambda ctx: Scoreboard((row, other), 19, 3.0))
+    x01 = lab.method(ctx, "X-01")
+    assert x01.tests == (row,) and x01.unregistered == ("forward:momentum_12_1",)

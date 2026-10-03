@@ -2,27 +2,30 @@
 the searches run for more, in the research database. Lookup by exact id (DOI, SSRN, arXiv, NBER,
 cleaned URL) or fuzzy title gives the 5 nearest methods with score and funnel status; meaning search
 is research-lab 04. The first open seeds the research archive, its 14 tested methods and ai-track
-04-09. Marks (go / drop / dig deeper) keep who and when."""
+04-09. Marks (go / drop / dig deeper) keep who and when. A tested method names its tests in research-lab
+01's registry and shows their bar and verdict from the scoreboard."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from oracle.lab import load_seed
 from oracle.lab.matching import link_for, normal_title, source_key, title_score
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, UnknownMethod
+from oracle.services.lab_service import ScoreRow, scoreboard
 from oracle.services.testbed_service import research_context
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.literature import LiteratureRepo, MarkRow, MethodRow, SourceRow
 from oracle.store.meta import MetaRepo
 
 __all__ = ["MARKS", "QUALITIES", "STATUSES", "Lookup", "Method", "MethodDetail", "MethodHit", "Recorded", "Search",
-           "Source", "SourceHit", "log_search", "lookup", "mark", "method", "methods", "record", "searches", "sources"]
+           "Source", "SourceHit", "log_search", "lookup", "mark", "method", "methods", "record", "searches", "sources",
+           "with_tests"]
 
 STATUSES = ("new", "proposed", "go", "dropped", "triage", "power", "built", "train", "confirm", "pass", "fail",
             "promising", "not-testable", "duplicate-of")
@@ -105,8 +108,8 @@ class Method:
     why: str
     result: str
     see_also: tuple[str, ...]
-    test_key: str | None
-    """research-lab 01's registry test name."""
+    test_keys: tuple[str, ...]
+    """research-lab 01's registry keys."""
     status_by: str
     status_at: str
     added_at: str
@@ -116,6 +119,10 @@ class Method:
 class MethodDetail(Method):
     sources: tuple[Source, ...] = ()
     marks: tuple[MarkRow, ...] = ()
+    tests: tuple[ScoreRow, ...] = ()
+    """The scoreboard's rows for its registry keys: bar and verdict as judged."""
+    unregistered: tuple[str, ...] = ()
+    """Keys the registry does not hold (dropped since)."""
 
 
 @dataclass(frozen=True)
@@ -165,7 +172,7 @@ def _seed(conn, at: str) -> None:
             new = repo.add_method(m["ref"], m["name"], m["status"], m["origin"], at, SEED_BY, family=m["family"],
                                   definition=m["definition"], rating=m["rating"], archive_status=m["archive_status"],
                                   archive_note=m["archive_note"], evidence=m["evidence"], why=m["why"],
-                                  result=m["result"], see_also=m["see_also"], test_key=m["test_key"])
+                                  result=m["result"], see_also=m["see_also"], test_keys=m["test_keys"])
             repo.link(new, [by_url[u] for u in m["sources"]])
         MetaRepo(conn).set(SEED_KEY, str(seed["version"]))
 
@@ -178,7 +185,7 @@ def _source(repo: LiteratureRepo, s: SourceRow) -> Source:
 def _method(m: MethodRow, refs: dict[int, str]) -> Method:
     return Method(m.ref, m.name, m.family, m.definition, m.aliases, m.status,
                   refs.get(m.duplicate_of) if m.duplicate_of else None, m.origin, m.rating, m.archive_status,
-                  m.archive_note, m.evidence, m.why, m.result, m.see_also, m.test_key, m.status_by, m.status_at,
+                  m.archive_note, m.evidence, m.why, m.result, m.see_also, m.test_keys, m.status_by, m.status_at,
                   m.added_at)
 
 
@@ -266,9 +273,22 @@ def methods(ctx: AppContext, status: str | None = None) -> list[Method]:
         return [_method(m, refs) for m in rows]
 
 
-def method(ctx: AppContext, ref: str) -> MethodDetail:
+def method(ctx: AppContext, ref: str, tests: bool = True) -> MethodDetail:
+    """tests=False leaves the registry rows to `with_tests`, which reads the live database too, so the
+    GUI calls it on the event loop's thread."""
     with _lab(ctx) as repo:
-        return _detail(repo, _known(repo, ref))
+        found = _detail(repo, _known(repo, ref))
+    return with_tests(ctx, found) if tests else found
+
+
+def with_tests(ctx: AppContext, m: MethodDetail) -> MethodDetail:
+    """The scoreboard's rows for the method's registry keys."""
+    if not m.test_keys:
+        return m
+    rows = [r for r in scoreboard(ctx).rows if r.key in m.test_keys]
+    rows.sort(key=lambda r: m.test_keys.index(r.key))
+    held = {r.key for r in rows}
+    return replace(m, tests=tuple(rows), unregistered=tuple(k for k in m.test_keys if k not in held))
 
 
 def _by(by: str) -> str:
@@ -278,7 +298,7 @@ def _by(by: str) -> str:
     return by
 
 
-def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "") -> MethodDetail:
+def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "", tests: bool = True) -> MethodDetail:
     """go, drop or dig (deeper): the method's new status, with who and when, kept in its mark history."""
     if how not in MARKS:
         raise InvalidQuery(f"a mark is go, drop or dig, got {how!r}")
@@ -294,7 +314,8 @@ def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "") 
             raise InvalidQuery(f"{m.ref} is a near-duplicate of a tested method: only drop marks it; "
                                "registration asks for a 'different because' note")
         repo.set_status(m.id, how, MARKS[how], by, to_utc_iso(ctx.clock.utcnow()), note.strip())
-        return _detail(repo, _known(repo, ref))
+        done = _detail(repo, _known(repo, ref))
+    return with_tests(ctx, done) if tests else done
 
 
 def record(ctx: AppContext, ident: str | None = None, *, title: str | None = None, authors: str | None = None,

@@ -91,3 +91,11 @@ def test_lookup_by_a_second_title_shows_both(tmp_path, capsys):
     assert main(["--config", config(tmp_path), "lab", "lookup", "Relief Rally senators feckless stock picking"]) == 0
     out = capsys.readouterr().out
     assert "(also titled Relief Rally: Senators As Feckless" in out and "A-91" in out
+
+
+def test_method_shows_its_registry_bar_and_verdict(tmp_path, capsys):
+    assert main(["--config", config(tmp_path), "lab", "method", "X-07"]) == 0
+    out = capsys.readouterr().out
+    assert "  test event:2.02 h20: not run (bar t > 2.00)" in out and "test event:insider_cluster h20" in out
+    assert main(["--config", config(tmp_path), "lab", "methods", "--status", "fail"]) == 0
+    assert "[test event:2.02, event:2.01, event:insider_cluster]" in capsys.readouterr().out

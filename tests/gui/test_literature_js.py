@@ -17,8 +17,8 @@ METHOD = {"ref": "T-15", "name": "52-week-high proximity", "family": "A. Cross-s
           "duplicate_of": None, "origin": "archive", "rating": 3, "archive_status": "Untested",
           "archive_note": "Untested (raw 12-1 Tried-FAIL t 0.50)",
           "evidence": "George-Hwang 2004: 0.45%/month.", "why": "momentum family", "result": "", "see_also": ["T-13"],
-          "test_key": None, "status_by": "seed", "status_at": "2026-10-03T11:00:00+00:00", "added_at": "x",
-          "sources": [SOURCE], "marks": []}
+          "test_keys": [], "status_by": "seed", "status_at": "2026-10-03T11:00:00+00:00", "added_at": "x",
+          "sources": [SOURCE], "marks": [], "tests": [], "unregistered": []}
 MARKED = {**METHOD, "status": "go", "status_by": "user", "status_at": "2026-10-03T12:00:00+00:00",
           "marks": [{"mark": "go", "status_from": "new", "status_to": "go", "by": "user",
                      "at": "2026-10-03T12:00:00+00:00", "note": "cheap"}]}
@@ -179,3 +179,17 @@ def test_the_card_skips_an_archive_note_that_only_repeats_the_status_and_shows_a
     """)
     assert "archive: Untested" in text and "Archive:" not in text
     assert "also titled Relief Rally" in text
+
+
+def test_a_linked_method_shows_its_registry_rows_with_bar_and_verdict():
+    text = run("""
+        ANSWERS["GET /api/lab/methods/T-15"] = { ...ANSWERS["GET /api/lab/methods/T-15"],
+          test_keys: ["momentum_12_1", "gone"], unregistered: ["gone"],
+          tests: [{ key: "momentum_12_1", horizon: 20, measure: "IC", value: 0.008, t: 0.5, bar: "t > 2.00",
+                    verdict: "FAIL" }] };
+        section.start(); await settle();
+        button(node, "T-15").fire("click"); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "Registry tests" in text and "momentum_12_1 h20: FAIL (bar t > 2.00; IC +0.0080, t 0.50)" in text
+    assert "gone: not in the registry" in text

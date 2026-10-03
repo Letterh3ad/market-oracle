@@ -4,8 +4,8 @@ import sqlite3
 
 from oracle.store.migrations import run_ddl
 
-# research-lab 03. test_key names a test in research-lab 01's registry; no foreign key, so either
-# ticket can land first (join on the registry's test name once both are in).
+# research-lab 03. test_keys (a JSON list) name tests in research-lab 01's registry (lab_tests.key);
+# a list because one tested method can span several registrations (8-K items, a forward tracker).
 DDL = """
 CREATE TABLE lit_sources (
     id       INTEGER PRIMARY KEY,
@@ -45,12 +45,11 @@ CREATE TABLE lit_methods (
     why            TEXT NOT NULL DEFAULT '',
     result         TEXT NOT NULL DEFAULT '',
     see_also       TEXT NOT NULL DEFAULT '[]',
-    test_key       TEXT,
+    test_keys      TEXT NOT NULL DEFAULT '[]',
     status_by      TEXT NOT NULL,
     status_at      TEXT NOT NULL,
     added_at       TEXT NOT NULL
 );
-CREATE INDEX lit_methods_test ON lit_methods(test_key);
 CREATE TABLE lit_method_sources (
     method_id INTEGER NOT NULL REFERENCES lit_methods(id) ON DELETE CASCADE,
     source_id INTEGER NOT NULL REFERENCES lit_sources(id) ON DELETE CASCADE,

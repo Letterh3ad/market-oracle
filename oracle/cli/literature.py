@@ -137,7 +137,7 @@ def run_mark(ctx: AppContext, args: argparse.Namespace) -> int:
 
 def _line(m: Method) -> str:
     rating = "-" if m.rating is None else str(m.rating)
-    return f"{m.ref:<6} {m.status:<12} {rating:>2}  {m.name}" + (f"  [test {m.test_key}]" if m.test_key else "")
+    return f"{m.ref:<6} {m.status:<12} {rating:>2}  {m.name}" + (f"  [test {', '.join(m.test_keys)}]" if m.test_keys else "")
 
 
 def run_methods(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -163,8 +163,12 @@ def run_method(ctx: AppContext, args: argparse.Namespace) -> int:
         print(f"  aliases: {', '.join(m.aliases)}")
     if m.see_also:
         print(f"  see also: {', '.join(m.see_also)}")
-    if m.test_key:
-        print(f"  test: {m.test_key}")
+    for t in m.tests:
+        print(f"  test {t.key}{f' h{t.horizon}' if t.horizon else ''}: {t.verdict} (bar {t.bar}"
+              + (f"; {t.measure} {t.value:{'+.4f' if t.measure == 'IC' else '+.2%'}}" if t.value is not None else "")
+              + (f", t {t.t:.2f}" if t.t is not None else "") + ")")
+    for key in m.unregistered:
+        print(f"  test {key}: not in the registry")
     print("Sources:" if m.sources else "No sources.")
     for s in m.sources:
         print_source(s)

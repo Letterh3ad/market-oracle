@@ -1208,7 +1208,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x",
@@ -1228,7 +1228,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated"
@@ -1247,7 +1247,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf"
@@ -1266,7 +1266,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/abstract=2312432"
@@ -1285,7 +1285,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.2307/2672906"
@@ -1304,7 +1304,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.jstor.org/stable/248290",
@@ -1324,7 +1324,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2014.10.010",
@@ -1344,7 +1344,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/360827",
@@ -1364,7 +1364,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v63y2008i2p921-945.html",
@@ -1385,7 +1385,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2013.10.005",
@@ -1406,7 +1406,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w13739"
@@ -1425,7 +1425,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/357231"
@@ -1444,7 +1444,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jempfin.2011.01.003",
@@ -1464,7 +1464,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v54y1999i4p1249-1290.html"
@@ -1483,7 +1483,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/361244"
@@ -1502,7 +1502,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w20439"
@@ -1521,7 +1521,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/357254",
@@ -1541,7 +1541,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/359814"
@@ -1560,7 +1560,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.1996.tb05222.x"
@@ -1579,7 +1579,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ink.library.smu.edu.sg/lkcsb_research/4664",
@@ -1600,7 +1600,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.1995.tb04796.x"
@@ -1619,7 +1619,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/0304-405X(93)90009-Z"
@@ -1638,7 +1638,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/system/files/working_papers/w30748/w30748.pdf"
@@ -1657,7 +1657,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.aqr.com/Insights/Research/Journal-Article/Economic-Links-and-Predictable-Returns"
@@ -1676,7 +1676,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -1693,7 +1693,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.3905/jpm.1989.409211",
@@ -1713,7 +1713,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
@@ -1732,7 +1732,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://personal.lse.ac.uk/polk/research/TugOfWar.pdf"
@@ -1751,7 +1751,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://rpc.cfainstitute.org/research/financial-analysts-journal/2008/equity-returns-at-the-turn-of-the-month"
@@ -1770,7 +1770,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.1990.tb03731.x"
@@ -1789,7 +1789,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.html",
@@ -1809,7 +1809,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://nber.org/papers/w10483",
@@ -1829,7 +1829,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -1846,7 +1846,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ivey.uwo.ca/media/3775549/pontiff.pdf"
@@ -1865,7 +1865,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html",
@@ -1886,7 +1886,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/abstract=3604626",
@@ -1906,7 +1906,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://github.com/bkelly-lab/ReplicationCrisis",
@@ -1926,7 +1926,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html"
@@ -1945,7 +1945,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w20721"
@@ -1964,7 +1964,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://academicnewsletter.sufe.edu.cn/info/353765",
@@ -1984,7 +1984,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://news.wpcarey.asu.edu/20180917-do-stocks-outperform-treasury-bills"
@@ -2003,7 +2003,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.spglobal.com/spdji/en/spiva/article/spiva-europe-mid-year-2023"
@@ -2022,7 +2022,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2039,7 +2039,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
@@ -2058,7 +2058,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://JKPfactors.com/"
@@ -2077,7 +2077,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2094,7 +2094,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html",
@@ -2114,7 +2114,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1086/260061"
@@ -2133,7 +2133,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.jstor.org/stable/1913610",
@@ -2153,7 +2153,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/abstract=2460551"
@@ -2172,7 +2172,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/abstract=2326253"
@@ -2191,7 +2191,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2208,7 +2208,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.1997.tb03818.x"
@@ -2227,7 +2227,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ivey.uwo.ca/media/3775549/pontiff.pdf"
@@ -2246,7 +2246,7 @@
    "rating": 8,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2263,7 +2263,7 @@
    "rating": 9,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2280,7 +2280,7 @@
    "rating": 9,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2297,7 +2297,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.aeaweb.org/conference/2025/program/paper/EFddaa8b"
@@ -2316,7 +2316,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://rationalreminder.ca/podcast/350"
@@ -2335,7 +2335,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf",
@@ -2356,7 +2356,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2373,7 +2373,9 @@
    "rating": 3,
    "status": "fail",
    "result": "FAIL (research.db 2026-10-03): confirm 2008+ CAGR 8.1%, worst fall -26%; the overlay's own return-cost bar",
-   "test_key": "trend_overlay",
+   "test_keys": [
+    "trend_overlay"
+   ],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/abstract=962461",
@@ -2395,7 +2397,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2011.11.003",
@@ -2415,7 +2417,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://alphaarchitect.com/risk-premia-harvesting-through-momentum/",
@@ -2435,7 +2437,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/22208",
@@ -2455,7 +2457,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2472,7 +2474,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2489,7 +2491,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://indexacapital.com/bundles/unaiadvisor/docs/papers/2010-Vanguard-Best-practices-for-portfolio-rebalancing.pdf",
@@ -2509,7 +2511,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.vanguard.co.uk/professional/vanguard-365/financial-planning/financial-well-being/cost-averaging"
@@ -2528,7 +2530,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2545,7 +2547,7 @@
    "rating": 9,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.gov.uk/individual-savings-accounts"
@@ -2564,7 +2566,7 @@
    "rating": 9,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.gov.uk/tax-on-your-private-pension/pension-tax-relief"
@@ -2583,7 +2585,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.gov.uk/lifetime-isa",
@@ -2603,7 +2605,7 @@
    "rating": 8,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://nber.org/papers/w10483"
@@ -2622,7 +2624,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2639,7 +2641,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2656,7 +2658,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2673,7 +2675,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2690,7 +2692,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2707,7 +2709,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2724,7 +2726,7 @@
    "rating": 3,
    "status": "fail",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2304.07619"
@@ -2743,7 +2745,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2309.17322",
@@ -2763,7 +2765,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687"
@@ -2782,7 +2784,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w26186"
@@ -2801,7 +2803,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2006.08097",
@@ -2821,7 +2823,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.2010.01625.x"
@@ -2840,7 +2842,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2407.17866",
@@ -2860,7 +2862,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html"
@@ -2879,7 +2881,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html",
@@ -2899,7 +2901,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2510.03195"
@@ -2918,7 +2920,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2935,7 +2937,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -2952,7 +2954,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v63y2008i4p1977-2011.html",
@@ -2972,7 +2974,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w32161"
@@ -2991,7 +2993,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2006.08097"
@@ -3010,7 +3012,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.stern.nyu.edu/sites/default/files/assets/documents/Gow%20Larcker%20Zakolyukina-Non-answers%20during%20conference%20calls.pdf"
@@ -3029,7 +3031,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.2011.01705.x"
@@ -3048,7 +3050,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhq141"
@@ -3067,7 +3069,7 @@
    "rating": 1,
    "status": "fail",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -3084,7 +3086,7 @@
    "rating": 1,
    "status": "fail",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -3101,7 +3103,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687"
@@ -3120,7 +3122,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2504.14765"
@@ -3139,7 +3141,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2504.14765",
@@ -3159,7 +3161,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2502.21206",
@@ -3179,7 +3181,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2601.13770",
@@ -3199,7 +3201,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2412.20138",
@@ -3219,7 +3221,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2311.13743",
@@ -3240,7 +3242,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2510.02209"
@@ -3259,7 +3261,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2402.12659"
@@ -3278,7 +3280,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2605.16895",
@@ -3298,7 +3300,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2605.16895"
@@ -3317,7 +3319,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2306.06031"
@@ -3336,7 +3338,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2309.17322"
@@ -3355,7 +3357,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhaa009",
@@ -3375,7 +3377,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm"
@@ -3394,7 +3396,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhaa009",
@@ -3414,7 +3416,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhaa009",
@@ -3434,7 +3436,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhaa009"
@@ -3453,7 +3455,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhaa009",
@@ -3473,7 +3475,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -3490,7 +3492,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1287/mnsc.2022.4449"
@@ -3509,7 +3511,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhp063"
@@ -3528,7 +3530,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2012.07149"
@@ -3547,7 +3549,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086"
@@ -3566,7 +3568,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086"
@@ -3585,7 +3587,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w30217",
@@ -3605,7 +3607,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1287/mnsc.2022.4449"
@@ -3624,7 +3626,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.ejor.2017.11.054",
@@ -3644,7 +3646,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2606.27100"
@@ -3663,7 +3665,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w33351"
@@ -3682,7 +3684,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/jofi.13268"
@@ -3701,7 +3703,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/1809.09441"
@@ -3720,7 +3722,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/1904.00745"
@@ -3739,7 +3741,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jeconom.2020.07.009"
@@ -3758,7 +3760,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2511.18578",
@@ -3779,7 +3781,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2606.27100",
@@ -3801,7 +3803,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2511.18578"
@@ -3820,7 +3822,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -3837,7 +3839,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/0304-4076(86)90063-1"
@@ -3856,7 +3858,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/jjfinec/nbp001"
@@ -3875,7 +3877,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.2307/1912559"
@@ -3894,7 +3896,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -3911,7 +3913,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2019.06.008"
@@ -3930,7 +3932,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/rfs/hhj020",
@@ -3950,7 +3952,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2019.05.001"
@@ -3969,7 +3971,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/S0047-259X(03)00096-4"
@@ -3988,7 +3990,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4005,7 +4007,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/1601.00991"
@@ -4024,7 +4026,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/S0304-405X(98)00052-X"
@@ -4043,7 +4045,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2306.12964"
@@ -4062,7 +4064,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2308.00016",
@@ -4082,7 +4084,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2011.09607"
@@ -4101,7 +4103,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4118,7 +4120,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://hobergphillips.tuck.dartmouth.edu/",
@@ -4138,7 +4140,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4155,7 +4157,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1109/ICDM.2008.17"
@@ -4174,7 +4176,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4191,7 +4193,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4205613"
@@ -4210,7 +4212,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4227,7 +4229,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1111/j.1540-6261.2011.01679.x"
@@ -4246,7 +4248,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3647164/",
@@ -4266,7 +4268,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/rfinst/v37y2024i5p1409-1459..html"
@@ -4285,7 +4287,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.2308/accr-51865"
@@ -4304,7 +4306,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.gdeltproject.org/data.html"
@@ -4323,7 +4325,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://pubsonline.informs.org/doi/10.1287/mnsc.2019.3450"
@@ -4342,7 +4344,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html"
@@ -4361,7 +4363,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html"
@@ -4380,7 +4382,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/qje/qjw040",
@@ -4400,7 +4402,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://api.usaspending.gov/"
@@ -4419,7 +4421,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://personal.lse.ac.uk/polk/research/BestIdeas.pdf"
@@ -4438,7 +4440,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.nber.org/papers/w26975"
@@ -4457,7 +4459,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1016/j.jfineco.2016.03.004",
@@ -4477,7 +4479,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/cup/jfinqa/v45y2010i03p641-662_00.html",
@@ -4497,7 +4499,7 @@
    "rating": 1,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/oup/revfin/v25y2021i4p937-972..html"
@@ -4516,7 +4518,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.2308/accr-51232"
@@ -4535,7 +4537,7 @@
    "rating": 2,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4552,7 +4554,7 @@
    "rating": 7,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v55y2000i2p773-806.html",
@@ -4572,7 +4574,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://www.gov.uk/individual-savings-accounts",
@@ -4592,7 +4594,7 @@
    "rating": 6,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1109/ICDM.2008.17"
@@ -4611,7 +4613,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2605.16895"
@@ -4630,7 +4632,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html"
@@ -4649,7 +4651,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://doi.org/10.1093/jjfinec/nbp001",
@@ -4669,7 +4671,7 @@
    "rating": 5,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": [
     "https://arxiv.org/abs/2510.07920",
@@ -4689,7 +4691,7 @@
    "rating": 3,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4706,7 +4708,7 @@
    "rating": 4,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [],
    "sources": []
   },
@@ -4723,7 +4725,10 @@
    "rating": 2,
    "status": "fail",
    "result": "IC +0.008 t 0.50, could not see",
-   "test_key": "momentum_12_1",
+   "test_keys": [
+    "momentum_12_1",
+    "forward:momentum_12_1"
+   ],
    "see_also": [
     "T-13",
     "T-16"
@@ -4747,7 +4752,10 @@
    "rating": 2,
    "status": "fail",
    "result": "+0.004 t 0.53, could not see",
-   "test_key": "reversal_1m",
+   "test_keys": [
+    "reversal_1m",
+    "forward:reversal_1m"
+   ],
    "see_also": [
     "T-12"
    ],
@@ -4768,7 +4776,10 @@
    "rating": 2,
    "status": "fail",
    "result": "+0.0065 t 0.44, could not see",
-   "test_key": "sue",
+   "test_keys": [
+    "sue",
+    "forward:sue"
+   ],
    "see_also": [],
    "sources": []
   },
@@ -4785,7 +4796,10 @@
    "rating": 2,
    "status": "fail",
    "result": "+0.009 t 0.91, could not see",
-   "test_key": "earnings_yield",
+   "test_keys": [
+    "earnings_yield",
+    "forward:earnings_yield"
+   ],
    "see_also": [
     "T-01",
     "T-03"
@@ -4809,7 +4823,9 @@
    "rating": 1,
    "status": "fail",
    "result": "-0.001, FAIL",
-   "test_key": "gross_profitability",
+   "test_keys": [
+    "gross_profitability"
+   ],
    "see_also": [
     "T-04",
     "T-07"
@@ -4833,7 +4849,9 @@
    "rating": 1,
    "status": "fail",
    "result": "~-0.002, FAIL",
-   "test_key": "insider_buys",
+   "test_keys": [
+    "insider_buys"
+   ],
    "see_also": [
     "A-96"
    ],
@@ -4852,7 +4870,11 @@
    "rating": 1,
    "status": "fail",
    "result": "FAIL",
-   "test_key": "event_study",
+   "test_keys": [
+    "event:2.02",
+    "event:2.01",
+    "event:insider_cluster"
+   ],
    "see_also": [
     "T-18",
     "A-11"
@@ -4874,7 +4896,10 @@
    "rating": 2,
    "status": "fail",
    "result": "-0.28% t -2.21, opposite sign to train",
-   "test_key": "event_study",
+   "test_keys": [
+    "event:1.01",
+    "forward:1.01"
+   ],
    "see_also": [
     "A-11"
    ],
@@ -4893,7 +4918,7 @@
    "rating": 1,
    "status": "fail",
    "result": "none beat b&h",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "T-10",
     "T-14",
@@ -4919,7 +4944,9 @@
    "rating": 1,
    "status": "fail",
    "result": "FAIL all runs",
-   "test_key": null,
+   "test_keys": [
+    "laya"
+   ],
    "see_also": [
     "A-01",
     "A-05"
@@ -4943,7 +4970,7 @@
    "rating": 1,
    "status": "fail",
    "result": "noise",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-20",
     "A-67"
@@ -4963,7 +4990,7 @@
    "rating": 1,
    "status": "fail",
    "result": "56% hit vs 59.5% base",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-105",
     "A-33"
@@ -4985,7 +5012,7 @@
    "rating": 3,
    "status": "built",
    "result": "pending, cancelled partway",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-01"
    ],
@@ -5006,7 +5033,7 @@
    "rating": 3,
    "status": "dropped",
    "result": "skipped",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-36",
     "A-35"
@@ -5030,7 +5057,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-35"
    ],
@@ -5051,7 +5078,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-34",
     "A-36",
@@ -5074,7 +5101,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-08",
     "A-09"
@@ -5094,7 +5121,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-08"
    ],
@@ -5115,7 +5142,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-24"
    ],
@@ -5136,7 +5163,7 @@
    "rating": null,
    "status": "new",
    "result": "",
-   "test_key": null,
+   "test_keys": [],
    "see_also": [
     "A-24",
     "A-03"

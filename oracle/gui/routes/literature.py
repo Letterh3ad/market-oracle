@@ -58,12 +58,12 @@ async def methods(status: str | None = None, ctx: AppContext = Depends(get_ctx))
 
 @router.get("/methods/{ref}")
 async def method(ref: str, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.method, ctx, ref))
+    return asdict(lab.with_tests(ctx, await asyncio.to_thread(lab.method, ctx, ref, False)))
 
 
 @router.post("/methods/{ref}/mark")
 async def mark(ref: str, body: Mark, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(await asyncio.to_thread(lab.mark, ctx, ref, body.how, USER, body.note))
+    return asdict(lab.with_tests(ctx, await asyncio.to_thread(lab.mark, ctx, ref, body.how, USER, body.note, False)))
 
 
 @router.post("/sources")

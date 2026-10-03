@@ -45,8 +45,8 @@ class MethodRow:
     why: str
     result: str
     see_also: tuple[str, ...]
-    test_key: str | None
-    """A test in research-lab 01's registry, by name."""
+    test_keys: tuple[str, ...]
+    """Tests in research-lab 01's registry, by key."""
     status_by: str
     status_at: str
     added_at: str
@@ -75,13 +75,13 @@ class SearchRow:
 
 _SOURCE = "id, title, authors, year, quality, url, read_on, note, added_at, added_by, also_titled"
 _METHOD = ("id, ref, name, family, definition, aliases, status, duplicate_of, origin, rating, archive_status, "
-           "archive_note, evidence, why, result, see_also, test_key, status_by, status_at, added_at")
+           "archive_note, evidence, why, result, see_also, test_keys, status_by, status_at, added_at")
 SOURCE_FIELDS = ("title", "authors", "year", "quality", "url", "read_on", "note")
 
 
 def _method(r: sqlite3.Row) -> MethodRow:
     d = dict(r)
-    return MethodRow(**{**d, "aliases": tuple(json.loads(d["aliases"])), "see_also": tuple(json.loads(d["see_also"]))})
+    return MethodRow(**{**d, **{k: tuple(json.loads(d[k])) for k in ("aliases", "see_also", "test_keys")}})
 
 
 class LiteratureRepo:
@@ -141,14 +141,14 @@ class LiteratureRepo:
     def add_method(self, ref: str, name: str, status: str, origin: str, at: str, by: str, *, family: str = "",
                    definition: str = "", aliases: Iterable[str] = (), rating: int | None = None,
                    archive_status: str = "", archive_note: str = "", evidence: str = "", why: str = "", result: str = "",
-                   see_also: Iterable[str] = (), test_key: str | None = None) -> int:
+                   see_also: Iterable[str] = (), test_keys: Iterable[str] = ()) -> int:
         with transaction(self._conn):
             return self._conn.execute(
                 "INSERT INTO lit_methods (ref, name, family, definition, aliases, status, origin, rating, archive_status, "
-                "archive_note, evidence, why, result, see_also, test_key, status_by, status_at, added_at) "
+                "archive_note, evidence, why, result, see_also, test_keys, status_by, status_at, added_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ref, name, family, definition, json.dumps(list(aliases)), status, origin, rating, archive_status,
-                 archive_note, evidence, why, result, json.dumps(list(see_also)), test_key, by, at, at)).lastrowid
+                 archive_note, evidence, why, result, json.dumps(list(see_also)), json.dumps(list(test_keys)), by, at, at)).lastrowid
 
     def method(self, ref: str) -> MethodRow | None:
         r = self._conn.execute(f"SELECT {_METHOD} FROM lit_methods WHERE ref = ? COLLATE NOCASE", (ref,)).fetchone()
