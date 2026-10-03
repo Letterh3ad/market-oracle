@@ -83,6 +83,24 @@ def test_an_incomplete_or_clashing_template_is_refused(ctx, bad, why):
     assert hypotheses(registrations(ctx)) == LEGACY_N
 
 
+def test_a_strategy_registration_records_the_variants_tried_for_its_deflated_sharpe(ctx):
+    s = register_test(ctx, template("s", kind="strategy", horizons=(), variants=6), today="2026-10-04")
+    assert s.variants == 6 and "6 variants tried" in s.bar_rule
+    assert registration(ctx, "s").variants == 6 and hypotheses(registrations(ctx)) == LEGACY_N + 1, "still one in N"
+    assert registration(ctx, "trend_overlay").variants == 1 and register_test(ctx, template("t")).variants == 1
+
+
+@pytest.mark.parametrize("variants, why", [(0, "1 or more"), (True, "1 or more"), (2.5, "1 or more")])
+def test_variants_are_a_whole_number_of_tries(ctx, variants, why):
+    with pytest.raises(InvalidQuery, match=why):
+        register_test(ctx, template("s", kind="strategy", horizons=(), variants=variants))
+
+
+def test_only_a_strategy_counts_variants(ctx):
+    with pytest.raises(InvalidQuery, match="strategy"):
+        register_test(ctx, template("x", variants=3))
+
+
 async def test_a_run_without_a_committed_registration_is_refused(ctx):
     seed(ctx)
     with research_context(ctx) as r:

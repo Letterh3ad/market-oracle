@@ -37,6 +37,8 @@ class Registration:
     legacy: bool
     result_key: str
     note: str = ""
+    variants: int = 1
+    """Strategy versions tried before registering: the deflated Sharpe's trial count."""
 
     @property
     def hypotheses(self) -> int:

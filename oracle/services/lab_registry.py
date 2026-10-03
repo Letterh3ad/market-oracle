@@ -26,8 +26,8 @@ MAX_HORIZONS = 2
 KEY_RE = re.compile(r"[a-z0-9][a-z0-9_.:-]{0,63}")
 HASH_RE = re.compile(r"[0-9a-f]{7,40}")
 SIGNS = ("positive", "negative")
-STRATEGY_RULE = "beats the index after UK retail costs on confirm and deflated Sharpe probability >= 0.95 given the " \
-                "variants tried (spec 6)"
+STRATEGY_RULE = "beats the index after UK retail costs on confirm and deflated Sharpe probability >= 0.95 given {} " \
+                "{} tried (spec 6)"
 TEXT_FIELDS = ("label", "rule", "universe", "expected_size", "source", "power", "costs", "kill_stage")
 
 
@@ -51,6 +51,8 @@ class Template:
     parent: str | None = None
     """A FAILed method this one is near; then different_because is required."""
     different_because: str | None = None
+    variants: int = 1
+    """A strategy's versions tried before this registration (its deflated Sharpe's trial count)."""
 
 
 def hypotheses(regs: Iterable[Registration]) -> int:
@@ -93,6 +95,11 @@ def _check(t: Template, repo: LabTestRepo) -> None:
         raise InvalidQuery(f"1 to {MAX_HORIZONS} different horizons, each counted toward N")
     if any(isinstance(h, bool) or not isinstance(h, int) or h < 1 for h in t.horizons):
         raise InvalidQuery("horizons are whole trading days, 1 or more")
+    if isinstance(t.variants, bool) or not isinstance(t.variants, int) or t.variants < 1:
+        raise InvalidQuery("variants tried: a whole number, 1 or more")
+    if t.variants != 1 and t.kind != "strategy":
+        raise InvalidQuery("only a strategy test counts variants tried (its deflated Sharpe); signals and events "
+                           "count horizons in N")
     if t.expected_sign not in SIGNS:
         raise InvalidQuery(f"expected sign: {' or '.join(SIGNS)}")
     if t.kind == "signal" and t.expected_sign != "positive":
@@ -116,7 +123,7 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
         strategy = t.kind == "strategy"
         bar = None if strategy else round(bonferroni_bar(n), 4)
         if strategy:
-            rule = STRATEGY_RULE
+            rule = STRATEGY_RULE.format(t.variants, "variant" if t.variants == 1 else "variants")
         else:
             what, rest = (("IC above 0", ", positive in more than half the counted segments") if t.kind == "signal"
                           else ("mean CAR in the train mean's sign", ""))
@@ -125,7 +132,7 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
             t.key, t.label.strip(), t.kind, today or ctx.clock.utcnow().date().isoformat(), tuple(t.horizons),
             t.rule.strip(), t.universe.strip(), t.expected_sign, t.expected_size.strip(), t.source.strip(),
             t.power.strip(), t.costs.strip(), bar, True, rule, t.kill_stage.strip(), t.parent or None,
-            (t.different_because or "").strip() or None, None, False, t.key)
+            (t.different_because or "").strip() or None, None, False, t.key, variants=t.variants)
         repo.add(reg)
         return reg
 
