@@ -83,8 +83,8 @@ def default_pick(rows: tuple[FundRow, ...]) -> tuple[str, str]:
     if ahead:
         named = ", ".join(f"{FUNDS[r.key].label} {_pct(r.cagr)} ({r.us_share:.0%} US)"
                           for r in sorted(ahead, key=lambda r: -r.cagr))
-        reason += (f" More concentrated funds returned more over this window ({named}): one market's good "
-                   "decade, not a reason to drop the rest of the world.")
+        reason += (f" More US-heavy funds returned more over this window ({named}): that lead is the US "
+                   "market's run, not a reason to drop the rest of the world.")
     return DEFAULT_FUND, f"{reason} {rule}"
 
 

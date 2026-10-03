@@ -9,7 +9,7 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.plan_service import PICKABLE, PlanSummary, plan_summary, save_plan
 
-COMMANDS = {"funds": "oracle plan funds", "trend": "oracle plan trend", "platform": "oracle plan set --platform ...",
+COMMANDS = {"funds": "oracle plan funds", "trend": "oracle plan trend", "platform": "oracle plan set --percent-fee PCT, or --platform flat --flat-fee GBP",
             "monthly": "oracle plan set --monthly GBP", "fund": "oracle plan set --fund NAME"}
 SETTERS = (("fund", str, f"the fund you hold: {', '.join(PICKABLE)}, or default for the numbers' pick"),
            ("monthly", float, "GBP paid in each month"),
