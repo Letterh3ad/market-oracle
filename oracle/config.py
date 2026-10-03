@@ -264,6 +264,34 @@ class PlanConfig:
 
 
 @dataclass(frozen=True)
+class WrappersConfig:
+    """Your numbers for the ISA, workplace pension and Lifetime ISA comparison (boring-plan 09).
+    Nothing about you is assumed: 0 (or -1) is not entered yet."""
+
+    lisa: bool = False
+    """Show the Lifetime ISA beside the others; off unless you turn it on."""
+    salary: float = 0.0
+    """£ a year before tax; 0 is not entered yet."""
+    employee_pct: float = 0.0
+    """Your workplace pension contribution, % of the earnings it is worked out on, relief included."""
+    employer_pct: float = 0.0
+    on_salary: bool = False
+    """True: contributions are a % of the whole salary; false: of qualifying earnings (auto-enrolment's band)."""
+    sacrifice: bool = False
+    """Your contribution is paid by salary sacrifice."""
+    born: int = 0
+    """Year of birth, for the pension and Lifetime ISA ages; 0 is not entered yet."""
+    needed_before: float = -1.0
+    """£ a month of the monthly amount you may need before the pension can be drawn; -1 is not answered yet."""
+    retire_tax: float = 20.0
+    """% income tax on the taxed part of the pension when drawn (20 is the basic rate): set yours."""
+    pension_fee: float = 0.3
+    """The pension scheme's yearly charge, % of the pot (Nest's published 0.3%)."""
+    pension_charge: float = 1.8
+    """% taken from each contribution (Nest's published 1.8%)."""
+
+
+@dataclass(frozen=True)
 class LayaAccountConfig:
     """The paper account that trades Laya's daily news score alone, for evidence whatever its
     predictive test said. On by default, so its record starts the day it ships."""
@@ -574,6 +602,7 @@ class Config:
     laya: LayaConfig = field(default_factory=LayaConfig)
     data_checks: DataChecksConfig = field(default_factory=DataChecksConfig)
     plan: PlanConfig = field(default_factory=PlanConfig)
+    wrappers: WrappersConfig = field(default_factory=WrappersConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -827,6 +856,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
             continue
         if name == "plan":
             values[name] = check_plan(value)
+            continue
+        if name == "wrappers":
+            values[name] = check_wrappers(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -1109,6 +1141,31 @@ def check_plan(raw: object) -> PlanConfig:
                 or (key == "monthly" and value == high)):
             raise ConfigError(f"plan.{key} must be a number from 0{' to 100' if high == 100 else ' up'}, got {value!r}")
     return config
+
+
+def check_wrappers(raw: object) -> WrappersConfig:
+    """`[wrappers]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
+    if not isinstance(raw, dict):
+        raise ConfigError("wrappers must be a [wrappers] table")
+    _reject_unknown(raw, WrappersConfig, "[wrappers]")
+    w = replace(WrappersConfig(), **raw)
+
+    def number(v: object, low: float, high: float) -> bool:
+        return not isinstance(v, bool) and isinstance(v, (int, float)) and low <= v <= high
+
+    checks = {
+        **{key: (isinstance(getattr(w, key), bool), "true or false") for key in ("lisa", "on_salary", "sacrifice")},
+        "salary": (number(w.salary, 0, 1e9), "£ a year from 0"),
+        **{key: (number(getattr(w, key), 0, 100), "a % from 0 to 100") for key in (
+            "employee_pct", "employer_pct", "pension_fee", "pension_charge")},
+        "retire_tax": (number(w.retire_tax, 0, 45), "a % from 0 to 45"),
+        "born": (w.born == 0 or _whole(w.born, 1900, 2100), "a year of birth, or 0 for not entered"),
+        "needed_before": (number(w.needed_before, 0, 1e9) or w.needed_before == -1, "£ a month from 0, or -1 for not answered"),
+    }
+    for key, (ok, text) in checks.items():
+        if not ok:
+            raise ConfigError(f"wrappers.{key} must be {text}, got {getattr(w, key)!r}")
+    return w
 
 
 def _discovery(raw: object) -> DiscoveryConfig:

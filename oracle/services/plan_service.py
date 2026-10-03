@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from oracle.broker.uk_rates import ISA_ALLOWANCE
 from oracle.config import PlanConfig
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
@@ -21,8 +22,6 @@ __all__ = ["DEFAULT_FUND", "ISA_ALLOWANCE", "PICKABLE", "Missing", "PlanLine", "
 DEFAULT_FUND = "all_world"
 PICKABLE = tuple(k for k, f in FUNDS.items() if f.compared)
 """Funds a plan can hold; the UK part is shown only inside the mix."""
-ISA_ALLOWANCE = 20_000
-"""£ a year into all ISAs together (gov.uk, frozen to April 2030; checked 2026-10-03)."""
 HORIZON = 25
 
 

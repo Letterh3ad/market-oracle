@@ -214,6 +214,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{key: "GET /api/plan/contributions" for key in (
         "plan contributions", *(f"plan contributions --{flag}" for flag in (
             "monthly", "lump", "years", "fund", "second", "weight", "band", "cash", "cash-rate")))},
+    # Where the next pound goes card: the comparison, and its form saving [wrappers] (the Lifetime ISA switch too).
+    **{key: "GET /api/plan/wrappers" for key in ("plan wrappers", "plan wrappers --growth")},
+    **{f"plan wrappers --{flag}": "PUT /api/plan/wrappers" for flag in (
+        "lisa", "salary", "employee-pct", "employer-pct", "on-salary", "sacrifice", "born", "needed-before",
+        "retire-tax", "pension-fee", "pension-charge")},
     # Fund comparison card: "Compare funds" and its kept result.
     "plan funds": "POST /api/jobs/plan-funds",
     "plan funds --show": "GET /api/plan/funds",

@@ -14,8 +14,8 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, PlanConfig, ScheduleConfig, Setting,
-    check_ai_account, check_peers, check_plan, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, PlanConfig, WrappersConfig, ScheduleConfig, Setting,
+    check_ai_account, check_peers, check_plan, check_wrappers, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
 from oracle.services.context import AppContext
@@ -26,10 +26,10 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "LIVE_SECTIONS", "PEERS_RANGE", "edit_config", "reload_live_settings", "set_ai_account", "set_ai_research", "set_automation", "set_regime_account", "set_regime_ai_account", "set_regime_v2_account", "set_core_sat_account", "set_laya_account",
-    "set_peer_count", "set_plan", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
+    "set_peer_count", "set_plan", "set_wrappers", "set_schedule", "set_setting", "set_tick_warning", "settings_form",
 ]
 
-LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "data_checks", "plan", "analysts", "universe", "discovery", "models")
+LIVE_SECTIONS = ("schedule", "automation", "ai_account", "regime_account", "regime_ai_account", "regime_v2_account", "core_sat_account", "laya_account", "laya", "data_checks", "plan", "wrappers", "analysts", "universe", "discovery", "models")
 """Sections a running app takes from oracle.toml as soon as it changes; the rest wait for a restart.
 A nested table ([models.slots]) is live with its section."""
 SWITCHES = {"regime_account": "regime", "regime_ai_account": "regime-ai", "regime_v2_account": "regime-v2"}
@@ -55,6 +55,14 @@ def set_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
     _save(ctx, "plan", dict(values))
     ctx.config = replace(ctx.config, plan=plan)
     return plan
+
+
+def set_wrappers(ctx: AppContext, values: dict[str, object]) -> WrappersConfig:
+    """[wrappers] keys in one checked write, like `set_plan`."""
+    wrappers = _check(check_wrappers, {**asdict(ctx.config.wrappers), **values})
+    _save(ctx, "wrappers", dict(values))
+    ctx.config = replace(ctx.config, wrappers=wrappers)
+    return wrappers
 
 
 def set_schedule(ctx: AppContext, enabled: bool, time: str) -> Path:
