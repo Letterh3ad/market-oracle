@@ -47,7 +47,9 @@ class TemplateBody(BaseModel):
 @router.post("/tests")
 async def post_test(body: TemplateBody, ctx: AppContext = Depends(get_ctx)) -> dict:
     data = body.model_dump()
-    return asdict(register_test(ctx, Template(**{**data, "horizons": tuple(data["horizons"])})))
+    # On a thread: the near-FAIL check may wait on Ollama's embeddings.
+    t = Template(**{**data, "horizons": tuple(data["horizons"])})
+    return asdict(await asyncio.to_thread(register_test, ctx, t))
 
 
 class CommitBody(BaseModel):
