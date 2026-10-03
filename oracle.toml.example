@@ -179,6 +179,8 @@ percent_cap = 0.0          # GBP a year the percentage fee stops at; 0 is no cap
 flat_fee = 0.0             # the flat platform's fee, GBP a month
 dealing_fee = 0.0          # GBP per buy or sell (0 for free regular investing)
 fx_fee = 0.0               # % of each buy taken for currency conversion (0 for a GBP fund)
+fund = ""                  # the fund you hold: all_world, developed, sp500 or uk_mix; "" is the numbers' pick
+monthly = 0.0              # GBP paid in each month; 0 is not set yet
 
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]

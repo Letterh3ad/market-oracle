@@ -49,9 +49,9 @@ def set_peer_count(ctx: AppContext, count: int) -> Path:
 
 
 def set_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
-    """The whole [plan] platform in one write: checked first, then saved together, so a refused
-    value leaves every key as it was."""
-    plan = _check(check_plan, dict(values))
+    """[plan] keys in one write: checked over the current plan first, then saved together, so a
+    refused value leaves every key as it was and keys not given keep their values."""
+    plan = _check(check_plan, {**asdict(ctx.config.plan), **values})
     _save(ctx, "plan", dict(values))
     ctx.config = replace(ctx.config, plan=plan)
     return plan

@@ -1,6 +1,6 @@
 // The pre-registered trend overlay test (boring-plan 04): the 10-month moving average rule on the
 // S&P 500 total-return index against buy and hold, choose 1988-2007 (reported only) and confirm
-// 2008 on (the verdict). Lives on the Ledgers tab until the Plan tab exists.
+// 2008 on (the verdict). A card on the Plan tab; `changed` hears when a run finishes.
 import { api } from "./api.js";
 import { linesChart } from "./chart.js";
 import { table } from "./compare.js";
@@ -43,7 +43,7 @@ function windowPart(w, title, charts) {
   el("div", { class: "row compare" }, holder, windowTable(w))];
 }
 
-function trendSection() {
+function trendSection({ changed } = {}) {
   const note = el("div", { class: "form-note" });
   const body = el("div");
   let chartsDrawn = [];
@@ -98,7 +98,7 @@ function trendSection() {
   function follow(job) {
     state(job);
     followJob(job, state).then(() => say("The trend overlay test finished.", false), (err) => say(err.message))
-      .finally(load);
+      .finally(() => { load(); changed?.(); });
   }
 
   const run = el("button", { type: "button", onclick: async () => {

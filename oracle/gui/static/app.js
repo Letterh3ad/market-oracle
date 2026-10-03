@@ -7,6 +7,7 @@ import watchlistTab from "./tabs/watchlist.js";
 import discoverTab from "./tabs/discover.js";
 import companyTab from "./tabs/company.js";
 import ledgersTab from "./tabs/ledgers.js";
+import planTab from "./tabs/plan.js";
 import activityTab from "./tabs/activity.js";
 
 // Order here is the order in the rail.
@@ -16,6 +17,7 @@ const TABS = [
   discoverTab,
   companyTab,
   ledgersTab,
+  planTab,
   activityTab,
 ];
 

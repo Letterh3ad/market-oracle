@@ -703,7 +703,7 @@ def submit_plan_trend(ctx: AppContext, runner: JobRunner) -> Job:
     async def work(c: AppContext):
         return await run_and_keep_trend(c, say=stage.append)
 
-    return runner.submit("plan_trend", "Trend overlay test", work, subject=PLAN_TREND_SUBJECT, link="#ledgers",
+    return runner.submit("plan_trend", "Trend overlay test", work, subject=PLAN_TREND_SUBJECT, link="#plan",
                          progress=lambda: stage[-1] if stage else None)
 
 
@@ -722,7 +722,7 @@ def submit_plan_funds(ctx: AppContext, runner: JobRunner) -> Job:
     async def work(c: AppContext):
         return await run_and_keep_funds(c, say=stage.append)
 
-    return runner.submit("plan_funds", "Fund comparison", work, subject=PLAN_FUNDS_SUBJECT, link="#ledgers",
+    return runner.submit("plan_funds", "Fund comparison", work, subject=PLAN_FUNDS_SUBJECT, link="#plan",
                          progress=lambda: stage[-1] if stage else None)
 
 

@@ -116,6 +116,11 @@ def test_every_exemption_and_pending_entry_says_why():
                for v in MANIFEST.values() if isinstance(v, (Exempt, Pending)))
 
 
+def test_every_plan_action_has_a_cli_twin(ctx):
+    plan = {r for r in app_routes(build_app(ctx)) if r.split(" ", 1)[1].startswith(("/api/plan/", "/api/jobs/plan-"))}
+    assert len(plan) >= 7 and plan - routes(MANIFEST) == set()
+
+
 def test_the_settings_form_over_every_oracle_toml_key_is_served_and_called(ctx):
     assert set(SETTINGS_FORM) <= app_routes(build_app(ctx))
     assert [r for r in SETTINGS_FORM if uncalled(r, _page_source())] == []
