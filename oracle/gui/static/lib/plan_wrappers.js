@@ -110,6 +110,11 @@ function wrappersSection() {
     const values = {};
     for (const [key, label] of NUMBERS) {
       const raw = String(inputs[key].value ?? "").trim();
+      // A number input reads "" for text it cannot parse; only validity tells that from a blank field.
+      if (inputs[key].validity?.badInput) {
+        say(`${label} must be a number. Nothing saved.`);
+        return;
+      }
       if (raw === "") {
         if (key === "needed_before") values[key] = -1;
         else if (key === "salary" || key === "born") values[key] = 0;

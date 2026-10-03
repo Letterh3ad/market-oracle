@@ -170,12 +170,17 @@ def test_platform_costs_are_marginal_so_a_flat_fee_does_not_flip_the_order(ctx):
     assert any("marginal" in n for n in flat.notes)
 
 
-def test_a_capped_percentage_is_charged_up_to_its_cap(ctx):
+def test_a_capped_percentage_charges_the_account_with_the_extra_less_without_it(ctx):
+    # Gate 09 r2 #1: the cap is per account; the plan's £500 a month passes it in about 3 years.
     use(ctx, replace(BASIC, needed_before=0), percent_fee=0.25, percent_cap=45.0, dealing_fee=1.5)
-    isa = rows(wrapper_comparison(ctx))["isa"]
-    months = 27 * 12
-    expected = project(steady(0.05, months, date(2026, 10, 3)), [PER] * months, FeeModel(percent=0.0025, cap=45.0))
-    assert isa.fees == pytest.approx(expected[-1].fees) and isa.pot == pytest.approx(expected[-1].value)
+    c = wrapper_comparison(ctx)
+    isa = rows(c)["isa"]
+    months, fees = 27 * 12, FeeModel(percent=0.0025, cap=45.0)
+    series = steady(0.05, months, date(2026, 10, 3))
+    base, more = project(series, [500.0] * months, fees)[-1], project(series, [600.0] * months, fees)[-1]
+    assert isa.fees == pytest.approx(more.fees - base.fees) and isa.fees < 20
+    assert isa.pot == pytest.approx(more.value - base.value)
+    assert rest_step(c).wrapper == "isa" and rest_step(c).monthly == 500  # as with no fees
 
 
 def test_a_sacrifice_step_puts_in_what_the_2029_ni_cap_allows_and_warns(ctx):
@@ -207,3 +212,16 @@ def test_lisa_age_boundary_and_protected_pension_age_are_said(ctx):
     assert any("may" in n and "already" in n for n in wrapper_comparison(ctx).notes)
     use(ctx, replace(BASIC, born=1972))
     assert any("6 April 1971" in n for n in wrapper_comparison(ctx).notes)
+
+
+def test_a_sacrifice_step_ending_before_the_2029_cap_keeps_todays_figure(ctx):
+    # Gate 09 r2 #4: born 1972, pension from 55, the horizon ends in 2027.
+    use(ctx, replace(BASIC, sacrifice=True, needed_before=0, born=1972))
+    step = rest_step(wrapper_comparison(ctx))
+    assert step.wrapper == "pension" and step.into == pytest.approx(500 / 0.72) and "2029" not in step.text
+
+
+def test_one_ni_cap_note_when_the_own_sacrifice_is_already_over_it(ctx):
+    use(ctx, replace(BASIC, sacrifice=True, needed_before=0, employee_pct=10, on_salary=True))
+    notes = [n for n in wrapper_comparison(ctx).notes if "£2,000" in n]
+    assert len(notes) == 1

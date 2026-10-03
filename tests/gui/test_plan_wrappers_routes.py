@@ -34,3 +34,10 @@ async def test_bad_values_are_a_clean_400(client, ctx):
 async def test_unknown_keys_are_refused_not_dropped(client, ctx):
     r = await client.put("/api/plan/wrappers", json={"salary": 30000, "pot": 1})
     assert r.status_code == 400 and "pot" in r.text and ctx.config.wrappers.salary == 0
+
+
+async def test_a_wrong_type_names_the_field(client, ctx):
+    r = await client.put("/api/plan/wrappers", json={"salary": "30000"})
+    assert r.status_code == 400 and "salary" in r.json()["error"] and ctx.config.wrappers.salary == 0
+    r = await client.put("/api/plan/wrappers", json=[1])
+    assert r.status_code == 400

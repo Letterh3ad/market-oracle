@@ -128,7 +128,10 @@ class _Rows:
         self.series = steady(growth, self.to_end, ctx.clock.utcnow().date())
         account = user_fees(ctx)
         self.platform = FeeModel(percent=account.percent, cap=account.cap, fx=account.fx)
-        """What an extra £100 a month adds: the flat fee and the monthly buy's dealing fee are paid anyway."""
+        """The flat fee and the monthly buy's dealing fee are paid anyway, so they are left out."""
+        self.account = ctx.config.plan.monthly
+        """The ISA account's own monthly stream: a capped percentage fee is per account, so the ISA row is
+        charged the account's fees with the extra £100 less its fees without."""
         self.pension_fees = nest_fees(w.pension_fee, w.pension_charge)
 
     def pension_gross(self, own: float, when: date) -> float:
@@ -157,8 +160,15 @@ class _Rows:
                                   f"from {RATES.lisa_free_age} (or a first home); {RATES.lisa_charge:.0%} charge before"))
         return tuple(rows)
 
+    def _marginal(self, paid: list[float]) -> list[Month]:
+        """The ISA account with the extra money less the account without it, month by month."""
+        base = project(self.series, [self.account] * len(paid), self.platform)
+        more = project(self.series, [self.account + p for p in paid], self.platform)
+        return [Month(b.day, m.contributed - b.contributed, 0.0, m.fees - b.fees, m.value - b.value)
+                for b, m in zip(base, more)]
+
     def _row(self, key: str, fees: FeeModel, paid: list[float], extra, access: str) -> WrapperRow:
-        path = project(self.series, paid, fees, extra)
+        path = self._marginal(paid) if key == "isa" else project(self.series, paid, fees, extra)
         end = path[self.to_access - 1]
         spendable = self._spend(key, end, early=self.access < RATES.lisa_free_age)
         at_60 = self._spend(key, path[-1], early=False) if self.lisa_open else None
@@ -237,8 +247,10 @@ def _row_notes(w: WrappersConfig, growth: float, table: _Rows) -> list[str]:
     paying = (f" Paid in until {RATES.lisa_pay_until} (the last Lifetime ISA year) in every row, so each £1 has "
               f"the same time to grow." if table.lisa_open else "")
     return [f"Each row is {_gbp(PER)} a month of take-home pay at {growth:.1%} a year (assumed), after charges: "
-            f"the ISA and Lifetime ISA at the marginal cost of your platform (its percentage fee up to the cap and "
-            f"FX; the flat fee and the monthly dealing fee are paid anyway), the pension at {w.pension_fee:g}% a "
+            f"the ISA and Lifetime ISA at the marginal cost of your platform (the flat fee and the monthly dealing "
+            f"fee are paid anyway; the ISA pays what its percentage fee rises by on your monthly amount plus the "
+            f"£100, so a cap counts once per account; the Lifetime ISA, its own account, pays the percentage up to "
+            f"the cap on its own pot, and FX), the pension at {w.pension_fee:g}% a "
             f"year and {w.pension_charge:g}% of each contribution.{paying}",
             f"Pension spendable: {RATES.tax_free_share:.0%} tax-free (up to {_gbp(RATES.lump_sum_allowance)}), the "
             f"rest taxed at {w.retire_tax:g}% when drawn (your retire_tax; set the rate you expect).",
@@ -288,8 +300,10 @@ def _steps(w: WrappersConfig, m: PensionMonth | None, monthly: float, access: in
 def _pension_step(w: WrappersConfig, amount: float, table: _Rows, m: PensionMonth | None,
                   notes: list[str]) -> tuple[float, str]:
     """Extra pension for `amount` of take-home a month. Under sacrifice, `into` is what it puts in once the
-    2029 NI cap applies (today's figure beside it); under relief at source, what leaves pay and what comes back."""
-    capped = table.pension_gross(amount, RATES.sacrifice_cap_from)
+    2029 NI cap applies when the paying years reach it (today's figure beside it); under relief at source, what
+    leaves pay and what comes back."""
+    reaches_cap = table.series[table.paying - 1][0] >= RATES.sacrifice_cap_from
+    capped = table.pension_gross(amount, RATES.sacrifice_cap_from if reaches_cap else table.series[0][0])
     head = f"{LABELS['pension']}: {_gbp(amount)} a month of take-home"
     if w.sacrifice:
         now = table.pension_gross(amount, table.series[0][0])
@@ -297,8 +311,9 @@ def _pension_step(w: WrappersConfig, amount: float, table: _Rows, m: PensionMont
         if now - capped > 0.005:
             text += f" ({_gbp(now)} until {RATES.sacrifice_cap_from:%d %B %Y}, when NI is saved on the first " \
                     f"{_gbp(RATES.sacrifice_ni_cap)} a year sacrificed only)"
-        total = ((m.gross if m else 0.0) + capped) * 12
-        if total > RATES.sacrifice_ni_cap:
+        own = (m.gross if m else 0.0) * 12
+        total = own + capped * 12
+        if reaches_cap and own <= RATES.sacrifice_ni_cap < total:
             notes.append(f"With this step you would sacrifice {_gbp(total)} a year: from "
                          f"{RATES.sacrifice_cap_from:%d %B %Y} only the first {_gbp(RATES.sacrifice_ni_cap)} is free "
                          "of NI, so each extra £1 saves less.")

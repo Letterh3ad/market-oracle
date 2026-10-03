@@ -3374,3 +3374,8 @@ tick's lock and its banner); explaining every flag (rejected: hundreds of model 
 **Context:** Gate 09 r1 found the £100 ISA/LISA rows paid the whole flat fee and a dealing fee per buy, which flipped the order on a flat platform; and the sacrifice step used pre-2029 NI room.
 **Decision:** The ISA and LISA rows charge only what an extra £100 adds: the percentage fee (up to its cap) and FX; the flat fee and the monthly buy's dealing fee are paid anyway. The extra-pension step's `into` is its value once the 2029 NI cap applies, with today's figure beside it, and a note when the user's own sacrifice plus the step passes £2,000 a year. Relief-at-source steps say what leaves pay and what Self Assessment returns.
 **Alternatives:** Full account fees on each row (wrong basis, flips the order); today's NI room (overstates for most of the horizon).
+
+## 2026-10-03 - boring-plan 09 gate r2: capped percentage charged per account
+**Context:** Gate 09 r2: a capped percentage fee charged on the £100 ISA row as if it were a whole account overstated its cost (the cap binds on the account) and still flipped the order.
+**Decision:** The ISA row's fees are the account's fees with the plan's monthly amount plus the £100 less its fees with the monthly amount alone (same `project`, run twice). The Lifetime ISA, a separate account, keeps the percentage up to the cap on its own pot. The sacrifice step uses the 2029 cap only when its paying years reach 6 April 2029.
+**Alternatives:** Ignoring the cap for the extra (overstates fees); taking the cap as already reached (understates them early on).

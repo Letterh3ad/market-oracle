@@ -102,3 +102,15 @@ def test_compare_keeps_unsaved_edits_and_a_bad_number_is_not_sent():
     """)
     assert kept == "41000" and sent == []
     assert "Employer % must be a number" in text and "Saved." not in text
+
+
+def test_text_a_number_field_cannot_parse_is_not_saved_as_blank():
+    # Gate 09 r2 #2: a browser's number input reads "" for "abc"; validity.badInput says so.
+    sent, text = run("""
+        section.start(); await settle();
+        const salary = labelled(node, "Salary (GBP a year)");
+        salary.value = ""; salary.validity = { badInput: true };
+        button(node, "Save").fire("click"); await settle();
+        console.log(JSON.stringify([sent, node.textContent]));
+    """)
+    assert sent == [] and "Salary (GBP a year) must be a number" in text and "Saved." not in text
