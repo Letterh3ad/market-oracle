@@ -5,6 +5,7 @@ import { linesChart } from "./chart.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
 import { money, pct } from "./fmt.js";
+import { savedText } from "./guardrails.js";
 import { sendJson } from "./ui.js";
 
 const PLATFORM = [
@@ -127,8 +128,7 @@ function planMoneySection({ changed } = {}) {
       try {
         const body = Object.fromEntries(fields.map(([, input, key]) => [key, key === "platform" ? input.value
           : Number(input.value)]));
-        await sendJson("/api/plan/platform", body, "PUT");
-        say("Platform saved.", false);
+        say(`Platform: ${savedText(await sendJson("/api/plan/platform", body, "PUT"))}`, false);
         changed?.();
       } catch (err) {
         say(err.message);

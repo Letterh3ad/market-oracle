@@ -87,7 +87,7 @@ def test_nothing_run_or_set_lists_what_is_missing_instead_of_failing(ctx, monkey
     s = plan_summary(ctx)
     got = lines(s)
     assert s.fund == "all_world" and not s.picked and s.monthly == 0 and s.overlay is False
-    assert [m.step for m in s.missing] == ["funds", "platform", "monthly", "trend"]
+    assert [m.step for m in s.missing] == ["funds", "platform", "monthly", "trend", "rule"]
     assert "Compare funds" in s.missing[0].text
     assert not got["fund"].known and not got["overlay"].known and got["wrapper"].known
     assert got["overlay"].value.startswith("No")
@@ -119,7 +119,7 @@ def test_platform_and_monthly_with_fees_set_give_the_crossover_and_the_allowance
     ctx.config = replace(ctx.config, plan=PlanConfig(percent_fee=0.25, flat_fee=4.99, monthly=500.0))
     s = plan_summary(ctx)
     got = lines(s)
-    assert s.missing == () and s.monthly == 500.0
+    assert [m.step for m in s.missing] == ["rule"] and s.monthly == 500.0
     assert "£23,952" in got["platform"].reason and "year 4" in got["platform"].reason
     assert got["monthly"].value == "£500 a month"
     assert "£6,000 a year of the £20,000" in got["wrapper"].reason

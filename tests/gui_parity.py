@@ -220,6 +220,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Trend overlay test card: "Run trend test" and its kept result.
     "plan trend": "POST /api/jobs/plan-trend",
     "plan trend --show": "GET /api/plan/trend",
+    # Guardrails card: the drawdown preview (pot input, never stored), the no-sell rule, the pending change.
+    **{key: "GET /api/plan/drawdowns" for key in ("plan drawdowns", "plan drawdowns --pot")},
+    **{key: "GET /api/plan/guardrails" for key in ("plan rule", "plan pending")},
+    **{key: "PUT /api/plan/rule" for key in ("plan rule --set", "plan rule --clear")},
+    "plan pending --cancel": "DELETE /api/plan/pending",
     # Ledgers tab, Data health card: "Run data checks", its counts and each check's flagged rows.
     "data check": "POST /api/jobs/data-check",
     "data check --check": OUTPUT_ONLY,

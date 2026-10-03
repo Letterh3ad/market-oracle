@@ -3,9 +3,10 @@
 import { api } from "./api.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
+import { savedText } from "./guardrails.js";
 import { sendJson } from "./ui.js";
 
-function planSummarySection() {
+function planSummarySection({ changed } = {}) {
   const note = el("div", { class: "form-note" });
   const body = el("div");
   const fund = el("select", { name: "fund", "aria-label": "Fund" });
@@ -45,9 +46,10 @@ function planSummarySection() {
   const save = el("button", { type: "button", onclick: async () => {
     save.disabled = true;
     try {
-      await sendJson("/api/plan/choice", { fund: fund.value || "default", monthly: Number(monthly.value || 0) }, "PUT");
-      say("Saved.", false);
+      const r = await sendJson("/api/plan/choice", { fund: fund.value || "default", monthly: Number(monthly.value || 0) }, "PUT");
+      say(savedText(r), false);
       await load();
+      changed?.();
     } catch (err) {
       say(err.message);
     } finally {

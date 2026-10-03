@@ -27,7 +27,8 @@ def test_set_takes_the_platform_too_and_refuses_bad_values_cleanly(tmp_path, cap
     cfg = config(tmp_path)
     assert main(["--config", str(cfg), "plan", "set", "--platform", "flat", "--dealing-fee", "1.5"]) == 0
     plan = tomllib.loads(cfg.read_text(encoding="utf-8"))["plan"]
-    assert plan["platform"] == "flat" and plan["dealing_fee"] == 1.5 and plan["flat_fee"] == 4.99
+    assert "platform" not in plan and "dealing_fee" not in plan and plan["flat_fee"] == 4.99
+    assert "Pending until" in capsys.readouterr().out, "the platform was set, so a change waits 7 days"
     assert main(["--config", str(cfg), "plan", "set", "--fund", "gold"]) != 0
     assert "gold" in capsys.readouterr().err
     assert main(["--config", str(cfg), "plan", "set"]) != 0

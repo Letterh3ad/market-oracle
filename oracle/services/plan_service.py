@@ -15,8 +15,8 @@ from oracle.services.fund_compare_service import FUNDS, FundComparison, FundRow,
 from oracle.services.settings_service import set_plan
 from oracle.services.trend_service import TrendTest, trend_tests
 
-__all__ = ["DEFAULT_FUND", "ISA_ALLOWANCE", "PICKABLE", "Missing", "PlanLine", "PlanSummary", "default_pick",
-           "plan_summary", "save_plan"]
+__all__ = ["DEFAULT_FUND", "ISA_ALLOWANCE", "PICKABLE", "Missing", "PlanLine", "PlanSummary", "check_choice",
+           "default_pick", "plan_fund", "plan_summary", "save_plan"]
 
 DEFAULT_FUND = "all_world"
 PICKABLE = tuple(k for k, f in FUNDS.items() if f.compared)
@@ -175,21 +175,46 @@ def _overlay_line(t: TrendTest | None, missing: list[Missing]) -> PlanLine:
                     "through falls.", True)
 
 
+def _rule_line(plan: PlanConfig, missing: list[Missing]) -> PlanLine:
+    if not plan.rule:
+        missing.append(Missing("rule", "Write your no-sell rule (Guardrails card)."))
+        return PlanLine("rule", "No-sell rule", "not written", "Written while calm, it is what you read in a fall "
+                        "instead of selling.", False)
+    return PlanLine("rule", "No-sell rule", plan.rule, "Your own words, written while calm: read them before selling "
+                    "anything in a fall. Changing them waits 7 days.", True)
+
+
+def plan_fund(ctx: AppContext) -> str:
+    """The fund the plan holds: the user's pick, else the numbers' default."""
+    pick = ctx.config.plan.fund.strip().lower()
+    if pick in PICKABLE:
+        return pick
+    c = fund_comparison(ctx)
+    return default_pick(c.rows)[0] if c else DEFAULT_FUND
+
+
 def plan_summary(ctx: AppContext) -> PlanSummary:
     plan = ctx.config.plan
     missing: list[Missing] = []
     fund, key, picked, default = _fund_line(plan, fund_comparison(ctx), missing)
     t = trend_tests(ctx)
     lines = (fund, _wrapper_line(plan), _platform_line(ctx, plan, missing), _monthly_line(plan, missing),
-             _overlay_line(t, missing))
-    order = ("funds", "fund", "platform", "monthly", "trend")
+             _overlay_line(t, missing), _rule_line(plan, missing))
+    order = ("funds", "fund", "platform", "monthly", "trend", "rule")
     return PlanSummary(lines, tuple(sorted(missing, key=lambda m: order.index(m.step))), key, picked, default,
                        plan.monthly, bool(t and t.passed), tuple((k, FUNDS[k].label) for k in PICKABLE))
 
 
 def save_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
     """Any [plan] keys in one checked write; `fund` "default" (or "") goes back to the numbers' pick."""
+    return set_plan(ctx, check_choice(values))
+
+
+def check_choice(values: dict[str, object]) -> dict[str, object]:
+    """`values` with `fund` checked against the pickable funds ("default" as "") and `rule` trimmed."""
     values = dict(values)
+    if isinstance(values.get("rule"), str):
+        values["rule"] = values["rule"].strip()
     if "fund" in values:
         fund = values["fund"]
         if not isinstance(fund, str):
@@ -199,4 +224,4 @@ def save_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
         if fund and fund not in PICKABLE:
             raise InvalidQuery(f"fund must be one of {', '.join(PICKABLE)} or default, got {fund!r}")
         values["fund"] = fund
-    return set_plan(ctx, values)
+    return values

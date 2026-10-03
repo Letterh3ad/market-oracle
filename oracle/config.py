@@ -261,6 +261,14 @@ class PlanConfig:
     """The fund comparison key the user picked; "" is the numbers' default (all-world unless they say otherwise)."""
     monthly: float = 0.0
     """£ paid in each month; 0 is not set yet."""
+    rule: str = ""
+    """The user's own no-sell rule, in their words; "" is not written yet."""
+
+
+PLAN_PARTS = (("fund",), ("monthly",), ("platform", "percent_fee", "percent_cap", "flat_fee", "dealing_fee", "fx_fee"),
+              ("rule",))
+"""The real-money plan's parts, each under the 7-day cool-off as a whole (boring-plan 08)."""
+PLAN_RULE_MAX = 1000
 
 
 @dataclass(frozen=True)
@@ -1102,6 +1110,8 @@ def check_plan(raw: object) -> PlanConfig:
         raise ConfigError(f"plan.platform must be one of {', '.join(PLATFORMS)}, got {config.platform!r}")
     if not isinstance(config.fund, str):
         raise ConfigError(f"plan.fund must be a fund name, got {config.fund!r}")
+    if not isinstance(config.rule, str) or len(config.rule) > PLAN_RULE_MAX:
+        raise ConfigError(f"plan.rule must be text of at most {PLAN_RULE_MAX} characters")
     for key in ("percent_fee", "percent_cap", "flat_fee", "dealing_fee", "fx_fee", "monthly"):
         value = getattr(config, key)
         high = 100 if key in ("percent_fee", "fx_fee") else float("inf")

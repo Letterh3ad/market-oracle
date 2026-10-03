@@ -102,6 +102,8 @@ def test_the_plan_tab_hosts_the_summary_and_the_three_cards_and_ledgers_does_not
         ANSWERS["GET /api/plan/trend"] = {{ result: null }};
         ANSWERS["GET /api/settings"] = {{ settings: [{{ section: "plan", key: "monthly", value: 300 }},
           {{ section: "plan", key: "fund", value: "sp500" }}] }};
+        ANSWERS["GET /api/plan/guardrails"] = {{ rule: "", pending: null, history: [], cool_off_days: 7 }};
+        ANSWERS["GET /api/plan/drawdowns"] = {{ status: 404, error: "run Compare funds first" }};
         ANSWERS["POST /api/jobs/plan-funds"] = {{ id: 3, kind: "plan_funds", state: "done" }};
         ANSWERS["GET /api/jobs/3"] = {{ id: 3, kind: "plan_funds", state: "done" }};
         const tab = (await import({json.dumps((STATIC_DIR / "tabs" / "plan.js").as_uri())})).default;
@@ -117,7 +119,7 @@ def test_the_plan_tab_hosts_the_summary_and_the_three_cards_and_ledgers_does_not
     """], capture_output=True, text=True, check=True)
     tab, titles, before, after, monthly, fund = json.loads(out.stdout)
     assert tab == "plan"
-    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test"]
+    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test", "Guardrails"]
     assert before == 1 and after == 2
     assert monthly == ["", "300", "300"] and fund[1:] == ["sp500"]
     app = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
