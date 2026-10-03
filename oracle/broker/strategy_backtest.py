@@ -88,6 +88,7 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
             shares[s] = pot * w / last[s]
             cash -= pot * w
     yields = sorted((cash_yield or {}).items())
+    month_ends = {a for a, b in zip(days, days[1:]) if (a.year, a.month) != (b.year, b.month)}
     trades: list[Trade] = []
     platform = 0.0
     target = decide(first) if len(window) > 1 else None
@@ -101,7 +102,7 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
         value = cash + sum(n * (close(s, d) or 0.0) for s, n in shares.items())
         for s in prices:
             close(s, d)
-        if d != window[-1] and _month_end(d, days):
+        if d != window[-1] and d in month_ends:
             fee = min(costs.fees.platform(value), value)
             if value > 0 and fee > 0:
                 keep = 1 - fee / value
@@ -112,11 +113,6 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
         equity.append((d, value))
         target = decide(d) if d != window[-1] else None
     return StrategyRun(equity, tuple(trades), platform)
-
-
-def _month_end(d: date, days: Sequence[date]) -> bool:
-    later = next((x for x in days if x > d), None)
-    return later is not None and (later.year, later.month) != (d.year, d.month)
 
 
 def _fill(d: date, target: Weights, prices, listings, costs: UkCosts, shares: dict[str, float], cash: float,
