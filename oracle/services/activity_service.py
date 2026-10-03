@@ -46,7 +46,9 @@ from oracle.services.signal_test_service import check_signal, run_and_keep
 from oracle.services.testbed_service import build_testbed
 from oracle.services.xbrl_service import fetch_fundamentals
 from oracle.services.insider_service import fetch_insiders
-from oracle.services.event_study_service import run_and_keep_events
+from oracle.services.event_study_service import EVENT_TYPES, registry_key, run_and_keep_events
+from oracle.services.lab_registry import check_committed
+from oracle.services.trend_service import KEY as TREND_KEY
 from oracle.services.trend_service import run_and_keep_trend
 from oracle.services.fund_compare_service import run_and_keep_funds
 from oracle.services.routine_service import update_listing_prices, update_prices
@@ -675,6 +677,7 @@ EVENT_STUDY_SUBJECT = "event_study"
 def submit_event_study(ctx: AppContext, runner: JobRunner, train_only: bool = False) -> Job:
     """The pre-registered typed-event study on the testbed (with `train_only`, 2010-2019 alone), kept
     in the research database. It reads only and waits like a signal test; a Cancel keeps nothing."""
+    check_committed(ctx, [registry_key(name) for name in EVENT_TYPES])
     stage: list[str] = []
     stopped = threading.Event()
 
@@ -698,6 +701,7 @@ PLAN_TREND_SUBJECT = "plan_trend"
 def submit_plan_trend(ctx: AppContext, runner: JobRunner) -> Job:
     """The pre-registered trend overlay test: fetch the newest ^SP500TR days into the research
     database, run both windows and keep the result there (seconds)."""
+    check_committed(ctx, [TREND_KEY])
     stage: list[str] = []
 
     async def work(c: AppContext):
@@ -762,6 +766,7 @@ def submit_signal_test(ctx: AppContext, runner: JobRunner, name: str, train_only
     confirm never read), kept in the research database (minutes). It reads only, waits while live
     work or a testbed build runs, and a Cancel stops it between chunks of days, keeping nothing."""
     check_signal(name)
+    check_committed(ctx, [name])
     stage: list[str] = []
     stopped = threading.Event()
 

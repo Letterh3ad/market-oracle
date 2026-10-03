@@ -4,7 +4,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-__all__ = ["CODE_ROOT", "code_version"]
+__all__ = ["CODE_ROOT", "code_version", "decisions_at"]
 
 CODE_ROOT = Path(__file__).resolve().parents[2]
 """The folder holding the `oracle` package: a git checkout, or a packaged build."""
@@ -20,6 +20,26 @@ def code_version(root: Path = CODE_ROOT) -> str:
         return out.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return _files_hash(root / "oracle")
+
+
+def decisions_at(commit: str, root: Path = CODE_ROOT) -> tuple[str, str] | None:
+    """`commit`'s full hash and its DECISIONS.md; None without a git checkout at `root`. Raises
+    LookupError when the checkout has no such commit or the commit has no DECISIONS.md."""
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=10)
+    try:
+        if git("rev-parse", "--git-dir").returncode:
+            return None
+        full = git("rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}")
+        if full.returncode:
+            raise LookupError(f"no commit {commit} in this checkout")
+        text = git("show", f"{full.stdout.strip()}:DECISIONS.md")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if text.returncode:
+        raise LookupError(f"commit {commit} has no DECISIONS.md")
+    return full.stdout.strip(), text.stdout
 
 
 def _files_hash(package: Path) -> str:

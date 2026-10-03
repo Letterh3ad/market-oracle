@@ -74,11 +74,12 @@ def summarise(cars: Sequence[Car], h: int) -> EventRow:
     return EventRow(h, len(cars), len({d for d, _ in cars}), _r(m), _r(t, 2), sum(x > 0 for _, x in cars))
 
 
-def passes(train: EventRow | None, confirm: EventRow | None) -> bool:
-    """The confirm mean's t above T_BAR in the train mean's sign."""
+def passes(train: EventRow | None, confirm: EventRow | None, bar: float = T_BAR, inclusive: bool = False) -> bool:
+    """The confirm mean's t above `bar` (or at it, `inclusive`) in the train mean's sign."""
     if train is None or confirm is None or not train.mean or confirm.t is None:
         return False
-    return math.copysign(1, train.mean) * confirm.t > T_BAR
+    t = math.copysign(1, train.mean) * confirm.t
+    return t >= bar if inclusive else t > bar
 
 
 def _r(x: float | None, places: int = 5) -> float | None:

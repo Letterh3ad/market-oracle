@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 
 from oracle.services.activity_service import Job
 from oracle.services.analysis_service import WatchedAnalysis
-from oracle.services.backtest_service import KeptBacktest
+from oracle.services.backtest_service import KeptBacktest, deflated
 from oracle.services.cutoff_service import CutoffProbe, ReplayCutoff
 from oracle.services.data_check_service import DataCheckRun
 from oracle.services.discovery_chat_service import AnswerView
@@ -94,9 +94,11 @@ def backtest_summary(k: KeptBacktest) -> dict:
 
 def backtest(k: KeptBacktest) -> dict:
     b = k.backtest
+    lines, walked = deflated(b)
     return {**backtest_summary(k), "listings": list(b.listings), "lines": [line(l) for l in b.lines],
             "trades": [asdict(t) for t in b.trades], "notes": list(b.notes),
-            "walk_forward": None if b.walk_forward is None else asdict(b.walk_forward)}
+            "walk_forward": None if b.walk_forward is None else asdict(b.walk_forward),
+            "deflated": [asdict(d) for d in lines], "walk_deflated": [asdict(d) for d in walked]}
 
 
 def answer(v: AnswerView) -> dict:

@@ -6,7 +6,7 @@ import textwrap
 import time
 
 from oracle.cli.common import iso_day, print_lines
-from oracle.services.backtest_service import Figures, WalkForward, run_backtest
+from oracle.services.backtest_service import Deflated, Figures, WalkForward, deflated, run_backtest
 from oracle.services.context import AppContext
 from oracle.services.watch_service import DEFAULT_LIST
 
@@ -54,8 +54,13 @@ def run(ctx: AppContext, args: argparse.Namespace) -> int:
     print()
     print_lines(r.lines, base)
     print()
+    lines, walked = deflated(r)
+    print_deflated("Deflated Sharpe over the whole run", lines)
+    print()
     if r.walk_forward:
         print_walk_forward(r.walk_forward)
+        print()
+        print_deflated("Deflated Sharpe over all walk-forward segments", walked)
         print()
     if not r.trades:
         print("No trades.")
@@ -77,6 +82,15 @@ def _every(seconds: float):
             last[0] = time.monotonic()
             print(text, file=sys.stderr, flush=True)
     return say
+def print_deflated(title: str, rows: tuple[Deflated, ...]) -> None:
+    print(f"{title} (the chance a line's Sharpe beats the best of its variants tried by luck; PASS needs 0.95)")
+    print(f"{'line':<14}{'Sharpe':>8}{'variants':>10}{'deflated':>10}")
+    for d in rows:
+        sharpe = "" if d.sharpe is None else f"{d.sharpe:.2f}"
+        dsr = "" if d.dsr is None else f"{d.dsr:.3f}"
+        print(f"{d.name:<14}{sharpe:>8}{d.variants:>10}{dsr:>10}")
+
+
 def print_walk_forward(wf: WalkForward) -> None:
     head = f"{'line':<14}{'return':>9}{'largest fall':>14}{'over b&h':>10}{'Sharpe':>8}{'ret/fall':>10}"
     print("Walk-forward by segment (each a fresh start; over b&h is the return over buy and hold's in the same days)")

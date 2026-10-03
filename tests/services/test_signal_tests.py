@@ -21,6 +21,7 @@ from oracle.services.testbed_service import Testbed, research_context
 from oracle.store.bars import BarRepo
 from oracle.store.testbed import Snapshot, TestbedRepo
 from tests.fakes.clock import FakeClock
+from tests.fakes.lab import registered
 
 NOW = datetime(2022, 1, 3, 12, 0, tzinfo=timezone.utc)
 FIRST = date(2017, 6, 1)
@@ -53,6 +54,7 @@ def seed(ctx, rows=None, bars=None):
         repo.upsert(walk("SPY", days, 999), "2022-01-01T00:00:00+00:00")
         for k, t in enumerate(TICKERS):
             repo.upsert((bars or {}).get(t) or walk(t, days, k), "2022-01-01T00:00:00+00:00")
+    registered(ctx, *REGISTRY)
 
 
 @pytest.fixture
@@ -165,6 +167,7 @@ def test_the_registry_holds_the_pre_registered_signals():
 
 
 async def test_an_empty_testbed_says_build_it_first(ctx):
+    registered(ctx, "null")
     with pytest.raises(InvalidQuery, match="build it first"):
         await run_signal_test(ctx, "null", registry=REGISTRY)
 

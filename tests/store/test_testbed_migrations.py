@@ -48,7 +48,7 @@ def test_a_research_db_with_the_insider_tables_gains_fx_and_dividends_for_the_fu
     conn.execute("INSERT INTO signal_tests (signal, verdict, result, run_at) VALUES ('trend_overlay', 'FAIL', '{}', 'x')")
     conn.commit()
     migrate(conn, MIGRATIONS)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 10
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"fx_rates", "fx_history", "dividends", "dividend_spans"} <= tables
     assert "paper_dividends" not in tables, "paper ledgers live in the live database only"

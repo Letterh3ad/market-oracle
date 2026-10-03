@@ -10,11 +10,12 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import date
 
-from oracle.analysts.event_study import HORIZONS, PRIMARY, EventRow, event_cars, passes, summarise
+from oracle.analysts.event_study import HORIZONS, PRIMARY, T_BAR, EventRow, event_cars, passes, summarise
 from oracle.research import insider
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.insider_service import InsiderData, issuer_data
+from oracle.services.lab_registry import require_committed
 from oracle.services.signal_test_service import (
     CONFIRM_START, EVENT_KEY, TRAIN_END, TRAIN_KEY, TRAIN_ONLY, load_panel, missing_share,
 )
@@ -51,6 +52,13 @@ class EventType:
     """Per horizon; empty for a train-only run."""
     verdict: str
     passed: bool
+    bar: float = T_BAR
+    """The t its registration set (kept results from before the lab needed t above 2)."""
+    bar_inclusive: bool = False
+
+
+def registry_key(name: str) -> str:
+    return f"event:{name}"
 
 
 @dataclass(frozen=True)
@@ -70,10 +78,10 @@ class EventStudy:
     id: int | None = None
 
 
-def _verdict(train: EventRow | None, confirm: EventRow | None) -> str:
+def _verdict(train: EventRow | None, confirm: EventRow | None, bar: float, inclusive: bool) -> str:
     if train is None or not train.mean or confirm is None or confirm.t is None:
         return "INCONCLUSIVE"
-    return "PASS" if passes(train, confirm) else "FAIL"
+    return "PASS" if passes(train, confirm, bar, inclusive) else "FAIL"
 
 
 class _Stopped(Exception):
@@ -84,7 +92,8 @@ async def run_event_study(ctx: AppContext, *, end: date | None = None, train_onl
                           stop: Callable[[], bool] | None = None, busy: Callable[[], str | None] | None = None,
                           on_progress: Callable[[str], None] = lambda _: None) -> EventStudy | None:
     """The study as pre-registered over the testbed to `end` (default today); reads only. `train_only`
-    loads nothing after TRAIN_END and computes no confirm. None when `stop`."""
+    loads nothing after TRAIN_END and computes no confirm. None when `stop`. Refused unless every
+    type's pre-registration is committed; each type's verdict needs the bar its registration froze."""
     say = on_progress
 
     async def turn(label: str) -> None:
@@ -98,6 +107,7 @@ async def run_event_study(ctx: AppContext, *, end: date | None = None, train_onl
         say(label)
 
     with research_context(ctx) as r:
+        regs = require_committed(r, [registry_key(name) for name in EVENT_TYPES])
         tb = Testbed(r)
         try:
             await turn("loading the testbed")
@@ -112,7 +122,7 @@ async def run_event_study(ctx: AppContext, *, end: date | None = None, train_onl
             types = []
             for name, label in EVENT_TYPES.items():
                 await turn(f"event study: {name}")
-                types.append(_study(p, data, name, label, train_only))
+                types.append(_study(p, data, name, label, train_only, regs[registry_key(name)]))
         except _Stopped:
             return None
     last = p.days[-1]
@@ -132,7 +142,7 @@ def _events(p, data: InsiderData, name: str) -> dict[str, list[int]]:
     return out
 
 
-def _study(p, data: InsiderData, name: str, label: str, train_only: bool) -> EventType:
+def _study(p, data: InsiderData, name: str, label: str, train_only: bool, reg) -> EventType:
     cars = event_cars(p, _events(p, data, name), HORIZONS)
     train, confirm = [], []
     for h in HORIZONS:
@@ -142,8 +152,9 @@ def _study(p, data: InsiderData, name: str, label: str, train_only: bool) -> Eve
         if not train_only:
             confirm.append(summarise(co, h))
     k = HORIZONS.index(PRIMARY)
-    verdict = TRAIN_ONLY if train_only else _verdict(train[k], confirm[k])
-    return EventType(name, label, tuple(train), tuple(confirm), verdict, verdict == "PASS")
+    bar, inclusive = (T_BAR, False) if reg.bar is None else (reg.bar, reg.bar_inclusive)
+    verdict = TRAIN_ONLY if train_only else _verdict(train[k], confirm[k], bar, inclusive)
+    return EventType(name, label, tuple(train), tuple(confirm), verdict, verdict == "PASS", bar, inclusive)
 
 
 def keep_event_study(ctx: AppContext, study: EventStudy) -> EventStudy:

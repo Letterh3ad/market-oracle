@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
 from oracle.analysts.indicators import YEAR
+from oracle.analysts.lab import Moments, moments
 from oracle.analysts.risk import Series
 from oracle.broker.compare import max_fall
 
@@ -30,6 +31,8 @@ class Figures:
     """Return over the largest fall's size; None without a fall."""
     excess: float | None = None
     """Return over the benchmark's in the same span."""
+    moments: Moments | None = None
+    """Over all segments only: the pooled daily returns' shape, for the deflated Sharpe."""
 
 
 @dataclass(frozen=True)
@@ -82,8 +85,8 @@ def judge(equities: Mapping[str, Sequence[Series]], benchmark: str) -> tuple[Wal
         each = [replace(f, excess=f.ret - b.ret) for f, b in zip(each, base)]
         total = _compounded(f.ret for f in each)
         worst = min((f.max_fall for f in each), default=0.0)
-        overall = Figures(total, worst, _sharpe([r for e in series for r in _daily(e)]), _per_fall(total, worst),
-                          total - base_total)
+        pooled = [r for e in series for r in _daily(e)]
+        overall = Figures(total, worst, _sharpe(pooled), _per_fall(total, worst), total - base_total, moments(pooled))
         beat = None if name == benchmark else sum(1 for f in each if f.excess > 0)
         out.append(WalkLine(name, tuple(each), overall, beat))
     return tuple(out)

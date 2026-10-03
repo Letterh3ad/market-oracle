@@ -11,7 +11,7 @@ from oracle.services.errors import (
     SearchFailed, ServiceError,
     UniverseNotLoaded, UniverseUnavailable, UnknownBacktest, UnknownFilterValue, UnknownJob, UnknownQuestion, UnknownResearchRun,
     UnknownSymbol,
-    UnknownCorrection, UnknownLink, UnknownModelProfile, UnknownWatchlist,
+    UnknownCorrection, UnknownLabTest, UnknownLink, UnknownModelProfile, UnknownWatchlist,
 )
 
 log = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 # Most specific first: the first matching class wins. Anything else a service raises is 400.
 STATUS = (
     ((UnknownSymbol, UnknownWatchlist, UnknownJob, UnknownResearchRun, UnknownBacktest, UnknownQuestion, UnknownLink,
-      UnknownModelProfile, UnknownCorrection),
+      UnknownModelProfile, UnknownCorrection, UnknownLabTest),
      404),
     ((InvalidQuery, UnknownFilterValue, InvalidTag, InvalidWatchlistName), 400),
     ((JobAlreadyRunning, UniverseNotLoaded, NoPrices, CannotRestart, ConfigInUse), 409),
