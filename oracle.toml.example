@@ -170,6 +170,16 @@ nightly = true             # run them after each scheduled tick
 explain = false            # true: a local Ollama model writes a one-paragraph explanation per flag (the first 25 a run)
 explain_model = ""         # the model profile that explains ("" the research slot's); only an Ollama profile is used
 
+# Your investing platform, for the Plan fee and contribution tests (`oracle plan fees`). Rates only:
+# amounts are entered per run. No named-platform presets: copy your platform's own price list.
+[plan]
+platform = "percentage"    # which fee you pay: "percentage" or "flat"
+percent_fee = 0.0          # the percentage platform's fee, % a year (0.25 is 0.25%)
+percent_cap = 0.0          # GBP a year the percentage fee stops at; 0 is no cap
+flat_fee = 0.0             # the flat platform's fee, GBP a month
+dealing_fee = 0.0          # GBP per buy or sell (0 for free regular investing)
+fx_fee = 0.0               # % of each buy taken for currency conversion (0 for a GBP fund)
+
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]
 rotation_min_hold_days = 20   # trading days a holding is kept before it can be rotated out (1 to 250)

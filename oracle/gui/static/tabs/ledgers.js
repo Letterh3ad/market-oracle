@@ -13,6 +13,7 @@ import { regimeCard } from "../lib/regime.js";
 import { replaySection } from "../lib/replay.js";
 import { signalTestsSection } from "../lib/signal_tests.js";
 import { trendSection } from "../lib/trend.js";
+import { planMoneySection } from "../lib/plan_money.js";
 import { fundsSection } from "../lib/funds.js";
 import { dataHealthSection } from "../lib/data_health.js";
 import { unvalidatedBadge } from "../lib/research.js";
@@ -30,6 +31,7 @@ let replay = null; // this render's Replay study card, kept across repaints like
 let history = null; // this render's History coverage card, kept the same way
 let signalTests = null; // this render's Signal tests card, kept the same way
 let trend = null; // this render's Trend overlay test card, until the Plan tab takes it
+let planMoney = null; // this render's Fees and contributions card, until the Plan tab takes it
 let funds = null; // this render's Fund comparison card, until the Plan tab takes it
 let dataHealth = null; // this render's Data health card
 let reader = null; // this render's Stronger reader card
@@ -382,6 +384,7 @@ async function load(mine) {
     signalTests.node,
     funds.node,
     trend.node,
+    planMoney.node,
     dataHealth.node,
     layaTest.node,
     history.node,
@@ -396,6 +399,7 @@ async function load(mine) {
     signalTests.start();
     funds.start();
     trend.start();
+    planMoney.start();
     dataHealth.start();
     layaTest.start();
     history.start();
@@ -415,6 +419,7 @@ function render(target) {
   history = historySection();
   signalTests = signalTestsSection();
   trend = trendSection();
+  planMoney = planMoneySection();
   funds = fundsSection();
   dataHealth = dataHealthSection();
   reader = readerSection();

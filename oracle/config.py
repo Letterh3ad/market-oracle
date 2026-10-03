@@ -237,6 +237,28 @@ class DataChecksConfig:
     """The model profile that explains; "" is the research slot's. It must be an Ollama profile."""
 
 
+PLATFORMS = ("percentage", "flat")
+
+
+@dataclass(frozen=True)
+class PlanConfig:
+    """The user's investing platform, for the boring plan's fee and contribution tests. Only rates:
+    amounts are entered per run, never stored."""
+
+    platform: str = "percentage"
+    """Which fee the user pays: "percentage" or "flat"."""
+    percent_fee: float = 0.0
+    """The percentage platform's fee, in % a year."""
+    percent_cap: float = 0.0
+    """£ a year the percentage fee stops at; 0 is no cap."""
+    flat_fee: float = 0.0
+    """The flat platform's fee, £ a month."""
+    dealing_fee: float = 0.0
+    """£ per buy or sell."""
+    fx_fee: float = 0.0
+    """% of each buy taken for currency conversion."""
+
+
 @dataclass(frozen=True)
 class LayaAccountConfig:
     """The paper account that trades Laya's daily news score alone, for evidence whatever its
@@ -547,6 +569,7 @@ class Config:
     laya_account: LayaAccountConfig = field(default_factory=LayaAccountConfig)
     laya: LayaConfig = field(default_factory=LayaConfig)
     data_checks: DataChecksConfig = field(default_factory=DataChecksConfig)
+    plan: PlanConfig = field(default_factory=PlanConfig)
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     llm: LlmConfig = field(default_factory=LlmConfig)
     models: dict[str, ModelProfile] = field(default_factory=dict)
@@ -797,6 +820,9 @@ def _apply(raw: dict, strict: bool = False) -> Config:
             continue
         if name == "data_checks":
             values[name] = _data_checks(value)
+            continue
+        if name == "plan":
+            values[name] = check_plan(value)
             continue
         if name == "llm":
             values[name] = _llm(value)
@@ -1059,6 +1085,22 @@ def _data_checks(raw: object) -> DataChecksConfig:
             raise ConfigError(f"data_checks.{key} must be true or false, got {getattr(config, key)!r}")
     if not isinstance(config.explain_model, str):
         raise ConfigError(f"data_checks.explain_model must be a model profile name, got {config.explain_model!r}")
+    return config
+
+
+def check_plan(raw: object) -> PlanConfig:
+    """`[plan]` from its keys, defaults for the rest; raises ConfigError naming the bad one."""
+    if not isinstance(raw, dict):
+        raise ConfigError("plan must be a [plan] table")
+    _reject_unknown(raw, PlanConfig, "[plan]")
+    config = replace(PlanConfig(), **raw)
+    if config.platform not in PLATFORMS:
+        raise ConfigError(f"plan.platform must be one of {', '.join(PLATFORMS)}, got {config.platform!r}")
+    for key in ("percent_fee", "percent_cap", "flat_fee", "dealing_fee", "fx_fee"):
+        value = getattr(config, key)
+        high = 100 if key in ("percent_fee", "fx_fee") else float("inf")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= high:
+            raise ConfigError(f"plan.{key} must be a number from 0{' to 100' if high == 100 else ' up'}, got {value!r}")
     return config
 
 
