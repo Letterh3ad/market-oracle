@@ -113,3 +113,7 @@ class UnknownLink(ServiceError):
 
 class UnknownCorrection(ServiceError):
     pass
+
+
+class UnknownMethod(ServiceError):
+    pass
