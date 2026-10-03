@@ -31,6 +31,7 @@ include = ["oracle*", "holiday_watch"]
 
 [tool.setuptools.package-data]
 "oracle.gui" = ["static/*", "static/*/*"]
+"oracle.lab" = ["seed.json"]
 "holiday_watch" = ["*.md", "*.txt", "*.ps1", "config.example.toml"]
 
 [tool.pytest.ini_options]

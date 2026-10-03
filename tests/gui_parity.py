@@ -208,6 +208,22 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "lab register": "POST /api/lab/tests",
     "lab commit": "PUT /api/lab/tests/{key}/commit",
     "lab drop": "DELETE /api/lab/tests/{key}",
+    # Research tab, Literature index card: the lookup box, the method list and its status filter, a
+    # method's details and its Go / Drop / Dig deeper buttons, "Record a source" and "Search log".
+    # The page acts as the user; --by names another caller (the autopilot).
+    "lab lookup": "GET /api/lab/lookup",
+    "lab methods": "GET /api/lab/methods",
+    "lab methods --status": "GET /api/lab/methods",
+    "lab method": "GET /api/lab/methods/{ref}",
+    "lab mark": "POST /api/lab/methods/{ref}/mark",
+    "lab mark --note": "POST /api/lab/methods/{ref}/mark",
+    **{key: "POST /api/lab/sources" for key in ("lab record", *(f"lab record --{flag}" for flag in (
+        "title", "authors", "year", "quality", "read", "note", "method", "new-method", "family", "definition",
+        "alias")))},
+    "lab search-log": "POST /api/lab/searches",  # without a query: the card's list, GET /api/lab/searches
+    **{f"lab search-log --{flag}": "POST /api/lab/searches" for flag in ("where", "found", "note")},
+    **{f"lab {cmd} --by": Exempt("the page acts as the user; --by names the autopilot or another caller")
+       for cmd in ("record", "search-log", "mark")},
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",

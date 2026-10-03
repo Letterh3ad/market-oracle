@@ -5,6 +5,7 @@ import json
 from dataclasses import fields
 from pathlib import Path
 
+from oracle.cli import literature
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
@@ -15,7 +16,8 @@ TEMPLATE_FIELDS = tuple(f.name for f in fields(Template))
 
 def register(parser: argparse.ArgumentParser) -> None:
     parser.description = ("the research lab: every pre-registered test, its PASS bar and verdict (research-lab spec 6, "
-                          "8); kept in the research database")
+                          "8), and the literature index of methods, sources and searches; kept in the research "
+                          "database")
     sub = parser.add_subparsers(dest="lab_command", required=True)
     sub.add_parser("scoreboard", description="every registered test, one row per horizon: confirm IC or excess, t, "
                                              "the bar it was judged by, verdict and power").set_defaults(
@@ -35,6 +37,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     drop = sub.add_parser("drop", description="remove a registration the gate turned down (only before its commit)")
     drop.add_argument("key")
     drop.set_defaults(handler=run_drop)
+    literature.add_commands(sub)
 
 
 def _num(x: float | None, fmt: str) -> str:

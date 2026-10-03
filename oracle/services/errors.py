@@ -121,3 +121,7 @@ class UnknownLabTest(ServiceError):
 
 class NotRegistered(InvalidQuery):
     """A data run of a test with no committed pre-registration."""
+
+
+class UnknownMethod(ServiceError):
+    pass

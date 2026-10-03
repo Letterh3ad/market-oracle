@@ -1,0 +1,5176 @@
+{
+ "version": 1,
+ "from": "research-archive.md (2026-10-02), its 14 tested methods, ai-track 04-09",
+ "sources": [
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x",
+   "title": "The Cross-Section of Expected Stock Returns",
+   "authors": "Fama, French",
+   "year": 1992,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated",
+   "title": "Reports of Value's Death May Be Greatly Exaggerated",
+   "authors": "Arnott, Harvey, Kalesnik, Linnainmaa",
+   "year": 2021,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf",
+   "title": "Is There a Replication Crisis in Finance?",
+   "authors": "Jensen, Kelly, Pedersen",
+   "year": 2023,
+   "quality": "replicated"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=2312432",
+   "title": "Quality Minus Junk",
+   "authors": "Asness, Frazzini, Pedersen",
+   "year": 2019,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.2307/2672906",
+   "title": "Value Investing: The Use of Historical Financial Statement Information to Separate Winners from Losers",
+   "authors": "Piotroski",
+   "year": 2000,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.jstor.org/stable/248290",
+   "title": "Do Stock Prices Fully Reflect Information in Accruals and Cash Flows about Future Earnings?",
+   "authors": "Sloan",
+   "year": 1996,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ivey.uwo.ca/media/3775549/pontiff.pdf",
+   "title": "Does Academic Research Destroy Stock Return Predictability?",
+   "authors": "McLean, Pontiff",
+   "year": 2016,
+   "quality": "replicated"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2014.10.010",
+   "title": "A Five-Factor Asset Pricing Model",
+   "authors": "Fama, French",
+   "year": 2015,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html",
+   "title": "Replicating Anomalies",
+   "authors": "Hou, Xue, Zhang",
+   "year": 2020,
+   "quality": "replicated"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/360827",
+   "title": "Asset Growth and the Cross-Section of Stock Returns",
+   "authors": "Cooper, Gulen, Schill",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/bla/jfinan/v63y2008i2p921-945.html",
+   "title": "Share Issuance and Cross-Sectional Returns",
+   "authors": "Pontiff, Woodgate",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/eee/jfinec/v94y2009i1p1-17.html",
+   "title": "Share Issuance and Cross-Sectional Returns: International Evidence",
+   "authors": "McLean, Pontiff, Watanabe",
+   "year": 2009,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/0304-405X(95)00826-Z",
+   "title": "Market Underreaction to Open Market Share Repurchases",
+   "authors": "Ikenberry, Lakonishok, Vermaelen",
+   "year": 1995,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2013.10.005",
+   "title": "Betting Against Beta",
+   "authors": "Frazzini, Pedersen",
+   "year": 2014,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.3905/jpm.2007.698039",
+   "title": "The Volatility Effect: Lower Risk Without Lower Return",
+   "authors": "Blitz, van Vliet",
+   "year": 2007,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://mysimon.rochester.edu/novy-marx/research/BABAB.pdf",
+   "title": "Betting Against Betting Against Beta",
+   "authors": "Novy-Marx, Velikov",
+   "year": 2022,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.nber.org/papers/w13739",
+   "title": "High Idiosyncratic Volatility and Low Returns: International and Further U.S. Evidence",
+   "authors": "Ang, Hodrick, Xing, Zhang",
+   "year": 2009,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/357231",
+   "title": "Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns",
+   "authors": "Bali, Cakici, Whitelaw",
+   "year": 2011,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jempfin.2011.01.003",
+   "title": "Residual Momentum",
+   "authors": "Blitz, Huij, Martens",
+   "year": 2011,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html",
+   "title": "Kenneth R. French Data Library",
+   "authors": "Fama, French",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://ideas.repec.org/a/bla/jfinan/v54y1999i4p1249-1290.html",
+   "title": "Do Industries Explain Momentum?",
+   "authors": "Moskowitz, Grinblatt",
+   "year": 1999,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/361244",
+   "title": "The 52-Week High and Momentum Investing",
+   "authors": "George, Hwang",
+   "year": 2004,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.nber.org/papers/w20439",
+   "title": "Momentum Crashes",
+   "authors": "Daniel, Moskowitz",
+   "year": 2016,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/357254",
+   "title": "Seasonality in the Cross-Section of Stock Returns",
+   "authors": "Heston, Sadka",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://resolve.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/seasonality-in-the-cross-section-of-stock-returns-the-international-evidence/449422A711AB698236AD46F6BA7414D6",
+   "title": "Seasonality in the Cross-Section of Stock Returns: The International Evidence",
+   "authors": "Heston, Sadka",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/359814",
+   "title": "Earnings Announcements and Systematic Risk",
+   "authors": "Savor, Wilson",
+   "year": 2016,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.1996.tb05222.x",
+   "title": "Momentum Strategies",
+   "authors": "Chan, Jegadeesh, Lakonishok",
+   "year": 1996,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ink.library.smu.edu.sg/lkcsb_research/4664",
+   "title": "The Good News in Short Interest",
+   "authors": "Boehmer, Huszar, Jordan",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://WWW.FINRA.ORG/sites/default/files/Equity_Short_Interest_Data_File_Download_API.pdf",
+   "title": "Equity Short Interest Data File Download API",
+   "authors": "FINRA",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.finra.org/finra-data/browse-catalog/equity-short-interest/data",
+   "title": "Equity Short Interest Data",
+   "authors": "FINRA",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.1995.tb04796.x",
+   "title": "Price Reactions to Dividend Initiations and Omissions: Overreaction or Drift?",
+   "authors": "Michaely, Thaler, Womack",
+   "year": 1995,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/0304-405X(93)90009-Z",
+   "title": "Restructuring Through Spinoffs: The Stock Market Evidence",
+   "authors": "Cusatis, Miles, Woolridge",
+   "year": 1993,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.nber.org/system/files/working_papers/w30748/w30748.pdf",
+   "title": "The Disappearing Index Effect",
+   "authors": "Greenwood, Sammon",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.aqr.com/Insights/Research/Journal-Article/Economic-Links-and-Predictable-Returns",
+   "title": "Economic Links and Predictable Returns",
+   "authors": "Cohen, Frazzini",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.3905/jpm.1989.409211",
+   "title": "The Fundamental Law of Active Management",
+   "authors": "Grinold",
+   "year": 1989,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://personal.lse.ac.uk/polk/research/TugOfWar.pdf",
+   "title": "A Tug of War: Overnight Versus Intraday Expected Returns",
+   "authors": "Lou, Polk, Skouras",
+   "year": 2019,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://rpc.cfainstitute.org/research/financial-analysts-journal/2008/equity-returns-at-the-turn-of-the-month",
+   "title": "Equity Returns at the Turn of the Month",
+   "authors": "McConnell, Xu",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.1990.tb03731.x",
+   "title": "High Stock Returns before Holidays: Existence and Evidence on Possible Causes",
+   "authors": "Ariel",
+   "year": 1990,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.html",
+   "title": "The Pre-FOMC Announcement Drift",
+   "authors": "Lucca, Moench",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.skidmore.edu/economics/documents/KurovWolfeGilbert-TheDisappearingPre-FOMC-Announce-Drift-200914.pdf",
+   "title": "The Disappearing Pre-FOMC Announcement Drift",
+   "authors": "Kurov, Wolfe, Gilbert",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://nber.org/papers/w10483",
+   "title": "A Comprehensive Look at the Empirical Performance of Equity Premium Prediction",
+   "authors": "Welch, Goyal",
+   "year": 2008,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://sfi.ch/en/publications/a-comprehensive-2022-look-at-the-empirical-performance-of-equity-premium-prediction",
+   "title": "A Comprehensive 2022 Look at the Empirical Performance of Equity Premium Prediction",
+   "authors": "Goyal, Welch, Zafirov",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/pdf/2209.13623",
+   "title": "Publication Bias in Asset Pricing Research",
+   "authors": "Chen, Zimmermann",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=3604626",
+   "title": "Open Source Cross-Sectional Asset Pricing",
+   "authors": "Chen, Zimmermann",
+   "year": 2022,
+   "quality": "replicated"
+  },
+  {
+   "url": "https://www.openassetpricing.com/",
+   "title": "Open Source Asset Pricing (openassetpricing.com)",
+   "authors": "Chen, Zimmermann",
+   "year": 2022,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://github.com/bkelly-lab/ReplicationCrisis",
+   "title": "Is There a Replication Crisis in Finance? (code)",
+   "authors": "Jensen, Kelly, Pedersen",
+   "year": 2023,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://JKPfactors.com/",
+   "title": "Is There a Replication Crisis in Finance? (data)",
+   "authors": "Jensen, Kelly, Pedersen",
+   "year": 2023,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.nber.org/papers/w20721",
+   "title": "A Taxonomy of Anomalies and Their Trading Costs",
+   "authors": "Novy-Marx, Velikov",
+   "year": 2016,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://academicnewsletter.sufe.edu.cn/info/353765",
+   "title": "...and the Cross-Section of Expected Returns",
+   "authors": "Harvey, Liu, Zhu",
+   "year": 2016,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=2345489",
+   "title": "Backtesting",
+   "authors": "Harvey, Liu",
+   "year": 2015,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://news.wpcarey.asu.edu/20180917-do-stocks-outperform-treasury-bills",
+   "title": "Do Stocks Outperform Treasury Bills?",
+   "authors": "Bessembinder",
+   "year": 2018,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.spglobal.com/spdji/en/spiva/article/spiva-europe-mid-year-2023",
+   "title": "SPIVA Europe mid-year 2023",
+   "authors": "S&P Dow Jones Indices",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://doi.org/10.1086/260061",
+   "title": "Risk, Return, and Equilibrium: Empirical Tests",
+   "authors": "Fama, MacBeth",
+   "year": 1973,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.jstor.org/stable/1913610",
+   "title": "A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix",
+   "authors": "Newey, West",
+   "year": 1987,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/rfs/hhn053",
+   "title": "Estimating Standard Errors in Finance Panel Data Sets: Comparing Approaches",
+   "authors": "Petersen",
+   "year": 2009,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=2460551",
+   "title": "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality",
+   "authors": "Bailey, Lopez de Prado",
+   "year": 2014,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=2326253",
+   "title": "The Probability of Backtest Overfitting",
+   "authors": "Bailey et al.",
+   "year": 2015,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.1997.tb03818.x",
+   "title": "The Delisting Bias in CRSP Data",
+   "authors": "Shumway",
+   "year": 1997,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.aeaweb.org/conference/2025/program/paper/EFddaa8b",
+   "title": "Beyond the Status Quo: A Critical Assessment of Lifecycle Investment Advice",
+   "authors": "Anarkulova, Cederburg, O'Doherty",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://rationalreminder.ca/podcast/350",
+   "title": "Beyond the Status Quo: Lifecycle Investment Advice (podcast summary)",
+   "authors": "Anarkulova, Cederburg, O'Doherty",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=962461",
+   "title": "A Quantitative Approach to Tactical Asset Allocation",
+   "authors": "Faber",
+   "year": 2007,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://papers.ssrn.com/abstract=2677212",
+   "title": "Empirical Performance of Moving Average Strategies",
+   "authors": "Zakamulin",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing",
+   "title": "A Century of Evidence on Trend-Following Investing",
+   "authors": "Hurst, Ooi, Pedersen",
+   "year": null,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://people.duke.edu/~charvey/Research/Published_Papers/P167_Breaking_bad_trends.pdf",
+   "title": "Breaking Bad Trends",
+   "authors": "Harvey et al.",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2011.11.003",
+   "title": "Time Series Momentum",
+   "authors": "Moskowitz, Ooi, Pedersen",
+   "year": 2012,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://alphaarchitect.com/risk-premia-harvesting-through-momentum/",
+   "title": "Risk Premia Harvesting Through Dual Momentum",
+   "authors": "Antonacci",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://cxoadvisory.com/momentum-investing/a-few-notes-on-dual-momentum-investing",
+   "title": "A Few Notes on Dual Momentum Investing",
+   "authors": "CXO",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.nber.org/papers/22208",
+   "title": "Volatility-Managed Portfolios",
+   "authors": "Moreira, Muir",
+   "year": 2017,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.lehigh.edu/~xuy219/research/COWY.pdf",
+   "title": "On the Performance of Volatility-Managed Portfolios",
+   "authors": "Cederburg, O'Doherty, Wang, Yan",
+   "year": 2020,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://indexacapital.com/bundles/unaiadvisor/docs/papers/2010-Vanguard-Best-practices-for-portfolio-rebalancing.pdf",
+   "title": "Best Practices for Portfolio Rebalancing",
+   "authors": "Vanguard",
+   "year": 2010,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://corporate.vanguard.com/content/dam/corp/research/pdf/rational_rebalancing_analytical_approach_to_multiasset_portfolio_rebalancing.pdf",
+   "title": "Rational Rebalancing: An Analytical Approach to Multiasset Portfolio Rebalancing",
+   "authors": "Vanguard",
+   "year": 2022,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.vanguard.co.uk/professional/vanguard-365/financial-planning/financial-well-being/cost-averaging",
+   "title": "Cost Averaging vs Lump Sum Investing",
+   "authors": "Vanguard",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.gov.uk/individual-savings-accounts",
+   "title": "Individual Savings Accounts (ISAs)",
+   "authors": "gov.uk",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.gov.uk/tax-on-your-private-pension/pension-tax-relief",
+   "title": "Tax on Your Private Pension: Pension Tax Relief",
+   "authors": "gov.uk",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.gov.uk/lifetime-isa",
+   "title": "Lifetime ISA",
+   "authors": "gov.uk",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.which.co.uk/news/article/25-lifetime-isa-penalty-to-be-restored-in-april-is-it-still-worth-getting-one-aGxhq4f4V8mE",
+   "title": "25% Lifetime ISA Penalty to Be Restored in April: Is It Still Worth Getting One?",
+   "authors": "Which?",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://arxiv.org/abs/2304.07619",
+   "title": "Can ChatGPT Forecast Stock Price Movements? Return Predictability and Large Language Models",
+   "authors": "Lopez-Lira & Tang",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2309.17322",
+   "title": "Assessing Look-Ahead Bias in Stock Return Predictions Generated By GPT Sentiment Analysis",
+   "authors": "Glasserman & Lin",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2504.14765",
+   "title": "The Memorization Problem: Can We Trust LLMs' Economic Forecasts?",
+   "authors": "Lopez-Lira, Tang & Zhu",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687",
+   "title": "Expected Returns and Large Language Models",
+   "authors": "Chen, Kelly & Xiu",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.nber.org/papers/w26186",
+   "title": "Predicting Returns with Text Data",
+   "authors": "Ke, Kelly & Xiu",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2006.08097",
+   "title": "FinBERT: A Pretrained Language Model for Financial Communications",
+   "authors": "Yang, Uy & Huang",
+   "year": 2020,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://huggingface.co/yiyanghkust/finbert-tone",
+   "title": "FinBERT-tone Model Card (yiyanghkust/finbert-tone)",
+   "authors": "Huang, Wang & Yang",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.2010.01625.x",
+   "title": "When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks",
+   "authors": "Loughran & McDonald",
+   "year": 2011,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2407.17866",
+   "title": "Financial Statement Analysis with Large Language Models",
+   "authors": "Kim, Muhn & Nikolaev",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://faculty.chicagobooth.edu/valeri-nikolaev/ongoing-research-projects",
+   "title": "Financial Statement Analysis with Large Language Models: Withdrawal Notice",
+   "authors": "Kim, Muhn & Nikolaev",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html",
+   "title": "Lazy Prices",
+   "authors": "Cohen, Malloy & Nguyen",
+   "year": 2020,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2601.15247",
+   "title": "Taxonomy-Aligned Risk Extraction from 10-K Filings with Autonomous Improvement Using LLMs",
+   "authors": "",
+   "year": 2026,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2510.03195",
+   "title": "From Text to Alpha: Can LLMs Track Evolving Signals in Corporate Disclosures?",
+   "authors": "",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://ideas.repec.org/a/bla/jfinan/v63y2008i4p1977-2011.html",
+   "title": "Economic Links and Predictable Returns",
+   "authors": "Cohen & Frazzini",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2301.11394",
+   "title": "Customer Momentum",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.nber.org/papers/w32161",
+   "title": "ChatGPT and Corporate Policies",
+   "authors": "Jha, Qian, Weber & Yang",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.stern.nyu.edu/sites/default/files/assets/documents/Gow%20Larcker%20Zakolyukina-Non-answers%20during%20conference%20calls.pdf",
+   "title": "Non-Answers During Conference Calls",
+   "authors": "Gow, Larcker & Zakolyukina",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.2011.01705.x",
+   "title": "The Power of Voice: Managerial Affective States and Future Firm Performance",
+   "authors": "Mayew & Venkatachalam",
+   "year": 2012,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/rfs/hhq141",
+   "title": "All the News That's Fit to Reprint: Do Investors React to Stale Information?",
+   "authors": "Tetlock",
+   "year": 2011,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2510.07920",
+   "title": "Profit Mirage: Revisiting Information Leakage in LLM-based Financial Agents",
+   "authors": "",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2502.21206",
+   "title": "Chronologically Consistent Large Language Models",
+   "authors": "He, Lv, Manela & Wu",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://huggingface.co/manelalab",
+   "title": "Chronologically Consistent LLMs Model Cards (manelalab)",
+   "authors": "He, Lv, Manela & Wu",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://arxiv.org/abs/2601.13770",
+   "title": "Look-Ahead-Bench: A Standardized Benchmark of Look-ahead Bias in Point-in-Time LLMs for Finance",
+   "authors": "Benhenda",
+   "year": 2026,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://github.com/benstaf/lookaheadbench",
+   "title": "Look-Ahead-Bench Code (lookaheadbench)",
+   "authors": "Benhenda",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://arxiv.org/abs/2412.20138",
+   "title": "TradingAgents: Multi-Agents LLM Financial Trading Framework",
+   "authors": "",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2605.16895",
+   "title": "The Alpha Illusion: Reported Alpha from LLM Trading Agents Should Not Be Treated as Deployment Evidence",
+   "authors": "",
+   "year": 2026,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2311.13743",
+   "title": "FinMem: A Performance-Enhanced LLM Trading Agent with Layered Memory and Character Design",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2402.18485",
+   "title": "A Multimodal Foundation Agent for Financial Trading: Tool-Augmented, Diversified, and Generalist (FinAgent)",
+   "authors": "",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2510.02209",
+   "title": "StockBench: Can LLM Agents Trade Stocks Profitably in Real-World Markets?",
+   "authors": "",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2402.12659",
+   "title": "FinBen: A Holistic Financial Benchmark for Large Language Models",
+   "authors": "",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2306.06031",
+   "title": "FinGPT: Open-Source Financial Large Language Models",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1093/rfs/hhaa009",
+   "title": "Empirical Asset Pricing via Machine Learning",
+   "authors": "Gu, Kelly & Xiu",
+   "year": 2020,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1287/mnsc.2022.4449",
+   "title": "Machine Learning versus Economic Restrictions: Evidence from Stock Return Predictability",
+   "authors": "Avramov, Cheng & Metzker",
+   "year": 2023,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm",
+   "title": "Open Source Cross-Sectional Asset Pricing",
+   "authors": "Chen & Zimmermann",
+   "year": null,
+   "quality": "replicated"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.ejor.2016.10.031",
+   "title": "Deep Neural Networks, Gradient-Boosted Trees, Random Forests: Statistical Arbitrage on the S&P 500",
+   "authors": "Krauss, Do & Huck",
+   "year": 2017,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1111/jofi.12733",
+   "title": "Sparse Signals in the Cross-Section of Returns",
+   "authors": "Chinco, Clark-Joseph & Ye",
+   "year": 2019,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/rfs/hhp063",
+   "title": "Out-of-Sample Equity Premium Prediction: Combination Forecasts and Links to the Real Economy",
+   "authors": "Rapach, Strauss & Zhou",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2012.07149",
+   "title": "Building Cross-Sectional Systematic Strategies By Learning to Rank",
+   "authors": "Poh, Lim, Zohren & Roberts",
+   "year": 2020,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086",
+   "title": "Advances in Financial Machine Learning",
+   "authors": "López de Prado",
+   "year": 2018,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://www.nber.org/papers/w30217",
+   "title": "The Virtue of Complexity in Return Prediction",
+   "authors": "Kelly, Malamud & Zhou",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://bfi.uchicago.edu/wp-content/uploads/2025/08/BFI_WP_2025-104.pdf",
+   "title": "Seemingly Virtuous Complexity in Return Prediction",
+   "authors": "Nagel",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.ejor.2017.11.054",
+   "title": "Deep Learning with Long Short-Term Memory Networks for Financial Market Predictions",
+   "authors": "Fischer & Krauss",
+   "year": 2018,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://iwf.rw.fau.de/files/2015/12/11-2017.pdf",
+   "title": "Deep Learning with Long Short-Term Memory Networks for Financial Market Predictions (working paper)",
+   "authors": "Fischer & Krauss",
+   "year": 2017,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://arxiv.org/abs/2606.27100",
+   "title": "Pretrained Time-Series Foundation Models for Financial Return Forecasting",
+   "authors": "",
+   "year": 2026,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.nber.org/papers/w33351",
+   "title": "AI Asset Pricing Models",
+   "authors": "Kelly, Kuznetsov, Malamud & Xu",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1111/jofi.13268",
+   "title": "(Re-)Imag(in)ing Price Trends",
+   "authors": "Jiang, Kelly & Xiu",
+   "year": 2023,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/1809.09441",
+   "title": "Temporal Relational Ranking for Stock Prediction",
+   "authors": "Feng et al.",
+   "year": 2019,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/1904.00745",
+   "title": "Deep Learning in Asset Pricing",
+   "authors": "Chen, Pelger & Zhu",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jeconom.2020.07.009",
+   "title": "Autoencoder Asset Pricing Models",
+   "authors": "Gu, Kelly & Xiu",
+   "year": 2021,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2511.18578",
+   "title": "Re(Visiting) Time Series Foundation Models in Finance",
+   "authors": "Rahimikia, Ni & Wang",
+   "year": 2025,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2403.07815",
+   "title": "Chronos: Learning the Language of Time Series",
+   "authors": "",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://huggingface.co/amazon/chronos-bolt-base",
+   "title": "Chronos-Bolt Model Card (amazon/chronos-bolt-base)",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://arxiv.org/abs/2310.10688",
+   "title": "A Decoder-Only Foundation Model for Time-Series Forecasting (TimesFM)",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2402.02592",
+   "title": "Unified Training of Universal Time Series Forecasting Transformers (Moirai)",
+   "authors": "",
+   "year": 2024,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2310.08278",
+   "title": "Lag-Llama: Towards Foundation Models for Probabilistic Time Series Forecasting",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/0304-4076(86)90063-1",
+   "title": "Generalized Autoregressive Conditional Heteroskedasticity",
+   "authors": "Bollerslev",
+   "year": 1986,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/jjfinec/nbp001",
+   "title": "A Simple Approximate Long-Memory Model of Realized Volatility",
+   "authors": "Corsi",
+   "year": 2009,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.2307/1912559",
+   "title": "A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle",
+   "authors": "Hamilton",
+   "year": 1989,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2019.06.008",
+   "title": "Shrinking the Cross-Section",
+   "authors": "Kozak, Nagel & Santosh",
+   "year": 2020,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/rfs/hhj020",
+   "title": "Pairs Trading: Performance of a Relative-Value Arbitrage Rule",
+   "authors": "Gatev, Goetzmann & Rouwenhorst",
+   "year": 2006,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.2469/faj.v66.n4.1",
+   "title": "Does Simple Pairs Trading Still Work?",
+   "authors": "Do & Faff",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2019.05.001",
+   "title": "Characteristics Are Covariances: A Unified Model of Risk and Return",
+   "authors": "Kelly, Pruitt & Su",
+   "year": 2019,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1016/S0047-259X(03)00096-4",
+   "title": "A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices",
+   "authors": "Ledoit & Wolf",
+   "year": 2004,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/1601.00991",
+   "title": "101 Formulaic Alphas",
+   "authors": "Kakushadze",
+   "year": 2016,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/S0304-405X(98)00052-X",
+   "title": "Using Genetic Algorithms to Find Technical Trading Rules",
+   "authors": "Allen & Karjalainen",
+   "year": 1999,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://arxiv.org/abs/2306.12964",
+   "title": "Generating Synergistic Formulaic Alpha Collections via Reinforcement Learning (AlphaGen)",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2308.00016",
+   "title": "Alpha-GPT: Human-AI Interactive Alpha Mining for Quantitative Investment",
+   "authors": "",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://arxiv.org/abs/2011.09607",
+   "title": "FinRL: A Deep Reinforcement Learning Library for Automated Stock Trading in Quantitative Finance",
+   "authors": "",
+   "year": 2020,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://hobergphillips.tuck.dartmouth.edu/",
+   "title": "Hoberg-Phillips Data Library",
+   "authors": "Hoberg & Phillips",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://ideas.repec.org/a/cup/jfinqa/v53y2018i06p2355-2388_00.html",
+   "title": "Text-Based Industry Momentum",
+   "authors": "Hoberg & Phillips",
+   "year": 2018,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1109/ICDM.2008.17",
+   "title": "Isolation Forest",
+   "authors": "Liu, Ting & Zhou",
+   "year": 2008,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4205613",
+   "title": "Causal Factor Investing: Can Factor Investing Become Scientific?",
+   "authors": "López de Prado",
+   "year": 2023,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1111/j.1540-6261.2011.01679.x",
+   "title": "In Search of Attention",
+   "authors": "Da, Engelberg & Gao",
+   "year": 2011,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3647164/",
+   "title": "Quantifying Wikipedia Usage Patterns Before Stock Market Moves",
+   "authors": "Moat et al.",
+   "year": 2013,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews",
+   "title": "Wikimedia Pageviews API",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://ideas.repec.org/a/oup/rfinst/v37y2024i5p1409-1459..html",
+   "title": "Place Your Bets? The Value of Investment Research on Reddit's Wallstreetbets",
+   "authors": "Bradley, Hanousek, Jame & Xiao",
+   "year": 2024,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.2308/accr-51865",
+   "title": "Can Twitter Help Predict Firm-Level Earnings and Stock Returns?",
+   "authors": "Bartov, Faurel & Mohanram",
+   "year": 2018,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.gdeltproject.org/data.html",
+   "title": "The GDELT Project Data",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://pubsonline.informs.org/doi/10.1287/mnsc.2019.3450",
+   "title": "Are Online Job Postings Informative to Investors?",
+   "authors": "Gutierrez, Lourie, Nekrasov & Shevlin",
+   "year": 2020,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html",
+   "title": "On the Capital Market Consequences of Big Data: Evidence from Outer Space",
+   "authors": "Katona, Painter, Patatoukas & Zeng",
+   "year": 2025,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.1093/qje/qjw040",
+   "title": "Technological Innovation, Resource Allocation, and Growth",
+   "authors": "Kogan, Papanikolaou, Seru & Stoffman",
+   "year": 2017,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://patentsview.org/",
+   "title": "PatentsView",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://api.usaspending.gov/",
+   "title": "USAspending API",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://personal.lse.ac.uk/polk/research/BestIdeas.pdf",
+   "title": "Best Ideas",
+   "authors": "Cohen, Polk & Silli",
+   "year": null,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://www.nber.org/papers/w26975",
+   "title": "Do Senators and House Members Beat the Stock Market? Evidence from the STOCK Act",
+   "also_titled": "Relief Rally: Senators As Feckless As the Rest of Us at Stock Picking",
+   "authors": "Belmont et al.",
+   "year": 2022,
+   "quality": "working-paper"
+  },
+  {
+   "url": "https://doi.org/10.1016/j.jfineco.2016.03.004",
+   "title": "Short Interest and Aggregate Stock Returns",
+   "authors": "Rapach, Ringgenberg & Zhou",
+   "year": 2016,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://www.finra.org/finra-data/browse-catalog/equity-short-interest",
+   "title": "FINRA Equity Short Interest",
+   "authors": "",
+   "year": null,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://ideas.repec.org/a/cup/jfinqa/v45y2010i03p641-662_00.html",
+   "title": "What Does the Individual Option Volatility Smirk Tell Us About Future Equity Returns?",
+   "authors": "Xing, Zhang & Zhao",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/cup/jfinqa/v45y2010i02p335-367_00.html",
+   "title": "Deviations from Put-Call Parity and Stock Return Predictability",
+   "authors": "Cremers & Weinbaum",
+   "year": 2010,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/oup/revfin/v25y2021i4p937-972..html",
+   "title": "ETF Arbitrage, Non-Fundamental Demand, and Return Predictability",
+   "authors": "Brown, Davies & Ringgenberg",
+   "year": 2021,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://doi.org/10.2308/accr-51232",
+   "title": "SEC Comment Letters and Insider Sales",
+   "authors": "Dechow, Lawrence & Ryans",
+   "year": 2016,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://ideas.repec.org/a/bla/jfinan/v55y2000i2p773-806.html",
+   "title": "Trading Is Hazardous to Your Wealth: The Common Stock Investment Performance of Individual Investors",
+   "authors": "Barber & Odean",
+   "year": 2000,
+   "quality": "peer-reviewed"
+  },
+  {
+   "url": "https://marketing.morningstar.com/content/cs-assets/v3/assets/blt9415ea4cc4157833/blt5d1d34a59bd78a2c/680a4bd8c4d2e877fdb4b354/Mind_the_Gap_2024.pdf",
+   "title": "Morningstar Mind the Gap 2024",
+   "authors": "Morningstar",
+   "year": 2024,
+   "quality": "practitioner"
+  },
+  {
+   "url": "https://web.stanford.edu/~wfsharpe/art/active/active.htm",
+   "title": "The Arithmetic of Active Management",
+   "authors": "Sharpe",
+   "year": 1991,
+   "quality": "practitioner"
+  }
+ ],
+ "methods": [
+  {
+   "ref": "T-01",
+   "name": "Book-to-market (classic value)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "buy high book/price, avoid low. Fama-French HML.",
+   "evidence": "Fama-French 1992. Value drew down ~55% from 2007 to mid-2020 (Arnott et al. 2021). HML is weak in large caps; the premium is concentrated in small stocks.",
+   "why": "earnings yield already failed, and B/M is weaker than E/P in large caps over 2010+.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (earnings yield, a cousin, Tried-FAIL h20 t 0.91)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated"
+   ]
+  },
+  {
+   "ref": "T-02",
+   "name": "Intangible-adjusted value",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "add capitalised R&D and SG&A to book before computing B/M.",
+   "evidence": "Arnott et al. 2021 show it \"outperforms the traditional measure by a wide margin\", but that is in-sample and designed after the drawdown.",
+   "why": "post-hoc fix for a failing factor; tiny edge in large caps at best.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated"
+   ]
+  },
+  {
+   "ref": "T-03",
+   "name": "Composite value (E/P, CF/P, S/P, B/M average rank)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "average several valuation ranks to cut noise.",
+   "evidence": "composites are standard in practitioner value (QMJ/AQR style). Jensen-Kelly-Pedersen cluster value signals into one theme that replicates globally.",
+   "why": "composites raise IC modestly (maybe 1.3-1.5x of one ratio), still likely below 0.03.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf"
+   ]
+  },
+  {
+   "ref": "T-04",
+   "name": "Quality minus junk (QMJ)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "long profitable, growing, safe (low leverage, low vol) firms.",
+   "evidence": "Asness-Frazzini-Pedersen 2019: significant risk-adjusted returns in US and 24 countries. Works in large caps (it is partly a low-risk bet).",
+   "why": "best-replicating \"defensive\" theme, but one component already showed nothing; return is mostly risk reduction, not raw return.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (gross profitability, one leg, Tried-FAIL h20 -0.001)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/abstract=2312432"
+   ]
+  },
+  {
+   "ref": "T-05",
+   "name": "Piotroski F-score",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "9 binary accounting checks, buy high-score value stocks.",
+   "evidence": "Piotroski 2000: ~23%/yr spread, but within high-B/M small firms, with returns concentrated in small, illiquid, low-analyst-coverage stocks.",
+   "why": "original effect lives in small, neglected stocks the S&P 500 does not hold.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.2307/2672906"
+   ]
+  },
+  {
+   "ref": "T-06",
+   "name": "Accruals",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "low accruals (earnings backed by cash) beat high accruals.",
+   "evidence": "Sloan 1996. Listed among the strongest decayers after publication in McLean-Pontiff style studies; widely reported as largely gone after ~2000 in US large caps.",
+   "why": "well-known decay, small in large caps.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.jstor.org/stable/248290",
+    "https://ivey.uwo.ca/media/3775549/pontiff.pdf"
+   ]
+  },
+  {
+   "ref": "T-07",
+   "name": "Operating profitability (RMW)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "Fama-French 5-factor profitability (operating profit / book equity).",
+   "evidence": "Fama-French 2015. Replicates in Hou-Xue-Zhang.",
+   "why": "near-duplicate of the GP test that showed zero.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (sibling gross profitability Tried-FAIL)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2014.10.010",
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
+   ]
+  },
+  {
+   "ref": "T-08",
+   "name": "Asset growth / investment (CMA)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "firms growing total assets slowly beat fast growers.",
+   "evidence": "Cooper-Gulen-Schill 2008: ~20%/yr spread over 40 years, but much larger in small caps; replicates per Hou-Xue-Zhang.",
+   "why": "one of the few that replicates value-weighted; large-cap IC still likely ~0.01, below what the testbed sees at h20 (needs h60/h250).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/360827",
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
+   ]
+  },
+  {
+   "ref": "T-09",
+   "name": "Net share issuance / buybacks",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "firms shrinking share count beat issuers.",
+   "evidence": "Pontiff-Woodgate 2008: more significant than size, B/M or momentum post-1970; international version. Buyback announcement drift: Ikenberry-Lakonishok-Vermaelen 1995 (12% 4-year abnormal return, mostly value buybacks).",
+   "why": "robust and works in large caps, cheap to compute (shares outstanding in XBRL), but slow (h250) so the testbed has few independent periods.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v63y2008i2p921-945.html",
+    "https://ideas.repec.org/a/eee/jfinec/v94y2009i1p1-17.html",
+    "https://doi.org/10.1016/0304-405X(95)00826-Z"
+   ]
+  },
+  {
+   "ref": "T-10",
+   "name": "Low volatility / betting against beta",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "low-beta or low-vol stocks give similar return with less risk.",
+   "evidence": "Frazzini-Pedersen 2014 (BAB alpha needs leverage on the long side). Blitz-van Vliet 2007 show low-vol large caps match return at lower risk. Novy-Marx notes BAB partly reflects equal-weighting and small stocks (BABAB).",
+   "why": "real risk reduction, but long-only unlevered it lowers return; for a 10-year accumulator that is a cost, not a gain.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (low-vol scorer inside the 51-name regime blend; regime ~+50% vs b&h +76.6%)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2013.10.005",
+    "https://doi.org/10.3905/jpm.2007.698039",
+    "https://mysimon.rochester.edu/novy-marx/research/BABAB.pdf"
+   ]
+  },
+  {
+   "ref": "T-11",
+   "name": "Idiosyncratic volatility",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "avoid high residual-vol stocks.",
+   "evidence": "Ang-Hodrick-Xing-Zhang 2009: -1.31%/month extreme-quintile spread in 23 markets. Concentrated in small, high-vol, short-constrained stocks.",
+   "why": "short-leg effect, mostly small caps; S&P 500 has few extreme names.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w13739"
+   ]
+  },
+  {
+   "ref": "T-12",
+   "name": "MAX (lottery stocks)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "stocks with a huge max daily return last month underperform.",
+   "evidence": "Bali-Cakici-Whitelaw 2011 (JFE). Short-side, small-cap heavy.",
+   "why": "same as T-11; overlaps 1-month reversal which failed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/357231"
+   ]
+  },
+  {
+   "ref": "T-13",
+   "name": "Residual (idiosyncratic) momentum",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "momentum on factor-model residuals, not raw returns; less crash risk.",
+   "evidence": "Blitz-Huij-Martens 2011: about double the risk-adjusted return of raw momentum, 1930-2009.",
+   "why": "the best-argued momentum variant, but raw momentum showed nothing on confirm and post-2009 momentum has been weak.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (raw 12-1 Tried-FAIL t 0.50)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jempfin.2011.01.003",
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html"
+   ]
+  },
+  {
+   "ref": "T-14",
+   "name": "Industry momentum",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "buy stocks in last 6-12 months' winning industries.",
+   "evidence": "Moskowitz-Grinblatt 1999: explains much of stock momentum.",
+   "why": "rotation already lost; ~11 sectors means tiny breadth.",
+   "archive_status": "Untested",
+   "archive_note": "Untested, but the testbed uses sector-excess returns, which removes exactly this signal by design. Rotation on the 51 names: Tried-other (lost to b&h)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v54y1999i4p1249-1290.html"
+   ]
+  },
+  {
+   "ref": "T-15",
+   "name": "52-week-high proximity",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "stocks near their 52-week high keep rising.",
+   "evidence": "George-Hwang 2004: 0.45%/month, no long-run reversal.",
+   "why": "momentum family; correlated with the failed 12-1 test but behaves differently in crashes. Cheap to test.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/361244"
+   ]
+  },
+  {
+   "ref": "T-16",
+   "name": "Momentum with crash protection (dynamic momentum)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "scale momentum down after market falls and in high vol.",
+   "evidence": "Daniel-Moskowitz 2016: roughly doubles alpha and Sharpe vs static momentum, 1927-2013.",
+   "why": "scaling a signal with ~zero confirm IC does not create IC; it is a long-short hedge-fund tool.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w20439"
+   ]
+  },
+  {
+   "ref": "T-17",
+   "name": "Return seasonality (Heston-Sadka)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "a stock's return in calendar month m predicts its return in month m of later years.",
+   "evidence": "Heston-Sadka 2008 (1963-2002, NYSE/AMEX), international replication up to 5 years.",
+   "why": "survives in large caps and is cheap; but monthly signal on 500 names needs decades for power (see T-43).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/357254",
+    "https://resolve.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/seasonality-in-the-cross-section-of-stock-returns-the-international-evidence/449422A711AB698236AD46F6BA7414D6"
+   ]
+  },
+  {
+   "ref": "T-18",
+   "name": "Earnings announcement premium",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "stocks about to announce earnings earn more in the announcement window.",
+   "evidence": "Savor-Wilson 2016: 9.9% annualised abnormal return for scheduled announcers.",
+   "why": "risk premium (less prone to arbitrage), but per-event size is a few bp, so turnover cost dominates for a retail account.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (8-K 2.02 event study Tried-FAIL, but that measured post-event drift, not pre/during)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/359814"
+   ]
+  },
+  {
+   "ref": "T-19",
+   "name": "Analyst revisions / estimate momentum",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "buy stocks with rising consensus EPS forecasts.",
+   "evidence": "Chan-Jegadeesh-Lakonishok 1996: earnings momentum separate from price momentum. Strong practitioner use.",
+   "why": "one of the few signals that still works in large caps, but needs point-in-time history of estimates (I/B/E/S, paid). Yahoo only gives today's snapshot.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1996.tb05222.x"
+   ]
+  },
+  {
+   "ref": "T-20",
+   "name": "Short interest",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "avoid heavily shorted stocks; low short interest plus high volume is good news.",
+   "evidence": "Boehmer-Huszar-Jordan 2010: low-SI heavily traded stocks earn significant positive abnormal returns; high-SI negative but transient.",
+   "why": "real information, partly in large caps, but needs history. FINRA's API (docs, catalog) is free, twice a month, ~8 business days lag.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ink.library.smu.edu.sg/lkcsb_research/4664",
+    "https://WWW.FINRA.ORG/sites/default/files/Equity_Short_Interest_Data_File_Download_API.pdf",
+    "https://www.finra.org/finra-data/browse-catalog/equity-short-interest/data"
+   ]
+  },
+  {
+   "ref": "T-21",
+   "name": "Dividend initiations and omissions",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "drift after a firm starts (up) or cuts (down) a dividend.",
+   "evidence": "Michaely-Thaler-Womack 1995 (JF), 1964-1988 sample. Few S&P 500 events per year.",
+   "why": "pre-2000 evidence, tiny event count in large caps, event-study family already failed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1995.tb04796.x"
+   ]
+  },
+  {
+   "ref": "T-22",
+   "name": "Spin-offs",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "spun-off firms and parents outperform for 1-3 years.",
+   "evidence": "Cusatis-Miles-Woolridge 1993 (JFE), 1965-1988; driven by later takeovers.",
+   "why": "old sample, ~5-15 S&P events/year, no power.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/0304-405X(93)90009-Z"
+   ]
+  },
+  {
+   "ref": "T-23",
+   "name": "Index additions and deletions",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "trade S&P 500 inclusion announcements.",
+   "evidence": "Greenwood-Sammon 2025: addition effect fell from 7.4% (1990s) to under 1%; deletions ~0.1% 2010-2020.",
+   "why": "effect is gone.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/system/files/working_papers/w30748/w30748.pdf"
+   ]
+  },
+  {
+   "ref": "T-24",
+   "name": "Customer-supplier lead-lag (customer momentum)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "buy suppliers after their big customers rise.",
+   "evidence": "Cohen-Frazzini 2008: 1.22%/month EW, 1.06% VW long-short.",
+   "why": "strong paper and value-weighted works; but within S&P 500 few linked pairs, and customer disclosure (10-K segment notes, >10% customers) needs parsing. Recent decay unclear.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.aqr.com/Insights/Research/Journal-Article/Economic-Links-and-Predictable-Returns"
+   ]
+  },
+  {
+   "ref": "T-25",
+   "name": "Peer / technology / shared-analyst links",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "returns of economically related peers (patent overlap, co-coverage) predict a stock.",
+   "evidence": "Lee-Sun-Wang-Zhang 2019 \"Technological links and predictable returns\" (JFE) and Ali-Hirshleifer 2020 \"Shared analyst coverage\" (JFE); effects are monthly, partly large-cap.",
+   "why": "data paid (patents ok via USPTO free, co-coverage needs I/B/E/S). Cross-ref: the AI archive may cover text-similarity peers.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-26",
+   "name": "Composite multi-signal score (fundamental law)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "average many weak, low-correlated signals into one rank. Fundamental law: IR ≈ IC × sqrt(breadth) (Grinold 1989).",
+   "evidence": "Jensen-Kelly-Pedersen: 13 themes, most enter the tangency portfolio. Arithmetic: 5 uncorrelated signals of IC 0.008 combine to ~0.018, still below the 0.03 the testbed sees; and the long-only, no-short version captures only part (transfer coefficient ~0.3-0.5).",
+   "why": "the honest way to use weak signals, but even if real the net gain long-only on S&P 500 is maybe 0.5-1%/yr before tax drag on turnover, and you cannot verify it here.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (8-scorer regime blend and learned weights lost to b&h on 51 names)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.3905/jpm.1989.409211",
+    "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf"
+   ]
+  },
+  {
+   "ref": "T-27",
+   "name": "Long-term reversal (3-5 year losers)",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "De Bondt-Thaler contrarian.",
+   "evidence": "largely subsumed by value and concentrated in small caps (Hou-Xue-Zhang).",
+   "why": "duplicate of value, no large-cap edge.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
+   ]
+  },
+  {
+   "ref": "T-28",
+   "name": "Overnight vs intraday momentum split",
+   "family": "A. Cross-sectional stock anomalies",
+   "origin": "archive",
+   "definition": "momentum profit sits overnight, reversal intraday; trade the component.",
+   "evidence": "Lou-Polk-Skouras 2019: 14 strategies earn entirely overnight or entirely intraday.",
+   "why": "needs open/close execution; signal decomposes known factors that already failed. Free from Yahoo open/close.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://personal.lse.ac.uk/polk/research/TugOfWar.pdf"
+   ]
+  },
+  {
+   "ref": "T-29",
+   "name": "Turn-of-the-month",
+   "family": "B. Market-level timing and calendar effects",
+   "origin": "archive",
+   "definition": "hold equities from last trading day to day 3 of the month.",
+   "evidence": "McConnell-Xu 2008: 1926-2005, all of the equity premium came at turns of month; 31 of 35 countries.",
+   "why": "for a buy-and-hold ISA investor, being out the rest of the month loses more than it gains after spreads; useful only as \"time the monthly contribution a few days before month end\" (tiny, free).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://rpc.cfainstitute.org/research/financial-analysts-journal/2008/equity-returns-at-the-turn-of-the-month"
+   ]
+  },
+  {
+   "ref": "T-30",
+   "name": "Pre-holiday effect",
+   "family": "B. Market-level timing and calendar effects",
+   "origin": "archive",
+   "definition": "day before market holidays has high returns.",
+   "evidence": "Ariel 1990 (JF). Pre-2000 evidence, widely reported weaker since.",
+   "why": "~9 days/year, nothing actionable for a holder.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1990.tb03731.x"
+   ]
+  },
+  {
+   "ref": "T-31",
+   "name": "Pre-FOMC drift",
+   "family": "B. Market-level timing and calendar effects",
+   "origin": "archive",
+   "definition": "equities rise in the 24 hours before scheduled Fed announcements.",
+   "evidence": "Lucca-Moench: 0.49% per pre-FOMC window, 1994-2011. Kurov-Wolfe-Gilbert: disappeared after 2015.",
+   "why": "textbook post-publication decay.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.html",
+    "https://www.skidmore.edu/economics/documents/KurovWolfeGilbert-TheDisappearingPre-FOMC-Announce-Drift-200914.pdf"
+   ]
+  },
+  {
+   "ref": "T-32",
+   "name": "Equity premium predictors (CAPE, dividend yield, term spread)",
+   "family": "B. Market-level timing and calendar effects",
+   "origin": "archive",
+   "definition": "time stock/bond weight on valuation or macro.",
+   "evidence": "Welch-Goyal 2008: no predictor beat the historical mean out-of-sample; 2024 update: a third of newer ones fail in-sample, half the rest fail out-of-sample.",
+   "why": "best-documented failure in finance; use as a behavioural \"do not do this\".",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://nber.org/papers/w10483",
+    "https://sfi.ch/en/publications/a-comprehensive-2022-look-at-the-empirical-performance-of-equity-premium-prediction"
+   ]
+  },
+  {
+   "ref": "T-33",
+   "name": "Sell in May / Halloween",
+   "family": "B. Market-level timing and calendar effects",
+   "origin": "archive",
+   "definition": "hold Nov-Apr only.",
+   "evidence": "Bouman-Jacobsen 2002 (AER) found it in 36 of 37 markets; in-sample, weak in recent US data, and cash half the year loses the premium.",
+   "why": "gives up ~half the equity premium for a small Sharpe gain.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-34",
+   "name": "Post-publication decay",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "discount published effects before testing.",
+   "evidence": "McLean-Pontiff 2016: -26% out-of-sample, -58% post-publication; bigger decay for bigger in-sample effects.",
+   "why": "as a planning rule (\"expect 40% of the paper's spread, less in large caps\") it would have predicted most FAILs; free to adopt in specs.",
+   "archive_status": "Untested",
+   "archive_note": "Untested as a tool",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ivey.uwo.ca/media/3775549/pontiff.pdf"
+   ]
+  },
+  {
+   "ref": "T-35",
+   "name": "Replication meta-studies (HXZ vs JKP vs Chen-Zimmermann)",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "use what replicates as a shortlist.",
+   "evidence": "Hou-Xue-Zhang (65% fail, value-weighted, microcaps controlled; survivors: value, momentum, investment, profitability). Jensen-Kelly-Pedersen 2023: most replicate across 93 countries. Chen-Zimmermann: publication-bias shrinkage only ~12%.",
+   "why": "the disagreement itself is the lesson: they replicate as long-short multi-decade portfolios across all stocks, not as 2020+ large-cap ICs.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html",
+    "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf",
+    "https://arxiv.org/pdf/2209.13623"
+   ]
+  },
+  {
+   "ref": "T-36",
+   "name": "Open Source Asset Pricing data instead of building signals",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "download 200+ pre-computed predictors and their monthly portfolio returns.",
+   "evidence": "Chen-Zimmermann 2022, site: 98% of clearly significant predictors reproduce; portfolios in several implementations (VW, EW, quintile/decile, price/size screens) back to 1926.",
+   "why": "lets you check \"does signal X still work in big stocks, post-2000, value-weighted\" in minutes before writing any code. Firm-level signals are keyed by CRSP PERMNO (ticker mapping is the snag; CRSP itself is paid), so use the portfolio returns for triage, not as live signals.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/abstract=3604626",
+    "https://www.openassetpricing.com/"
+   ]
+  },
+  {
+   "ref": "T-37",
+   "name": "JKP global factor returns",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "free factor returns for 153 factors in 93 countries, incl. large-cap (\"mega/large\") cuts.",
+   "evidence": "Jensen-Kelly-Pedersen, jkpfactors.com.",
+   "why": "answers \"is this effect alive in UK/EU/global large caps\" with no build; firm-level data needs WRDS (paid).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://github.com/bkelly-lab/ReplicationCrisis",
+    "https://JKPfactors.com/"
+   ]
+  },
+  {
+   "ref": "T-38",
+   "name": "Ken French data library as a reference",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "free FF factors, momentum, industry and international portfolios, size breakpoints.",
+   "evidence": "Data library.",
+   "why": "needed for residual momentum (T-13) and to sanity-check factor ETF claims (T-60); free and daily-updated.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html"
+   ]
+  },
+  {
+   "ref": "T-39",
+   "name": "Trading costs reality check",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "subtract realistic costs before believing any backtest.",
+   "evidence": "Novy-Marx-Velikov 2016: anomalies with monthly one-sided turnover under 50% mostly survive costs, few above; a buy/hold spread (hysteresis band) is the best simple mitigation.",
+   "why": "adding a hold band to any future signal strategy is cheap and directly protects money; UK also has 0.5% stamp duty on UK shares (not on ETFs).",
+   "archive_status": "Untested",
+   "archive_note": "Untested in signal tests (backtest engine charges costs?)",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w20721"
+   ]
+  },
+  {
+   "ref": "T-40",
+   "name": "Multiple-testing hurdle t > 3",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "raise the PASS bar as the number of tested signals grows.",
+   "evidence": "Harvey-Liu-Zhu 2016: new factors need t > 3.0. Harvey-Liu \"Backtesting\" haircut Sharpe ratios.",
+   "why": "Oracle has run 10+ pre-registered tests; at t>2 one false PASS is expected by chance. A count-aware bar (or Bonferroni/BHY) is free and prevents the most expensive mistake (trusting a lucky PASS).",
+   "archive_status": "Untested",
+   "archive_note": "Untested (PASS uses t > 2)",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/353765",
+    "https://papers.ssrn.com/abstract=2345489"
+   ]
+  },
+  {
+   "ref": "T-41",
+   "name": "\"Most stocks lose\" skewness fact",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "stock picking is a bet against extreme skew.",
+   "evidence": "Bessembinder 2018: 4% of stocks created all net US wealth 1926-2016; most stocks lifetime-underperform T-bills.",
+   "why": "strong argument for the index plan and against concentrated stock portfolios; show it in the GUI as a guardrail.",
+   "archive_status": "Fact",
+   "archive_note": "n/a",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://news.wpcarey.asu.edu/20180917-do-stocks-outperform-treasury-bills"
+   ]
+  },
+  {
+   "ref": "T-42",
+   "name": "Active fund failure rates (SPIVA)",
+   "family": "C. Meta-evidence (how much to believe any of it)",
+   "origin": "archive",
+   "definition": "base rate for \"can anyone beat the index\".",
+   "evidence": "SPIVA Europe: ~95% of GBP global equity funds underperformed over 10 years.",
+   "why": "directly supports keeping real money in the index; prevents switching to an active fund after a bad year.",
+   "archive_status": "Fact",
+   "archive_note": "n/a",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.spglobal.com/spdji/en/spiva/article/spiva-europe-mid-year-2023"
+   ]
+  },
+  {
+   "ref": "T-43",
+   "name": "Power calculation per signal before testing",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "compute minimum detectable IC from history length and IC volatility, publish it with each pre-registration.",
+   "evidence": "t ≈ mean IC / (sd IC / sqrt(T)). With monthly IC sd ~0.08-0.10 and true IC 0.01, you need ~250-400 independent months for t = 2. 2020+ confirm has ~70 months. (gate-02 power note already did this for h20/h5.)",
+   "why": "tells you up front which tests are pointless; saves build time. Make it automatic.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (done once, IC ~0.03 detectable)",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-44",
+   "name": "Bigger universe (Russell 1000/3000, mid-caps)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "more names = more breadth, smaller detectable IC.",
+   "evidence": "SE of a cross-sectional IC scales ~1/sqrt(N); going 500 to 3000 names cuts noise ~2.4x, but small names add the microcap illusions Hou-Xue-Zhang warn about.",
+   "why": "helps see effects, but free point-in-time Russell membership does not exist; survivorship worse than now; and effects found in mid/small caps do not help an index investor.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
+   ]
+  },
+  {
+   "ref": "T-45",
+   "name": "International testbed (FTSE 350, STOXX 600, Japan)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "second independent sample to confirm US findings.",
+   "evidence": "JKP show factors work out-of-sample in 93 countries.",
+   "why": "doubles sample, but point-in-time membership and fundamentals are hard; use JKP factor returns (T-37) instead first.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (parked as ticket 08)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://JKPfactors.com/"
+   ]
+  },
+  {
+   "ref": "T-46",
+   "name": "Longer history (pre-2010)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "extend train back to 1990s or 1960s.",
+   "evidence": "the cross-sectional literature uses CRSP 1926/1963+. Power grows with sqrt(months).",
+   "why": "real power gain, but Yahoo pre-2010 member coverage is poor (2010 already 31% missing) and XBRL starts 2009-2011. Only feasible via OpenAP portfolio returns (T-36).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-47",
+   "name": "Portfolio sorts alongside IC",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "report top-minus-bottom quintile returns (value-weighted) as well as rank IC.",
+   "evidence": "the standard test in Hou-Xue-Zhang and Chen-Zimmermann; IC can hide nonlinear or tail-only effects.",
+   "why": "makes results comparable to papers and shows if only one tail works; does not add power.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html",
+    "https://papers.ssrn.com/abstract=3604626"
+   ]
+  },
+  {
+   "ref": "T-48",
+   "name": "Fama-MacBeth / pooled panel with several signals at once",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "regress returns on many characteristics together each month, average slopes.",
+   "evidence": "Fama-MacBeth 1973.",
+   "why": "tests marginal value of a signal given others and uses one model instead of N separate tests (less forking).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1086/260061"
+   ]
+  },
+  {
+   "ref": "T-49",
+   "name": "Newey-West and clustered standard errors",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "correct t-stats for overlapping horizons and cross-name correlation.",
+   "evidence": "Newey-West 1987; Petersen 2009 (cluster by time and firm).",
+   "why": "done; only firm-level clustering (Petersen) is missing, and NW over daily cross-sectional ICs already covers the overlap.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (already in the harness: `signal_test.window_result` uses Newey-West t over the daily ICs; observed power is 2x the NW standard error)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.jstor.org/stable/1913610",
+    "https://doi.org/10.1093/rfs/hhn053"
+   ]
+  },
+  {
+   "ref": "T-50",
+   "name": "Deflated Sharpe ratio",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "correct a backtest Sharpe for number of trials and fat tails.",
+   "evidence": "Bailey-Lopez de Prado 2014.",
+   "why": "the backtest engine compares strategies vs b&h; DSR stops a tuned overlay looking good by luck. Simple formula.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/abstract=2460551"
+   ]
+  },
+  {
+   "ref": "T-51",
+   "name": "Probability of backtest overfitting (CSCV)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "split history into blocks, check how often the in-sample best config ranks below median out-of-sample.",
+   "evidence": "Bailey-Borwein-Lopez de Prado-Zhu 2015; R package `pbo`.",
+   "why": "right tool whenever a parameter is chosen (MA length, rebalance bands); one-rule pre-registration already avoids most of it.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/abstract=2326253"
+   ]
+  },
+  {
+   "ref": "T-52",
+   "name": "Combinatorial purged cross-validation",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "many train/test splits with purging and embargo so overlapping labels do not leak.",
+   "evidence": "Lopez de Prado, *Advances in Financial Machine Learning* (Wiley 2018), ch. 7 and 12.",
+   "why": "more useful for the AI/ML side; for single pre-registered rules a fixed train/confirm split is fine.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-53",
+   "name": "Delisting returns and survivorship correction",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "include the final return of delisted names (often -30% for performance delists).",
+   "evidence": "Shumway 1997: ignoring delisting returns biases anomaly results.",
+   "why": "missing losers bias early-period ICs toward quality/value and overstate b&h of single stocks; fixing it is hard with free data (SEC 25-NSE + last Yahoo price is a partial patch).",
+   "archive_status": "Untested",
+   "archive_note": "Untested (delisted names mostly missing in research.db)",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1997.tb03818.x"
+   ]
+  },
+  {
+   "ref": "T-54",
+   "name": "Forward paper tracking (already frozen)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "freeze signals, judge on future data only.",
+   "evidence": "the only test immune to forking paths. McLean-Pontiff out-of-sample logic.",
+   "why": "honest, but 12 months of h20 is ~12 independent points; it will almost certainly be inconclusive. Pre-state that, and extend to 3 years.",
+   "archive_status": "Building",
+   "archive_note": "Building (5 trackers, judged 2027-10-01)",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ivey.uwo.ca/media/3775549/pontiff.pdf"
+   ]
+  },
+  {
+   "ref": "T-55",
+   "name": "Benchmark hygiene (total return, same currency, same fees)",
+   "family": "D. Evaluation and power methods",
+   "origin": "archive",
+   "definition": "compare every strategy to total-return, GBP, after-cost index.",
+   "evidence": "price-only S&P 500 understates b&h by ~1.5-2%/yr (dividend yield). Boring-plan decision 1.",
+   "why": "removes a systematic bias that made earlier comparisons wrong-sized; certain gain in decision quality.",
+   "archive_status": "Building",
+   "archive_note": "Building",
+   "rating": 8,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-56",
+   "name": "Lowest-cost all-world fund",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "pick the cheapest broad global tracker (accumulating, GBP).",
+   "evidence": "cost is the most reliable predictor of fund returns (SPIVA, T-42). Every 0.1% TER compounds to ~1% of the pot per 10 years.",
+   "why": "certain, measurable, permanent.",
+   "archive_status": "Building",
+   "archive_note": "Building (fund comparison)",
+   "rating": 9,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-57",
+   "name": "Platform fee structure (flat vs percentage)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "move to a flat-fee platform once the pot is large enough.",
+   "evidence": "arithmetic (0.25-0.45% vs a few £/month).",
+   "why": "often the biggest single cost for a UK ISA, certain saving.",
+   "archive_status": "Building",
+   "archive_note": "Building",
+   "rating": 9,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-58",
+   "name": "Global vs home bias (all-world vs S&P 500 vs UK)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "hold world market weights, not US-only or UK-heavy.",
+   "evidence": "Anarkulova-Cederburg-O'Doherty: bootstrapped 39 developed countries 1890-2019; optimal lifetime mix ~33% domestic, 67% international stocks, beats age-based stock-bond. US-only looks best in hindsight (2010-2024), which is the trap.",
+   "why": "no expected-return gain is guaranteed, but it removes single-country risk at near-zero cost.",
+   "archive_status": "Building",
+   "archive_note": "Building (default all-world)",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.aeaweb.org/conference/2025/program/paper/EFddaa8b"
+   ]
+  },
+  {
+   "ref": "T-59",
+   "name": "100% equities for a 10+ year horizon (no glide path yet)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "skip bonds while accumulating; consider de-risking only near the spend date.",
+   "evidence": "Anarkulova-Cederburg-O'Doherty: all-equity diversified internationally beats target-date style glide paths on wealth, retirement income and capital preservation.",
+   "why": "likely more terminal wealth; but tolerance of a -50% drawdown is the real constraint, and the paper is contested (US-centric critics).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://rationalreminder.ca/podcast/350"
+   ]
+  },
+  {
+   "ref": "T-60",
+   "name": "Factor ETFs (UCITS: value, momentum, quality, min vol, small-cap value)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "tilt part of the ISA to factor funds (e.g. iShares Edge MSCI World Value/Quality/Momentum/Min Vol, SPDR/Avantis small-cap value UCITS).",
+   "evidence": "factors replicate long-run (JKP) but decay post-publication (McLean-Pontiff), long-only funds capture maybe half, TERs 0.2-0.4%, and value lost for 13 years (Arnott et al.).",
+   "why": "small expected gain, high tracking error that tempts quitting at the worst time. Small-cap value is the most-cited tilt but UCITS options are limited.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf",
+    "https://ivey.uwo.ca/media/3775549/pontiff.pdf",
+    "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated"
+   ]
+  },
+  {
+   "ref": "T-61",
+   "name": "Multi-factor fund vs single factors",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "one diversified multi-factor ETF instead of several single-factor tilts.",
+   "evidence": "combining low-correlated premia raises Sharpe (fundamental law, T-26); less timing temptation.",
+   "why": "better than single factors, still uncertain net of TER.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-62",
+   "name": "Trend overlay (10-month MA)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "hold the index above its 10-month MA, cash below.",
+   "evidence": "Faber 2007/2013: equity-like return, bond-like drawdown since 1900. Zakamulin: data-mining contamination; no statistical outperformance post-1932, wins only in bear markets. Hurst-Ooi-Pedersen evidence is for diversified long-short futures, not one-index on/off. Harvey et al. show deterioration in 2009-2019 from more trend reversals.",
+   "why": "it will probably cut 2008's drawdown (PASS on drawdown is plausible) but 2020 and 2022 whipsaws make the <=1 pt/yr return cost the likely failure. Inside an ISA there is no tax cost, which helps.",
+   "archive_status": "Building",
+   "archive_note": "Building (pre-registered, 1988-2007 / 2008+)",
+   "rating": 3,
+   "status": "fail",
+   "result": "FAIL (research.db 2026-10-03): confirm 2008+ CAGR 8.1%, worst fall -26%; the overlay's own return-cost bar",
+   "test_keys": [
+    "trend_overlay"
+   ],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/abstract=962461",
+    "https://papers.ssrn.com/abstract=2677212",
+    "https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing",
+    "https://people.duke.edu/~charvey/Research/Published_Papers/P167_Breaking_bad_trends.pdf"
+   ]
+  },
+  {
+   "ref": "T-63",
+   "name": "Time-series momentum across asset classes",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "12-month trend on equities, bonds, commodities, FX, long-short.",
+   "evidence": "Moskowitz-Ooi-Pedersen 2012; Hurst-Ooi-Pedersen since 1880.",
+   "why": "needs futures/leverage; UCITS managed-futures funds charge 1%+; weak 2011-2019.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2011.11.003",
+    "https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing"
+   ]
+  },
+  {
+   "ref": "T-64",
+   "name": "Dual momentum (Antonacci GEM)",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "hold US or ex-US equities (whichever is stronger), switch to bonds if both lag T-bills.",
+   "evidence": "Antonacci backtests from 1974; post-publication (2014+) critiques (CXO) find it behind 60/40-like benchmarks.",
+   "why": "same family as T-62 plus a regional switch; post-publication record weak.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (rotation on 51 names Tried-other, lost)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://alphaarchitect.com/risk-premia-harvesting-through-momentum/",
+    "https://cxoadvisory.com/momentum-investing/a-few-notes-on-dual-momentum-investing"
+   ]
+  },
+  {
+   "ref": "T-65",
+   "name": "Volatility targeting / vol-managed portfolios",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "scale equity exposure inversely to recent volatility.",
+   "evidence": "Moreira-Muir 2017: large alphas. Cederburg et al. 2020: across 103 strategies, implementable versions do not beat unmanaged portfolios out-of-sample.",
+   "why": "without leverage it means less equity on average, i.e. lower long-run wealth; out-of-sample evidence negative.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/22208",
+    "https://www.lehigh.edu/~xuy219/research/COWY.pdf"
+   ]
+  },
+  {
+   "ref": "T-66",
+   "name": "Risk parity",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "weight asset classes by inverse risk, lever up bonds.",
+   "evidence": "depends on leverage and the 1982-2020 bond bull; 2022 stock-bond crash hit it hard.",
+   "why": "needs leverage, no fit for a long-horizon ISA accumulator.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-67",
+   "name": "Bonds/gilts and glide path near spend date",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "add gilts or a global bond fund only as the spend date nears.",
+   "evidence": "see T-59 (Anarkulova et al. against bonds for long horizons); conventional advice (target-date) for sequence risk.",
+   "why": "irrelevant for the first ~7 years, important in the last 3-5 before spending. Plan a review date, not a build now.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-68",
+   "name": "Rebalancing rules",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "annual or 5% bands.",
+   "evidence": "Vanguard 2010: no optimal frequency; annual or 5% bands balance risk and cost. Vanguard 2022 rational rebalancing: annual is optimal for most.",
+   "why": "with one all-world fund there is nothing to rebalance; a \"rebalancing bonus\" is not a reliable return source. Directing new contributions to the underweight fund is the free version.",
+   "archive_status": "Building",
+   "archive_note": "Building",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://indexacapital.com/bundles/unaiadvisor/docs/papers/2010-Vanguard-Best-practices-for-portfolio-rebalancing.pdf",
+    "https://corporate.vanguard.com/content/dam/corp/research/pdf/rational_rebalancing_analytical_approach_to_multiasset_portfolio_rebalancing.pdf"
+   ]
+  },
+  {
+   "ref": "T-69",
+   "name": "Lump sum vs drip-feed",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "invest available cash at once rather than over 12 months.",
+   "evidence": "Vanguard UK: lump sum won 61.6-73.7% of rolling 1-year periods 1976-2022, ~1.2-2.4 pt average advantage.",
+   "why": "for windfalls, lump sum has higher expected value; monthly salary contributions are not DCA (invest each when received).",
+   "archive_status": "Building",
+   "archive_note": "Building",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.vanguard.co.uk/professional/vanguard-365/financial-planning/financial-well-being/cost-averaging"
+   ]
+  },
+  {
+   "ref": "T-70",
+   "name": "Cash drag and contribution timing",
+   "family": "E. Portfolio construction for the real money",
+   "origin": "archive",
+   "definition": "invest contributions the day they land; avoid idle cash in the ISA.",
+   "evidence": "at ~7%/yr expected equity return, a 2-week average delay costs ~0.25% of each contribution's first-year return (arithmetic). Turn-of-month (T-29) slightly favours buying just before month end.",
+   "why": "small, certain, free to fix with an automatic monthly investment.",
+   "archive_status": "Building",
+   "archive_note": "Building",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-71",
+   "name": "Stocks and Shares ISA first",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "£20k/yr allowance, no tax on gains or dividends.",
+   "evidence": "gov.uk ISAs.",
+   "why": "certain tax saving vs a GIA once over the small CGT/dividend allowances.",
+   "archive_status": "Building",
+   "archive_note": "Building (the plan)",
+   "rating": 9,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.gov.uk/individual-savings-accounts"
+   ]
+  },
+  {
+   "ref": "T-72",
+   "name": "SIPP / workplace pension with tax relief and employer match",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "put retirement money in a pension first: 20% relief added (25% uplift), 40/45% for higher-rate; employer match is free money; 25% tax-free at withdrawal.",
+   "evidence": "gov.uk pension tax relief.",
+   "why": "for money not needed before 57 (minimum pension age from 2028), relief plus match beats any return idea here. Add an \"ISA vs pension\" comparator.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (not in boring-plan scope)",
+   "rating": 9,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.gov.uk/tax-on-your-private-pension/pension-tax-relief"
+   ]
+  },
+  {
+   "ref": "T-73",
+   "name": "Lifetime ISA",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "up to £4k/yr, 25% government bonus, under 40 to open; penalty 25% if withdrawn except first home or age 60.",
+   "evidence": "gov.uk Lifetime ISA; Which? on the 25% charge.",
+   "why": "certain 25% uplift; the withdrawal penalty loses ~6.25% of own money if misused.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.gov.uk/lifetime-isa",
+    "https://www.which.co.uk/news/article/25-lifetime-isa-penalty-to-be-restored-in-april-is-it-still-worth-getting-one-aGxhq4f4V8mE"
+   ]
+  },
+  {
+   "ref": "T-74",
+   "name": "Behavioural guardrails (automate, no-sell rules, loss pre-commitment)",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "automated monthly buy, written rule \"no selling on drawdowns\", show historical drawdowns before they happen, cool-off before any change to real allocation.",
+   "evidence": "the return gap between fund returns and investor returns is driven by timing flows (Morningstar \"Mind the Gap\" annual studies, ~1%/yr); Welch-Goyal shows timing does not work.",
+   "why": "avoiding one panic sale in a -30% year is worth more than any signal tested so far.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 8,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://nber.org/papers/w10483"
+   ]
+  },
+  {
+   "ref": "T-75",
+   "name": "Keep stock-picking money out of the ISA plan (or capped)",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "if signal trading ever goes live, cap it (e.g. 5%) in a separate pot judged against the all-world line.",
+   "evidence": "T-41, T-42 base rates.",
+   "why": "limits damage of a false PASS and keeps the experiment honest.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-76",
+   "name": "FX and fund domicile (GBP-accumulating Irish UCITS)",
+   "family": "F. UK wrappers, tax and behaviour",
+   "origin": "archive",
+   "definition": "prefer Irish-domiciled accumulating UCITS: 15% US dividend withholding (treaty) inside the fund, no FX fee per trade, no dividend reinvestment drag.",
+   "evidence": "US-UK treaty rate 15% vs 30% default; US ETFs are not available to UK retail (PRIIPs KID rule).",
+   "why": "avoids ~0.1-0.3%/yr of leakage vs badly chosen wrappers/share classes.",
+   "archive_status": "Building",
+   "archive_note": "Building (fund comparison uses UCITS funds)",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-77",
+   "name": "Tax-loss harvesting",
+   "family": "G. Other traditional ideas",
+   "origin": "archive",
+   "definition": "realise losses to offset gains.",
+   "evidence": "standard; irrelevant inside ISA/SIPP.",
+   "why": "no tax inside wrappers; only matters for a GIA beyond £20k/yr.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-78",
+   "name": "Equal-weight S&P 500",
+   "family": "G. Other traditional ideas",
+   "origin": "archive",
+   "definition": "equal-weight instead of cap-weight.",
+   "evidence": "historically higher return via size and rebalancing tilts; lagged badly 2023-2024 on mega-cap concentration. Higher TER and turnover.",
+   "why": "a size/value tilt in disguise, US-only, more tracking error.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-79",
+   "name": "Pairs trading / statistical arbitrage",
+   "family": "G. Other traditional ideas",
+   "origin": "archive",
+   "definition": "trade mean reversion between cointegrated pairs.",
+   "evidence": "Gatev-Goetzmann-Rouwenhorst 2006 (RFS) excess returns declined sharply after the 1990s; needs shorting and low costs.",
+   "why": "short-side, cost-sensitive, decayed; not doable in an ISA.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "T-80",
+   "name": "Options overlays (covered calls, protective puts)",
+   "family": "G. Other traditional ideas",
+   "origin": "archive",
+   "definition": "sell calls for income or buy puts for protection.",
+   "evidence": "buy-write indices (e.g. CBOE BXM) lag the index in bull markets; puts carry a premium cost. Options are not ISA-eligible in most UK platforms.",
+   "why": "lowers expected return or is not allowed in the wrapper.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-01",
+   "name": "LLM headline sentiment (Lopez-Lira & Tang)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Ask an LLM \"good/bad/unknown for the stock?\" per headline, trade next-day on the score.",
+   "evidence": "GPT scores predict next-day returns; on post-cutoff headlines GPT-4 hits ~90% portfolio-day accuracy on the non-tradable day-0 reaction, the tradable drift is concentrated in small stocks and negative news, and strategy returns fall as LLM adoption rises; small models (GPT-1/2, BERT) fail (Lopez-Lira & Tang, arXiv 2304.07619 v6, 2025).",
+   "why": "Finishing the 32B run is cheap and is the only honest post-cutoff test, but the paper's own tradable drift sits in small caps and is decaying, and the post-cutoff window is too short for power at large caps.",
+   "archive_status": "Tried-FAIL",
+   "archive_note": "Tried-FAIL (Laya small classifier, all runs). 32B local reader on ~64k post-cutoff headlines pending (job 732 cancelled at 13.8k/154.8k, resumable)",
+   "rating": 3,
+   "status": "fail",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2304.07619"
+   ]
+  },
+  {
+   "ref": "A-02",
+   "name": "Anonymised headlines (Glasserman & Lin distraction effect)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Replace company names with \"Company X\" before scoring.",
+   "evidence": "Anonymised headlines beat originals in-sample with GPT-3.5, strongest for large firms (the model's general knowledge distracts it); out-of-sample the difference loses significance (Glasserman & Lin, arXiv 2309.17322). Masking does not stop recall of dates/entities (Lopez-Lira, Tang & Zhu, arXiv 2504.14765).",
+   "why": "A one-flag A/B on the 32B reader; worth it only as a cheap arm, since post-cutoff the effect is not significant and it does not fix leakage.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2309.17322",
+    "https://arxiv.org/abs/2504.14765"
+   ]
+  },
+  {
+   "ref": "A-03",
+   "name": "LLM embeddings plus a supervised return model (Chen, Kelly & Xiu)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Embed each article with an LLM, train a ridge/logistic model from embeddings to next-day returns.",
+   "evidence": "LLM embeddings beat technical signals and bag-of-words, especially for negation/complex articles, across 16 markets and 13 languages; fresh-news alerts give higher Sharpe; slow price response consistent with limits to arbitrage (Chen, Kelly & Xiu, SSRN 4416687).",
+   "why": "Better than prompting because it learns the mapping, but needs a long labelled text history; with a modern embedder that history is pre-cutoff (leaky). Viable only paired with A-24 (chronological models) or EDGAR text.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687"
+   ]
+  },
+  {
+   "ref": "A-04",
+   "name": "SESTM supervised word model (Ke, Kelly & Xiu)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Screen words that co-move with returns, fit a two-topic model, score articles. No pretrained model, so no look-ahead from training data.",
+   "evidence": "On Dow Jones Newswires, strong daily long-short performance net of costs; most of the effect within 1-2 days of news and stronger in smaller stocks (Ke, Kelly & Xiu, NBER w26186).",
+   "why": "The one news model that can use the full 2010-2019 train window legally. Headline-only, free-source text is much thinner than newswires, and the signal is day-0/1 (hard at daily-close execution).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w26186"
+   ]
+  },
+  {
+   "ref": "A-05",
+   "name": "FinBERT sentiment",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Finance-tuned BERT classifier for sentence tone.",
+   "evidence": "Beats Loughran-McDonald and classic ML on labelled analyst sentences, biggest gain with small training sets (Huang, Wang & Yang, CAR 2023 / arXiv 2006.08097; model yiyanghkust/finbert-tone).",
+   "why": "Better tone labels, not better returns; Lopez-Lira finds BERT-size models do not forecast returns. Pretrained on pre-2020 text, so leakage is limited (a small plus).",
+   "archive_status": "Untested",
+   "archive_note": "Untested (Laya, a similar small classifier, FAILED)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2006.08097",
+    "https://huggingface.co/yiyanghkust/finbert-tone"
+   ]
+  },
+  {
+   "ref": "A-06",
+   "name": "Loughran-McDonald dictionary tone baseline",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Count negative/uncertainty words from the finance dictionary.",
+   "evidence": "Finance-specific lists beat general ones on 10-K tone vs filing returns (Loughran & McDonald, JF 2011).",
+   "why": "Useful only as the zero-leakage baseline every LLM text test should beat; weak on its own.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.2010.01625.x"
+   ]
+  },
+  {
+   "ref": "A-07",
+   "name": "LLM financial statement analysis (Kim, Muhn & Nikolaev)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Give an LLM anonymised statements, ask for next-year earnings direction.",
+   "evidence": "Claimed GPT-4 beats analysts (arXiv 2407.17866); the paper is now **withdrawn** after a co-author found replication inconsistencies (Nikolaev's notice).",
+   "why": "Withdrawn result, plus recall of pre-cutoff numbers makes backtests meaningless.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2407.17866",
+    "https://faculty.chicagobooth.edu/valeri-nikolaev/ongoing-research-projects"
+   ]
+  },
+  {
+   "ref": "A-08",
+   "name": "Lazy Prices: 10-K/10-Q change detection",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Cosine similarity between this filing and last year's; firms that change their text a lot underperform.",
+   "evidence": "Short \"changers\", long \"non-changers\": up to 188 bp/month alpha, predicts earnings, news and bankruptcies; investors are slow to notice (Cohen, Malloy & Nguyen, JF 2020). Headline number is the strongest spec; value-weighted and post-publication returns are smaller (decay: see quant archive).",
+   "why": "Best text candidate on paper: no LLM so no cutoff rule, full 2010+ testbed usable, slow quarterly signal (low turnover). Likely weaker in S&P 500 and since 2018 publication.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html"
+   ]
+  },
+  {
+   "ref": "A-09",
+   "name": "Risk-factor (Item 1A) change detection",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Diff only the risk-factor section; flag new or expanded risks.",
+   "evidence": "Lazy Prices finds risk-factor changes carry much of the effect (JF 2020); LLM pipelines can map 10-K risks into a taxonomy for S&P 500 (arXiv 2601.15247).",
+   "why": "Sub-variant of A-08; best value is as a user-facing \"new risks this year\" digest (see A-93).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html",
+    "https://arxiv.org/abs/2601.15247"
+   ]
+  },
+  {
+   "ref": "A-10",
+   "name": "LLM semantic change in disclosures (\"metric shifting\")",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "LLM extracts emphasised metrics per period; firms that shift what they emphasise underperform.",
+   "evidence": "LLM-measured semantic shifts in disclosures predict alpha (arXiv 2510.03195).",
+   "why": "New, single paper; LLM-based so only post-cutoff filings count (one or two 10-K cycles).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2510.03195"
+   ]
+  },
+  {
+   "ref": "A-11",
+   "name": "8-K free-text classification beyond item codes",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "LLM reads 8-K bodies/exhibits to type events finer than item numbers.",
+   "evidence": "Item-code event studies already FAILED here (2.02, 1.01, 2.01, clusters).",
+   "why": "Finer types split already-weak events into smaller, lower-power buckets.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (item codes FAIL)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-12",
+   "name": "Guidance extraction from 8-K Ex. 99.1",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Pull management guidance numbers from press releases into a table.",
+   "evidence": "No free consensus to compute \"guidance surprise\"; useful as structured data (no return paper tested here).",
+   "why": "Good input for explanations (A-91) and for ML targets later; as a stand-alone signal it lacks the consensus benchmark.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-13",
+   "name": "LLM-extracted supplier/customer edges (customer momentum)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Extract \"major customer\" links from 10-Ks; trade suppliers after customer news.",
+   "evidence": "Customers average 20% of supplier sales and customer returns predict supplier returns (Cohen & Frazzini, JF 2008); still present with updated methods (Customer Momentum, arXiv 2301.11394).",
+   "why": "Edges are a useful asset already half-built; the lead-lag is classic and testable on the full testbed if edges are dated, but suppliers in the S&P 500 are big and well covered.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (relationship graph exists; no signal test)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v63y2008i4p1977-2011.html",
+    "https://arxiv.org/abs/2301.11394"
+   ]
+  },
+  {
+   "ref": "A-14",
+   "name": "Capex/investment plans from calls (ChatGPT and corporate policies)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "LLM reads calls for capex intentions.",
+   "evidence": "LLM-measured capex plans predict future firm investment (Jha, Qian, Weber & Yang, NBER w32161).",
+   "why": "Predicts investment, not returns directly; maps onto the investment anomaly (quant archive) that can be computed from XBRL instead.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w32161"
+   ]
+  },
+  {
+   "ref": "A-15",
+   "name": "Earnings-call tone",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Score management tone in prepared remarks vs Q&A.",
+   "evidence": "FinBERT shows call text more informative than dictionaries suggest (Huang et al.).",
+   "why": "Data access is the blocker; effect mostly priced at the call.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2006.08097"
+   ]
+  },
+  {
+   "ref": "A-16",
+   "name": "Q&A evasiveness (non-answers)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Detect \"we don't disclose / take it offline\" replies.",
+   "evidence": "~11% of analyst questions get non-answers, more when news is bad (Gow, Larcker & Zakolyukina, JAR).",
+   "why": "Interesting governance flag for a holding report, weak trading evidence.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.stern.nyu.edu/sites/default/files/assets/documents/Gow%20Larcker%20Zakolyukina-Non-answers%20during%20conference%20calls.pdf"
+   ]
+  },
+  {
+   "ref": "A-17",
+   "name": "Earnings-call audio (vocal cues)",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Emotion analysis of CEO/CFO voice.",
+   "evidence": "Vocal affect carries information beyond words (Mayew & Venkatachalam, JF 2012).",
+   "why": "Data and tooling cost far above any plausible large-cap edge.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.2011.01705.x"
+   ]
+  },
+  {
+   "ref": "A-18",
+   "name": "Stale vs novel news",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Down-weight repeated stories; novelty filter before scoring.",
+   "evidence": "Investors overreact to stale news, which reverses (Tetlock, RFS 2011).",
+   "why": "A sensible preprocessing step for A-01/A-03 (dedupe), not a signal by itself here.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhq141"
+   ]
+  },
+  {
+   "ref": "A-19",
+   "name": "Event typing taxonomy for news",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Classify articles into typed events (M&A, guidance cut, lawsuit) then study each.",
+   "evidence": "Laya already typed relevance/direction per article and FAILED.",
+   "why": "Already tried; more categories cut power further.",
+   "archive_status": "Tried-FAIL",
+   "archive_note": "Tried-FAIL",
+   "rating": 1,
+   "status": "fail",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-20",
+   "name": "Aggregate news sentiment for market timing",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Daily market-wide LLM mood to tilt equity exposure.",
+   "evidence": "4B regime tilt here moved weights on 24% of days and added noise.",
+   "why": "Already failed; market timing has the lowest power of all (one series).",
+   "archive_status": "Tried-FAIL",
+   "archive_note": "Tried-FAIL",
+   "rating": 1,
+   "status": "fail",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-21",
+   "name": "International / multilingual news",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Extend A-01/A-03 to non-US stocks in local languages.",
+   "evidence": "Predictability across 16 markets, 13 languages (Chen, Kelly & Xiu).",
+   "why": "Less efficient markets help, but no international testbed yet (ticket 08 needs-triage) and ISA costs on foreign single stocks are high.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687"
+   ]
+  },
+  {
+   "ref": "A-22",
+   "name": "LLM forecast of earnings or prices directly",
+   "family": "1. LLM and NLP on text",
+   "origin": "archive",
+   "definition": "Ask a model \"what will EPS/price be?\"",
+   "evidence": "LLMs recall exact pre-cutoff economic and market values; instructions not to use them fail (Lopez-Lira, Tang & Zhu, arXiv 2504.14765).",
+   "why": "Below base rate already; backtests impossible pre-cutoff.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (ReAct verdicts 56% vs 59.5% base)",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2504.14765"
+   ]
+  },
+  {
+   "ref": "A-23",
+   "name": "Memorisation probe for the local models' real cutoff",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Before trusting \"cutoff 2025-05-31\", test whether qwen recalls prices, headlines or EPS after that date; set the cutoff empirically.",
+   "evidence": "LLMs recall exact pre-cutoff values and masking fails (arXiv 2504.14765); best agents lose up to 50% and fall to zero after their knowledge window (Profit Mirage, arXiv 2510.07920).",
+   "why": "Cheap insurance that the one rule protecting every LLM verdict is right; protects decisions, not returns.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (cutoff rule exists, declared not measured)",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2504.14765",
+    "https://arxiv.org/abs/2510.07920"
+   ]
+  },
+  {
+   "ref": "A-24",
+   "name": "Chronologically consistent LLMs (ChronoBERT / ChronoGPT)",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Use models trained only on text up to each year (vintages 1999-2024) so pre-2025 history can be tested without look-ahead.",
+   "evidence": "Yearly vintages, ~1.55B params, match BERT on NLP and get Sharpe close to a much larger Llama on next-day news returns, implying look-ahead bias is modest (He, Lv, Manela & Wu, arXiv 2502.21206; weights on Hugging Face, manelalab).",
+   "why": "The only way to give any LLM text signal the full 2010-2019 train / 2020+ confirm testbed, fixing the power problem; still needs a signal that works.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2502.21206",
+    "https://huggingface.co/manelalab"
+   ]
+  },
+  {
+   "ref": "A-25",
+   "name": "Point-in-time commercial models (PiT-Inference) and Look-Ahead-Bench",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Vendor LLMs with dated cutoffs; benchmark measures alpha decay across regimes.",
+   "evidence": "Llama 3.1 and DeepSeek show clear look-ahead bias; PiT models generalise better (Benhenda, arXiv 2601.13770, code).",
+   "why": "A-24 gives the same benefit locally and free; single-author benchmark.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2601.13770",
+    "https://github.com/benstaf/lookaheadbench"
+   ]
+  },
+  {
+   "ref": "A-26",
+   "name": "TradingAgents (multi-agent debate desk)",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Analyst, bull/bear, risk and trader agents debate each trade.",
+   "evidence": "Reports better return/Sharpe than baselines on a short window of a few large-cap stocks (arXiv 2412.20138); such reported alpha suffers temporal contamination, missing frictions and short windows (Alpha Illusion, arXiv 2605.16895).",
+   "why": "Same family as the agent that already underperformed base rate; debate adds tokens, not information.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (in-house ReAct agent: 56% vs 59.5% base)",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2412.20138",
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-27",
+   "name": "FinMem / FinAgent / FinCon memory agents",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Agents with layered memory and reflection.",
+   "evidence": "Short single-stock backtests (FinMem, arXiv 2311.13743; FinAgent, arXiv 2402.18485); flagged as non-deployment evidence (arXiv 2605.16895).",
+   "why": "Look-ahead-prone, tiny samples, needs large models.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2311.13743",
+    "https://arxiv.org/abs/2402.18485",
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-28",
+   "name": "StockBench-style evaluation",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Contamination-free multi-month daily trading test of agents.",
+   "evidence": "Mar-Jul 2025; most agents (GPT-5, Claude 4, Qwen3, etc.) fail to beat buy-and-hold (arXiv 2510.02209).",
+   "why": "Confirms the oracle's own finding; adopt its metrics, do not expect a different answer.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (own replay/paper lines do this)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2510.02209"
+   ]
+  },
+  {
+   "ref": "A-29",
+   "name": "FinBen and Q&A benchmarks",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "36-dataset benchmark incl. a trading task.",
+   "evidence": "Only >70B models handle trading; trading results on short windows (arXiv 2402.12659).",
+   "why": "Useful only to pick an extraction model; trading part is leak-prone.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2402.12659"
+   ]
+  },
+  {
+   "ref": "A-30",
+   "name": "Reporting protocol for any LLM claim (Alpha Illusion P1-P6)",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Checklist: post-cutoff only, costs, window length, baseline, factor exposure, uncertainty.",
+   "evidence": "Alpha Illusion, arXiv 2605.16895; leakage benchmark FinLake-Bench.",
+   "why": "Mostly in place; add the factor-exposure check (does an \"AI pick\" just load on momentum/size?).",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (pre-registration and cutoff rule already cover most)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2605.16895",
+    "https://arxiv.org/abs/2510.07920"
+   ]
+  },
+  {
+   "ref": "A-31",
+   "name": "LLM as an information interface, not a trader",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "LLM extracts facts; separate calibrated statistical modules decide.",
+   "evidence": "Recommended architecture in arXiv 2605.16895.",
+   "why": "Right design direction; benefit depends on the extracted facts being predictive.",
+   "archive_status": "Building",
+   "archive_note": "Building (reader/extraction stages)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-32",
+   "name": "Fine-tune a small LLM on returns (FinGPT-style LoRA)",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "LoRA-tune a 4-8B model on headline to return labels.",
+   "evidence": "FinGPT, arXiv 2306.06031 reports mostly classification benchmarks, not clean OOS trading.",
+   "why": "Base model already saw the labels (leak); A-03 or A-24 get the same with less cost.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2306.06031"
+   ]
+  },
+  {
+   "ref": "A-33",
+   "name": "Verdict calibration",
+   "family": "2. LLM agents, benchmarks and point-in-time models",
+   "origin": "archive",
+   "definition": "Map research-agent confidence to real hit rates; shrink overconfident calls.",
+   "evidence": "GPT overconfidence hurts (Glasserman & Lin); own data: 56% vs 59.5% base.",
+   "why": "Calibrating a signal below base rate gives \"ignore it\", which is already the answer.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2309.17322"
+   ]
+  },
+  {
+   "ref": "A-34",
+   "name": "Gu-Kelly-Xiu ML benchmark (trees and neural nets)",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Predict monthly returns from ~94 characteristics + macro with trees/NNs.",
+   "evidence": "NNs/trees roughly double regression-based strategy performance, gains from interactions; dominant inputs are momentum, liquidity, volatility; predictability also in large liquid stocks (Gu, Kelly & Xiu, RFS 2020). Payoff falls 62% excluding microcaps, 68% excluding distressed firms, and worsens after costs (Avramov, Cheng & Metzker, MS 2023).",
+   "why": "With 30-60 in-house characteristics and a rank target it becomes a fair test on the full testbed (no cutoff issue); S&P 500 large-cap gain is the small remainder.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (user skipped XGBoost on weak inputs)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009",
+    "https://doi.org/10.1287/mnsc.2022.4449"
+   ]
+  },
+  {
+   "ref": "A-35",
+   "name": "Build a characteristic library (input breadth)",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Compute ~50 standard signals (value, quality, investment, accruals, issuance, vol, beta, liquidity, momentum family) point-in-time from XBRL and prices.",
+   "evidence": "200+ published predictors replicated with code and definitions (Chen & Zimmermann, Open Source Asset Pricing); stock-level files are keyed to CRSP permno (WRDS needed to map).",
+   "why": "The prerequisite that would change the XGBoost verdict; also reusable for risk and explanations.",
+   "archive_status": "Building",
+   "archive_note": "Building (XBRL fundamentals live; a few signals done)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm"
+   ]
+  },
+  {
+   "ref": "A-36",
+   "name": "Gradient boosting (LightGBM/XGBoost) with rank target",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "GBM on the A-35 library, target = next-month cross-sectional rank.",
+   "evidence": "Boosted trees among best GKX models (RFS 2020); trees/GBM on S&P 500 stat-arb returns declined to near zero after ~2010 (Krauss, Do & Huck, EJOR 2017).",
+   "why": "Cheapest strong learner; honest expectation is IC around the detection limit in large caps.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (skipped)",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009",
+    "https://doi.org/10.1016/j.ejor.2016.10.031"
+   ]
+  },
+  {
+   "ref": "A-37",
+   "name": "Linear shrinkage: ridge, lasso, elastic net",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Penalised regression over many characteristics.",
+   "evidence": "Elastic net/ridge are GKX's linear baselines, beaten by nonlinear models but robust (RFS 2020); lasso on short-horizon returns finds sparse, short-lived signals (Chinco, Clark-Joseph & Ye, JF 2019).",
+   "why": "Should be run first: if ridge on 50 signals fails confirm, GBM is unlikely to rescue it.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009",
+    "https://doi.org/10.1111/jofi.12733"
+   ]
+  },
+  {
+   "ref": "A-38",
+   "name": "PLS / PCR (supervised factor compression)",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Compress many predictors into a few return-relevant components.",
+   "evidence": "Included in GKX comparison, below trees/NNs (RFS 2020).",
+   "why": "Same input limit, usually not better than ridge.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009"
+   ]
+  },
+  {
+   "ref": "A-39",
+   "name": "Random forest",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Bagged trees.",
+   "evidence": "Below boosted trees and NNs in GKX (RFS 2020); also decayed in Krauss et al. (EJOR 2017).",
+   "why": "Dominated by A-36; keep only as an ensemble member.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009",
+    "https://doi.org/10.1016/j.ejor.2016.10.031"
+   ]
+  },
+  {
+   "ref": "A-40",
+   "name": "SVM / kernel methods",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Support vector classification of up/down.",
+   "evidence": "No strong cross-sectional asset-pricing evidence beyond what GBM/NN cover (Random Fourier Features in A-46 are the kernel analogue).",
+   "why": "No reason to expect it to beat GBM; scales poorly.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-41",
+   "name": "Plain feed-forward neural nets",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "1-5 layer MLP on characteristics.",
+   "evidence": "NN3 best in GKX; gains shrink with economic restrictions (Avramov et al.).",
+   "why": "Needs ensembles of seeds and more data than ~500 stocks provide; GBM is safer on small panels.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1287/mnsc.2022.4449"
+   ]
+  },
+  {
+   "ref": "A-42",
+   "name": "Ensembles and forecast combination",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Average many simple forecasts or models.",
+   "evidence": "Combining forecasts gives consistent OOS gains for the equity premium (Rapach, Strauss & Zhou, RFS 2010).",
+   "why": "The most reliable way to squeeze weak signals; can combine the \"could not see\" signals (momentum, SUE, EY with IC > 0) into one test with more power.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhp063"
+   ]
+  },
+  {
+   "ref": "A-43",
+   "name": "Learning to rank (pairwise/listwise loss)",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Train directly on ordering stocks (LambdaMART, ListNet).",
+   "evidence": "Roughly 3x Sharpe vs naive ranking on cross-sectional momentum (Poh, Lim, Zohren & Roberts, arXiv 2012.07149).",
+   "why": "Right loss for a ranking IC test; cannot add information the inputs lack, and the 3x is relative to a weak baseline.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2012.07149"
+   ]
+  },
+  {
+   "ref": "A-44",
+   "name": "Target design: excess return, rank, risk-adjusted, triple barrier",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Choose what the model predicts: sector-neutral rank, vol-scaled return, or triple-barrier outcome.",
+   "evidence": "Triple-barrier labels and sample weighting (López de Prado, Advances in Financial ML, Wiley 2018); GKX use plain excess returns.",
+   "why": "Rank and sector-neutral targets cut noise for little cost; that is where \"better targets\" can help weak inputs.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086"
+   ]
+  },
+  {
+   "ref": "A-45",
+   "name": "Meta-labelling",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Secondary model predicts whether a primary rule's signal will pay, used to size or skip.",
+   "evidence": "Framework from López de Prado 2018; evidence is practitioner backtests, little independent OOS.",
+   "why": "Needs a primary signal with real edge; the only live candidate is the trend overlay (quant stream), and filtering it risks overfitting.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086"
+   ]
+  },
+  {
+   "ref": "A-46",
+   "name": "Virtue of complexity (Random Fourier Features)",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Thousands of random nonlinear features of a few predictors for market timing.",
+   "evidence": "Claimed complex models beat simple ones (Kelly, Malamud & Zhou, JF 2024 / NBER w30217); critique: with P >> T the forecast is just a similarity-weighted average of past returns, a momentum-like rule (Nagel, BFI WP 2025-104).",
+   "why": "Market timing, contested, and the trend overlay already covers what it secretly does.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w30217",
+    "https://bfi.uchicago.edu/wp-content/uploads/2025/08/BFI_WP_2025-104.pdf"
+   ]
+  },
+  {
+   "ref": "A-47",
+   "name": "Cost-aware ML portfolios",
+   "family": "3. Supervised ML on characteristics (the XGBoost question)",
+   "origin": "archive",
+   "definition": "Learn weights with trading costs in the objective instead of predicting then trading.",
+   "evidence": "ML profits deteriorate with realistic costs due to turnover and extreme positions (Avramov et al.).",
+   "why": "Matters only once a gross signal exists.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1287/mnsc.2022.4449"
+   ]
+  },
+  {
+   "ref": "A-48",
+   "name": "LSTM on daily returns",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "Sequence model on past returns per stock, rank next-day.",
+   "evidence": "S&P 500 1992-2015: 0.46%/day before costs, Sharpe 5.8 pre-cost, with profits largely gone in the later years (Fischer & Krauss, EJOR 2018; working paper).",
+   "why": "Daily short-term reversal in disguise, arbitraged away, killed by costs; reversal_1m already failed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.ejor.2017.11.054",
+    "https://iwf.rw.fau.de/files/2015/12/11-2017.pdf"
+   ]
+  },
+  {
+   "ref": "A-49",
+   "name": "Temporal conv nets / transformers on price-volume",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "TCN or transformer on OHLCV windows.",
+   "evidence": "Same input as A-48; TSFM studies on single stocks show tiny, sparse gains over random walk (arXiv 2606.27100).",
+   "why": "Architecture does not fix the absence of signal in past prices of large caps.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2606.27100"
+   ]
+  },
+  {
+   "ref": "A-50",
+   "name": "Transformer SDF across assets (AI asset pricing models)",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "Attention across stocks inside the pricing kernel.",
+   "evidence": "OOS Sharpe 4.57 vs 1.05-1.80 for traditional models, full CRSP universe (Kelly, Kuznetsov, Malamud & Xu, NBER w33351).",
+   "why": "Needs the full CRSP panel; Sharpe of that size comes from hard-to-trade names.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w33351"
+   ]
+  },
+  {
+   "ref": "A-51",
+   "name": "CNN on chart images ((Re-)Imag(in)ing Price Trends)",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "Turn 5/20/60-day OHLC charts into images, CNN predicts up/down.",
+   "evidence": "CNN chart signals beat momentum/reversal, transfer to other markets and time scales; strongest at short horizons and in smaller stocks (Jiang, Kelly & Xiu, JF 2023).",
+   "why": "Credible, no look-ahead, full testbed usable; but weekly horizon means turnover and the large-cap effect is weak. A fun, honest test, low payoff.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/jofi.13268"
+   ]
+  },
+  {
+   "ref": "A-52",
+   "name": "Graph neural nets over the supplier/sector graph",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "GNN propagates signals along relationship edges.",
+   "evidence": "Relational ranking with industry/wiki graphs improved stock ranking in short US samples (Feng et al., TOIS 2019, arXiv 1809.09441).",
+   "why": "Test the simple lead-lag (A-13) first; a GNN is a heavier way to find the same link effect.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (graph exists)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/1809.09441"
+   ]
+  },
+  {
+   "ref": "A-53",
+   "name": "Deep SDF with GAN (Chen-Pelger-Zhu)",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "Adversarial network estimates the pricing kernel from characteristics and macro states.",
+   "evidence": "High OOS Sharpe on the full US cross-section 1967-2016 (Chen, Pelger & Zhu, MS 2024, arXiv 1904.00745).",
+   "why": "Research-grade, data hungry, gains in the full (small-cap) universe.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/1904.00745"
+   ]
+  },
+  {
+   "ref": "A-54",
+   "name": "Conditional autoencoder factors",
+   "family": "4. Deep models trained from scratch (sequence, image, graph)",
+   "origin": "archive",
+   "definition": "Neural net maps characteristics to factor loadings.",
+   "evidence": "Lower pricing errors than IPCA/Fama-French on full CRSP (Gu, Kelly & Xiu, J. Econometrics 2021).",
+   "why": "A pricing (explaining) tool more than a stock picker for 500 names.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jeconom.2020.07.009"
+   ]
+  },
+  {
+   "ref": "A-55",
+   "name": "Chronos / Chronos-Bolt zero-shot return forecasts",
+   "family": "5. Time-series foundation models",
+   "origin": "archive",
+   "definition": "Pretrained forecaster on each stock's return series.",
+   "evidence": "On large global daily excess returns, off-the-shelf Chronos gets OOS R² -1.37% and ~51% direction; TimesFM R² -2.80%, below 50% (Rahimikia, Ni & Wang, arXiv 2511.18578); models: Chronos, Chronos-Bolt card.",
+   "why": "Independent evidence says worse than predicting zero. Skip for returns.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (considered 2026-09-24)",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2511.18578",
+    "https://arxiv.org/abs/2403.07815",
+    "https://huggingface.co/amazon/chronos-bolt-base"
+   ]
+  },
+  {
+   "ref": "A-56",
+   "name": "TimesFM, Moirai, Lag-Llama",
+   "family": "5. Time-series foundation models",
+   "origin": "archive",
+   "definition": "Other general TSFMs.",
+   "evidence": "On AAPL/AMZN/GOOG/JPM/META, gains over random walk are \"small and sparse\"; only 2 of 10 tasks significant (arXiv 2606.27100); TimesFM, Moirai, Lag-Llama.",
+   "why": "Same as A-55.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2606.27100",
+    "https://arxiv.org/abs/2310.10688",
+    "https://arxiv.org/abs/2402.02592",
+    "https://arxiv.org/abs/2310.08278"
+   ]
+  },
+  {
+   "ref": "A-57",
+   "name": "Finance-pretrained TSFMs (FinText-TSFM)",
+   "family": "5. Time-series foundation models",
+   "origin": "archive",
+   "definition": "TSFMs pretrained on financial returns.",
+   "evidence": "Finance-pretrained models give \"substantial forecasting and economic gains\" vs off-the-shelf (arXiv 2511.18578).",
+   "why": "The only TSFM claim worth a test; pretraining window overlaps the testbed, so only post-release days are clean.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2511.18578"
+   ]
+  },
+  {
+   "ref": "A-58",
+   "name": "TSFMs for volatility instead of returns",
+   "family": "5. Time-series foundation models",
+   "origin": "archive",
+   "definition": "Forecast realised volatility for risk display/sizing.",
+   "evidence": "Volatility is persistent and forecastable with simple models (A-60); TSFM edge over HAR not established in the sources above.",
+   "why": "If vol forecasts are wanted, HAR is cheaper and just as good.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-59",
+   "name": "GARCH volatility forecasting",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Conditional variance model per stock/index.",
+   "evidence": "Standard (Bollerslev, J. Econometrics 1986).",
+   "why": "Volatility is genuinely predictable, unlike returns; useful for risk alerts and position-size display, not alpha.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/0304-4076(86)90063-1"
+   ]
+  },
+  {
+   "ref": "A-60",
+   "name": "HAR realised-volatility model",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Regress volatility on daily, weekly, monthly past volatility.",
+   "evidence": "Simple, hard-to-beat vol forecaster (Corsi, J. Fin. Econometrics 2009).",
+   "why": "Cheapest reliable forecast in this whole list; feeds A-95 risk monitor and the trend overlay's vol scaling (quant archive).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/jjfinec/nbp001"
+   ]
+  },
+  {
+   "ref": "A-61",
+   "name": "Hidden Markov / Markov-switching regimes",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Latent bull/bear states from returns and vol.",
+   "evidence": "Foundation (Hamilton, Econometrica 1989); here, an LLM regime tilt added noise.",
+   "why": "States are only clear in hindsight; switching lags make it a slower trend filter, which the pre-registered trend overlay already tests.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (LLM regime tilt FAIL)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.2307/1912559"
+   ]
+  },
+  {
+   "ref": "A-62",
+   "name": "Kalman filters (dynamic betas, pairs hedge ratios)",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Track time-varying betas or spreads.",
+   "evidence": "Standard state-space tool; no specific large-cap alpha evidence found.",
+   "why": "Good for showing \"this holding's beta rose\", minor for returns.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-63",
+   "name": "Bayesian shrinkage of the cross-section",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Shrink many factor premia towards zero with a prior.",
+   "evidence": "Strong shrinkage over principal components yields robust SDFs from many anomalies (Kozak, Nagel & Santosh, JFE 2020).",
+   "why": "Principled way to combine weak signals; same input bottleneck as section 3.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2019.06.008"
+   ]
+  },
+  {
+   "ref": "A-64",
+   "name": "Cointegration pairs / stat arb",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Trade spreads of co-moving pairs back to mean.",
+   "evidence": "Up to 11% annual excess 1962-2002 (Gatev, Goetzmann & Rouwenhorst, RFS 2006); simple pairs profits declined sharply in later years (Do & Faff, FAJ 2010).",
+   "why": "Needs shorting (not in an ISA), high turnover, decayed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhj020",
+    "https://doi.org/10.2469/faj.v66.n4.1"
+   ]
+  },
+  {
+   "ref": "A-65",
+   "name": "PCA / IPCA factor models",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Latent factors with loadings driven by characteristics.",
+   "evidence": "IPCA prices anomalies with few factors on full CRSP (Kelly, Pruitt & Su, JFE 2019).",
+   "why": "Better as a risk decomposition (\"your list is 80% one factor\") than a picker.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2019.05.001"
+   ]
+  },
+  {
+   "ref": "A-66",
+   "name": "Covariance shrinkage (Ledoit-Wolf) for risk",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Stable covariance matrix for portfolio risk and diversification checks.",
+   "evidence": "Shrinkage estimator dominates the sample covariance when stocks outnumber observations (Ledoit & Wolf, JMVA 2004).",
+   "why": "Reliable, cheap; gives honest \"how concentrated is my risk\" numbers for any satellite list. Little use for a pure index holder.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/S0047-259X(03)00096-4"
+   ]
+  },
+  {
+   "ref": "A-67",
+   "name": "GARCH-style or regime-based market timing",
+   "family": "6. Statistical and econometric models",
+   "origin": "archive",
+   "definition": "Cut equity when forecast vol is high.",
+   "evidence": "Vol-managed portfolios belong to the quant archive; cross-ref only.",
+   "why": "Covered by the trend-overlay pre-registration; avoid testing two overlays at once.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-68",
+   "name": "Formulaic alphas (Kakushadze 101)",
+   "family": "7. Automated alpha mining",
+   "origin": "archive",
+   "definition": "Library of 101 short-horizon price/volume formulas.",
+   "evidence": "Real formulas used in production; average holding 0.6-6.4 days, low pairwise correlation (Kakushadze, arXiv 1601.00991).",
+   "why": "Days-long holding periods; costs and retail execution eat them; 5-day IC detection floor (0.013) is above most.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/1601.00991"
+   ]
+  },
+  {
+   "ref": "A-69",
+   "name": "Genetic programming / symbolic regression",
+   "family": "7. Automated alpha mining",
+   "origin": "archive",
+   "definition": "Evolve trading formulas.",
+   "evidence": "GA-found technical rules did not earn excess returns after costs on the S&P index (Allen & Karjalainen, JFE 1999).",
+   "why": "A search engine for overfit; multiple-testing burden kills the confirm test.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/S0304-405X(98)00052-X"
+   ]
+  },
+  {
+   "ref": "A-70",
+   "name": "RL-guided alpha search (AlphaGen and successors)",
+   "family": "7. Automated alpha mining",
+   "origin": "archive",
+   "definition": "RL generates formula sets that improve a combination model.",
+   "evidence": "Gains reported on Chinese A-share indices (Yu et al., KDD 2023, arXiv 2306.12964).",
+   "why": "Same overfit risk at scale; A-share retail-driven market, not S&P 500.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2306.12964"
+   ]
+  },
+  {
+   "ref": "A-71",
+   "name": "LLM-guided alpha mining (Alpha-GPT style)",
+   "family": "7. Automated alpha mining",
+   "origin": "archive",
+   "definition": "LLM proposes factor formulas, harness tests them.",
+   "evidence": "Human-AI interactive mining framework (Alpha-GPT, arXiv 2308.00016); LLM priors become hidden factor exposures (arXiv 2605.16895).",
+   "why": "The LLM proposes ideas it read in papers about pre-cutoff data; each one tested burns confirm-set credibility.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2308.00016",
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-72",
+   "name": "Deep RL portfolio agents (FinRL etc.)",
+   "family": "8. Reinforcement learning for portfolios",
+   "origin": "archive",
+   "definition": "PPO/DDPG agents allocate across stocks.",
+   "evidence": "Library and benchmark reports on short windows of large-cap sets (FinRL, arXiv 2011.09607); no independent long OOS evidence of beating buy-and-hold after costs found.",
+   "why": "RL needs a stationary simulator; returns are non-stationary and the reward is mostly noise. Highest overfit risk per line of code.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2011.09607"
+   ]
+  },
+  {
+   "ref": "A-73",
+   "name": "RL for execution/rebalancing timing",
+   "family": "8. Reinforcement learning for portfolios",
+   "origin": "archive",
+   "definition": "Learn when to place orders.",
+   "evidence": "Execution RL matters for institutional size, not a few hundred pounds.",
+   "why": "Order sizes are too small for market impact to exist.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-74",
+   "name": "Text-based peers (Hoberg-Phillips TNIC)",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Peer groups from 10-K product descriptions, refreshed yearly.",
+   "evidence": "Free data library with text-network industries (Hoberg & Phillips data); used for text-based industry momentum (Hoberg & Phillips, JFQA 2018).",
+   "why": "Ready-made, dated peer graph to strengthen the relationship graph and discovery; peer momentum is a modest, testable add.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://hobergphillips.tuck.dartmouth.edu/",
+    "https://ideas.repec.org/a/cup/jfinqa/v53y2018i06p2355-2388_00.html"
+   ]
+  },
+  {
+   "ref": "A-75",
+   "name": "Clustering returns for peers or regimes",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Cluster stocks by return correlation or days by market state.",
+   "evidence": "Descriptive tool; no direct alpha evidence.",
+   "why": "Helps diversification views (do my picks all move together?), weak for returns.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-76",
+   "name": "Anomaly detection on data feeds (isolation forest + rules)",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Flag impossible prices, split/dividend errors, ticker remaps, stale quotes, outlier fundamentals.",
+   "evidence": "Isolation forest method (Liu, Ting & Zhou, ICDM 2008); own history: junk-fund tickers crashed testbed build, 27 renames, dividends missing from b&h lines (+57.6% vs +71.9%).",
+   "why": "Bad data has already distorted results here; catching it raises the trustworthiness of every test and ledger.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (ad-hoc fixes only)",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1109/ICDM.2008.17"
+   ]
+  },
+  {
+   "ref": "A-77",
+   "name": "Event anomaly detection (unusual volume/return days)",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Flag abnormal days on holdings and trigger the reader.",
+   "evidence": "Generic; used as a trigger, not a signal.",
+   "why": "Focuses reading compute on days that matter; supports A-95.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-78",
+   "name": "Causal factor investing / uplift",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Require a causal graph and mechanism before accepting a factor.",
+   "evidence": "Argument that associational factor research is prone to false discoveries (López de Prado, Causal Factor Investing, SSRN 4205613); no credible uplift-modelling evidence for stock selection found.",
+   "why": "Useful as a \"state the mechanism\" box in pre-registration; no tradeable method.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4205613"
+   ]
+  },
+  {
+   "ref": "A-79",
+   "name": "Double ML for event effects",
+   "family": "9. Unsupervised and causal methods",
+   "origin": "archive",
+   "definition": "Debiased ML to estimate an event's effect controlling for many covariates.",
+   "evidence": "No finance-return evidence found that beats standard event studies.",
+   "why": "Event studies already failed for lack of effect, not lack of controls.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-80",
+   "name": "Google Trends attention (SVI)",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Search volume spikes for tickers.",
+   "evidence": "Russell 3000, 2004-2008: SVI rise predicts +30 bp over two weeks, then almost fully reverses within a year; retail attention (Da, Engelberg & Gao, JF 2011).",
+   "why": "Small-cap retail effect, short and reversing; Trends data is noisy and hard to get in bulk.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.2011.01679.x"
+   ]
+  },
+  {
+   "ref": "A-81",
+   "name": "Wikipedia page views",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Daily views of company/finance pages.",
+   "evidence": "DJIA pages 2007-2012: view changes preceded moves; trading-strategy profits claimed on 30 stocks (Moat et al., Sci. Rep. 2013); free API from 2015 (Wikimedia pageviews).",
+   "why": "Free, clean, point-in-time, testable 2015+; original evidence is a small, data-mined study. Cheap to add as an attention feature.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3647164/",
+    "https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews"
+   ]
+  },
+  {
+   "ref": "A-82",
+   "name": "Reddit / WallStreetBets",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Due-diligence posts or mention counts.",
+   "evidence": "Pre-GME DD buy calls earned ~5% over a quarter; after Jan 2021 the predictive power vanished (Bradley et al., RFS 2024).",
+   "why": "Effect gone in exactly the period that matters.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/rfinst/v37y2024i5p1409-1459..html"
+   ]
+  },
+  {
+   "ref": "A-83",
+   "name": "StockTwits / X",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Retail posts aggregated per stock.",
+   "evidence": "Aggregated tweets predict earnings and announcement returns, stronger in weak information environments (Bartov, Faurel & Mohanram, TAR 2018).",
+   "why": "Paid, small-cap leaning, crowded.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.2308/accr-51865"
+   ]
+  },
+  {
+   "ref": "A-84",
+   "name": "GDELT tone",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Article tone and volume per company from GDELT.",
+   "evidence": "Data from 2015 (GDELT); no strong peer-reviewed firm-level return evidence found.",
+   "why": "Free history from 2015 is its real value: a dated text archive for A-04/A-24, not the tone score itself.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (ingested; nightly 429 partial ticks)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.gdeltproject.org/data.html"
+   ]
+  },
+  {
+   "ref": "A-85",
+   "name": "Job postings",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Growth in a firm's job ads.",
+   "evidence": "Posting changes predict future performance and get a two-day positive price reaction (Gutierrez, Lourie, Nekrasov & Shevlin, MS 2020).",
+   "why": "Reaction is fast and the data is paid.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://pubsonline.informs.org/doi/10.1287/mnsc.2019.3450"
+   ]
+  },
+  {
+   "ref": "A-86",
+   "name": "Web traffic and app downloads",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Similarweb/Sensor Tower usage metrics.",
+   "evidence": "Vendor studies only; satellite-style data mainly helps sophisticated short sellers (Katona et al., JFQA 2025).",
+   "why": "Paid and already priced by funds that buy it.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html"
+   ]
+  },
+  {
+   "ref": "A-87",
+   "name": "Satellite, shipping, card spend",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Parking lots, ship tracking, transaction panels.",
+   "evidence": "Satellite retail data let sophisticated investors profit around reports 2011-2017, mostly on bad news via shorting (Katona et al., JFQA 2025).",
+   "why": "Out of budget and shorting.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html"
+   ]
+  },
+  {
+   "ref": "A-88",
+   "name": "Patents",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Patent grants and their market value.",
+   "evidence": "Patent value measured from grant-day returns predicts growth (Kogan, Papanikolaou, Seru & Stoffman, QJE 2017); data via PatentsView.",
+   "why": "Predicts growth, not clearly returns; useful for discovery (innovators outside the universe).",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/qje/qjw040",
+    "https://patentsview.org/"
+   ]
+  },
+  {
+   "ref": "A-89",
+   "name": "Government contracts",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Federal award flows per firm.",
+   "evidence": "Free USAspending API; no strong primary return paper found.",
+   "why": "Weak evidence, entity matching is hard.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://api.usaspending.gov/"
+   ]
+  },
+  {
+   "ref": "A-90",
+   "name": "13F holdings: best ideas / cloning",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Track funds' highest-conviction overweights from quarterly 13F.",
+   "evidence": "Managers' best ideas beat the market by 2.8-4.5%/yr, 1991-2005; other holdings do not (Cohen, Polk & Silli). 13F arrives up to 45 days after quarter end.",
+   "why": "Free, slow, no LLM, testable on 2013+ filings; old sample and filing lag are the risks.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://personal.lse.ac.uk/polk/research/BestIdeas.pdf"
+   ]
+  },
+  {
+   "ref": "A-91",
+   "name": "Congressional trades",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Copy STOCK Act disclosures.",
+   "evidence": "2012-2020: senator and House buys slightly underperform; consistent with random picking (Belmont et al., J. Public Econ. 2022 / NBER w26975).",
+   "why": "No edge in the best recent evidence.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.nber.org/papers/w26975"
+   ]
+  },
+  {
+   "ref": "A-92",
+   "name": "FINRA short interest",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Days-to-cover or short interest ratio per stock; aggregate short interest for the market.",
+   "evidence": "Aggregate short interest is a strong market predictor: OOS annual R² 13.24% (1973-2013) (Rapach, Ringgenberg & Zhou, JFE 2016); data twice monthly (FINRA). Firm-level shorting anomaly: quant archive.",
+   "why": "Free, informed-trader data, works on the existing harness; the market-timing version is one series (low power) and post-2013 performance unknown.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2016.03.004",
+    "https://www.finra.org/finra-data/browse-catalog/equity-short-interest"
+   ]
+  },
+  {
+   "ref": "A-93",
+   "name": "Options-implied signals (IV smirk, IV spread, put-call)",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Cross-section of option-implied skew and call-put IV gaps.",
+   "evidence": "Steepest-smirk stocks underperform by 10.9%/yr, 1996-2005 (Xing, Zhang & Zhao, JFQA 2010); expensive-call stocks beat expensive-put stocks by 50 bp/week, shrinking over time (Cremers & Weinbaum, JFQA 2010).",
+   "why": "Credible, large-cap-relevant, but no free history: start a daily logger now, testable in 2-3 years.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/cup/jfinqa/v45y2010i03p641-662_00.html",
+    "https://ideas.repec.org/a/cup/jfinqa/v45y2010i02p335-367_00.html"
+   ]
+  },
+  {
+   "ref": "A-94",
+   "name": "ETF flows",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Creation/redemption flows predicting ETF returns.",
+   "evidence": "Short high-flow, long low-flow ETFs earns 1.1-2.0%/month (non-fundamental demand reverses) (Brown, Davies & Ringgenberg, RoF 2021).",
+   "why": "Needs shorting ETFs; not usable in an ISA.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 1,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/oup/revfin/v25y2021i4p937-972..html"
+   ]
+  },
+  {
+   "ref": "A-95",
+   "name": "SEC comment letters",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Staff questions on filings (CORRESP/UPLOAD), released after review.",
+   "evidence": "Insider selling rises before revenue-recognition comment letters become public; returns drift 1-5% lower over the 50 days after release (Dechow, Lawrence & Ryans, TAR 2016).",
+   "why": "Information leaks before public release; valuable as a red-flag in holding reports more than a signal.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.2308/accr-51232"
+   ]
+  },
+  {
+   "ref": "A-96",
+   "name": "Insider Form 4 text (plans, footnotes)",
+   "family": "10. Alternative data",
+   "origin": "archive",
+   "definition": "Separate routine 10b5-1 trades from opportunistic ones using footnotes.",
+   "evidence": "Insider buys already FAIL here; opportunistic-vs-routine is the quant archive's.",
+   "why": "Refinement of a failed signal; small chance it rescues it.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (insider buys FAIL)",
+   "rating": 2,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-97",
+   "name": "Behaviour guardrails",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "Pre-trade checklist and cooling-off: \"is this in the plan? did a drop just happen? is this a chase?\", plus a log of overrides.",
+   "evidence": "Most active traders earned 11.4%/yr vs market 17.9% (Barber & Odean, JF 2000); average investor dollar trailed its funds by 1.1%/yr over 10 years from bad timing (Morningstar Mind the Gap 2024).",
+   "why": "The behaviour gap is larger than any alpha found here and protecting the b&h plan is the highest-value job left.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 7,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v55y2000i2p773-806.html",
+    "https://marketing.morningstar.com/content/cs-assets/v3/assets/blt9415ea4cc4157833/blt5d1d34a59bd78a2c/680a4bd8c4d2e877fdb4b354/Mind_the_Gap_2024.pdf"
+   ]
+  },
+  {
+   "ref": "A-98",
+   "name": "Tax, ISA and fee assistant",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "Track ISA allowance use, compare fund OCFs and platform fees, flag fee drag and minimum-fee traps on small balances.",
+   "evidence": "Rules: GOV.UK ISA; after costs the average active pound must trail passive (Sharpe, Arithmetic of Active Management).",
+   "why": "Fees are a certain, known-size gain; on a small pot a flat platform fee can exceed any factor premium.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://www.gov.uk/individual-savings-accounts",
+    "https://web.stanford.edu/~wfsharpe/art/active/active.htm"
+   ]
+  },
+  {
+   "ref": "A-99",
+   "name": "Data-error catcher with LLM triage",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "A-76 plus an LLM that explains each flag (\"split on 2026-05-12 not applied?\") for the user.",
+   "evidence": "Own failures (junk tickers, renames, missing dividends); isolation forest.",
+   "why": "Every verdict depends on the data; this raises trust in all of them.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 6,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1109/ICDM.2008.17"
+   ]
+  },
+  {
+   "ref": "A-100",
+   "name": "Position explainer",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "For each holding: why it is owned, what changed since purchase, how it moved vs index, in plain English with links.",
+   "evidence": "LLMs as auditable information interfaces are the recommended safe role (arXiv 2605.16895).",
+   "why": "Better understanding reduces panic selling; no return claim needed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (research notes exist)",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-101",
+   "name": "Filing \"what changed\" digest for holdings",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "On each 10-K/10-Q of a held name: new risk factors, changed guidance, new lawsuits (A-08/A-09 machinery, read by an LLM).",
+   "evidence": "Text changes predict bad news later (Lazy Prices).",
+   "why": "Saves reading time and surfaces red flags; doubles as the A-08 test pipeline.",
+   "archive_status": "Untested",
+   "archive_note": "Untested (reading stage reads filings)",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html"
+   ]
+  },
+  {
+   "ref": "A-102",
+   "name": "Risk monitor",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "Alerts on concentration (A-66), forecast vol spikes (A-60), drawdown vs plan, and flagged events (fraud, delisting, going-concern, comment letters).",
+   "evidence": "Vol forecasting (Corsi 2009); shrinkage covariance (Ledoit & Wolf 2004).",
+   "why": "Prevents the rare large single-stock loss; mostly matters for the satellite sleeve.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://doi.org/10.1093/jjfinec/nbp001",
+    "https://doi.org/10.1016/S0047-259X(03)00096-4"
+   ]
+  },
+  {
+   "ref": "A-103",
+   "name": "Experiment-hygiene assistant",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "Checks each new signal: pre-registered? post-cutoff only? power at expected IC? counts tests run so far; refuses to label a result before confirm.",
+   "evidence": "Leakage and short-window failures in LLM finance (arXiv 2510.07920, arXiv 2605.16895).",
+   "why": "Cheap, protects against fooling yourself, which is the main risk of an alpha search.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other (pre-registration and harness exist; checks manual)",
+   "rating": 5,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": [
+    "https://arxiv.org/abs/2510.07920",
+    "https://arxiv.org/abs/2605.16895"
+   ]
+  },
+  {
+   "ref": "A-104",
+   "name": "Natural-language queries over own ledgers (local text-to-SQL)",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "\"How did satellite picks do since June vs ACWI?\" answered from research.db.",
+   "evidence": "Convenience; no return claim.",
+   "why": "Lowers friction to check results honestly; GUI parity needed.",
+   "archive_status": "Untested",
+   "archive_note": "Untested",
+   "rating": 3,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "A-105",
+   "name": "Research agent as reading aid, not a signal",
+   "family": "11. AI for non-alpha benefit",
+   "origin": "archive",
+   "definition": "Keep the ReAct agent for summaries and source-finding; drop its buy/sell verdict.",
+   "evidence": "Own: verdict hit rate 56% vs 59.5% base.",
+   "why": "Keeps the useful part, removes a below-base-rate signal that could tempt trades.",
+   "archive_status": "Tried-other",
+   "archive_note": "Tried-other",
+   "rating": 4,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "X-01",
+   "name": "Momentum 12-1 (h20)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "12-1 momentum: the past year to the last close, leaving out its last month; cross-sectional IC on sector-excess returns at h20.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 2,
+   "status": "fail",
+   "result": "IC +0.008 t 0.50, could not see",
+   "test_keys": [
+    "momentum_12_1",
+    "forward:momentum_12_1"
+   ],
+   "see_also": [
+    "T-13",
+    "T-16"
+   ],
+   "sources": [
+    "https://doi.org/10.1016/j.jempfin.2011.01.003",
+    "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html",
+    "https://www.nber.org/papers/w20439"
+   ]
+  },
+  {
+   "ref": "X-02",
+   "name": "1-month reversal (h5)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "1-month reversal: minus the last month's return to the last close; IC at h5.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 2,
+   "status": "fail",
+   "result": "+0.004 t 0.53, could not see",
+   "test_keys": [
+    "reversal_1m",
+    "forward:reversal_1m"
+   ],
+   "see_also": [
+    "T-12"
+   ],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/357231"
+   ]
+  },
+  {
+   "ref": "X-03",
+   "name": "SUE / PEAD from XBRL (h60)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "SUE: quarterly EPS minus the same quarter a year before, over the spread of the 8 changes before it; held from the day after its filing; IC at h60.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 2,
+   "status": "fail",
+   "result": "+0.0065 t 0.44, could not see",
+   "test_keys": [
+    "sue",
+    "forward:sue"
+   ],
+   "see_also": [],
+   "sources": []
+  },
+  {
+   "ref": "X-04",
+   "name": "Earnings yield (h20)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "Earnings yield: trailing-year diluted EPS over the last close; IC at h20.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 2,
+   "status": "fail",
+   "result": "+0.009 t 0.91, could not see",
+   "test_keys": [
+    "earnings_yield",
+    "forward:earnings_yield"
+   ],
+   "see_also": [
+    "T-01",
+    "T-03"
+   ],
+   "sources": [
+    "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://rpc.cfainstitute.org/research/financial-analysts-journal/2020/reports-of-values-death-may-be-greatly-exaggerated",
+    "https://research-api.cbs.dk/ws/portalfiles/portal/95651880/theis_ingerslev_jensen_et_al_is_there_a_replication_crisis_in_finance_publishersversion.pdf"
+   ]
+  },
+  {
+   "ref": "X-05",
+   "name": "Gross profitability (h20)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "Gross profitability: trailing-year gross profit over total assets at the quarter's end; IC at h20.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "-0.001, FAIL",
+   "test_keys": [
+    "gross_profitability"
+   ],
+   "see_also": [
+    "T-04",
+    "T-07"
+   ],
+   "sources": [
+    "https://papers.ssrn.com/abstract=2312432",
+    "https://doi.org/10.1016/j.jfineco.2014.10.010",
+    "https://ideas.repec.org/a/oup/rfinst/v33y2020i5p2019-2133..html"
+   ]
+  },
+  {
+   "ref": "X-06",
+   "name": "Insider open-market buys (20/60 d)",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "Insider buys: distinct officers and directors with an open-market purchase in Form 4s known in the 90 days before; IC at h20 and h60.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "~-0.002, FAIL",
+   "test_keys": [
+    "insider_buys"
+   ],
+   "see_also": [
+    "A-96"
+   ],
+   "sources": []
+  },
+  {
+   "ref": "X-07",
+   "name": "8-K 2.02 / 2.01 / insider clusters",
+   "family": "Already tested (event)",
+   "origin": "tested",
+   "definition": "Event study: CAR vs sector after 8-K item 2.02 (results), 2.01 (acquisitions) and insider-buy clusters.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "FAIL",
+   "test_keys": [
+    "event:2.02",
+    "event:2.01",
+    "event:insider_cluster"
+   ],
+   "see_also": [
+    "T-18",
+    "A-11"
+   ],
+   "sources": [
+    "https://academicnewsletter.sufe.edu.cn/info/359814"
+   ]
+  },
+  {
+   "ref": "X-08",
+   "name": "8-K 1.01",
+   "family": "Already tested (event)",
+   "origin": "tested",
+   "definition": "Event study: CAR vs sector after 8-K item 1.01 (material agreements).",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 2,
+   "status": "fail",
+   "result": "-0.28% t -2.21, opposite sign to train",
+   "test_keys": [
+    "event:1.01",
+    "forward:1.01"
+   ],
+   "see_also": [
+    "A-11"
+   ],
+   "sources": []
+  },
+  {
+   "ref": "X-09",
+   "name": "Rule strategy, regime lines, regime-v2, learned weights (51 names, 4 y)",
+   "family": "Already tested (strategy)",
+   "origin": "tested",
+   "definition": "Rule-based paper lines on the 51-name watchlist over 4 years: fixed-rule strategy, regime lines (trend, momentum, low-vol blend), regime-v2 and learned weights, each against buy-and-hold.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "none beat b&h",
+   "test_keys": [],
+   "see_also": [
+    "T-10",
+    "T-14",
+    "T-64"
+   ],
+   "sources": [
+    "https://doi.org/10.1016/j.jfineco.2013.10.005",
+    "https://doi.org/10.3905/jpm.2007.698039",
+    "https://mysimon.rochester.edu/novy-marx/research/BABAB.pdf",
+    "https://ideas.repec.org/a/bla/jfinan/v54y1999i4p1249-1290.html"
+   ]
+  },
+  {
+   "ref": "X-10",
+   "name": "Laya headline classifier",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "Laya small headline classifier: per-headline sentiment score as a next-day signal.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "FAIL all runs",
+   "test_keys": [
+    "laya"
+   ],
+   "see_also": [
+    "A-01",
+    "A-05"
+   ],
+   "sources": [
+    "https://arxiv.org/abs/2304.07619",
+    "https://arxiv.org/abs/2006.08097",
+    "https://huggingface.co/yiyanghkust/finbert-tone"
+   ]
+  },
+  {
+   "ref": "X-11",
+   "name": "4B LLM regime tilt",
+   "family": "Already tested (strategy)",
+   "origin": "tested",
+   "definition": "A 4B local LLM reads the news and tilts the regime line's equity weight.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "noise",
+   "test_keys": [],
+   "see_also": [
+    "A-20",
+    "A-67"
+   ],
+   "sources": []
+  },
+  {
+   "ref": "X-12",
+   "name": "ReAct research verdicts",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "ReAct research agent buy/hold/sell verdicts per company, scored as hit rate against the base rate.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 1,
+   "status": "fail",
+   "result": "56% hit vs 59.5% base",
+   "test_keys": [],
+   "see_also": [
+    "A-105",
+    "A-33"
+   ],
+   "sources": [
+    "https://arxiv.org/abs/2309.17322"
+   ]
+  },
+  {
+   "ref": "X-13",
+   "name": "32B reader",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "32B local LLM reads post-cutoff headlines (good/bad/unknown per stock) as a next-day signal; job 732 cancelled at 13.8k/154.8k, resumable.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 3,
+   "status": "built",
+   "result": "pending, cancelled partway",
+   "test_keys": [],
+   "see_also": [
+    "A-01"
+   ],
+   "sources": [
+    "https://arxiv.org/abs/2304.07619"
+   ]
+  },
+  {
+   "ref": "X-14",
+   "name": "XGBoost on the same features",
+   "family": "Already tested (signal)",
+   "origin": "tested",
+   "definition": "Gradient boosting on the existing few features; skipped because the inputs were weak (see A-35/A-36).",
+   "evidence": "",
+   "why": "",
+   "archive_status": "Tested",
+   "archive_note": "",
+   "rating": 3,
+   "status": "dropped",
+   "result": "skipped",
+   "test_keys": [],
+   "see_also": [
+    "A-36",
+    "A-35"
+   ],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009",
+    "https://doi.org/10.1016/j.ejor.2016.10.031",
+    "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm"
+   ]
+  },
+  {
+   "ref": "AT-04",
+   "name": "Characteristic library (ai-track 04)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "About 30 point-in-time characteristics for testbed members from stored XBRL facts and prices, Chen-Zimmermann definitions where possible (value, profitability, accruals, investment, issuance, leverage, momentum family, 52-week high, volatility, beta, MAX, turnover, Amihud, size, dividend yield, SUE, Heston-Sadka), known at acceptance time plus the next-session rule; list frozen before any model run.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-35"
+   ],
+   "sources": [
+    "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm"
+   ]
+  },
+  {
+   "ref": "AT-05",
+   "name": "ML verdict on the characteristic library (ai-track 05)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "Ridge and LightGBM on the AT-04 library, target the cross-sectional rank of sector-excess return at h20 and h60; expanding window with yearly refit inside train 2010-2019, frozen for confirm 2020+; compared with the best single characteristic.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-34",
+    "A-36",
+    "A-37"
+   ],
+   "sources": [
+    "https://doi.org/10.1093/rfs/hhaa009"
+   ]
+  },
+  {
+   "ref": "AT-06",
+   "name": "EDGAR text store (ai-track 06)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "10-K Item 7 and 1A, 10-Q Part I Item 2 and Part II Item 1A, and 8-K 2.02 EX-99.1 text for testbed members 2009 on with acceptance times; infrastructure for AT-07 to AT-09.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-08",
+    "A-09"
+   ],
+   "sources": []
+  },
+  {
+   "ref": "AT-07",
+   "name": "Lazy Prices signal (ai-track 07)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "Cohen-Malloy-Nguyen: per member and section, term-frequency cosine similarity between a filing and the same filing type a year earlier; high similarity = non-changer, signal known at acceptance; IC at h20 and h60.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-08"
+   ],
+   "sources": [
+    "https://ideas.repec.org/a/bla/jfinan/v75y2020i3p1371-1415.html"
+   ]
+  },
+  {
+   "ref": "AT-08",
+   "name": "ChronoBERT embeddings (ai-track 08)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "Section embeddings from ChronoBERT yearly vintages (filing year Y uses vintage Y-1), 1,024-token chunks mean-pooled; infrastructure for AT-09.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-24"
+   ],
+   "sources": [
+    "https://arxiv.org/abs/2502.21206"
+   ]
+  },
+  {
+   "ref": "AT-09",
+   "name": "AI verdict on ChronoBERT embeddings (ai-track 09)",
+   "family": "ai-track (superseded tickets)",
+   "origin": "ai-track",
+   "definition": "Ridge from AT-08 section embeddings to sector-excess forward return (h20, h60), yearly refit in train 2010-2019, frozen for confirm 2020+; raw IC and incremental IC after Lazy Prices and the characteristic library; PASS on the incremental result.",
+   "evidence": "",
+   "why": "",
+   "archive_status": "",
+   "archive_note": "",
+   "rating": null,
+   "status": "new",
+   "result": "",
+   "test_keys": [],
+   "see_also": [
+    "A-24",
+    "A-03"
+   ],
+   "sources": [
+    "https://arxiv.org/abs/2502.21206"
+   ]
+  }
+ ]
+}

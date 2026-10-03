@@ -93,3 +93,4 @@ def test_the_research_tab_renders_its_section_list():
         console.log(JSON.stringify([tab.id, tab.label, pane.textContent]));
     """)
     assert text[:2] == ["research", "Research"] and "Scoreboard" in text[2] and "12-1 momentum" in text[2]
+    assert text[2].index("Scoreboard") < text[2].index("Literature index")
