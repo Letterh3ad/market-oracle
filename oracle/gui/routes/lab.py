@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
@@ -55,7 +56,7 @@ class CommitBody(BaseModel):
 
 @router.put("/tests/{key}/commit")
 async def put_commit(key: str, body: CommitBody, ctx: AppContext = Depends(get_ctx)) -> dict:
-    return asdict(commit_test(ctx, key, body.hash))
+    return asdict(await asyncio.to_thread(commit_test, ctx, key, body.hash))
 
 
 @router.delete("/tests/{key}")

@@ -1,5 +1,9 @@
 """The Research tab's scoreboard and registry routes."""
 
+import threading
+
+from oracle.services.lab_registry import registration
+
 TEMPLATE = {"key": "new_signal", "label": "A new signal", "kind": "signal", "horizons": [20], "rule": "the rule",
             "universe": "the testbed", "expected_sign": "positive", "expected_size": "IC 0.02", "source": "a paper",
             "power": "0.01", "costs": "none", "kill_stage": "confirm"}
@@ -25,3 +29,14 @@ async def test_register_show_commit_and_drop(client):
     assert (await client.get("/api/lab/tests/new_signal")).status_code == 404
     refused = await client.delete("/api/lab/tests/momentum_12_1")
     assert refused.status_code == 400 and "counts toward N" in refused.json()["error"]
+
+
+async def test_a_commit_check_runs_git_off_the_event_loop(client, monkeypatch):
+    threads = []
+
+    def check(ctx, key, commit_hash):
+        threads.append(threading.current_thread())
+        return registration(ctx, key)
+    monkeypatch.setattr("oracle.gui.routes.lab.commit_test", check)
+    assert (await client.put("/api/lab/tests/momentum_12_1/commit", json={"hash": "abcdef1"})).status_code == 200
+    assert threads and threads[0] is not threading.main_thread()

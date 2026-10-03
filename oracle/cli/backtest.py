@@ -82,6 +82,8 @@ def _every(seconds: float):
             last[0] = time.monotonic()
             print(text, file=sys.stderr, flush=True)
     return say
+
+
 def print_deflated(title: str, rows: tuple[Deflated, ...]) -> None:
     print(f"{title} (the chance a line's Sharpe beats the best of its variants tried by luck; PASS needs 0.95)")
     print(f"{'line':<14}{'Sharpe':>8}{'variants':>10}{'deflated':>10}")

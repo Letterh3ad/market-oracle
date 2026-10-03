@@ -14,8 +14,9 @@ from oracle.analysts.lab import T_FLOOR, bonferroni_bar
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NotRegistered, UnknownLabTest
 from oracle.services.testbed_service import research_context
+from oracle.store.db import transaction
 from oracle.store.lab import LabTestRepo, Registration
-from oracle.system.version import CODE_ROOT, decisions_at
+from oracle.system.version import CODE_ROOT, commit_decisions
 
 __all__ = ["KINDS", "MAX_HORIZONS", "Template", "commit_test", "drop_test", "hypotheses",
            "register_test", "registration", "registrations", "require_committed", "check_committed"]
@@ -94,6 +95,8 @@ def _check(t: Template, repo: LabTestRepo) -> None:
         raise InvalidQuery("horizons are whole trading days, 1 or more")
     if t.expected_sign not in SIGNS:
         raise InvalidQuery(f"expected sign: {' or '.join(SIGNS)}")
+    if t.kind == "signal" and t.expected_sign != "positive":
+        raise InvalidQuery("a signal test passes only on IC above 0: negate the score so its expected sign is positive")
     if empty := [f for f in TEXT_FIELDS if not (getattr(t, f) or "").strip()]:
         raise InvalidQuery(f"the template needs {', '.join(empty)}")
     if t.parent:
@@ -106,7 +109,7 @@ def _check(t: Template, repo: LabTestRepo) -> None:
 def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Registration:
     """Record a pre-registration with its bar frozen now: max(3, Bonferroni over every
     registered test's horizons, this one's included). Uncommitted, so no data run yet."""
-    with research_context(ctx) as r:
+    with research_context(ctx) as r, transaction(r.conn):
         repo = LabTestRepo(r.conn)
         _check(t, repo)
         n = hypotheses(repo.all()) + max(1, len(t.horizons))
@@ -128,8 +131,9 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
 
 
 def commit_test(ctx: AppContext, key: str, commit_hash: str, root: Path = CODE_ROOT) -> Registration:
-    """Record the commit that put `key`'s registration in DECISIONS. Checked against the checkout
-    when there is one: the commit exists and its DECISIONS.md names the key."""
+    """Record the commit that put `key`'s registration in DECISIONS. Refused unless the checkout
+    shows the commit on HEAD's history, made on or after the registration day, adding the key (in
+    backticks) to DECISIONS.md; any git failure refuses it too."""
     commit_hash = commit_hash.strip().lower()
     if not HASH_RE.fullmatch(commit_hash):
         raise InvalidQuery(f"{commit_hash!r} is not a commit hash (7 to 40 hex digits)")
@@ -139,14 +143,18 @@ def commit_test(ctx: AppContext, key: str, commit_hash: str, root: Path = CODE_R
         if reg.commit_hash:
             raise InvalidQuery(f"{key} is committed already at {reg.commit_hash[:7]}")
         try:
-            found = decisions_at(commit_hash, root)
+            found = commit_decisions(commit_hash, root)
         except LookupError as exc:
-            raise InvalidQuery(str(exc)) from exc
-        if found:
-            commit_hash, text = found
-            if f"`{key}`" not in text:
-                raise InvalidQuery(f"DECISIONS.md at {commit_hash[:7]} does not name `{key}`: commit the "
-                                   "registration entry first")
+            raise InvalidQuery(f"{exc}: the commit is not recorded") from exc
+        short = found.full[:7]
+        if not found.on_head:
+            raise InvalidQuery(f"{short} is not in this checkout's history: merge it first")
+        if found.committed.date().isoformat() < reg.registered_on:
+            raise InvalidQuery(f"{short} was committed before `{key}` was registered ({reg.registered_on})")
+        if f"`{key}`" not in found.decisions or f"`{key}`" in found.parent_decisions:
+            raise InvalidQuery(f"{short} does not add `{key}` to DECISIONS.md: commit the registration entry and "
+                               "record that commit")
+        commit_hash = found.full
         repo.set_commit(key, commit_hash)
         return _get(repo, key)
 

@@ -146,7 +146,8 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
     """The test of `name` as pre-registered, over the testbed to `end` (default today); reads only.
     Between chunks of days it waits while `busy` names live work, and returns None when `stop`.
     `train_only` loads nothing after TRAIN_END and computes no confirm. Refused unless the signal's
-    pre-registration is committed; its verdict needs the bar the registration froze."""
+    pre-registration is committed; it runs the registered horizons (never the code's) and its
+    verdict needs the bar the registration froze."""
     signal = check_signal(name, registry)
     say = on_progress
 
@@ -163,6 +164,7 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
     with research_context(ctx) as r:
         reg = require_committed(r, [signal.name])[signal.name]
         bar, inclusive = (T_BAR, False) if reg.bar is None else (reg.bar, reg.bar_inclusive)
+        horizons = reg.horizons
         tb = Testbed(r)
         try:
             await turn("loading the testbed")
@@ -179,7 +181,7 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
             train_spans, confirm_spans = segments(START, min(TRAIN_END, last)), segments(CONFIRM_START, last)
             missing = {"train": missing_share(p, START, TRAIN_END), "confirm": missing_share(p, CONFIRM_START, last)}
             train, confirm = [], []
-            for h in signal.horizons:
+            for h in horizons:
                 ics: dict = {}
                 for i in range(1, len(p.days), CHUNK):
                     await turn(f"{signal.name}, {h}-day horizon: {p.days[i]}")
@@ -192,7 +194,7 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
             return None
         snap = tb.snapshot()
     verdict = TRAIN_ONLY if train_only else overall([w.verdict for w in confirm])
-    return SignalTest(signal.name, signal.label, signal.horizons, signal.model, cutoff, tuple(train), tuple(confirm),
+    return SignalTest(signal.name, signal.label, horizons, signal.model, cutoff, tuple(train), tuple(confirm),
                       overall([w.verdict for w in train]), verdict, verdict == "PASS", p.days[0], last,
                       len(set().union(*p.members)),
                       f"{snap.source} at {(snap.revision or 'unknown')[:7]}, last change {snap.last_day}" if snap else None,

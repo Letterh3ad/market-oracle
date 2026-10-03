@@ -74,9 +74,8 @@ def _event_rows(reg: Registration, study) -> list[dict]:
                  run_at=study.run_at) for h in reg.horizons if (r := by_h.get(h))]
 
 
-def _laya_rows(reg: Registration, tests) -> list[dict]:
-    run = reg.result_key.split(":", 1)[1]
-    t = next((x for x in tests if x.run == run and x.model == laya_test_service.MODEL_TAG), None)
+def _laya_rows(ctx: AppContext, reg: Registration) -> list[dict]:
+    t = laya_test_service.latest_verdict(ctx, run=reg.result_key.split(":", 1)[1])
     if t is None:
         return []
     by_h = {x.horizon: x for x in t.horizons}
@@ -96,14 +95,13 @@ def scoreboard(ctx: AppContext) -> Scoreboard:
     regs = registrations(ctx)
     kept = signal_test_service.signal_tests(ctx)
     study = event_study_service.event_studies(ctx).get("full")
-    laya = laya_test_service.laya_tests(ctx)
     trend = trend_service.trend_tests(ctx)
     rows = []
     for reg in regs:
         if reg.result_key.startswith(f"{event_study_service.KEY}:"):
             found = _event_rows(reg, study)
         elif reg.result_key.startswith("laya:"):
-            found = _laya_rows(reg, laya)
+            found = _laya_rows(ctx, reg)
         elif reg.result_key == trend_service.KEY:
             found = _trend_rows(reg, trend)
         else:

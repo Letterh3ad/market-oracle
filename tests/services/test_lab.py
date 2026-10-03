@@ -3,6 +3,7 @@ Bonferroni bar frozen at registration, the commit gate on data runs, and the sco
 
 import subprocess
 from dataclasses import replace
+from datetime import date
 
 import pytest
 
@@ -14,10 +15,14 @@ from oracle.services.lab_registry import (
     Template, commit_test, drop_test, hypotheses, register_test, registration, registrations,
 )
 from oracle.services.lab_service import scoreboard
+from oracle.services.laya_test_service import (
+    DEFAULT_LIST, MODEL_TAG, TEST_START, HorizonResult, LayaTest, keep_laya_test,
+)
 from oracle.services.signal_test_service import keep_signal_test, run_signal_test
 from oracle.services.testbed_service import research_context
 from oracle.services.trend_service import run_and_keep_trend
 from oracle.store.lab import LabTestRepo
+from tests.fakes.lab import registered
 from tests.services.test_signal_tests import REGISTRY, ctx, seed  # noqa: F401
 
 LEGACY_N = 19
@@ -64,6 +69,7 @@ def test_a_registration_freezes_the_bonferroni_bar_over_every_horizon_its_own_in
     (dict(horizons=()), "1 to 2"),
     (dict(kind="strategy", horizons=(5,)), "no horizons"),
     (dict(expected_sign="up"), "expected sign"),
+    (dict(expected_sign="negative"), "IC above 0"),
     (dict(rule=" "), "needs rule"),
     (dict(rule=5), "are text"),
     (dict(horizons=(True,)), "whole trading days"),
@@ -135,11 +141,18 @@ def repo(tmp_path):
     return root
 
 
+def _decide(root, line, message="docs: pre-register"):
+    path = root / "DECISIONS.md"
+    path.write_text(path.read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+    _git(root, "commit", "-q", "-am", message)
+    return _git(root, "rev-parse", "HEAD")
+
+
 def test_a_commit_is_recorded_only_when_its_decisions_name_the_test(ctx, repo, tmp_path):
     register_test(ctx, template("future"))
     register_test(ctx, template("other"))
     head = _git(repo, "rev-parse", "HEAD")
-    with pytest.raises(InvalidQuery, match="does not name `other`"):
+    with pytest.raises(InvalidQuery, match="does not add `other`"):
         commit_test(ctx, "other", head[:7], root=repo)
     with pytest.raises(InvalidQuery, match="no commit"):
         commit_test(ctx, "future", "deadbee", root=repo)
@@ -150,9 +163,48 @@ def test_a_commit_is_recorded_only_when_its_decisions_name_the_test(ctx, repo, t
     assert commit_test(ctx, "future", head[:7].upper(), root=repo).commit_hash == head, "stored in full"
     with pytest.raises(InvalidQuery, match="committed already"):
         commit_test(ctx, "future", head, root=repo)
+
+
+def test_the_commit_must_add_the_entry_after_the_registration_on_this_checkouts_history(ctx, repo):
+    register_test(ctx, template("future"), today="2026-01-01")
+    register_test(ctx, template("later"), today="2099-01-01")
+    register_test(ctx, template("side"), today="2026-01-01")
+    mention = _decide(repo, "## Unrelated, mentions `future` and `later` again")
+    with pytest.raises(InvalidQuery, match="does not add `future`"):
+        commit_test(ctx, "future", mention, root=repo)
+    with pytest.raises(InvalidQuery, match="before `later` was registered"):
+        commit_test(ctx, "later", mention, root=repo)
+    _git(repo, "checkout", "-q", "-b", "elsewhere")
+    side = _decide(repo, "## Pre-register `side`")
+    _git(repo, "checkout", "-q", "-")
+    with pytest.raises(InvalidQuery, match="not in this checkout's history"):
+        commit_test(ctx, "side", side, root=repo)
+    assert registration(ctx, "side").commit_hash is None
+
+
+@pytest.mark.parametrize("fault, why", [
+    (FileNotFoundError("git"), "git could not run"),
+    (subprocess.TimeoutExpired("git", 10), "git timed out"),
+])
+def test_a_commit_is_refused_when_git_cannot_check_it(ctx, repo, monkeypatch, fault, why):
+    register_test(ctx, template("future"))
+    head = _git(repo, "rev-parse", "HEAD")
+
+    def broken(*a, **k):
+        raise fault
+    monkeypatch.setattr("oracle.system.version.subprocess.run", broken)
+    with pytest.raises(InvalidQuery, match=why):
+        commit_test(ctx, "future", head, root=repo)
+    assert registration(ctx, "future").commit_hash is None
+
+
+def test_a_commit_is_refused_without_a_checkout_git_can_read(ctx, tmp_path):
+    register_test(ctx, template("future"))
     plain = tmp_path / "no-git"
     plain.mkdir()
-    assert commit_test(ctx, "other", "abcdef1", root=plain).commit_hash == "abcdef1", "unchecked without a checkout"
+    with pytest.raises(InvalidQuery, match="not a git checkout"):
+        commit_test(ctx, "future", "abcdef1", root=plain)
+    assert registration(ctx, "future").commit_hash is None
 
 
 def test_only_an_uncommitted_registration_can_be_dropped(ctx):
@@ -179,3 +231,45 @@ async def test_the_scoreboard_shows_old_verdicts_as_kept_with_their_own_bar_and_
     assert {h for k, h in rows if k == "insider_buys"} == {20, 60}
     n = LEGACY_N + len(REGISTRY) + 1  # seed registers the fake signals
     assert board.n == n and board.next_bar == bonferroni_bar(n + 1)
+
+
+def test_a_negative_expected_sign_is_kept_for_an_event_test(ctx):
+    assert register_test(ctx, replace(template("ev", kind="event"), expected_sign="negative")).expected_sign == "negative"
+
+
+def test_a_registration_reads_n_and_inserts_in_one_transaction(ctx, monkeypatch):
+    seen, read = [], LabTestRepo.all
+
+    def watched(self):
+        seen.append(self._conn.in_transaction)
+        return read(self)
+    monkeypatch.setattr(LabTestRepo, "all", watched)
+    register_test(ctx, template("a"))
+    assert seen == [True], "a registration between the read and the insert would freeze the same N"
+
+
+async def test_a_signal_test_runs_exactly_its_registered_horizons(ctx):
+    seed(ctx)
+    with research_context(ctx) as r:
+        for key in ("future", "null"):
+            LabTestRepo(r.conn).delete(key)
+    registered(ctx, "future", horizons=(5, 20))
+    registered(ctx, "null", horizons=(20,))
+    wider = await run_signal_test(ctx, "future", registry=REGISTRY)
+    assert wider.horizons == (5, 20) and [w.horizon for w in wider.confirm] == [5, 20]
+    other = await run_signal_test(ctx, "null", registry=REGISTRY)
+    assert other.horizons == (20,) and [w.horizon for w in other.confirm] == [20], "the code's 5 is not registered"
+
+
+def _laya(ic, watchlist=DEFAULT_LIST, start=TEST_START):
+    hs = tuple(HorizonResult(h, 0, ic, 1.0, 10, 10, (), (), "FAIL", False, 0, 1) for h in (5, 20))
+    return LayaTest("main", "Laya", MODEL_TAG, start, date(2026, 9, 1), 51, {}, hs, "FAIL", False,
+                    "2026-10-01T00:00:00+00:00", watchlist=watchlist)
+
+
+def test_the_scoreboard_reads_layas_pre_registered_run_never_a_look(ctx):
+    keep_laya_test(ctx, _laya(0.01))
+    keep_laya_test(ctx, _laya(0.5, watchlist="another list"))
+    keep_laya_test(ctx, _laya(0.6, start=date(2024, 1, 1)))
+    rows = {(r.key, r.horizon): r for r in scoreboard(ctx).rows}
+    assert rows[("laya", 5)].value == rows[("laya", 20)].value == 0.01
