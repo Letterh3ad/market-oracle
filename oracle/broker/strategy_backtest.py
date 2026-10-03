@@ -64,7 +64,9 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
     """The rule over the calendar `days` from `start` to `end`, from `pot` in cash (or held as
     `initial` at the first close, at no cost). A target fills at each symbol's open (its close when
     the open is missing), sells first, then buys from the cash they leave, each buy's costs paid
-    out of the money it commits. A symbol without a session that day keeps its holding."""
+    out of the money it commits. A symbol without a session that day keeps its holding. Cash earns
+    `cash_yield` (annual percent by day, the latest known at the previous close) on days it trades
+    nothing, as the trend overlay's own simulator does."""
     window = [d for d in days if start <= d <= end]
     if not window:
         return StrategyRun([], (), 0.0)
@@ -91,10 +93,11 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
     target = decide(first) if len(window) > 1 else None
     equity = [(first, cash + sum(n * last[s] for s, n in shares.items()))]
     for prev, d in zip(window, window[1:]):
-        if yields:
-            cash *= 1 + _cash(yields, prev)
+        before = len(trades)
         if target is not None:
             cash = _fill(d, target, prices, listings, costs, shares, cash, last, trades)
+        if yields and len(trades) == before:
+            cash *= 1 + _cash(yields, prev)
         value = cash + sum(n * (close(s, d) or 0.0) for s, n in shares.items())
         for s in prices:
             close(s, d)

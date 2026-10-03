@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from oracle.analysts.lab import bonferroni_bar
-from oracle.services import event_study_service, laya_test_service, signal_test_service, trend_service
+from oracle.services import event_study_service, laya_test_service, signal_test_service, strategy_service, trend_service
 from oracle.services.context import AppContext
 from oracle.services.lab_registry import hypotheses, registrations
 from oracle.store.lab import Registration
@@ -38,6 +38,8 @@ class ScoreRow:
     commit_hash: str | None
     run_at: str | None
     note: str
+    dsr: float | None = None
+    """A strategy's deflated Sharpe probability of its daily excess over the index on confirm."""
 
 
 @dataclass(frozen=True)
@@ -91,11 +93,20 @@ def _trend_rows(reg: Registration, t) -> list[dict]:
                  verdict=t.verdict, power=None, run_at=t.run_at)]
 
 
+def _strategy_rows(reg: Registration, t) -> list[dict]:
+    if t is None:
+        return []
+    c = t.confirm
+    return [dict(horizon=None, measure="CAGR over the index after costs", value=c.excess, t=None, verdict=t.verdict,
+                 power=None, run_at=t.run_at, dsr=c.dsr)]
+
+
 def scoreboard(ctx: AppContext) -> Scoreboard:
     regs = registrations(ctx)
     kept = signal_test_service.signal_tests(ctx)
     study = event_study_service.event_studies(ctx).get("full")
     trend = trend_service.trend_tests(ctx)
+    strategies = strategy_service.strategy_tests(ctx)
     rows = []
     for reg in regs:
         if reg.result_key.startswith(f"{event_study_service.KEY}:"):
@@ -104,6 +115,8 @@ def scoreboard(ctx: AppContext) -> Scoreboard:
             found = _laya_rows(ctx, reg)
         elif reg.result_key == trend_service.KEY:
             found = _trend_rows(reg, trend)
+        elif reg.kind == "strategy":
+            found = _strategy_rows(reg, strategies.get(reg.result_key))
         else:
             found = _signal_rows(reg, kept)
         if not found:
@@ -112,7 +125,8 @@ def scoreboard(ctx: AppContext) -> Scoreboard:
                      for h in (reg.horizons or (None,))]
         rows += [ScoreRow(reg.key, reg.label, reg.kind, reg.registered_on, measure=f["measure"], horizon=f["horizon"],
                           value=f["value"], t=f["t"], bar=bar_text(reg), verdict=f["verdict"], power=f["power"],
-                          legacy=reg.legacy, commit_hash=reg.commit_hash, run_at=f["run_at"], note=reg.note)
+                          legacy=reg.legacy, commit_hash=reg.commit_hash, run_at=f["run_at"], note=reg.note,
+                          dsr=f.get("dsr"))
                  for f in found]
     n = hypotheses(regs)
     return Scoreboard(tuple(rows), n, bonferroni_bar(n + 1))

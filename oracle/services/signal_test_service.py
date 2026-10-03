@@ -40,6 +40,8 @@ CONFIRM_START = date(2020, 1, 1)
 EVENT_KEY = "event_study"
 OTHER_TESTS = frozenset({EVENT_KEY, trend_service.KEY, fund_compare_service.KEY})
 """Kept beside the signal tests in the same table, but not signal tests."""
+STRATEGY_PREFIX = "strategy:"
+"""Strategy tests' kept results (strategy_service.KEY_PREFIX)."""
 """The typed-event study keeps its results beside the signals' under this name."""
 CHUNK = 250
 """Decision days scored between two checks for a stop or live work."""
@@ -223,7 +225,8 @@ def signal_tests(ctx: AppContext, train_only: bool = False) -> dict[str, SignalT
     with research_context(ctx) as r:
         rows = SignalTestRepo(r.conn).latest()
     return {row.signal.removesuffix(TRAIN_KEY): _load(row.result, row.id) for row in rows
-            if row.signal.endswith(TRAIN_KEY) == train_only and row.signal.removesuffix(TRAIN_KEY) not in OTHER_TESTS}
+            if row.signal.endswith(TRAIN_KEY) == train_only and row.signal.removesuffix(TRAIN_KEY) not in OTHER_TESTS
+            and not row.signal.startswith(STRATEGY_PREFIX)}
 
 
 def _windows(rows: list[dict]) -> tuple[WindowResult, ...]:

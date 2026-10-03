@@ -92,7 +92,8 @@ def test_the_last_close_decides_nothing_and_no_day_after_it_is_read():
     assert seen == DAYS[1:3]
 
 
-def test_the_trend_overlay_through_the_engine_matches_its_own_simulator():
+@pytest.mark.parametrize("cash_yield", [None, {date(1989, 1, 2): 3.0, date(1995, 6, 1): 6.0}])
+def test_the_trend_overlay_through_the_engine_matches_its_own_simulator(cash_yield):
     rng = random.Random(7)
     days = weekdays(date(1990, 1, 1), 3000)
     closes, opens, c = [], [], 100.0
@@ -103,11 +104,12 @@ def test_the_trend_overlay_through_the_engine_matches_its_own_simulator():
         closes.append(c)
     sessions = [Session(d, o, x) for d, o, x in zip(days, opens, closes)]
     start, end = days[400], days[-1]
-    want = overlay(sessions, start, end, 0.001)
+    want = overlay(sessions, start, end, 0.001, cash_yield)
     calls = dict(month_end_decisions(sessions))
     first_call = next((calls[s.day] for s in reversed(sessions[:400]) if s.day in calls), None)
     run = simulate(days, {"X": {s.day: s for s in sessions}}, {"X": Listing("X", "USD", False)},
                    lambda d: None if calls.get(d) is None else {"X": 1.0 if calls[d] else 0.0}, start, end,
-                   UkCosts(FeeModel()), 1.0, initial={"X": 0.0 if first_call is False else 1.0})
+                   UkCosts(FeeModel()), 1.0, initial={"X": 0.0 if first_call is False else 1.0}, cash_yield=cash_yield)
     assert want.switches > 20 and len(run.trades) == want.switches
-    assert [v for _, v in run.equity] == pytest.approx([v for _, v in want.equity], rel=1e-4)
+    assert [v for _, v in run.equity] == pytest.approx([v for _, v in want.equity], rel=2e-5), \
+        "a buy's cost is taken on the value bought, not the cash: c squared per switch apart"
