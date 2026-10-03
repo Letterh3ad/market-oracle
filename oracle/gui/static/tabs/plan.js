@@ -5,9 +5,10 @@ import { fundsSection } from "../lib/funds.js";
 import { guardrailsSection } from "../lib/guardrails.js";
 import { planMoneySection } from "../lib/plan_money.js";
 import { planSummarySection } from "../lib/plan_summary.js";
+import { wrappersSection } from "../lib/plan_wrappers.js";
 import { trendSection } from "../lib/trend.js";
 
-const SECTIONS = [fundsSection, planMoneySection, trendSection, guardrailsSection];
+const SECTIONS = [fundsSection, planMoneySection, trendSection, wrappersSection, guardrailsSection];
 
 function render(target) {
   const cards = [];

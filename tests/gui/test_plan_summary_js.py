@@ -121,7 +121,8 @@ def test_the_plan_tab_hosts_the_summary_and_the_three_cards_and_ledgers_does_not
     """], capture_output=True, text=True, check=True)
     tab, titles, before, after, monthly, fund = json.loads(out.stdout)
     assert tab == "plan"
-    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test", "Guardrails"]
+    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test",
+                      "Where the next pound goes", "Guardrails"]
     assert before == 1 and after == 2
     assert monthly == ["", "300", "300"] and fund[1:] == ["sp500"]
     app = (STATIC_DIR / "app.js").read_text(encoding="utf-8")

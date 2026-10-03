@@ -16,6 +16,7 @@ from oracle.gui.routes import (
 )
 from oracle.gui.routes import control as app_control
 from oracle.gui.routes import guardrails, plan_money
+from oracle.gui.routes import plan_wrappers
 from oracle.gui.routes import laya as laya_routes
 from oracle.services.activity_service import JobRunner, nightly_data_check, sweep_leftovers
 from oracle.services.app_service import AppControl, server_launch
@@ -90,6 +91,7 @@ def build_app(ctx: AppContext, schedule: bool = False, control: AppControl | Non
     app.include_router(testbed.router)
     app.include_router(plan.router)
     app.include_router(plan_money.router)
+    app.include_router(plan_wrappers.router)
     app.include_router(guardrails.router)
     app.include_router(data_routes.router)
     app.include_router(reader.router)

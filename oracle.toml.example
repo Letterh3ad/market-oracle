@@ -184,6 +184,21 @@ fund = ""                  # the fund you hold: all_world, developed, sp500 or u
 monthly = 0.0              # GBP paid in each month; 0 is not set yet
 rule = ""                  # your no-sell rule in your own words; "" is not written yet
 
+# Your numbers for the ISA, workplace pension and Lifetime ISA comparison (Plan tab, Where the next
+# pound goes; `oracle plan wrappers`). Nothing about you is assumed: 0 or -1 is not entered yet.
+[wrappers]
+lisa = false               # show the Lifetime ISA beside the others (off unless you turn it on)
+salary = 0.0               # GBP a year before tax
+employee_pct = 0.0         # your workplace pension contribution, % (relief included)
+employer_pct = 0.0         # your employer's contribution, %
+on_salary = false          # true: % of the whole salary; false: of qualifying earnings (the auto-enrolment band)
+sacrifice = false          # your contribution is paid by salary sacrifice
+born = 0                   # year of birth, for the pension and Lifetime ISA ages
+needed_before = -1.0       # GBP a month of your monthly amount you may need before the pension age; -1 is not answered
+retire_tax = 20.0          # % income tax on the taxed part of the pension when drawn (20 is the basic rate)
+pension_fee = 0.3          # the pension's yearly charge, % of the pot (Nest's published 0.3%)
+pension_charge = 1.8       # % taken from each contribution (Nest's published 1.8%)
+
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]
 rotation_min_hold_days = 20   # trading days a holding is kept before it can be rotated out (1 to 250)
