@@ -108,7 +108,18 @@ def _check(t: Template, repo: LabTestRepo) -> None:
 
 def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Registration:
     """Record a pre-registration with its bar frozen now: max(3, Bonferroni over every
-    registered test's horizons, this one's included). Uncommitted, so no data run yet."""
+    registered test's horizons, this one's included). Uncommitted, so no data run yet. A rule near
+    a FAILed literature method (spec 8 and 10) needs a written 'different because'."""
+    with research_context(ctx) as r:
+        _check(t, LabTestRepo(r.conn))
+    # Imported here: the literature index reads the scoreboard, whose harnesses import this module.
+    from oracle.services.meaning_service import near_fail
+
+    # Outside the write transaction: the meaning check may call Ollama and store method vectors.
+    near = near_fail(ctx, f"{t.label}. {t.rule}")
+    if near is not None and not (t.different_because or "").strip():
+        raise InvalidQuery(f"the rule is near {near.label}, which FAILed: a FAIL is never re-tested with tweaks; "
+                           "say how this one differs (different because), or drop it")
     with research_context(ctx) as r, transaction(r.conn):
         repo = LabTestRepo(r.conn)
         _check(t, repo)
@@ -125,7 +136,7 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
             t.key, t.label.strip(), t.kind, today or ctx.clock.utcnow().date().isoformat(), tuple(t.horizons),
             t.rule.strip(), t.universe.strip(), t.expected_sign, t.expected_size.strip(), t.source.strip(),
             t.power.strip(), t.costs.strip(), bar, True, rule, t.kill_stage.strip(), t.parent or None,
-            (t.different_because or "").strip() or None, None, False, t.key)
+            (t.different_because or "").strip() or None, None, False, t.key, near_fail=near.label if near else None)
         repo.add(reg)
         return reg
 

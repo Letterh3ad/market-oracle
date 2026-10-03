@@ -1,7 +1,7 @@
 """The literature index (research-lab 03): every method the lab knows of, the sources it came from and
 the searches run for more, in the research database. Lookup by exact id (DOI, SSRN, arXiv, NBER,
 cleaned URL) or fuzzy title gives the 5 nearest methods with score and funnel status; meaning search
-is research-lab 04. The first open seeds the research archive, its 14 tested methods and ai-track
+is `meaning_service` (research-lab 04). The first open seeds the research archive, its 14 tested methods and ai-track
 04-09. Marks (go / drop / dig deeper) keep who and when. A tested method names its tests in research-lab
 01's registry and shows their bar and verdict from the scoreboard."""
 
@@ -24,8 +24,8 @@ from oracle.store.literature import LiteratureRepo, MarkRow, MethodRow, SourceRo
 from oracle.store.meta import MetaRepo
 
 __all__ = ["MARKS", "QUALITIES", "STATUSES", "Lookup", "Method", "MethodDetail", "MethodHit", "Recorded", "Search",
-           "Source", "SourceHit", "log_search", "lookup", "mark", "method", "methods", "record", "searches", "sources",
-           "with_tests"]
+           "Source", "SourceHit", "log_search", "lookup", "mark", "method", "methods", "open_index", "record", "searches",
+           "sources", "with_tests"]
 
 STATUSES = ("new", "proposed", "go", "dropped", "triage", "power", "built", "train", "confirm", "pass", "fail",
             "promising", "not-testable", "duplicate-of")
@@ -146,10 +146,17 @@ class Search:
 
 
 @contextmanager
-def _lab(ctx: AppContext) -> Iterator[LiteratureRepo]:
+def open_index(ctx: AppContext) -> Iterator[AppContext]:
+    """The research database's context, the index seeded on its first open."""
     with research_context(ctx) as r:
         if MetaRepo(r.conn).get(SEED_KEY) is None:
             _seed(r.conn, to_utc_iso(ctx.clock.utcnow()))
+        yield r
+
+
+@contextmanager
+def _lab(ctx: AppContext) -> Iterator[LiteratureRepo]:
+    with open_index(ctx) as r:
         yield LiteratureRepo(r.conn)
 
 

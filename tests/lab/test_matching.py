@@ -1,6 +1,14 @@
 import pytest
 
-from oracle.lab.matching import normal_title, source_key, title_score
+from oracle.lab.matching import keyword_score, normal_title, source_key, title_score
+
+
+def test_keyword_score_counts_shared_content_words_across_plurals_and_stop_words():
+    # {buy, stock, near, yearly, high} against {stock, near, 52, week, high, keep, rising}
+    assert keyword_score("buy stocks near their yearly high", "stocks near their 52-week high keep rising") == 0.5
+    assert keyword_score("Momentum", "momentum") == 1.0
+    assert keyword_score("the of", "momentum") == 0.0
+    assert keyword_score("value stocks", "") == 0.0
 
 
 @pytest.mark.parametrize("text", [

@@ -59,3 +59,49 @@ class OllamaChat:
             return json.loads(content)
         except ValueError:
             return content
+
+
+class OllamaEmbed:
+    """Ollama's /api/embed, synchronous: the literature index's meaning search is a short local call
+    from synchronous services."""
+
+    batch = 32
+
+    def __init__(self, model: str, base_url: str, timeout_s: float,
+                 transport: httpx.BaseTransport | None = None) -> None:
+        self.model = model
+        self._base = base_url.rstrip("/")
+        self._timeout = timeout_s
+        self._transport = transport
+
+    def _prefix(self, query: bool) -> str:
+        # nomic-embed-text was trained with task prefixes and scores worse without them.
+        if not self.model.startswith("nomic-embed"):
+            return ""
+        return "search_query: " if query else "search_document: "
+
+    def embed(self, texts: list[str], query: bool = False) -> list[list[float]]:
+        prefix = self._prefix(query)
+        out: list[list[float]] = []
+        with httpx.Client(timeout=self._timeout, transport=self._transport) as http:
+            for i in range(0, len(texts), self.batch):
+                out.extend(self._post(http, [prefix + t for t in texts[i:i + self.batch]]))
+        return out
+
+    def _post(self, http: httpx.Client, chunk: list[str]) -> list[list[float]]:
+        try:
+            response = http.post(f"{self._base}/api/embed", json={"model": self.model, "input": chunk, "truncate": True})
+        except httpx.TimeoutException as exc:
+            raise ModelError(f"Ollama {self.model} took longer than {self._timeout:.0f}s to embed") from exc
+        except httpx.TransportError as exc:
+            raise ModelError(f"Ollama is not reachable at {self._base} ({exc}): start it with `ollama serve`") from exc
+        if response.status_code == 404:
+            raise ModelError(f"Ollama has no model {self.model}: run `ollama pull {self.model}`")
+        try:
+            response.raise_for_status()
+            vectors = response.json()["embeddings"]
+            if len(vectors) != len(chunk):
+                raise ValueError(f"{len(vectors)} vectors for {len(chunk)} texts")
+            return [[float(x) for x in v] for v in vectors]
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            raise ModelError(f"Ollama {self.model} gave no usable embeddings: {exc}") from exc

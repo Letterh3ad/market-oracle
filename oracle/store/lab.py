@@ -37,6 +37,8 @@ class Registration:
     legacy: bool
     result_key: str
     note: str = ""
+    near_fail: str | None = None
+    """The FAILed literature method its rule was near at registration, with the score (research-lab 04)."""
 
     @property
     def hypotheses(self) -> int:

@@ -64,11 +64,22 @@ def test_a_research_db_with_the_registry_gains_the_literature_index_and_keeps_it
     conn.execute("INSERT INTO signal_tests (signal, verdict, result, run_at) VALUES ('sue', 'FAIL', '{}', 'x')")
     conn.commit()
     registered = conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0]
-    migrate(conn, MIGRATIONS)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 12
+    migrate(conn, MIGRATIONS[:12])
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 12
     assert conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0] == registered > 0
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"lit_sources", "lit_source_ids", "lit_methods", "lit_method_sources", "lit_marks", "lit_searches",
             "lit_search_sources"} <= tables
     assert [tuple(r) for r in conn.execute("SELECT signal FROM signal_tests")] == [("sue",)]
+    conn.close()
+
+
+def test_meaning_search_adds_method_vectors_and_the_registrations_near_fail_keeping_every_row(tmp_path):
+    from oracle.store.testbed_migrations import t0009_meaning
+    conn = connect(tmp_path / "research.db")
+    migrate(conn, MIGRATIONS[:MIGRATIONS.index(t0009_meaning)])
+    registered = conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0]
+    migrate(conn, MIGRATIONS)
+    assert conn.execute("SELECT count(*) FROM lab_tests WHERE near_fail IS NULL").fetchone()[0] == registered > 0
+    assert conn.execute("SELECT count(*) FROM lit_embeddings").fetchone()[0] == 0
     conn.close()

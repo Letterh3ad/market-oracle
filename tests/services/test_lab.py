@@ -273,3 +273,18 @@ def test_the_scoreboard_reads_layas_pre_registered_run_never_a_look(ctx):
     keep_laya_test(ctx, _laya(0.6, start=date(2024, 1, 1)))
     rows = {(r.key, r.horizon): r for r in scoreboard(ctx).rows}
     assert rows[("laya", 5)].value == rows[("laya", 20)].value == 0.01
+
+
+def test_a_registration_near_a_failed_method_needs_a_different_because(ctx, monkeypatch):
+    from tests.fakes.embed import FakeEmbed
+
+    monkeypatch.setattr("oracle.services.meaning_service.embedder", lambda ctx: FakeEmbed())
+    near = replace(template("over_200d", kind="strategy", horizons=()), rule="own the market over its 200-day average")
+    with pytest.raises(InvalidQuery, match=r"T-62 .*FAILed.*different because"):
+        register_test(ctx, near)
+    with pytest.raises(UnknownLabTest):
+        registration(ctx, "over_200d")
+    reg = register_test(ctx, replace(near, different_because="weekly checks, not month-end"))
+    assert reg.near_fail.startswith("T-62 Trend overlay (10-month MA) (meaning ")
+    assert registration(ctx, "over_200d").near_fail == reg.near_fail
+    assert register_test(ctx, template("plain")).near_fail is None
