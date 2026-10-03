@@ -39,6 +39,7 @@ CREATE TABLE lit_methods (
     origin         TEXT NOT NULL,
     rating         INTEGER,
     archive_status TEXT NOT NULL DEFAULT '',
+    archive_note   TEXT NOT NULL DEFAULT '',
     evidence       TEXT NOT NULL DEFAULT '',
     why            TEXT NOT NULL DEFAULT '',
     result         TEXT NOT NULL DEFAULT '',

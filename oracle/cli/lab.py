@@ -157,7 +157,8 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
           + (f"; rating {m.rating}" if m.rating is not None else "")
           + (f"; archive: {m.archive_status}" if m.archive_status else "")
           + (f"; duplicate of {m.duplicate_of}" if m.duplicate_of else ""))
-    for label, text in (("rule", m.definition), ("evidence", m.evidence), ("why", m.why), ("result", m.result)):
+    for label, text in (("rule", m.definition), ("evidence", m.evidence), ("why", m.why), ("result", m.result),
+                        ("archive", m.archive_note)):
         if text:
             _wrap(f"{label}: {text}")
     if m.aliases:

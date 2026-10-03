@@ -33,6 +33,7 @@ function literatureSection() {
   const note = el("div", { class: "form-note" });
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
   const query = el("input", { type: "search", size: 50, "aria-label": "Look up", placeholder: "title, method, ref or id" });
+  query.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
   const found = el("div");
   const statusPick = el("select", { "aria-label": "Status" }, el("option", { value: "" }, "every status"));
   const listBody = el("div");
@@ -75,7 +76,8 @@ function literatureSection() {
     detail.replaceChildren(el("div", { class: "card" },
       el("h3", null, `${m.ref} ${m.name}`),
       el("p", { class: "small dim" }, facts.filter(Boolean).join("; ")),
-      ...[["Rule", m.definition], ["Evidence", m.evidence], ["Why", m.why], ["Result", m.result]]
+      ...[["Rule", m.definition], ["Evidence", m.evidence], ["Why", m.why], ["Result", m.result],
+        ["Archive", m.archive_note]]
         .filter(([, text]) => text).map(([label, text]) => el("p", null, el("strong", null, `${label}: `), text)),
       m.aliases.length ? el("p", { class: "small" }, `Also called: ${m.aliases.join(", ")}`) : null,
       m.see_also.length ? el("p", { class: "small" }, "See also: ",
@@ -151,7 +153,7 @@ function literatureSection() {
         r.source ? el("ul", { class: "small" }, sourceItem(r.source, null, open)) : null,
         r.nearest.length ? el("div", null, el("p", { class: "small dim" }, "Nearest methods (check for a duplicate):"),
           table([["Method"], ["Status"], ["Score", null, 1], ["Name"], ["Matched on"]], hitRows(r.nearest), "")) : null);
-      Object.values(rec).forEach((input) => { input.value = ""; });
+      [...Object.values(rec), quality].forEach((input) => { input.value = ""; });
       await loadMethods();
     } catch (err) {
       say(err.message);

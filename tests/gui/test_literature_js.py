@@ -15,6 +15,7 @@ SOURCE = {"id": 7, "title": "52-Week High", "authors": "George, Hwang", "year": 
 METHOD = {"ref": "T-15", "name": "52-week-high proximity", "family": "A. Cross-sectional stock anomalies",
           "definition": "stocks near their 52-week high keep rising.", "aliases": [], "status": "new",
           "duplicate_of": None, "origin": "archive", "rating": 3, "archive_status": "Untested",
+          "archive_note": "Untested (raw 12-1 Tried-FAIL t 0.50)",
           "evidence": "George-Hwang 2004: 0.45%/month.", "why": "momentum family", "result": "", "see_also": ["T-13"],
           "test_key": None, "status_by": "seed", "status_at": "2026-10-03T11:00:00+00:00", "added_at": "x",
           "sources": [SOURCE], "marks": []}
@@ -87,6 +88,20 @@ def test_lookup_shows_sources_and_nearest_methods_and_opens_one():
     assert "GET /api/lab/lookup?q=52%20week%20high" in asked_ and "GET /api/lab/methods/T-15" in asked_
     assert "0.88 " in text and "0.91" in text and "fuzzy match" in text
     assert "Rule: stocks near their 52-week high keep rising." in text and "status new (by seed" in text
+    assert "Archive: Untested (raw 12-1 Tried-FAIL t 0.50)" in text
+
+
+def test_enter_in_the_lookup_box_looks_up():
+    asked_ = run("""
+        const box = labelled(node, "Look up");
+        box.value = "seasonality";
+        for (const fn of box.listeners.keydown ?? []) fn({ key: "a", target: box });
+        const before = asked.length;
+        for (const fn of box.listeners.keydown ?? []) fn({ key: "Enter", target: box });
+        await settle();
+        console.log(JSON.stringify([before, asked]));
+    """)
+    assert asked_[0] == 0 and asked_[1] == ["GET /api/lab/lookup?q=seasonality"]
 
 
 def test_a_status_filter_asks_for_that_status():
@@ -132,6 +147,16 @@ def test_recording_and_logging_send_their_fields():
         "aliases": ["fresh", "new one"]}]
     assert sent_[1] == ["/api/lab/searches", {"query": "decay", "where": "SSRN", "found": ["doi:10.1/x"], "note": ""}]
     assert "Logged search #3 (1 found)." in text and "Nearest methods (check for a duplicate)" in text
+
+
+def test_record_resets_the_whole_form_including_quality():
+    left = run("""
+        labelled(node, "Title").value = "A paper";
+        labelled(node, "Quality").value = "working-paper";
+        button(node, "Record").fire("click"); await settle();
+        console.log(JSON.stringify([labelled(node, "Title").value, labelled(node, "Quality").value]));
+    """)
+    assert left == ["", ""]
 
 
 def test_a_refused_mark_says_why():

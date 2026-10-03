@@ -180,6 +180,8 @@ def test_record_links_a_source_to_existing_methods(ctx):
     ({"title": "x", "methods": ["T-999"]}, "T-999"),
     ({"methods": ["T-15"]}, "source"),
     ({}, "nothing to record"),
+    ({"title": "   "}, "nothing to record"),
+    ({"ident": "https://example.com/new-paper", "title": " "}, "needs a title"),
     ({"title": "x", "new_method": "52-week-high proximity"}, "already in the index as T-15"),
     ({"title": "x", "by": ""}, "by"),
 ])
@@ -212,3 +214,77 @@ def test_method_list_filters_by_status_and_refuses_an_unknown_one(ctx):
         lab.methods(ctx, "maybe")
     with pytest.raises(UnknownMethod):
         lab.method(ctx, "Z-1")
+
+
+FAMA_FRENCH = "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x"
+
+
+@pytest.mark.parametrize("variant", [
+    "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x/",
+    "http://dx.doi.org/10.1111/j.1540-6261.1992.tb04398.x/",
+    "https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04398.x/",
+    "https://onlinelibrary.wiley.com/doi/full/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1540-6261.1992.tb04398.x",
+])
+def test_doi_link_variants_resolve_to_the_seeded_fama_french(ctx, variant):
+    seeded = lab.lookup(ctx, FAMA_FRENCH).sources[0].source
+    assert [h.source.id for h in lab.lookup(ctx, variant).sources] == [seeded.id]
+    again = lab.record(ctx, variant, note="checked")
+    assert not again.created and again.source.id == seeded.id
+    assert len(lab.sources(ctx)) == 170
+
+
+@pytest.mark.parametrize("title,ref", [
+    ("Seasonality in the cross-section of stock returns", "T-17"),
+    ("Market underreaction to open market share repurchases", "T-09"),
+    ("Price reactions to dividend initiations and omissions: overreaction or drift?", "T-21"),
+    ("High stock returns before holidays", "T-30"),
+    ("All the news that's fit to reprint: do investors react to stale information?", "A-18"),
+])
+def test_a_real_paper_title_finds_its_method_first(ctx, title, ref):
+    found = lab.lookup(ctx, title)
+    assert found.methods[0].ref == ref and found.methods[0].score > 0.8
+    assert ref in found.sources[0].source.methods
+
+
+@pytest.mark.parametrize("query,ref", [
+    ("Heston Sadka 2008", "T-17"),
+    ("Ikenberry, Lakonishok, Vermaelen 1995", "T-09"),
+    ("return seasonality", "T-17"),
+])
+def test_authors_and_year_or_the_method_name_find_the_method(ctx, query, ref):
+    assert lab.lookup(ctx, query).methods[0].ref == ref
+
+
+def test_authors_and_year_pick_the_paper_among_an_authors_others(ctx):
+    found = lab.lookup(ctx, "Fama French 1992")
+    assert found.sources[0].source.url == FAMA_FRENCH and found.sources[0].score == 1.0
+
+
+def test_seeded_titles_are_paper_titles_not_link_text(ctx):
+    titles = {s.title for s in lab.sources(ctx)}
+    assert not titles & {"Seasonality", "buybacks", "withdrawal", "working paper", "2022 update",
+                         "international evidence (JFQA)", "HAC covariance"}
+    assert "Seasonality in the Cross-Section of Stock Returns" in titles
+
+
+def test_a_blank_title_never_blanks_a_known_source(ctx):
+    for blank in ("", "   "):
+        kept = lab.record(ctx, MCLEAN, title=blank, note="re-read")
+        assert kept.source.title == "Does Academic Research Destroy Stock Return Predictability?"
+        assert kept.source.note == "re-read"
+
+
+def test_the_archive_note_is_kept(ctx):
+    t10 = lab.method(ctx, "T-10")
+    assert t10.archive_note == ("Tried-other (low-vol scorer inside the 51-name regime blend; regime ~+50% vs "
+                                "b&h +76.6%)")
+    assert lab.method(ctx, "T-13").archive_note == "Untested (raw 12-1 Tried-FAIL t 0.50)"
+
+
+def test_seeding_twice_is_a_no_op(ctx):
+    from oracle.services.testbed_service import research_context
+    lab.methods(ctx)
+    with research_context(ctx) as r:
+        lab._seed(r.conn, "2026-10-03T12:00:00+00:00")
+    assert len(lab.methods(ctx)) == 205 and len(lab.sources(ctx)) == 170

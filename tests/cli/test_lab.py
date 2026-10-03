@@ -66,3 +66,17 @@ def test_methods_lists_by_status(tmp_path, capsys):
     assert "X-13" in out and "T-15" not in out and "1 method" in out
     assert main(["--config", cfg, "lab", "methods"]) == 0
     assert "205 methods" in capsys.readouterr().out
+
+
+def test_a_blank_title_is_no_title(tmp_path, capsys):
+    cfg = config(tmp_path)
+    assert main(["--config", cfg, "lab", "record", "--title", "  "]) == 1
+    assert "nothing to record" in capsys.readouterr().err
+    assert main(["--config", cfg, "lab", "record", "https://ivey.uwo.ca/media/3775549/pontiff.pdf", "--title", " ",
+                 "--note", "again"]) == 0
+    assert "Does Academic Research Destroy Stock Return Predictability?" in capsys.readouterr().out
+
+
+def test_show_prints_the_archive_note(tmp_path, capsys):
+    assert main(["--config", config(tmp_path), "lab", "show", "T-10"]) == 0
+    assert "archive: Tried-other (low-vol scorer inside the 51-name regime blend" in capsys.readouterr().out

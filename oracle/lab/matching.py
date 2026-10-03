@@ -11,6 +11,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 _DOI = re.compile(r"\b(10\.\d{4,9}/[^\s?#]+)", re.I)
 _SSRN_DOI = re.compile(r"^10\.2139/ssrn\.(\d+)$", re.I)
+_DOI_TAIL = re.compile(r"(?:/(?:abs|abstract|full|pdf|epdf|summary))?/*$", re.I)
+"""What a publisher's legacy URL puts after the DOI (Wiley's `<doi>/full`), and trailing slashes."""
 _ARXIV_DOI = re.compile(r"^10\.48550/arxiv\.(\d{4}\.\d{4,5})", re.I)
 _ARXIV = re.compile(r"(?:arxiv\.org/(?:abs|pdf)/|\barxiv:?\s*)(\d{4}\.\d{4,5})", re.I)
 _SSRN = re.compile(r"(?:ssrn\.com/.*?abstract(?:_id)?=|\bssrn:?\s*)(\d{4,})", re.I)
@@ -32,7 +34,7 @@ def source_key(text: str) -> str | None:
             return f"{kind}:{'w' if kind == 'nber' else ''}{m[1]}"
     m = _DOI.search(t)
     if m and (t.lower().startswith(("doi", "10.")) or "/doi" in t.lower() or "doi.org/" in t.lower()):
-        doi = m[1].rstrip(".,;").lower()
+        doi = _DOI_TAIL.sub("", m[1].rstrip(".,;")).rstrip(".,;").lower()
         if (s := _SSRN_DOI.match(doi)) is not None:
             return f"ssrn:{s[1]}"
         if (a := _ARXIV_DOI.match(doi)) is not None:

@@ -98,6 +98,8 @@ class Method:
     """archive, tested, ai-track or added."""
     rating: int | None
     archive_status: str
+    archive_note: str
+    """The archive's status line verbatim, with its prior-test context."""
     evidence: str
     why: str
     result: str
@@ -147,6 +149,9 @@ def _seed(conn, at: str) -> None:
     seed = load_seed()
     repo = LiteratureRepo(conn)
     with transaction(conn):
+        # Checked again under the write lock: another first open may have seeded since.
+        if MetaRepo(conn).get(SEED_KEY) is not None:
+            return
         by_url: dict[str, int] = {}
         for s in seed["sources"]:
             key = source_key(s["url"])
@@ -157,8 +162,8 @@ def _seed(conn, at: str) -> None:
         for m in seed["methods"]:
             new = repo.add_method(m["ref"], m["name"], m["status"], m["origin"], at, SEED_BY, family=m["family"],
                                   definition=m["definition"], rating=m["rating"], archive_status=m["archive_status"],
-                                  evidence=m["evidence"], why=m["why"], result=m["result"], see_also=m["see_also"],
-                                  test_key=m["test_key"])
+                                  archive_note=m["archive_note"], evidence=m["evidence"], why=m["why"],
+                                  result=m["result"], see_also=m["see_also"], test_key=m["test_key"])
             repo.link(new, [by_url[u] for u in m["sources"]])
         MetaRepo(conn).set(SEED_KEY, str(seed["version"]))
 
@@ -171,7 +176,8 @@ def _source(repo: LiteratureRepo, s: SourceRow) -> Source:
 def _method(m: MethodRow, refs: dict[int, str]) -> Method:
     return Method(m.ref, m.name, m.family, m.definition, m.aliases, m.status,
                   refs.get(m.duplicate_of) if m.duplicate_of else None, m.origin, m.rating, m.archive_status,
-                  m.evidence, m.why, m.result, m.see_also, m.test_key, m.status_by, m.status_at, m.added_at)
+                  m.archive_note, m.evidence, m.why, m.result, m.see_also, m.test_key, m.status_by, m.status_at,
+                  m.added_at)
 
 
 def _detail(repo: LiteratureRepo, m: MethodRow) -> MethodDetail:
@@ -195,8 +201,8 @@ def _nearest(repo: LiteratureRepo, queries: Sequence[str], skip: frozenset[int] 
              limit: int = NEAREST) -> tuple[list[MethodHit], list[SourceHit]]:
     """Each method's best score over its ref, name, aliases and its sources' titles, for any query."""
     all_sources = repo.sources()
-    source_score = {s.id: max(max(title_score(q, s.title), title_score(q, f"{s.authors} {s.title}"))
-                              for q in queries) for s in all_sources}
+    source_score = {s.id: max(title_score(q, text) for q in queries for text in _source_texts(s))
+                    for s in all_sources}
     by_method: dict[int, list[int]] = {}
     for mid, sid in repo.links():
         by_method.setdefault(mid, []).append(sid)
@@ -217,6 +223,13 @@ def _nearest(repo: LiteratureRepo, queries: Sequence[str], skip: frozenset[int] 
     hits.sort(key=lambda h: -h.score)
     found = sorted((s for s in all_sources if source_score[s.id] >= SOURCE_FLOOR), key=lambda s: -source_score[s.id])
     return hits[:limit], [SourceHit(_source(repo, s), round(source_score[s.id], 3)) for s in found[:limit]]
+
+
+def _source_texts(s: SourceRow) -> tuple[str, ...]:
+    """What a query may name a source by: its title, authors and title, or authors and year."""
+    if not s.authors:
+        return (s.title,)
+    return s.title, f"{s.authors} {s.title}", f"{s.authors} {s.year or ''}"
 
 
 def lookup(ctx: AppContext, query: str) -> Lookup:
@@ -289,8 +302,8 @@ def record(ctx: AppContext, ident: str | None = None, *, title: str | None = Non
     given), optionally linked to methods it yields, and optionally a new method; the 5 nearest methods
     come back so a near-duplicate shows before more work goes into it."""
     by = _by(by)
-    title = title.strip() if title else None
-    new_method = new_method.strip() if new_method else None
+    title = (title or "").strip() or None
+    new_method = (new_method or "").strip() or None
     aliases = [a.strip() for a in aliases if a.strip()]
     refs = [r.strip() for r in methods if r.strip()]
     key = None

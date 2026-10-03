@@ -4,7 +4,7 @@
  "sources": [
   {
    "url": "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x",
-   "title": "Cross-Section of Expected Stock Returns",
+   "title": "The Cross-Section of Expected Stock Returns",
    "authors": "Fama, French",
    "year": 1992,
    "quality": "peer-reviewed"
@@ -32,14 +32,14 @@
   },
   {
    "url": "https://doi.org/10.2307/2672906",
-   "title": "Value Investing: historical financial statement information",
+   "title": "Value Investing: The Use of Historical Financial Statement Information to Separate Winners from Losers",
    "authors": "Piotroski",
    "year": 2000,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.jstor.org/stable/248290",
-   "title": "accruals",
+   "title": "Do Stock Prices Fully Reflect Information in Accruals and Cash Flows about Future Earnings?",
    "authors": "Sloan",
    "year": 1996,
    "quality": "peer-reviewed"
@@ -53,7 +53,7 @@
   },
   {
    "url": "https://doi.org/10.1016/j.jfineco.2014.10.010",
-   "title": "Five-Factor Model",
+   "title": "A Five-Factor Asset Pricing Model",
    "authors": "Fama, French",
    "year": 2015,
    "quality": "peer-reviewed"
@@ -67,28 +67,28 @@
   },
   {
    "url": "https://academicnewsletter.sufe.edu.cn/info/360827",
-   "title": "Asset Growth",
+   "title": "Asset Growth and the Cross-Section of Stock Returns",
    "authors": "Cooper, Gulen, Schill",
    "year": 2008,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/bla/jfinan/v63y2008i2p921-945.html",
-   "title": "Share Issuance",
+   "title": "Share Issuance and Cross-Sectional Returns",
    "authors": "Pontiff, Woodgate",
    "year": 2008,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/eee/jfinec/v94y2009i1p1-17.html",
-   "title": "international issuance",
+   "title": "Share Issuance and Cross-Sectional Returns: International Evidence",
    "authors": "McLean, Pontiff, Watanabe",
    "year": 2009,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1016/0304-405X(95)00826-Z",
-   "title": "buybacks",
+   "title": "Market Underreaction to Open Market Share Repurchases",
    "authors": "Ikenberry, Lakonishok, Vermaelen",
    "year": 1995,
    "quality": "peer-reviewed"
@@ -102,7 +102,7 @@
   },
   {
    "url": "https://doi.org/10.3905/jpm.2007.698039",
-   "title": "The Volatility Effect",
+   "title": "The Volatility Effect: Lower Risk Without Lower Return",
    "authors": "Blitz, van Vliet",
    "year": 2007,
    "quality": "peer-reviewed"
@@ -111,19 +111,19 @@
    "url": "https://mysimon.rochester.edu/novy-marx/research/BABAB.pdf",
    "title": "Betting Against Betting Against Beta",
    "authors": "Novy-Marx, Velikov",
-   "year": null,
+   "year": 2022,
    "quality": "working-paper"
   },
   {
    "url": "https://www.nber.org/papers/w13739",
-   "title": "High Idiosyncratic Volatility and Low Returns",
+   "title": "High Idiosyncratic Volatility and Low Returns: International and Further U.S. Evidence",
    "authors": "Ang, Hodrick, Xing, Zhang",
    "year": 2009,
    "quality": "working-paper"
   },
   {
    "url": "https://academicnewsletter.sufe.edu.cn/info/357231",
-   "title": "Maxing Out",
+   "title": "Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns",
    "authors": "Bali, Cakici, Whitelaw",
    "year": 2011,
    "quality": "peer-reviewed"
@@ -137,7 +137,7 @@
   },
   {
    "url": "https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/data_library.html",
-   "title": "Ken French Data Library",
+   "title": "Kenneth R. French Data Library",
    "authors": "Fama, French",
    "year": null,
    "quality": "practitioner"
@@ -151,7 +151,7 @@
   },
   {
    "url": "https://academicnewsletter.sufe.edu.cn/info/361244",
-   "title": "52-Week High",
+   "title": "The 52-Week High and Momentum Investing",
    "authors": "George, Hwang",
    "year": 2004,
    "quality": "peer-reviewed"
@@ -165,16 +165,16 @@
   },
   {
    "url": "https://academicnewsletter.sufe.edu.cn/info/357254",
-   "title": "Seasonality",
+   "title": "Seasonality in the Cross-Section of Stock Returns",
    "authors": "Heston, Sadka",
    "year": 2008,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://resolve.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/seasonality-in-the-cross-section-of-stock-returns-the-international-evidence/449422A711AB698236AD46F6BA7414D6",
-   "title": "international evidence (JFQA)",
+   "title": "Seasonality in the Cross-Section of Stock Returns: The International Evidence",
    "authors": "Heston, Sadka",
-   "year": null,
+   "year": 2010,
    "quality": "peer-reviewed"
   },
   {
@@ -200,28 +200,28 @@
   },
   {
    "url": "https://WWW.FINRA.ORG/sites/default/files/Equity_Short_Interest_Data_File_Download_API.pdf",
-   "title": "short interest data (API)",
+   "title": "Equity Short Interest Data File Download API",
    "authors": "FINRA",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://www.finra.org/finra-data/browse-catalog/equity-short-interest/data",
-   "title": "short interest data",
+   "title": "Equity Short Interest Data",
    "authors": "FINRA",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://doi.org/10.1111/j.1540-6261.1995.tb05168.x",
-   "title": "dividend initiations/omissions",
+   "title": "Price Reactions to Dividend Initiations and Omissions: Overreaction or Drift?",
    "authors": "Michaely, Thaler, Womack",
    "year": 1995,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1016/0304-405X(93)90024-4",
-   "title": "spin-offs",
+   "title": "Restructuring Through Spinoffs: The Stock Market Evidence",
    "authors": "Cusatis, Miles, Woolridge",
    "year": 1993,
    "quality": "peer-reviewed"
@@ -249,49 +249,49 @@
   },
   {
    "url": "https://personal.lse.ac.uk/polk/research/TugOfWar.pdf",
-   "title": "A Tug of War",
+   "title": "A Tug of War: Overnight Versus Intraday Expected Returns",
    "authors": "Lou, Polk, Skouras",
    "year": 2019,
    "quality": "working-paper"
   },
   {
    "url": "https://rpc.cfainstitute.org/research/financial-analysts-journal/2008/equity-returns-at-the-turn-of-the-month",
-   "title": "Turn of the Month",
+   "title": "Equity Returns at the Turn of the Month",
    "authors": "McConnell, Xu",
    "year": 2008,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1111/j.1540-6261.1990.tb05110.x",
-   "title": "pre-holiday",
+   "title": "High Stock Returns before Holidays: Existence and Evidence on Possible Causes",
    "authors": "Ariel",
    "year": 1990,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.html",
-   "title": "Pre-FOMC Announcement Drift",
+   "title": "The Pre-FOMC Announcement Drift",
    "authors": "Lucca, Moench",
    "year": null,
    "quality": "working-paper"
   },
   {
    "url": "https://www.skidmore.edu/economics/documents/KurovWolfeGilbert-TheDisappearingPre-FOMC-Announce-Drift-200914.pdf",
-   "title": "The Disappearing Pre-FOMC Drift",
+   "title": "The Disappearing Pre-FOMC Announcement Drift",
    "authors": "Kurov, Wolfe, Gilbert",
    "year": null,
    "quality": "working-paper"
   },
   {
    "url": "https://nber.org/papers/w10483",
-   "title": "Equity Premium Prediction",
+   "title": "A Comprehensive Look at the Empirical Performance of Equity Premium Prediction",
    "authors": "Welch, Goyal",
    "year": 2008,
    "quality": "working-paper"
   },
   {
    "url": "https://sfi.ch/en/publications/a-comprehensive-2022-look-at-the-empirical-performance-of-equity-premium-prediction",
-   "title": "2022 update",
+   "title": "A Comprehensive 2022 Look at the Empirical Performance of Equity Premium Prediction",
    "authors": "Goyal, Welch, Zafirov",
    "year": 2024,
    "quality": "working-paper"
@@ -312,7 +312,7 @@
   },
   {
    "url": "https://www.openassetpricing.com/",
-   "title": "openassetpricing.com",
+   "title": "Open Source Asset Pricing (openassetpricing.com)",
    "authors": "Chen, Zimmermann",
    "year": 2022,
    "quality": "practitioner"
@@ -368,28 +368,28 @@
   },
   {
    "url": "https://doi.org/10.1086/260061",
-   "title": "Risk, Return and Equilibrium",
+   "title": "Risk, Return, and Equilibrium: Empirical Tests",
    "authors": "Fama, MacBeth",
    "year": 1973,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.jstor.org/stable/1913610",
-   "title": "HAC covariance",
+   "title": "A Simple, Positive Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance Matrix",
    "authors": "Newey, West",
    "year": 1987,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1093/rfs/hhn053",
-   "title": "Clustered SEs",
+   "title": "Estimating Standard Errors in Finance Panel Data Sets: Comparing Approaches",
    "authors": "Petersen",
    "year": 2009,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://papers.ssrn.com/abstract=2460551",
-   "title": "The Deflated Sharpe Ratio",
+   "title": "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality",
    "authors": "Bailey, Lopez de Prado",
    "year": 2014,
    "quality": "working-paper"
@@ -403,14 +403,14 @@
   },
   {
    "url": "https://doi.org/10.1111/j.1540-6261.1997.tb03818.x",
-   "title": "Delisting Bias",
+   "title": "The Delisting Bias in CRSP Data",
    "authors": "Shumway",
    "year": 1997,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.aeaweb.org/conference/2025/program/paper/EFddaa8b",
-   "title": "Beyond the Status Quo: Lifecycle Investment Advice",
+   "title": "Beyond the Status Quo: A Critical Assessment of Lifecycle Investment Advice",
    "authors": "Anarkulova, Cederburg, O'Doherty",
    "year": null,
    "quality": "working-paper"
@@ -438,7 +438,7 @@
   },
   {
    "url": "https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing",
-   "title": "A Century of Evidence on Trend-Following",
+   "title": "A Century of Evidence on Trend-Following Investing",
    "authors": "Hurst, Ooi, Pedersen",
    "year": null,
    "quality": "peer-reviewed"
@@ -459,14 +459,14 @@
   },
   {
    "url": "https://alphaarchitect.com/risk-premia-harvesting-through-momentum/",
-   "title": "Dual Momentum summary",
+   "title": "Risk Premia Harvesting Through Dual Momentum",
    "authors": "Antonacci",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://cxoadvisory.com/momentum-investing/a-few-notes-on-dual-momentum-investing",
-   "title": "Notes on Dual Momentum",
+   "title": "A Few Notes on Dual Momentum Investing",
    "authors": "CXO",
    "year": null,
    "quality": "practitioner"
@@ -487,77 +487,77 @@
   },
   {
    "url": "https://indexacapital.com/bundles/unaiadvisor/docs/papers/2010-Vanguard-Best-practices-for-portfolio-rebalancing.pdf",
-   "title": "Best Practices for Portfolio Rebalancing (2010)",
+   "title": "Best Practices for Portfolio Rebalancing",
    "authors": "Vanguard",
    "year": 2010,
    "quality": "practitioner"
   },
   {
    "url": "https://corporate.vanguard.com/content/dam/corp/research/pdf/rational_rebalancing_analytical_approach_to_multiasset_portfolio_rebalancing.pdf",
-   "title": "Rational Rebalancing (2022)",
+   "title": "Rational Rebalancing: An Analytical Approach to Multiasset Portfolio Rebalancing",
    "authors": "Vanguard",
    "year": 2022,
    "quality": "practitioner"
   },
   {
    "url": "https://www.vanguard.co.uk/professional/vanguard-365/financial-planning/financial-well-being/cost-averaging",
-   "title": "Cost averaging vs lump sum (UK)",
+   "title": "Cost Averaging vs Lump Sum Investing",
    "authors": "Vanguard",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://www.gov.uk/individual-savings-accounts",
-   "title": "ISAs",
+   "title": "Individual Savings Accounts (ISAs)",
    "authors": "gov.uk",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://www.gov.uk/tax-on-your-private-pension/pension-tax-relief",
-   "title": "Pension tax relief",
+   "title": "Tax on Your Private Pension: Pension Tax Relief",
    "authors": "gov.uk",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://www.gov.uk/lifetime-isa",
-   "title": "ISAs (Lifetime ISA)",
+   "title": "Lifetime ISA",
    "authors": "gov.uk",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://www.which.co.uk/news/article/25-lifetime-isa-penalty-to-be-restored-in-april-is-it-still-worth-getting-one-aGxhq4f4V8mE",
-   "title": "LISA withdrawal charge",
+   "title": "25% Lifetime ISA Penalty to Be Restored in April: Is It Still Worth Getting One?",
    "authors": "Which?",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://arxiv.org/abs/2304.07619",
-   "title": "Can ChatGPT Forecast Stock Price Movements?",
+   "title": "Can ChatGPT Forecast Stock Price Movements? Return Predictability and Large Language Models",
    "authors": "Lopez-Lira & Tang",
    "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2309.17322",
-   "title": "Look-ahead bias in GPT sentiment",
+   "title": "Assessing Look-Ahead Bias in Stock Return Predictions Generated By GPT Sentiment Analysis",
    "authors": "Glasserman & Lin",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2504.14765",
-   "title": "The Memorization Problem",
+   "title": "The Memorization Problem: Can We Trust LLMs' Economic Forecasts?",
    "authors": "Lopez-Lira, Tang & Zhu",
-   "year": null,
+   "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416687",
-   "title": "Expected Returns and LLMs",
+   "title": "Expected Returns and Large Language Models",
    "authors": "Chen, Kelly & Xiu",
    "year": null,
    "quality": "working-paper"
@@ -571,36 +571,36 @@
   },
   {
    "url": "https://arxiv.org/abs/2006.08097",
-   "title": "FinBERT",
-   "authors": "Huang, Wang & Yang",
-   "year": 2023,
+   "title": "FinBERT: A Pretrained Language Model for Financial Communications",
+   "authors": "Yang, Uy & Huang",
+   "year": 2020,
    "quality": "working-paper"
   },
   {
    "url": "https://huggingface.co/yiyanghkust/finbert-tone",
-   "title": "FinBERT (huggingface.co)",
-   "authors": "",
+   "title": "FinBERT-tone Model Card (yiyanghkust/finbert-tone)",
+   "authors": "Huang, Wang & Yang",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://doi.org/10.1111/j.1540-6261.2010.01625.x",
-   "title": "Loughran & McDonald 2011",
+   "title": "When Is a Liability Not a Liability? Textual Analysis, Dictionaries, and 10-Ks",
    "authors": "Loughran & McDonald",
    "year": 2011,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/2407.17866",
-   "title": "Kim, Muhn & Nikolaev",
+   "title": "Financial Statement Analysis with Large Language Models",
    "authors": "Kim, Muhn & Nikolaev",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://faculty.chicagobooth.edu/valeri-nikolaev/ongoing-research-projects",
-   "title": "withdrawal",
-   "authors": "",
+   "title": "Financial Statement Analysis with Large Language Models: Withdrawal Notice",
+   "authors": "Kim, Muhn & Nikolaev",
    "year": null,
    "quality": "working-paper"
   },
@@ -613,21 +613,21 @@
   },
   {
    "url": "https://arxiv.org/abs/2601.15247",
-   "title": "10-K risk taxonomy extraction",
+   "title": "Taxonomy-Aligned Risk Extraction from 10-K Filings with Autonomous Improvement Using LLMs",
    "authors": "",
-   "year": null,
+   "year": 2026,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2510.03195",
-   "title": "semantic disclosure shifts",
+   "title": "From Text to Alpha: Can LLMs Track Evolving Signals in Corporate Disclosures?",
    "authors": "",
-   "year": null,
+   "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://ideas.repec.org/a/bla/jfinan/v63y2008i4p1977-2011.html",
-   "title": "Economic Links",
+   "title": "Economic Links and Predictable Returns",
    "authors": "Cohen & Frazzini",
    "year": 2008,
    "quality": "peer-reviewed"
@@ -636,7 +636,7 @@
    "url": "https://arxiv.org/abs/2301.11394",
    "title": "Customer Momentum",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
@@ -648,198 +648,198 @@
   },
   {
    "url": "https://www.stern.nyu.edu/sites/default/files/assets/documents/Gow%20Larcker%20Zakolyukina-Non-answers%20during%20conference%20calls.pdf",
-   "title": "Non-answers",
+   "title": "Non-Answers During Conference Calls",
    "authors": "Gow, Larcker & Zakolyukina",
    "year": null,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1111/j.1540-6261.2011.01705.x",
-   "title": "Power of Voice",
+   "title": "The Power of Voice: Managerial Affective States and Future Firm Performance",
    "authors": "Mayew & Venkatachalam",
    "year": 2012,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1093/rfs/hhq141",
-   "title": "Tetlock 2011, stale news",
-   "authors": "",
+   "title": "All the News That's Fit to Reprint: Do Investors React to Stale Information?",
+   "authors": "Tetlock",
    "year": 2011,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/2510.07920",
-   "title": "Profit Mirage / FinLake-Bench",
+   "title": "Profit Mirage: Revisiting Information Leakage in LLM-based Financial Agents",
    "authors": "",
-   "year": null,
+   "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2502.21206",
-   "title": "Chronologically Consistent LLMs",
+   "title": "Chronologically Consistent Large Language Models",
    "authors": "He, Lv, Manela & Wu",
    "year": null,
    "quality": "working-paper"
   },
   {
    "url": "https://huggingface.co/manelalab",
-   "title": "Chronologically Consistent LLMs (huggingface.co)",
-   "authors": "",
+   "title": "Chronologically Consistent LLMs Model Cards (manelalab)",
+   "authors": "He, Lv, Manela & Wu",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://arxiv.org/abs/2601.13770",
-   "title": "Benhenda, Look-Ahead-Bench",
-   "authors": "",
-   "year": null,
+   "title": "Look-Ahead-Bench: A Standardized Benchmark of Look-ahead Bias in Point-in-Time LLMs for Finance",
+   "authors": "Benhenda",
+   "year": 2026,
    "quality": "working-paper"
   },
   {
    "url": "https://github.com/benstaf/lookaheadbench",
-   "title": "Benhenda, Look-Ahead-Bench (github.com)",
-   "authors": "",
+   "title": "Look-Ahead-Bench Code (lookaheadbench)",
+   "authors": "Benhenda",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://arxiv.org/abs/2412.20138",
-   "title": "TradingAgents",
+   "title": "TradingAgents: Multi-Agents LLM Financial Trading Framework",
    "authors": "",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2605.16895",
-   "title": "The Alpha Illusion",
+   "title": "The Alpha Illusion: Reported Alpha from LLM Trading Agents Should Not Be Treated as Deployment Evidence",
    "authors": "",
-   "year": null,
+   "year": 2026,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2311.13743",
-   "title": "FinMem",
+   "title": "FinMem: A Performance-Enhanced LLM Trading Agent with Layered Memory and Character Design",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2402.18485",
-   "title": "FinAgent",
+   "title": "A Multimodal Foundation Agent for Financial Trading: Tool-Augmented, Diversified, and Generalist (FinAgent)",
    "authors": "",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2510.02209",
-   "title": "StockBench",
+   "title": "StockBench: Can LLM Agents Trade Stocks Profitably in Real-World Markets?",
    "authors": "",
-   "year": null,
+   "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2402.12659",
-   "title": "FinBen",
+   "title": "FinBen: A Holistic Financial Benchmark for Large Language Models",
    "authors": "",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2306.06031",
-   "title": "FinGPT",
+   "title": "FinGPT: Open-Source Financial Large Language Models",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1093/rfs/hhaa009",
-   "title": "Empirical Asset Pricing via ML",
+   "title": "Empirical Asset Pricing via Machine Learning",
    "authors": "Gu, Kelly & Xiu",
    "year": 2020,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1287/mnsc.2022.4449",
-   "title": "ML vs Economic Restrictions",
+   "title": "Machine Learning versus Economic Restrictions: Evidence from Stock Return Predictability",
    "authors": "Avramov, Cheng & Metzker",
    "year": 2023,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.federalreserve.gov/econres/feds/open-source-cross-sectional-asset-pricing.htm",
-   "title": "Open Source Asset Pricing",
+   "title": "Open Source Cross-Sectional Asset Pricing",
    "authors": "Chen & Zimmermann",
    "year": null,
    "quality": "replicated"
   },
   {
    "url": "https://doi.org/10.1016/j.ejor.2016.10.031",
-   "title": "Krauss, Do & Huck 2017",
+   "title": "Deep Neural Networks, Gradient-Boosted Trees, Random Forests: Statistical Arbitrage on the S&P 500",
    "authors": "Krauss, Do & Huck",
    "year": 2017,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1111/jofi.12733",
-   "title": "Chinco, Clark-Joseph & Ye 2019",
+   "title": "Sparse Signals in the Cross-Section of Returns",
    "authors": "Chinco, Clark-Joseph & Ye",
    "year": 2019,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1093/rfs/hhp063",
-   "title": "Rapach, Strauss & Zhou 2010",
+   "title": "Out-of-Sample Equity Premium Prediction: Combination Forecasts and Links to the Real Economy",
    "authors": "Rapach, Strauss & Zhou",
    "year": 2010,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/2012.07149",
-   "title": "Learning to Rank",
+   "title": "Building Cross-Sectional Systematic Strategies By Learning to Rank",
    "authors": "Poh, Lim, Zohren & Roberts",
-   "year": 2012,
+   "year": 2020,
    "quality": "working-paper"
   },
   {
    "url": "https://www.wiley.com/en-us/Advances+in+Financial+Machine+Learning-p-9781119482086",
-   "title": "López de Prado, Advances in Financial ML",
-   "authors": "",
+   "title": "Advances in Financial Machine Learning",
+   "authors": "López de Prado",
    "year": 2018,
    "quality": "practitioner"
   },
   {
    "url": "https://www.nber.org/papers/w30217",
-   "title": "Virtue of Complexity",
+   "title": "The Virtue of Complexity in Return Prediction",
    "authors": "Kelly, Malamud & Zhou",
    "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://bfi.uchicago.edu/wp-content/uploads/2025/08/BFI_WP_2025-104.pdf",
-   "title": "Nagel critique",
-   "authors": "",
+   "title": "Seemingly Virtuous Complexity in Return Prediction",
+   "authors": "Nagel",
    "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1016/j.ejor.2017.11.054",
-   "title": "Fischer & Krauss 2018",
+   "title": "Deep Learning with Long Short-Term Memory Networks for Financial Market Predictions",
    "authors": "Fischer & Krauss",
    "year": 2018,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://iwf.rw.fau.de/files/2015/12/11-2017.pdf",
-   "title": "working paper",
-   "authors": "",
-   "year": null,
+   "title": "Deep Learning with Long Short-Term Memory Networks for Financial Market Predictions (working paper)",
+   "authors": "Fischer & Krauss",
+   "year": 2017,
    "quality": "practitioner"
   },
   {
    "url": "https://arxiv.org/abs/2606.27100",
-   "title": "Pretrained TSFMs for return forecasting",
+   "title": "Pretrained Time-Series Foundation Models for Financial Return Forecasting",
    "authors": "",
-   "year": null,
+   "year": 2026,
    "quality": "working-paper"
   },
   {
@@ -858,7 +858,7 @@
   },
   {
    "url": "https://arxiv.org/abs/1809.09441",
-   "title": "Temporal Relational Ranking",
+   "title": "Temporal Relational Ranking for Stock Prediction",
    "authors": "Feng et al.",
    "year": 2019,
    "quality": "working-paper"
@@ -872,71 +872,71 @@
   },
   {
    "url": "https://doi.org/10.1016/j.jeconom.2020.07.009",
-   "title": "Autoencoder Asset Pricing",
+   "title": "Autoencoder Asset Pricing Models",
    "authors": "Gu, Kelly & Xiu",
    "year": 2021,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/2511.18578",
-   "title": "Re(Visiting) TSFMs in Finance",
+   "title": "Re(Visiting) Time Series Foundation Models in Finance",
    "authors": "Rahimikia, Ni & Wang",
-   "year": null,
+   "year": 2025,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2403.07815",
-   "title": "Chronos",
+   "title": "Chronos: Learning the Language of Time Series",
    "authors": "",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://huggingface.co/amazon/chronos-bolt-base",
-   "title": "Chronos-Bolt",
+   "title": "Chronos-Bolt Model Card (amazon/chronos-bolt-base)",
    "authors": "",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://arxiv.org/abs/2310.10688",
-   "title": "TimesFM",
+   "title": "A Decoder-Only Foundation Model for Time-Series Forecasting (TimesFM)",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2402.02592",
-   "title": "Moirai",
+   "title": "Unified Training of Universal Time Series Forecasting Transformers (Moirai)",
    "authors": "",
-   "year": null,
+   "year": 2024,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2310.08278",
-   "title": "Lag-Llama",
+   "title": "Lag-Llama: Towards Foundation Models for Probabilistic Time Series Forecasting",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1016/0304-4076(86)90063-1",
-   "title": "Bollerslev 1986 GARCH",
-   "authors": "",
+   "title": "Generalized Autoregressive Conditional Heteroskedasticity",
+   "authors": "Bollerslev",
    "year": 1986,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1093/jjfinec/nbp001",
-   "title": "Corsi 2009 HAR",
-   "authors": "",
+   "title": "A Simple Approximate Long-Memory Model of Realized Volatility",
+   "authors": "Corsi",
    "year": 2009,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.2307/1912559",
-   "title": "Hamilton 1989",
-   "authors": "",
+   "title": "A New Approach to the Economic Analysis of Nonstationary Time Series and the Business Cycle",
+   "authors": "Hamilton",
    "year": 1989,
    "quality": "peer-reviewed"
   },
@@ -949,78 +949,78 @@
   },
   {
    "url": "https://doi.org/10.1093/rfs/hhj020",
-   "title": "Gatev, Goetzmann & Rouwenhorst 2006",
+   "title": "Pairs Trading: Performance of a Relative-Value Arbitrage Rule",
    "authors": "Gatev, Goetzmann & Rouwenhorst",
    "year": 2006,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.2469/faj.v66.n4.1",
-   "title": "Do & Faff 2010",
+   "title": "Does Simple Pairs Trading Still Work?",
    "authors": "Do & Faff",
    "year": 2010,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1016/j.jfineco.2019.05.001",
-   "title": "IPCA",
+   "title": "Characteristics Are Covariances: A Unified Model of Risk and Return",
    "authors": "Kelly, Pruitt & Su",
    "year": 2019,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1016/S0047-259X(03)00096-4",
-   "title": "Ledoit & Wolf 2004",
+   "title": "A Well-Conditioned Estimator for Large-Dimensional Covariance Matrices",
    "authors": "Ledoit & Wolf",
    "year": 2004,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/1601.00991",
-   "title": "Kakushadze, 101 Formulaic Alphas",
-   "authors": "",
-   "year": null,
+   "title": "101 Formulaic Alphas",
+   "authors": "Kakushadze",
+   "year": 2016,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1016/S0304-405X(98)00052-X",
-   "title": "Allen & Karjalainen 1999",
+   "title": "Using Genetic Algorithms to Find Technical Trading Rules",
    "authors": "Allen & Karjalainen",
    "year": 1999,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://arxiv.org/abs/2306.12964",
-   "title": "AlphaGen",
+   "title": "Generating Synergistic Formulaic Alpha Collections via Reinforcement Learning (AlphaGen)",
    "authors": "",
    "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2308.00016",
-   "title": "Alpha-GPT",
+   "title": "Alpha-GPT: Human-AI Interactive Alpha Mining for Quantitative Investment",
    "authors": "",
-   "year": null,
+   "year": 2023,
    "quality": "working-paper"
   },
   {
    "url": "https://arxiv.org/abs/2011.09607",
-   "title": "FinRL",
+   "title": "FinRL: A Deep Reinforcement Learning Library for Automated Stock Trading in Quantitative Finance",
    "authors": "",
-   "year": 2011,
+   "year": 2020,
    "quality": "working-paper"
   },
   {
    "url": "https://hobergphillips.tuck.dartmouth.edu/",
-   "title": "data library",
+   "title": "Hoberg-Phillips Data Library",
    "authors": "Hoberg & Phillips",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://ideas.repec.org/a/cup/jfinqa/v53y2018i06p2355-2388_00.html",
-   "title": "text-based industry momentum",
-   "authors": "",
+   "title": "Text-Based Industry Momentum",
+   "authors": "Hoberg & Phillips",
    "year": 2018,
    "quality": "peer-reviewed"
   },
@@ -1033,9 +1033,9 @@
   },
   {
    "url": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4205613",
-   "title": "Causal Factor Investing",
-   "authors": "",
-   "year": null,
+   "title": "Causal Factor Investing: Can Factor Investing Become Scientific?",
+   "authors": "López de Prado",
+   "year": 2023,
    "quality": "working-paper"
   },
   {
@@ -1047,56 +1047,56 @@
   },
   {
    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3647164/",
-   "title": "Wikipedia usage before market moves",
+   "title": "Quantifying Wikipedia Usage Patterns Before Stock Market Moves",
    "authors": "Moat et al.",
    "year": 2013,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://wikitech.wikimedia.org/wiki/Analytics/AQS/Pageviews",
-   "title": "Wikimedia pageviews API",
+   "title": "Wikimedia Pageviews API",
    "authors": "",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://ideas.repec.org/a/oup/rfinst/v37y2024i5p1409-1459..html",
-   "title": "WallStreetBets",
+   "title": "Place Your Bets? The Value of Investment Research on Reddit's Wallstreetbets",
    "authors": "Bradley, Hanousek, Jame & Xiao",
    "year": 2024,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.2308/accr-51865",
-   "title": "Twitter",
+   "title": "Can Twitter Help Predict Firm-Level Earnings and Stock Returns?",
    "authors": "Bartov, Faurel & Mohanram",
    "year": 2018,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.gdeltproject.org/data.html",
-   "title": "GDELT",
+   "title": "The GDELT Project Data",
    "authors": "",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://pubsonline.informs.org/doi/10.1287/mnsc.2019.3450",
-   "title": "Job postings",
-   "authors": "Gutierrez et al.",
+   "title": "Are Online Job Postings Informative to Investors?",
+   "authors": "Gutierrez, Lourie, Nekrasov & Shevlin",
    "year": 2020,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/cup/jfinqa/v60y2025i2p551-579_1.html",
-   "title": "satellite data",
+   "title": "On the Capital Market Consequences of Big Data: Evidence from Outer Space",
    "authors": "Katona, Painter, Patatoukas & Zeng",
    "year": 2025,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.1093/qje/qjw040",
-   "title": "patents",
+   "title": "Technological Innovation, Resource Allocation, and Growth",
    "authors": "Kogan, Papanikolaou, Seru & Stoffman",
    "year": 2017,
    "quality": "peer-reviewed"
@@ -1124,56 +1124,56 @@
   },
   {
    "url": "https://www.nber.org/papers/w26975",
-   "title": "Congress trading",
+   "title": "Do Senators and House Members Beat the Stock Market? Evidence from the STOCK Act",
    "authors": "Belmont et al.",
    "year": 2022,
    "quality": "working-paper"
   },
   {
    "url": "https://doi.org/10.1016/j.jfineco.2016.03.004",
-   "title": "Short interest",
+   "title": "Short Interest and Aggregate Stock Returns",
    "authors": "Rapach, Ringgenberg & Zhou",
    "year": 2016,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://www.finra.org/finra-data/browse-catalog/equity-short-interest",
-   "title": "FINRA short interest",
+   "title": "FINRA Equity Short Interest",
    "authors": "",
    "year": null,
    "quality": "practitioner"
   },
   {
    "url": "https://ideas.repec.org/a/cup/jfinqa/v45y2010i03p641-662_00.html",
-   "title": "IV smirk",
+   "title": "What Does the Individual Option Volatility Smirk Tell Us About Future Equity Returns?",
    "authors": "Xing, Zhang & Zhao",
    "year": 2010,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/cup/jfinqa/v45y2010i02p335-367_00.html",
-   "title": "IV spread",
+   "title": "Deviations from Put-Call Parity and Stock Return Predictability",
    "authors": "Cremers & Weinbaum",
    "year": 2010,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/oup/revfin/v25y2021i4p937-972..html",
-   "title": "ETF flows",
+   "title": "ETF Arbitrage, Non-Fundamental Demand, and Return Predictability",
    "authors": "Brown, Davies & Ringgenberg",
    "year": 2021,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://doi.org/10.2308/accr-51232",
-   "title": "SEC comment letters",
+   "title": "SEC Comment Letters and Insider Sales",
    "authors": "Dechow, Lawrence & Ryans",
    "year": 2016,
    "quality": "peer-reviewed"
   },
   {
    "url": "https://ideas.repec.org/a/bla/jfinan/v55y2000i2p773-806.html",
-   "title": "Barber & Odean 2000",
+   "title": "Trading Is Hazardous to Your Wealth: The Common Stock Investment Performance of Individual Investors",
    "authors": "Barber & Odean",
    "year": 2000,
    "quality": "peer-reviewed"
@@ -1181,15 +1181,15 @@
   {
    "url": "https://marketing.morningstar.com/content/cs-assets/v3/assets/blt9415ea4cc4157833/blt5d1d34a59bd78a2c/680a4bd8c4d2e877fdb4b354/Mind_the_Gap_2024.pdf",
    "title": "Morningstar Mind the Gap 2024",
-   "authors": "",
+   "authors": "Morningstar",
    "year": 2024,
    "quality": "practitioner"
   },
   {
    "url": "https://web.stanford.edu/~wfsharpe/art/active/active.htm",
-   "title": "Sharpe, Arithmetic of Active Management",
-   "authors": "",
-   "year": null,
+   "title": "The Arithmetic of Active Management",
+   "authors": "Sharpe",
+   "year": 1991,
    "quality": "practitioner"
   }
  ],

@@ -38,6 +38,7 @@ class MethodRow:
     origin: str
     rating: int | None
     archive_status: str
+    archive_note: str
     evidence: str
     why: str
     result: str
@@ -71,8 +72,8 @@ class SearchRow:
 
 
 _SOURCE = "id, title, authors, year, quality, url, read_on, note, added_at, added_by"
-_METHOD = ("id, ref, name, family, definition, aliases, status, duplicate_of, origin, rating, archive_status, evidence, "
-           "why, result, see_also, test_key, status_by, status_at, added_at")
+_METHOD = ("id, ref, name, family, definition, aliases, status, duplicate_of, origin, rating, archive_status, "
+           "archive_note, evidence, why, result, see_also, test_key, status_by, status_at, added_at")
 SOURCE_FIELDS = ("title", "authors", "year", "quality", "url", "read_on", "note")
 
 
@@ -135,15 +136,15 @@ class LiteratureRepo:
 
     def add_method(self, ref: str, name: str, status: str, origin: str, at: str, by: str, *, family: str = "",
                    definition: str = "", aliases: Iterable[str] = (), rating: int | None = None,
-                   archive_status: str = "", evidence: str = "", why: str = "", result: str = "",
+                   archive_status: str = "", archive_note: str = "", evidence: str = "", why: str = "", result: str = "",
                    see_also: Iterable[str] = (), test_key: str | None = None) -> int:
         with transaction(self._conn):
             return self._conn.execute(
                 "INSERT INTO lit_methods (ref, name, family, definition, aliases, status, origin, rating, archive_status, "
-                "evidence, why, result, see_also, test_key, status_by, status_at, added_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "archive_note, evidence, why, result, see_also, test_key, status_by, status_at, added_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (ref, name, family, definition, json.dumps(list(aliases)), status, origin, rating, archive_status,
-                 evidence, why, result, json.dumps(list(see_also)), test_key, by, at, at)).lastrowid
+                 archive_note, evidence, why, result, json.dumps(list(see_also)), test_key, by, at, at)).lastrowid
 
     def method(self, ref: str) -> MethodRow | None:
         r = self._conn.execute(f"SELECT {_METHOD} FROM lit_methods WHERE ref = ? COLLATE NOCASE", (ref,)).fetchone()

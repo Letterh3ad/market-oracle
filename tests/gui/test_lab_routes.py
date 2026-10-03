@@ -52,3 +52,11 @@ async def test_searches_are_logged_and_listed(client):
     assert [(s["query"], s["place"], s["by"]) for s in listed] == [("decay", "SSRN", "user")]
     bad = await client.post("/api/lab/searches", json={"query": "decay", "where": ""})
     assert bad.status_code == 400
+
+
+async def test_a_blank_title_is_refused_and_never_blanks_a_known_one(client):
+    bad = await client.post("/api/lab/sources", json={"title": "  "})
+    assert bad.status_code == 400 and "nothing to record" in bad.json()["error"]
+    kept = (await client.post("/api/lab/sources", json={"id": MCLEAN, "title": " ", "note": "again"})).json()
+    assert kept["source"]["title"] == "Does Academic Research Destroy Stock Return Predictability?"
+    assert (await client.get("/api/lab/methods/T-10")).json()["archive_note"].startswith("Tried-other")

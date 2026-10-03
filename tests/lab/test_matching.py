@@ -9,6 +9,14 @@ from oracle.lab.matching import normal_title, source_key, title_score
     "doi:10.1111/j.1540-6261.1992.tb04398.x",
     "10.1111/j.1540-6261.1992.tb04398.x.",
     "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04398.x?utm_source=x",
+    "https://doi.org/10.1111/j.1540-6261.1992.tb04398.x/",
+    "http://dx.doi.org/10.1111/j.1540-6261.1992.tb04398.x/",
+    "https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04398.x/",
+    "https://onlinelibrary.wiley.com/doi/full/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://onlinelibrary.wiley.com/doi/pdf/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://onlinelibrary.wiley.com/doi/epdf/10.1111/j.1540-6261.1992.tb04398.x",
+    "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04398.x/full",
+    "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04398.x/abstract",
 ])
 def test_doi_variants_are_one_key(text):
     assert source_key(text) == "doi:10.1111/j.1540-6261.1992.tb04398.x"
