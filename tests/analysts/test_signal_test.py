@@ -6,7 +6,7 @@ import pytest
 
 from oracle.analysts.predictive import newey_west_t, spearman
 from oracle.analysts.signal_test import (
-    INSIDE, Panel, excess, momentum_12_1, overall, power, reversal_1m, window_result,
+    INSIDE, Panel, break_even, excess, momentum_12_1, overall, power, reversal_1m, top_books, window_result,
 )
 from oracle.market.bars import Bar
 
@@ -166,3 +166,34 @@ def test_a_fail_with_a_positive_ic_under_the_observed_power_says_it_could_not_se
     assert window_result("confirm", negative, spans, 1, None).verdict_text == "FAIL", "a negative IC is a plain FAIL"
     passing = window_result("confirm", ics_on(date(2020, 1, 1), 60, 0.05), spans, 1, None)
     assert passing.verdict_text == "PASS"
+
+
+def test_break_even_cost_is_the_gross_edge_over_twice_the_turnover():
+    assert break_even([0.01, 0.03], [0.5, 0.5]) == pytest.approx(0.02)
+    assert break_even([-0.01, 0.0], [0.5, 0.5]) is None, "no gross edge: no cost breaks even"
+    assert break_even([0.01], []) is None and break_even([], [0.5]) is None
+
+
+def test_turnover_and_break_even_on_a_toy_panel_checked_by_hand():
+    """Five names in one sector, h = 2, so books on day indexes 1 and 3 and a top fifth of one name.
+    Day 1 holds A, which rises 10% to day 3 while the rest stay flat: excess +0.10. Day 3 holds B,
+    which rises 20% to day 5 (A flat): excess +0.20. The second book replaces the whole first: one-way
+    turnover 1.0 (the first book has nothing before it). Break-even one-way cost per trade:
+    mean gross / (2 x mean turnover) = 0.15 / 2 = 0.075."""
+    flat = [10] * 7
+    p = panel(7, {"A": [10, 10, 10, 11, 11, 11, 11], "B": [10, 10, 10, 10, 10, 12, 12], "C": flat, "D": flat,
+                  "E": flat})
+    picks = {1: "A", 3: "B"}
+    books = top_books(p, lambda _, i, names: {s: float(s == picks.get(i)) for s in names}, 2)
+    assert {d: (round(g, 6), set(n)) for d, (g, n, _) in books.items()} == {p.days[1]: (0.1, {"A"}),
+                                                                           p.days[3]: (0.2, {"B"})}
+    w = window_result("confirm", {}, [(p.days[0], p.days[6])], 2, None, books=books)
+    assert w.turnover == pytest.approx(1.0) and w.break_even == pytest.approx(0.075)
+    later = window_result("confirm", {}, [(p.days[2], p.days[6])], 2, None, books=books)
+    assert later.turnover == pytest.approx(1.0) and later.break_even == pytest.approx(0.1), \
+        "a window's first book is turned over from the book before the window"
+
+
+def test_a_window_without_books_reports_no_turnover():
+    w = window_result("confirm", {}, [(D0, D0 + timedelta(30))], 5, None)
+    assert w.turnover is None and w.break_even is None

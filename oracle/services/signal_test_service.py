@@ -13,7 +13,7 @@ from datetime import date
 
 from oracle.analysts.predictive import T_BAR
 from oracle.analysts.signal_test import (
-    Panel, SegmentRow, Signal, WindowResult, daily_ics, momentum_12_1, overall, reversal_1m, unseen_text,
+    Panel, SegmentRow, Signal, WindowResult, daily_ics, momentum_12_1, overall, reversal_1m, top_books, unseen_text,
     window_result,
 )
 from oracle.broker.walk_forward import segments
@@ -183,13 +183,16 @@ async def run_signal_test(ctx: AppContext, name: str, *, registry: dict[str, Sig
             train, confirm = [], []
             for h in horizons:
                 ics: dict = {}
+                books: dict = {}
                 for i in range(1, len(p.days), CHUNK):
                     await turn(f"{signal.name}, {h}-day horizon: {p.days[i]}")
                     ics.update(daily_ics(p, signal.score, h, i, i + CHUNK))
-                train.append(window_result("train", ics, train_spans, h, missing["train"], cutoff, bar, inclusive))
+                    books.update(top_books(p, signal.score, h, i, i + CHUNK))
+                train.append(window_result("train", ics, train_spans, h, missing["train"], cutoff, bar, inclusive,
+                                           books))
                 if not train_only:
                     confirm.append(window_result("confirm", ics, confirm_spans, h, missing["confirm"], cutoff, bar,
-                                                 inclusive))
+                                                 inclusive, books))
         except _Stopped:
             return None
         snap = tb.snapshot()

@@ -69,6 +69,9 @@ function fundamentalsTable(c) {
 const num = (x, digits = 4) => (x == null ? "-" : `${x > 0 ? "+" : ""}${x.toFixed(digits)}`);
 const fixed = (x, digits = 4) => (x == null ? "-" : x.toFixed(digits));
 const pct = (x) => (x == null ? "-" : share(x));
+// Results kept before turnover was measured have none; no gross edge means no cost breaks even.
+const trading = (w) => (w.turnover == null ? "-" : `${share(w.turnover)} a rebalance, break-even `
+  + `${w.break_even == null ? "none (no gross edge)" : `${(w.break_even * 100).toFixed(2)}% a trade`}`);
 
 function windowCell(w) {
   return `IC ${num(w.ic)}, t ${fixed(w.t, 2)}, ${w.positive}+ of ${w.counted} segments: ${w.verdict_text ?? w.verdict}`;
@@ -85,13 +88,14 @@ function segmentsTable(w) {
 
 function signalsTable(signals, buttons) {
   const head = [["Signal"], ["Horizon", null, 1], ["Power train / confirm (observed)", null, 1],
-    ["Missing train / confirm", null, 1], ["Train (reported only)"], ["Confirm"], ["Verdict"], [""]];
+    ["Missing train / confirm", null, 1], ["Turnover, break-even cost (confirm)", null, 1], ["Train (reported only)"],
+    ["Confirm"], ["Verdict"], [""]];
   const rows = signals.flatMap((s) => {
     const r = s.result;
     const label = el("td", null, el("span", { class: "mono" }, s.name), el("div", { class: "dim small" }, s.label));
     if (!r) {
       return [el("tr", null, label, el("td", { class: "num" }, s.horizons.join(", ")),
-        el("td", { class: "small", colspan: 5 }, "Not run yet."), el("td", null, ...buttons(s.name)))];
+        el("td", { class: "small", colspan: 6 }, "Not run yet."), el("td", null, ...buttons(s.name)))];
     }
     return r.confirm.map((c, k) => {
       const t = r.train[k];
@@ -100,6 +104,7 @@ function signalsTable(signals, buttons) {
         el("td", { class: "num" }, `${fixed(t.observed_power)} / ${fixed(c.observed_power)}`,
           el("div", { class: "dim small" }, `formula ${fixed(t.power)} / ${fixed(c.power)}`)),
         el("td", { class: "num" }, `${pct(t.missing_share)} / ${pct(c.missing_share)}`),
+        el("td", { class: "num small" }, trading(c)),
         el("td", { class: "small" }, windowCell(t)),
         el("td", { class: "small" }, windowCell(c)),
         el("td", { class: r.passed ? "up" : r.verdict === "FAIL" ? "down" : "dim" }, k ? "" : r.verdict_text ?? r.verdict),
@@ -348,8 +353,9 @@ function signalTestsSection() {
       + "six-month segments. Power is the smallest IC the window could see at t 2, from its daily ICs' own spread (the "
       + "formula from names, days and horizon is beside it; it assumes names move independently and reads several "
       + "times too low). A FAIL whose IC was above 0 but under that power says so. The missing share is the window's "
-      + "member-days without bars. Train only runs 2010-2019 alone, never reading the confirm. Nothing here was tuned "
-      + "on results."),
+      + "member-days without bars. Turnover is the share of the top fifth's equal-weight book replaced each horizon; the "
+      + "break-even cost is the one-way cost per trade that takes its sector-excess edge to zero (sector side free). "
+      + "Train only runs 2010-2019 alone, never reading the confirm. Nothing here was tuned on results."),
     signalNote, signalsBody);
   return { node, start: begin };
 }
