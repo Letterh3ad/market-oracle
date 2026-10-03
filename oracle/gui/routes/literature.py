@@ -1,4 +1,4 @@
-"""The research lab's literature index: lookup, the method list, one method, marks, recording a source and
+"""The research lab's literature index: lookup, meaning search, the method list, one method, marks, recording a source and
 the search log. Each call opens the research database on a thread of its own. Marks and records made
 here are the user's."""
 
@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from oracle.gui.deps import get_ctx
 from oracle.services import literature_service as lab
+from oracle.services import meaning_service
 from oracle.services.context import AppContext
 
 router = APIRouter(prefix="/api/lab")
@@ -48,6 +49,11 @@ class SearchLog(BaseModel):
 @router.get("/lookup")
 async def lookup(q: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     return asdict(await asyncio.to_thread(lab.lookup, ctx, q))
+
+
+@router.get("/similar")
+async def similar(q: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(await asyncio.to_thread(meaning_service.similar, ctx, q))
 
 
 @router.get("/methods")

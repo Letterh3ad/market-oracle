@@ -1,4 +1,4 @@
-"""`oracle lab`'s literature index commands: lookup, record, search-log, mark, methods, method."""
+"""`oracle lab`'s literature index commands: lookup, similar, record, search-log, mark, methods, method."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import textwrap
 
 from oracle.services.context import AppContext
+from oracle.services.meaning_service import similar
 from oracle.services.literature_service import (
     MARKS, QUALITIES, STATUSES, Method, MethodHit, Source, log_search, lookup, mark, method, methods, record, searches,
 )
@@ -19,6 +20,12 @@ def add_commands(sub: argparse._SubParsersAction) -> None:
                                              "and status")
     p.add_argument("query")
     p.set_defaults(handler=run_lookup)
+
+    p = sub.add_parser("similar", description="find methods like this one by meaning (local Ollama embeddings of "
+                                              "each method's rule; shared words when Ollama is down): the 5 nearest "
+                                              "with score and status")
+    p.add_argument("text", help="the idea in plain words, e.g. 'buy stocks near their yearly high'")
+    p.set_defaults(handler=run_similar)
 
     p = sub.add_parser("record", description="record a source (new, or update one found by any of its ids or its "
                                              "title), link it to methods it yields, and optionally add a new method")
@@ -97,6 +104,15 @@ def run_lookup(ctx: AppContext, args: argparse.Namespace) -> int:
         for h in found.sources:
             print_source(h.source, h.score)
     print_hits(found.methods)
+    return 0
+
+
+def run_similar(ctx: AppContext, args: argparse.Namespace) -> int:
+    found = similar(ctx, args.text)
+    print(f"Similar to {found.query!r}: {found.note}")
+    for h in found.hits:
+        print(f"  {h.ref:<6} {h.status:<12} {h.score:.2f}  {h.name}"
+              + (f"  (rating {h.rating})" if h.rating is not None else ""))
     return 0
 
 

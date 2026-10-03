@@ -73,8 +73,8 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
                         ("rule", r.rule), ("universe", r.universe),
                         ("expected", f"{r.expected_sign}, {r.expected_size} ({r.source})"), ("power", r.power),
                         ("costs", r.costs), ("bar", bar_text(r)), ("pass rule", r.bar_rule),
-                        ("kill stage", r.kill_stage), ("parent", r.parent), ("different because", r.different_because),
-                        ("commit", r.commit_hash or "not committed: no data run yet"), ("note", r.note)):
+                        ("kill stage", r.kill_stage), ("parent", r.parent), ("near a FAIL", r.near_fail),
+                        ("different because", r.different_because), ("commit", r.commit_hash or "not committed: no data run yet"), ("note", r.note)):
         if value:
             print(f"  {name}: {value}")
     return 0

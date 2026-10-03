@@ -1,4 +1,5 @@
-// The literature index (research-lab 03): look up a paper or method, every method with its funnel
+// The literature index (research-lab 03): look up a paper or method, find methods like an idea by
+// meaning (research-lab 04), every method with its funnel
 // status, one method's rule, sources and marks (go / drop / dig deeper), recording a source, and the
 // search log. A section of the Research tab; marks and records made here are the user's.
 import { api } from "./api.js";
@@ -36,6 +37,10 @@ function literatureSection() {
   const query = el("input", { type: "search", size: 50, "aria-label": "Look up", placeholder: "title, method, ref or id" });
   query.addEventListener("keydown", (e) => { if (e.key === "Enter") lookup(); });
   const found = el("div");
+  const idea = el("input", { type: "search", size: 50, "aria-label": "Find similar",
+    placeholder: "an idea in plain words, e.g. buy stocks near their yearly high" });
+  idea.addEventListener("keydown", (e) => { if (e.key === "Enter") findSimilar(); });
+  const alike = el("div");
   const statusPick = el("select", { "aria-label": "Status" }, el("option", { value: "" }, "every status"));
   const listBody = el("div");
   const detail = el("div", { "data-method": "" });
@@ -111,6 +116,20 @@ function literatureSection() {
         el("p", { class: "small dim" }, r.note + (r.key ? ` (${r.key})` : "")),
         r.sources.length ? el("ul", { class: "small" }, ...r.sources.map((h) => sourceItem(h.source, h.score, open))) : null,
         table([["Method"], ["Status"], ["Score", null, 1], ["Name"], ["Matched on"]], hitRows(r.methods), "No methods."));
+    } catch (err) {
+      say(err.message);
+    }
+  }
+
+  async function findSimilar() {
+    if (!idea.value.trim()) return;
+    try {
+      const r = await api(`/api/lab/similar?q=${encodeURIComponent(idea.value)}`);
+      alike.replaceChildren(el("p", { class: r.mode === "meaning" ? "small dim" : "small warn-text" }, r.note),
+        table([["Method"], ["Status"], ["Score", null, 1], ["Name"], ["Family"]], r.hits.map((h) =>
+          el("tr", { "data-ref": h.ref }, el("td", null, refButton(h.ref, open)), el("td", null, h.status),
+            el("td", { class: "num" }, h.score.toFixed(2)), el("td", null, h.name),
+            el("td", { class: "small dim" }, h.family))), "No methods."));
     } catch (err) {
       say(err.message);
     }
@@ -201,11 +220,14 @@ function literatureSection() {
   }
 
   const lookupButton = el("button", { type: "button", onclick: lookup }, "Look up");
+  const similarButton = el("button", { type: "button", onclick: findSimilar }, "Find similar");
   const node = el("div", { class: "card", "data-literature": "" },
     el("h2", null, "Literature index"),
     el("p", { class: "dim small" }, "Every method the lab knows of, the papers and posts it came from, and the searches "
-      + "run for more. Look up by DOI, SSRN, arXiv, NBER or a link (exact), or by title, method name or ref (fuzzy)."),
-    el("div", { class: "row wrap" }, query, lookupButton), found, note, detail,
+      + "run for more. Look up by DOI, SSRN, arXiv, NBER or a link (exact), or by title, method name or ref (fuzzy). "
+      + "Find similar matches an idea by meaning (a local model), or by shared words when the model is not running."),
+    el("div", { class: "row wrap" }, query, lookupButton), found,
+    el("div", { class: "row wrap" }, idea, similarButton), alike, note, detail,
     el("h3", null, "Methods"), el("div", { class: "row" }, statusPick), listBody,
     el("details", null, el("summary", null, "Record a source"),
       el("div", { class: "row wrap" }, rec.id, rec.title, rec.authors, rec.year, quality, rec.read_on),

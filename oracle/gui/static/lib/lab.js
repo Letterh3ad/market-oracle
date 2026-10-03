@@ -15,7 +15,7 @@ const FIELDS = [
   ["universe", "Universe"], ["expected_size", "Expected size"], ["source", "Source of the sign and size"],
   ["power", "Power estimate: could the testbed see that size?", true], ["costs", "Costs"],
   ["kill_stage", "Kill stage"], ["parent", "Near a registered test (its key), if any"],
-  ["different_because", "Different because (needed with a parent)", true]];
+  ["different_because", "Different because (needed with a parent or near a FAILed method)", true]];
 
 function scoreTable(board, pick) {
   return table([["Test"], ["Type"], ["Registered"], ["h", null, 1], ["Confirm", null, 1], ["t", null, 1], ["Bar"],
@@ -83,8 +83,8 @@ function scoreboardSection() {
     const rows = [["Registered", r.registered_on], ["Type", r.kind], ["Horizons", r.horizons.join(", ") || "none"],
       ["Rule", r.rule], ["Universe", r.universe], ["Expected", `${r.expected_sign}, ${r.expected_size} (${r.source})`],
       ["Power", r.power], ["Costs", r.costs], ["Bar", r.bar_text], ["Pass rule", r.bar_rule],
-      ["Kill stage", r.kill_stage], ["Parent", r.parent], ["Different because", r.different_because],
-      ["Commit", r.commit_hash], ["Note", r.note]].filter(([, v]) => v);
+      ["Kill stage", r.kill_stage], ["Parent", r.parent], ["Near a FAIL", r.near_fail],
+      ["Different because", r.different_because], ["Commit", r.commit_hash], ["Note", r.note]].filter(([, v]) => v);
     detail.replaceChildren(el("div", { class: "card", "data-registration": key },
       el("h3", null, `${r.label} (${r.key})`),
       el("table", { class: "small" }, el("tbody", null, ...rows.map(([k, v]) =>
