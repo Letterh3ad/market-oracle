@@ -3333,3 +3333,15 @@ tick's lock and its banner); explaining every flag (rejected: hundreds of model 
 - Gate r1 M1: a buying cost above the money it is charged on takes all of it and no more, a rebalance cost at most the pot, so the pot never goes below 0 and a fee never pays back; a lump of 0 or less, a cash rate of -100% or less, and fees that take a whole drip tranche are refused (400 in the GUI).
 - Gate r1 L2: the card's Platform form saves the six `[plan]` keys in one checked write (`PUT /api/plan/platform`, `settings_service.set_plan`): all or none.
 **Alternatives:** A deep fetch of ACWI and GBP/USD into the live DB (duplicates 02's job and its research-DB rule); CUKX.L as the second fund (2010 on, live DB, a different TER basis than the first fund).
+
+## 2026-10-03 - Plan tab, the "your plan" summary and its default fund rule (boring-plan 05)
+**Context:** Spec 6 asks for a Plan tab with a summary (fund, wrapper, platform type, monthly, overlay yes/no); spec 2 says "default pick all-world unless the numbers say otherwise". 02's real run has the S&P 500 ahead of all-world since 2012 on both yearly return (+15.96% vs +12.68%) and worst fall (-26.1% vs -27.3%), so a plain "best numbers" rule would pick a 100% US fund on one decade.
+**Decision:**
+- Default fund: all-world unless a fund no more US-heavy than all-world beats it on both yearly return and worst fall over 02's shared history. A more concentrated fund's lead is shown in the reason, not followed. The user's pick (`[plan] fund`, "" the default) wins and the reason still states the numbers' default.
+- `[plan]` gains `fund` and `monthly` (GBP a month, 0 not set). The spec's "no amounts stored" now means the pot: the ticket asks for a monthly setting, and only the user's own oracle.toml holds it.
+- Wrapper is fixed to Stocks and Shares ISA (spec situation); its reason gives the yearly share of the £20,000 allowance. Pension and LISA are ticket 09's comparison.
+- Overlay yes only when 04's kept test passed; no result is "No (not tested yet)".
+- What is not known yet is a `missing` list naming the card's button (and, in the CLI, the command), never an error.
+- `oracle plan set` takes every `[plan]` key; `settings_service.set_plan` now checks the given keys over the current plan, so a partial write keeps the rest (gate 03 L5). `PUT /api/plan/choice` saves fund and monthly; the platform form keeps `PUT /api/plan/platform`.
+- The three 02/03/04 cards move off the Ledgers tab to the Plan tab, under the summary, which reloads when a card's job finishes or the platform is saved. Their jobs link to `#plan`. 08 and 09 add their panels to the tab's section list.
+**Alternatives:** Best risk-adjusted fund as the default (picks the S&P 500 on 2012-2026); a stored wrapper setting (nothing to choose until 09); a separate settings route for fund and monthly through the generic settings form (no validation of the fund key).

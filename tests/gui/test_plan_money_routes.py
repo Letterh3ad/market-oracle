@@ -65,3 +65,23 @@ async def test_a_refused_platform_value_saves_nothing(client, ctx):
     assert r.status_code == 400 and "fx_fee" in r.json()["error"]
     assert ctx.config.plan.flat_fee == 4.99
     assert "flat_fee = 4.99" in ctx.config_source.read_text(encoding="utf-8")
+
+
+async def test_the_summary_lists_each_line_and_what_is_missing(client):
+    body = (await client.get("/api/plan/summary")).json()
+    assert [line["name"] for line in body["lines"]] == ["fund", "wrapper", "platform", "monthly", "overlay"]
+    assert body["fund"] == "all_world" and body["picked"] is False and body["overlay"] is False
+    assert [m["step"] for m in body["missing"]] == ["funds", "platform", "monthly", "trend"]
+    assert ["sp500", "S&P 500"] in body["funds"]
+
+
+async def test_the_choice_saves_fund_and_monthly_only_and_refuses_an_unknown_fund(client, ctx):
+    await client.put("/api/plan/platform", json=PLATFORM)
+    r = await client.put("/api/plan/choice", json={"fund": "sp500", "monthly": 400})
+    assert r.status_code == 200 and r.json()["fund"] == "sp500" and r.json()["monthly"] == 400
+    assert ctx.config.plan.flat_fee == 4.99 and ctx.config.plan.platform == "flat"
+    r = await client.put("/api/plan/choice", json={"fund": "gold"})
+    assert r.status_code == 400 and "gold" in r.json()["error"]
+    r = await client.put("/api/plan/choice", json={"fund": "default"})
+    assert r.status_code == 200 and ctx.config.plan.fund == "" and ctx.config.plan.monthly == 400
+    assert (await client.put("/api/plan/choice", json={"monthly": "lots"})).status_code in (400, 422)

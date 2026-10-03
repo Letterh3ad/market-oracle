@@ -1,6 +1,6 @@
 // The fund comparison (boring-plan 02): all-world, developed world, S&P 500 and a UK home-bias mix as
 // sterling accumulating funds after their TER, every line a proxy, and each real UCITS fund tracked
-// against its proxy. Self-contained: lives on the Ledgers tab until the Plan tab exists.
+// against its proxy. Self-contained card on the Plan tab; `changed` hears when a run finishes.
 import { api } from "./api.js";
 import { linesChart } from "./chart.js";
 import { table } from "./compare.js";
@@ -34,7 +34,7 @@ function trackTable(tracks) {
     ["Difference (points)", null, 1], ["Per year (points)", null, 1]], trs, "No real fund stored.");
 }
 
-function fundsSection() {
+function fundsSection({ changed } = {}) {
   const note = el("div", { class: "form-note" });
   const body = el("div");
   let chart = null;
@@ -91,7 +91,7 @@ function fundsSection() {
   function follow(job) {
     state(job);
     followJob(job, state).then(() => say("The fund comparison finished.", false), (err) => say(err.message))
-      .finally(load);
+      .finally(() => { load(); changed?.(); });
   }
 
   const run = el("button", { type: "button", onclick: async () => {

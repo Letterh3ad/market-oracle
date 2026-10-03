@@ -12,9 +12,6 @@ import { repaint } from "../lib/repaint.js";
 import { regimeCard } from "../lib/regime.js";
 import { replaySection } from "../lib/replay.js";
 import { signalTestsSection } from "../lib/signal_tests.js";
-import { trendSection } from "../lib/trend.js";
-import { planMoneySection } from "../lib/plan_money.js";
-import { fundsSection } from "../lib/funds.js";
 import { dataHealthSection } from "../lib/data_health.js";
 import { unvalidatedBadge } from "../lib/research.js";
 import { tip, tipText } from "../lib/tip.js";
@@ -30,9 +27,6 @@ let backtest = null; // this render's Backtest section: one node kept across rep
 let replay = null; // this render's Replay study card, kept across repaints like the Backtest section
 let history = null; // this render's History coverage card, kept the same way
 let signalTests = null; // this render's Signal tests card, kept the same way
-let trend = null; // this render's Trend overlay test card, until the Plan tab takes it
-let planMoney = null; // this render's Fees and contributions card, until the Plan tab takes it
-let funds = null; // this render's Fund comparison card, until the Plan tab takes it
 let dataHealth = null; // this render's Data health card
 let reader = null; // this render's Stronger reader card
 let layaTest = null; // this render's Laya predictive test card, kept the same way
@@ -382,9 +376,6 @@ async function load(mine) {
       new Set(stale.due)),
     backtest.node,
     signalTests.node,
-    funds.node,
-    trend.node,
-    planMoney.node,
     dataHealth.node,
     layaTest.node,
     history.node,
@@ -397,9 +388,6 @@ async function load(mine) {
     compared.draw();
     backtest.start();
     signalTests.start();
-    funds.start();
-    trend.start();
-    planMoney.start();
     dataHealth.start();
     layaTest.start();
     history.start();
@@ -418,9 +406,6 @@ function render(target) {
   replay = replaySection();
   history = historySection();
   signalTests = signalTestsSection();
-  trend = trendSection();
-  planMoney = planMoneySection();
-  funds = fundsSection();
   dataHealth = dataHealthSection();
   reader = readerSection();
   layaTest = layaTestSection();

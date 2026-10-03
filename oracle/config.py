@@ -242,8 +242,8 @@ PLATFORMS = ("percentage", "flat")
 
 @dataclass(frozen=True)
 class PlanConfig:
-    """The user's investing platform, for the boring plan's fee and contribution tests. Only rates:
-    amounts are entered per run, never stored."""
+    """The user's investing platform and plan, for the boring plan's tests and the "your plan"
+    summary. Rates, the fund picked and the monthly amount; the pot itself is never stored."""
 
     platform: str = "percentage"
     """Which fee the user pays: "percentage" or "flat"."""
@@ -257,6 +257,10 @@ class PlanConfig:
     """£ per buy or sell."""
     fx_fee: float = 0.0
     """% of each buy taken for currency conversion."""
+    fund: str = ""
+    """The fund comparison key the user picked; "" is the numbers' default (all-world unless they say otherwise)."""
+    monthly: float = 0.0
+    """£ paid in each month; 0 is not set yet."""
 
 
 @dataclass(frozen=True)
@@ -1096,10 +1100,13 @@ def check_plan(raw: object) -> PlanConfig:
     config = replace(PlanConfig(), **raw)
     if config.platform not in PLATFORMS:
         raise ConfigError(f"plan.platform must be one of {', '.join(PLATFORMS)}, got {config.platform!r}")
-    for key in ("percent_fee", "percent_cap", "flat_fee", "dealing_fee", "fx_fee"):
+    if not isinstance(config.fund, str):
+        raise ConfigError(f"plan.fund must be a fund name, got {config.fund!r}")
+    for key in ("percent_fee", "percent_cap", "flat_fee", "dealing_fee", "fx_fee", "monthly"):
         value = getattr(config, key)
         high = 100 if key in ("percent_fee", "fx_fee") else float("inf")
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= high:
+        if (isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= high
+                or (key == "monthly" and value == high)):
             raise ConfigError(f"plan.{key} must be a number from 0{' to 100' if high == 100 else ' up'}, got {value!r}")
     return config
 

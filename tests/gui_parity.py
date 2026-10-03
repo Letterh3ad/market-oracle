@@ -202,19 +202,24 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "signals list": "GET /api/signals",
     "signals test": "POST /api/jobs/signal-test",
     "signals test --train-only": "POST /api/jobs/signal-test",
-    # Ledgers tab, Trend overlay test card (moves to the Plan tab): "Run trend test" and its kept result.
-    "plan trend": "POST /api/jobs/plan-trend",
-    "plan trend --show": "GET /api/plan/trend",
-    # Ledgers tab, Fees and contributions card (moves to the Plan tab): its two forms; the platform
-    # fees themselves are [plan] settings, saved together by the card's Platform form (PUT /api/plan/platform).
+    # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
+    # Your plan card: the summary, and its fund picker and monthly amount.
+    "plan show": "GET /api/plan/summary",
+    **{key: "PUT /api/plan/choice" for key in ("plan set", "plan set --fund", "plan set --monthly")},
+    # Fees and contributions card: the Platform form saves the platform keys together.
+    **{f"plan set --{flag}": "PUT /api/plan/platform" for flag in (
+        "platform", "percent-fee", "percent-cap", "flat-fee", "dealing-fee", "fx-fee")},
     **{key: "GET /api/plan/fees" for key in (
         "plan fees", *(f"plan fees --{flag}" for flag in ("monthly", "years", "growth", "start")))},
     **{key: "GET /api/plan/contributions" for key in (
         "plan contributions", *(f"plan contributions --{flag}" for flag in (
             "monthly", "lump", "years", "fund", "second", "weight", "band", "cash", "cash-rate")))},
-    # Ledgers tab, Fund comparison card (moves to the Plan tab): "Compare funds" and its kept result.
+    # Fund comparison card: "Compare funds" and its kept result.
     "plan funds": "POST /api/jobs/plan-funds",
     "plan funds --show": "GET /api/plan/funds",
+    # Trend overlay test card: "Run trend test" and its kept result.
+    "plan trend": "POST /api/jobs/plan-trend",
+    "plan trend --show": "GET /api/plan/trend",
     # Ledgers tab, Data health card: "Run data checks", its counts and each check's flagged rows.
     "data check": "POST /api/jobs/data-check",
     "data check --check": OUTPUT_ONLY,

@@ -1,5 +1,5 @@
 // Fees and contributions (boring-plan 03): the user's platform ([plan] settings), the fee calculator
-// and the contribution tests. Lives on the Ledgers tab until the Plan tab exists.
+// and the contribution tests. A card on the Plan tab; `changed` hears when the platform is saved.
 import { api } from "./api.js";
 import { linesChart } from "./chart.js";
 import { table } from "./compare.js";
@@ -89,7 +89,7 @@ function contributionResult(t, charts) {
   return parts;
 }
 
-function planMoneySection() {
+function planMoneySection({ changed } = {}) {
   const sayer = (note) => (text, bad = true) => {
     note.className = bad ? "form-note down" : "form-note";
     note.replaceChildren(text);
@@ -109,7 +109,12 @@ function planMoneySection() {
   async function loadPlatform() {
     const rows = (await api("/api/settings")).settings.filter((s) => s.section === "plan");
     const value = (key) => rows.find((r) => r.key === key)?.value;
-    const inputs = PLATFORM.map(([key, label, kind]) => {
+    if (Number(value("monthly")) > 0) {
+      feeMonthly.value = String(value("monthly"));
+      inputs.monthly[1].value = String(value("monthly"));
+    }
+    if (value("fund")) inputs.fund[1].value = value("fund");
+    const fields = PLATFORM.map(([key, label, kind]) => {
       if (kind === "select") {
         const select = el("select", { name: key }, ...["percentage", "flat"].map((p) =>
           el("option", { value: p, selected: value(key) === p ? "" : null }, p)));
@@ -120,17 +125,18 @@ function planMoneySection() {
     const save = el("button", { type: "button", onclick: async () => {
       save.disabled = true;
       try {
-        const body = Object.fromEntries(inputs.map(([, input, key]) => [key, key === "platform" ? input.value
+        const body = Object.fromEntries(fields.map(([, input, key]) => [key, key === "platform" ? input.value
           : Number(input.value)]));
         await sendJson("/api/plan/platform", body, "PUT");
         say("Platform saved.", false);
+        changed?.();
       } catch (err) {
         say(err.message);
       } finally {
         save.disabled = false;
       }
     } }, "Save platform");
-    platformForm.replaceChildren(...inputs.map(([label]) => label), save);
+    platformForm.replaceChildren(...fields.map(([label]) => label), save);
   }
 
   const [feeMonthlyLabel, feeMonthly] = field("monthly", "GBP a month", 500, { type: "number", min: "0", step: "any" });
@@ -183,7 +189,8 @@ function planMoneySection() {
     el("p", { class: "dim small" }, "Your platform's prices (no presets: copy them from its price list), what fees "
       + "take over a horizon, and contribution habits tested on every start month of fund comparison's series "
       + "(GBP, accumulating, after TER, from long-history proxies: run Compare funds first), after your fees. "
-      + "Funds: all_world, developed, sp500, uk, uk_mix. Amounts are never stored."),
+      + "Funds: all_world, developed, sp500, uk, uk_mix. The monthly amount starts at the one set under Your plan; "
+      + "the pot is never stored."),
     el("h3", null, "Your platform"), platformForm, note,
     el("h3", null, "Fee calculator"), feeForm, feeNote, feeBody,
     el("h3", null, "Contribution tests"), contributionForm, testNote, contributionBody);
