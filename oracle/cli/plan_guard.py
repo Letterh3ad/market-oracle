@@ -76,7 +76,8 @@ def run_pending(ctx: AppContext, args: argparse.Namespace) -> int:
     if g.history:
         print("Recent:")
         for c in g.history:
-            print(f"  {c.state:<9} {c.settled_at:%Y-%m-%d %H:%M} {changes(c)}")
+            why = f" ({c.note})" if c.state == "refused" else ""
+            print(f"  {c.state:<9} {c.settled_at:%Y-%m-%d %H:%M} {changes(c)}{why}")
     return 0
 
 

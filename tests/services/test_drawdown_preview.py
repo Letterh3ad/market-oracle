@@ -105,3 +105,9 @@ def test_nothing_stored_asks_for_the_fund_comparison(ctx):
 def test_the_pot_must_be_above_zero(ctx):
     with pytest.raises(InvalidQuery, match="pot"):
         drawdown_preview(ctx, 0)
+
+
+def test_the_note_names_a_price_only_series_as_price_only(ctx):
+    ctx.stored["all_world"] = replace(SERIES["all_world"], kind="price only")
+    first = drawdown_preview(ctx).notes[0]
+    assert first.startswith("In GBP, price only") and "dividends reinvested" not in first

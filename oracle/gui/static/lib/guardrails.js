@@ -55,11 +55,13 @@ function guardrailsSection({ changed } = {}) {
   const pot = el("input", { name: "pot", type: "number", min: "0", step: "any", size: 9, "aria-label": "Pot (GBP)" });
   let started = false;
   let loads = 0;
+  let shownRule = "";
 
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
 
   function fill(g) {
-    rule.value = g.rule;
+    if (rule.value === shownRule) rule.value = g.rule;  // keeps unsaved typing across refreshes
+    shownRule = g.rule;
     ruleBody.replaceChildren(el("p", null, g.rule ? el("strong", null, g.rule) : el("span", { class: "warn-text" },
       "Not written yet. Write it now, while calm: it is what you read in a fall instead of selling.")));
     const p = g.pending;
@@ -69,7 +71,8 @@ function guardrailsSection({ changed } = {}) {
       : el("p", { class: "small dim" }, "Nothing pending."),
     ...(g.history.length ? [el("details", null, el("summary", { class: "small" }, "Recent changes"),
       el("ul", { class: "small" }, ...g.history.map((c) => el("li", null, `${c.state} ${when(c.settled_at)}: `
-        + Object.entries(c.changes).map(([k, [from, to]]) => `${k} ${shown(from)} → ${shown(to)}`).join("; ")))))] : []));
+        + Object.entries(c.changes).map(([k, [from, to]]) => `${k} ${shown(from)} → ${shown(to)}`).join("; ")
+        + (c.state === "refused" ? ` (${c.note})` : "")))))] : []));
   }
 
   async function load() {

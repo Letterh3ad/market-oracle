@@ -12,11 +12,10 @@ from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.fees_service import ASSUMED_GROWTH, fee_drag
 from oracle.services.fund_compare_service import FUNDS, FundComparison, FundRow, fund_comparison
-from oracle.services.settings_service import set_plan
 from oracle.services.trend_service import TrendTest, trend_tests
 
 __all__ = ["DEFAULT_FUND", "ISA_ALLOWANCE", "PICKABLE", "Missing", "PlanLine", "PlanSummary", "check_choice",
-           "default_pick", "plan_fund", "plan_summary", "save_plan"]
+           "default_pick", "plan_fund", "plan_summary"]
 
 DEFAULT_FUND = "all_world"
 PICKABLE = tuple(k for k, f in FUNDS.items() if f.compared)
@@ -203,11 +202,6 @@ def plan_summary(ctx: AppContext) -> PlanSummary:
     order = ("funds", "fund", "platform", "monthly", "trend", "rule")
     return PlanSummary(lines, tuple(sorted(missing, key=lambda m: order.index(m.step))), key, picked, default,
                        plan.monthly, bool(t and t.passed), tuple((k, FUNDS[k].label) for k in PICKABLE))
-
-
-def save_plan(ctx: AppContext, values: dict[str, object]) -> PlanConfig:
-    """Any [plan] keys in one checked write; `fund` "default" (or "") goes back to the numbers' pick."""
-    return set_plan(ctx, check_choice(values))
 
 
 def check_choice(values: dict[str, object]) -> dict[str, object]:

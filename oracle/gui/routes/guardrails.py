@@ -11,7 +11,7 @@ from pydantic import BaseModel, StrictStr
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext, worker_context
 from oracle.services.guardrails_service import (
-    PlanChangeResult, cancel_pending, change_plan, drawdown_preview, guardrails,
+    PlanChangeResult, cancel_pending, change_plan, drawdown_preview, guardrails, settle,
 )
 
 router = APIRouter(prefix="/api/plan")
@@ -44,7 +44,10 @@ async def delete_pending(ctx: AppContext = Depends(get_ctx)) -> dict:
 
 @router.get("/drawdowns")
 async def drawdowns(pot: float | None = None, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """`pot` in GBP, used for this answer only (never stored); left out, an example pot."""
+    """`pot` in GBP, used for this answer only (never stored); left out, an example pot. Settled here on
+    the app's context too, since the worker's copy is thrown away."""
+    settle(ctx)
+
     def read():
         with worker_context(ctx) as own:
             return drawdown_preview(own, pot)

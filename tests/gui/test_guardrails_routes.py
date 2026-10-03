@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from oracle.services import guardrails_service
 from oracle.services.errors import NoPrices
 from tests.services.test_drawdown_preview import SERIES
@@ -48,3 +50,20 @@ async def test_drawdowns_without_history_say_which_job_to_run(client, monkeypatc
     monkeypatch.setattr(guardrails_service, "fund_series", none)
     r = await client.get("/api/plan/drawdowns")
     assert r.status_code >= 400 and "Compare funds" in r.json()["error"]
+
+
+@pytest.mark.parametrize("path", ["/api/plan/fees?monthly=100", "/api/plan/drawdowns",
+                                  "/api/plan/contributions?monthly=100", "/api/plan/guardrails"])
+async def test_every_plan_reader_takes_a_due_change_first(client, ctx, clock, monkeypatch, path):
+    monkeypatch.setattr(guardrails_service, "fund_series", lambda ctx, key, monthly=False: SERIES[key])
+    await client.put("/api/plan/platform", json=PLATFORM)
+    await client.put("/api/plan/platform", json={**PLATFORM, "percent_fee": 0.15})
+    clock.advance(timedelta(days=7).total_seconds())
+    await client.get(path)
+    assert ctx.config.plan.percent_fee == 0.15
+
+
+async def test_the_platform_form_may_send_only_the_edited_fields(client, ctx):
+    await client.put("/api/plan/platform", json=PLATFORM)
+    r = (await client.put("/api/plan/platform", json={"flat_fee": 3.99})).json()
+    assert r["pending"]["changes"] == {"flat_fee": [4.99, 3.99]} and ctx.config.plan.percent_fee == 0.25

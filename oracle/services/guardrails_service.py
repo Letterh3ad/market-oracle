@@ -12,10 +12,11 @@ from datetime import date, timedelta
 from oracle.broker.drawdowns import Fall, Paying, covers, keep_paying, months, worst_fall
 from oracle.config import PLAN_PARTS, ConfigError, PlanConfig, check_plan
 from oracle.services.context import AppContext
+from oracle.services.dividends_service import TOTAL_RETURN
 from oracle.services.errors import InvalidQuery, NoPrices
 from oracle.services.fund_compare_service import FUNDS, FundSeries, fund_series
 from oracle.services.plan_service import check_choice, plan_fund
-from oracle.services.settings_service import set_plan
+from oracle.services.settings_service import reload_live_settings, set_plan
 from oracle.store.plan_changes import PlanChange, PlanChangeRepo
 
 __all__ = ["COOL_OFF", "CRASHES", "Crash", "Drawdown", "DrawdownPreview", "EXAMPLE_POT", "Guardrails", "PlanChange",
@@ -45,7 +46,9 @@ class Guardrails:
 
 
 def settle(ctx: AppContext) -> PlanChange | None:
-    """Apply the pending change once its 7 days are up; the settled change, or None."""
+    """Apply the pending change once its 7 days are up; the settled change, or None. Every plan reader
+    calls it first."""
+    _reload(ctx)
     repo = PlanChangeRepo(ctx.conn)
     p = repo.pending()
     now = ctx.clock.utcnow()
@@ -58,10 +61,17 @@ def settle(ctx: AppContext) -> PlanChange | None:
     return repo.settle(p.id, "applied", now)
 
 
+def _reload(ctx: AppContext) -> None:
+    """Take [plan] as oracle.toml has it now, so a CLI write reaches a running GUI before it decides."""
+    if ctx.config_source is not None and ctx.config_source.is_file():
+        reload_live_settings(ctx)
+
+
 def change_plan(ctx: AppContext, values: dict[str, object]) -> PlanChangeResult:
     """Ask for [plan] changes. A part (see PLAN_PARTS) still at its defaults is filled at once; a change
-    to a set part joins the one pending change and restarts its 7 days; a key set back to its current
-    value leaves the pending change. Every value is checked now, not when it falls due."""
+    to a set part joins the one pending change and restarts its 7 days. A key given at its current value
+    changes nothing, pending included: only cancelling drops a pending change, so a form that sends every
+    field never undoes another field's change. Every value is checked now, not when it falls due."""
     settle(ctx)
     values = check_choice(values)
     repo = PlanChangeRepo(ctx.conn)
@@ -77,8 +87,8 @@ def change_plan(ctx: AppContext, values: dict[str, object]) -> PlanChangeResult:
     for key, value in values.items():
         part = part_of.get(key)
         if value == plan[key]:
-            after.pop(key, None)
-        elif part is None or all(plan[k] == blank[k] for k in part):
+            continue
+        if part is None or all(plan[k] == blank[k] for k in part):
             at_once[key] = value
         else:
             after[key] = (plan[key], value)
@@ -86,9 +96,6 @@ def change_plan(ctx: AppContext, values: dict[str, object]) -> PlanChangeResult:
         set_plan(ctx, at_once)
     if after == before:
         return PlanChangeResult(tuple(at_once), pending, ctx.config.plan)
-    if not after:
-        repo.settle(pending.id, "cancelled", now, "every change set back to its current value")
-        return PlanChangeResult(tuple(at_once), None, ctx.config.plan)
     fresh = any(before.get(k) != v for k, v in after.items())
     made, due = (now, now + COOL_OFF) if fresh or pending is None else (pending.made_at, pending.due)
     return PlanChangeResult(tuple(at_once), repo.put_pending(after, made, due), ctx.config.plan)
@@ -164,6 +171,7 @@ class DrawdownPreview:
 def drawdown_preview(ctx: AppContext, pot: float | None = None) -> DrawdownPreview:
     """Each crash in CRASHES on the plan's fund (GBP, total return, after its TER), or on the S&P 500
     where the fund's proxy starts too late. `pot` is never stored."""
+    settle(ctx)
     if pot is not None and not (0 < pot < math.inf):
         raise InvalidQuery(f"the pot must be above 0, got {pot!r}")
     key, monthly = plan_fund(ctx), ctx.config.plan.monthly
@@ -203,8 +211,10 @@ def _drawdown(c: Crash, key: str, series: dict[str, FundSeries], pot: float, mon
 
 
 def _notes(key: str, own: FundSeries | None, rows: tuple[Drawdown, ...], monthly: float) -> tuple[str, ...]:
-    notes = ["In GBP, total return (dividends reinvested), after the fund's charge (TER), before platform fees; "
-             "from proxies, not the real fund. Back at the peak means in GBP, not counting inflation."]
+    kind = own.kind if own else TOTAL_RETURN
+    measure = "total return (dividends reinvested)" if kind == TOTAL_RETURN else kind
+    notes = [f"In GBP, {measure}, after the fund's charge (TER), before platform fees; from proxies, not the "
+             "real fund. Back at the peak means in GBP, not counting inflation."]
     if own is None:
         notes.append(f"{FUNDS[key].label} has no stored history: run Compare funds. Every row is the S&P 500.")
     if any(r.stand_in for r in rows):

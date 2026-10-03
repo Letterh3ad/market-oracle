@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from oracle.config import Config, PlanConfig
+from oracle.services import guardrails_service
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.guardrails_service import (
@@ -85,14 +86,42 @@ def test_another_change_joins_the_pending_one_and_restarts_the_clock(started, cl
     assert got.pending.due == clock.utcnow() + COOL_OFF
 
 
-def test_setting_a_pending_key_back_to_its_value_drops_it_and_an_empty_change_is_cancelled(started, clock):
-    change_plan(started, {"monthly": 50, "fund": "sp500"})
+def test_saving_a_key_at_its_current_value_leaves_another_keys_pending_change_alone(started, clock):
+    change_plan(started, {"monthly": 50})
     due = guardrails(started).pending.due
     clock.advance(60)
-    got = change_plan(started, {"monthly": 500})
-    assert got.pending.changes == {"fund": ("all_world", "sp500")} and got.pending.due == due, "an undo keeps the clock"
-    got = change_plan(started, {"fund": "all_world"})
-    assert got.pending is None and guardrails(started).history[0].state == "cancelled"
+    got = change_plan(started, {"fund": "all_world", "monthly": 500.0})
+    assert got.pending.changes == {"monthly": (500.0, 50)} and got.pending.due == due
+    got = change_plan(started, {"monthly": 500.0})
+    assert got.pending.changes == {"monthly": (500.0, 50)}, "only Cancel drops a pending change"
+
+
+def test_a_change_that_no_longer_loads_when_due_is_refused_with_its_reason(started, clock, monkeypatch):
+    change_plan(started, {"monthly": 50})
+
+    def refuse(ctx, values):
+        raise InvalidQuery("plan.monthly is broken")
+
+    monkeypatch.setattr(guardrails_service, "set_plan", refuse)
+    clock.advance(COOL_OFF.total_seconds())
+    done = settle(started)
+    assert done.state == "refused" and "broken" in done.note and guardrails(started).pending is None
+    assert started.config.plan.monthly == 500.0
+
+
+def test_a_value_written_by_another_process_counts_as_set(ctx):
+    ctx.config_source.write_text("[plan]\npercent_fee = 0.25\n", encoding="utf-8")
+    got = change_plan(ctx, {"percent_fee": 0.15})
+    assert got.applied == () and got.pending.changes == {"percent_fee": (0.25, 0.15)}
+
+
+def test_a_due_change_written_by_another_process_settles_from_the_file(started, clock):
+    change_plan(started, {"monthly": 50})
+    clock.advance(COOL_OFF.total_seconds())
+    started.config_source.write_text(started.config_source.read_text(encoding="utf-8").replace(
+        "rule = ", "dealing_fee = 1.5\nrule = "), encoding="utf-8")
+    settle(started)
+    assert started.config.plan.monthly == 50 and started.config.plan.dealing_fee == 1.5
 
 
 def test_a_bad_value_is_refused_now_not_in_seven_days(started):

@@ -14,6 +14,7 @@ function planSummarySection({ changed } = {}) {
     "aria-label": "Monthly (GBP)" });
   let started = false;
   let loads = 0;
+  let shown = { fund: "", monthly: 0 };
 
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
 
@@ -24,6 +25,7 @@ function planSummarySection({ changed } = {}) {
     ...s.funds.map(([key, name]) => el("option", { value: key, selected: s.picked && s.fund === key ? "" : null }, name)));
     fund.value = s.picked ? s.fund : "";
     monthly.value = s.monthly ? String(s.monthly) : "";
+    shown = { fund: fund.value, monthly: s.monthly };
     const rows = s.lines.map((l) => el("tr", { "data-line": l.name },
       el("td", null, l.label), el("td", { class: l.known ? null : "warn-text" }, el("strong", null, l.value)),
       el("td", { class: "small" }, l.reason)));
@@ -46,8 +48,15 @@ function planSummarySection({ changed } = {}) {
   const save = el("button", { type: "button", onclick: async () => {
     save.disabled = true;
     try {
-      const r = await sendJson("/api/plan/choice", { fund: fund.value || "default", monthly: Number(monthly.value || 0) }, "PUT");
-      say(savedText(r), false);
+      // Only edited fields are sent, so saving one never touches another's pending change.
+      const body = {};
+      if (fund.value !== shown.fund) body.fund = fund.value || "default";
+      if (Number(monthly.value || 0) !== shown.monthly) body.monthly = Number(monthly.value || 0);
+      if (!Object.keys(body).length) {
+        say("Nothing changed.", false);
+        return;
+      }
+      say(savedText(await sendJson("/api/plan/choice", body, "PUT")), false);
       await load();
       changed?.();
     } catch (err) {

@@ -13,7 +13,9 @@ PENDING = {"id": 2, "changes": {"monthly": [500, 50]}, "made_at": "2026-10-03T12
            "due": "2026-10-10T12:00:00+00:00", "state": "pending", "settled_at": None, "note": ""}
 GUARD = {"rule": "Never sell in a fall.", "pending": PENDING, "cool_off_days": 7,
          "history": [{**PENDING, "id": 1, "changes": {"rule": ["", "x"]}, "state": "cancelled",
-                      "settled_at": "2026-10-02T09:00:00+00:00"}]}
+                      "settled_at": "2026-10-02T09:00:00+00:00"},
+                     {**PENDING, "id": 0, "state": "refused", "settled_at": "2026-10-01T09:00:00+00:00",
+                      "note": "plan.monthly is broken"}]}
 FALL = {"peak_day": "2020-02-19", "peak": 1.0, "trough_day": "2020-03-23", "trough": 0.75, "fall": -0.25,
         "recovered": "2020-08-18"}
 PAYING = {"value_at_trough": 15400, "paid_at_trough": 20500, "worst_gap": -5100, "worst_day": "2020-03-23",
@@ -72,3 +74,14 @@ def test_save_rule_cancel_and_show_send_their_requests():
     assert "DELETE /api/plan/pending" in asked and "GET /api/plan/drawdowns?pot=20000" in asked
     assert "Change pending until 2026-10-10 12:00 UTC" in note
     assert changes == 2
+
+
+def test_a_refused_change_shows_why_and_a_refresh_keeps_unsaved_rule_typing():
+    text, typed = run("""
+        section.start(); await settle();
+        labelled(node, "No-sell rule").value = "half typed";
+        await section.refresh(); await settle();
+        console.log(JSON.stringify([node.textContent, labelled(node, "No-sell rule").value]));
+    """)
+    assert "refused 2026-10-01 09:00: monthly 500 → 50 (plan.monthly is broken)" in text
+    assert typed == "half typed"

@@ -21,18 +21,19 @@ router = APIRouter(prefix="/api/plan")
 
 
 class Platform(BaseModel):
-    platform: StrictStr
-    percent_fee: StrictFloat | StrictInt
-    percent_cap: StrictFloat | StrictInt
-    flat_fee: StrictFloat | StrictInt
-    dealing_fee: StrictFloat | StrictInt
-    fx_fee: StrictFloat | StrictInt
+    platform: StrictStr | None = None
+    percent_fee: StrictFloat | StrictInt | None = None
+    percent_cap: StrictFloat | StrictInt | None = None
+    flat_fee: StrictFloat | StrictInt | None = None
+    dealing_fee: StrictFloat | StrictInt | None = None
+    fx_fee: StrictFloat | StrictInt | None = None
 
 
 @router.put("/platform")
 async def put_platform(body: Platform, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """All six [plan] keys checked together; saved at once on a blank platform, else pending 7 days."""
-    return change_shape(change_plan(ctx, body.model_dump()))
+    """The platform keys given (the form sends only those edited), checked together; saved at once on a
+    blank platform, else pending 7 days."""
+    return change_shape(change_plan(ctx, body.model_dump(exclude_none=True)))
 
 
 class Choice(BaseModel):
@@ -58,6 +59,7 @@ async def summary(ctx: AppContext = Depends(get_ctx)) -> dict:
 async def fees(monthly: float, years: int = 25, growth: float = ASSUMED_GROWTH * 100, start: float = 0.0,
                ctx: AppContext = Depends(get_ctx)) -> dict:
     """`growth` in % a year."""
+    settle(ctx)
     return asdict(fee_drag(ctx, monthly, years, growth / 100, start))
 
 
@@ -68,6 +70,7 @@ async def contributions(monthly: float, lump: float | None = None, years: int = 
                         ctx: AppContext = Depends(get_ctx)) -> dict:
     """Percent inputs (`weight`, `band`, `cash`, `cash_rate`) as the CLI takes them; `second` "none"
     skips the mix."""
+    settle(ctx)
     other = None if second.strip().lower() in ("", "none") else second.strip().lower()
 
     def read() -> ContributionTests:

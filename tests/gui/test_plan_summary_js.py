@@ -62,19 +62,21 @@ def test_the_card_shows_each_line_with_its_reason_and_what_is_missing():
     assert fund == "" and options == ["Default (All-world)", "All-world", "Developed world", "S&P 500"]
 
 
-def test_save_sends_the_pick_and_monthly_then_reloads():
-    sent, asked = run("""
+def test_save_sends_only_the_edited_fields_then_reloads():
+    sent, asked, note = run("""
         section.start(); await settle();
         labelled(node, "Fund").value = "sp500";
         labelled(node, "Monthly (GBP)").value = "450";
         button(node, "Save").fire("click"); await settle();
-        labelled(node, "Fund").value = "";
+        labelled(node, "Monthly (GBP)").value = "300";
         button(node, "Save").fire("click"); await settle();
-        console.log(JSON.stringify([sent, asked.filter((a) => a === "GET /api/plan/summary").length]));
+        button(node, "Save").fire("click"); await settle();
+        const note = node.all((n) => (n.className ?? "").startsWith("form-note")).map((n) => n.textContent).join("");
+        console.log(JSON.stringify([sent, asked.filter((a) => a === "GET /api/plan/summary").length, note]));
     """)
     assert sent == [["/api/plan/choice", {"fund": "sp500", "monthly": 450}],
-                    ["/api/plan/choice", {"fund": "default", "monthly": 0}]]
-    assert asked == 3
+                    ["/api/plan/choice", {"monthly": 300}]], "the fund was not edited the second time"
+    assert asked == 3 and note == "Nothing changed."
 
 
 def test_a_saved_pick_is_selected_and_nothing_missing_shows_no_list():

@@ -5,6 +5,7 @@ import pytest
 
 from oracle.gui.app import STATIC_DIR
 from tests.gui.test_backtest_js import NODE, PRELUDE
+from tests.gui.test_plan_summary_js import SENT
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page's modules")
 
@@ -51,18 +52,20 @@ def run(body: str):
     return json.loads(out.stdout)
 
 
-def test_the_platform_form_shows_the_plan_settings_and_saves_each():
-    asked, values = run("""
+def test_the_platform_form_shows_the_plan_settings_and_saves_only_the_edited_ones():
+    asked, values, sent = run(SENT + """
         section.start(); await settle();
         const named = (n) => find(node, (x) => x.attrs?.name === n);
         const shown = [named("platform").value, named("percent_fee").value, named("flat_fee").value, named("fx_fee").value];
         named("fx_fee").value = "0.5";
         button(node, "Save platform").fire("click"); await settle();
+        button(node, "Save platform").fire("click"); await settle();
         const puts = asked.filter((a) => a.startsWith("PUT"));
-        console.log(JSON.stringify([puts, shown]));
+        console.log(JSON.stringify([puts, shown, sent]));
     """)
-    assert asked == ["PUT /api/plan/platform"]
+    assert asked == ["PUT /api/plan/platform"], "a second save with nothing edited sends nothing"
     assert values == ["flat", "0.25", "4.99", "0"]
+    assert sent == [["/api/plan/platform", {"fx_fee": 0.5}]]
 
 
 def test_the_fee_calculator_shows_the_crossover_and_every_platform():
