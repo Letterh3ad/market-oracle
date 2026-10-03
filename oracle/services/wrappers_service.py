@@ -126,12 +126,17 @@ class _Rows:
         """Months paid in: with the Lifetime ISA, every row pays only while it can (to 50), so each £1 has
         the same time to grow."""
         self.series = steady(growth, self.to_end, ctx.clock.utcnow().date())
-        self.platform = user_fees(ctx)
+        account = user_fees(ctx)
+        self.platform = FeeModel(percent=account.percent, cap=account.cap, fx=account.fx)
+        """What an extra £100 a month adds: the flat fee and the monthly buy's dealing fee are paid anyway."""
         self.pension_fees = nest_fees(w.pension_fee, w.pension_charge)
 
+    def pension_gross(self, own: float, when: date) -> float:
+        """What `own` of take-home a month puts into the pension on `when`."""
+        return gross_for(own, self.w.salary, self.w.sacrifice, ni_room(self.sacrificed, when) / 12)
+
     def pension_extra(self, own: float, i: int) -> float:
-        room = ni_room(self.sacrificed, self.series[i][0]) / 12
-        return gross_for(own, self.w.salary, self.w.sacrifice, room) - own
+        return self.pension_gross(own, self.series[i][0]) - own
 
     def build(self) -> tuple[WrapperRow, ...]:
         paid = [PER] * self.paying
@@ -190,7 +195,12 @@ def wrapper_comparison(ctx: AppContext, growth: float = ASSUMED_GROWTH) -> Wrapp
         notes += _workplace_notes(w, workplace)
     if w.lisa and age is not None and not RATES.lisa_open_from <= age < RATES.lisa_open_before:
         notes.append(f"A Lifetime ISA can only be opened from {RATES.lisa_open_from} and before "
-                     f"{RATES.lisa_open_before}, so it is left out.")
+                     f"{RATES.lisa_open_before}, so it is left out. Age here is this year less your year of birth, so "
+                     f"you may be a year younger (open one before your birthday if so). One already open keeps "
+                     f"taking money until {RATES.lisa_pay_until}; this comparison does not show it.")
+    if w.born and 1971 <= w.born <= 1973:
+        notes.append(f"Born between 6 April 1971 and 5 April 1973 without a protected pension age, you may reach 55 "
+                     f"and then lose access from {RATES.access_age_from:%d %B %Y} until 57: check with your scheme.")
     years = access - age if access is not None and age is not None else None
     if years is not None and years <= 0:
         notes.append(f"You can draw a pension now (from {access}): this comparison, of years still to grow, is not shown.")
@@ -227,8 +237,9 @@ def _row_notes(w: WrappersConfig, growth: float, table: _Rows) -> list[str]:
     paying = (f" Paid in until {RATES.lisa_pay_until} (the last Lifetime ISA year) in every row, so each £1 has "
               f"the same time to grow." if table.lisa_open else "")
     return [f"Each row is {_gbp(PER)} a month of take-home pay at {growth:.1%} a year (assumed), after charges: "
-            f"the ISA and Lifetime ISA at your platform's fees, the pension at {w.pension_fee:g}% a year and "
-            f"{w.pension_charge:g}% of each contribution.{paying}",
+            f"the ISA and Lifetime ISA at the marginal cost of your platform (its percentage fee up to the cap and "
+            f"FX; the flat fee and the monthly dealing fee are paid anyway), the pension at {w.pension_fee:g}% a "
+            f"year and {w.pension_charge:g}% of each contribution.{paying}",
             f"Pension spendable: {RATES.tax_free_share:.0%} tax-free (up to {_gbp(RATES.lump_sum_allowance)}), the "
             f"rest taxed at {w.retire_tax:g}% when drawn (your retire_tax; set the rate you expect).",
             "Relief is read at your salary's top rate; a contribution bigger than the income in that band gets "
@@ -257,9 +268,12 @@ def _steps(w: WrappersConfig, m: PensionMonth | None, monthly: float, access: in
             break
         k = r.key
         amount = min(rest, RATES.lisa_limit / 12) if k == "lisa" else rest
-        into = amount * (1 + RATES.lisa_bonus) if k == "lisa" else (
-            amount + table.pension_extra(amount, 0) if k == "pension" else amount)
-        steps.append(Step(k, amount, into, f"{LABELS[k]}: {_gbp(amount)} a month puts {_gbp(into)} in.{why}"))
+        if k == "pension":
+            into, text = _pension_step(w, amount, table, m, notes)
+        else:
+            into = amount * (1 + RATES.lisa_bonus) if k == "lisa" else amount
+            text = f"{LABELS[k]}: {_gbp(amount)} a month puts {_gbp(into)} in."
+        steps.append(Step(k, amount, into, text + why))
         why = " The rest goes to the next best."
         if k != "pension":
             isa_yearly += amount * 12
@@ -271,12 +285,41 @@ def _steps(w: WrappersConfig, m: PensionMonth | None, monthly: float, access: in
     return tuple(steps), isa_yearly
 
 
+def _pension_step(w: WrappersConfig, amount: float, table: _Rows, m: PensionMonth | None,
+                  notes: list[str]) -> tuple[float, str]:
+    """Extra pension for `amount` of take-home a month. Under sacrifice, `into` is what it puts in once the
+    2029 NI cap applies (today's figure beside it); under relief at source, what leaves pay and what comes back."""
+    capped = table.pension_gross(amount, RATES.sacrifice_cap_from)
+    head = f"{LABELS['pension']}: {_gbp(amount)} a month of take-home"
+    if w.sacrifice:
+        now = table.pension_gross(amount, table.series[0][0])
+        text = f"{head} puts {_gbp(capped)} in"
+        if now - capped > 0.005:
+            text += f" ({_gbp(now)} until {RATES.sacrifice_cap_from:%d %B %Y}, when NI is saved on the first " \
+                    f"{_gbp(RATES.sacrifice_ni_cap)} a year sacrificed only)"
+        total = ((m.gross if m else 0.0) + capped) * 12
+        if total > RATES.sacrifice_ni_cap:
+            notes.append(f"With this step you would sacrifice {_gbp(total)} a year: from "
+                         f"{RATES.sacrifice_cap_from:%d %B %Y} only the first {_gbp(RATES.sacrifice_ni_cap)} is free "
+                         "of NI, so each extra £1 saves less.")
+        return capped, text + "."
+    paid = capped * (1 - RATES.basic)
+    back = paid - amount
+    if back > 0.005:
+        return capped, (f"{head}: you pay {_gbp(paid)}, the scheme adds {_gbp(capped - paid)} relief "
+                        f"({_gbp(capped)} in), and {_gbp(back)} comes back through Self Assessment.")
+    return capped, f"{head} puts {_gbp(capped)} in (relief at source included)."
+
+
 def _workplace_step(w: WrappersConfig, m: PensionMonth) -> Step:
     parts = [f"{_gbp(m.relief)} relief"] if m.relief else []
     parts += [f"{_gbp(m.employer)} employer"] if m.employer else []
     parts += [f"{_gbp(m.saved)} tax and NI saved"] if m.saved else []
     back = f" You claim {_gbp(m.refund)} a month more back through Self Assessment." if m.refund else ""
-    if m.employer:
+    if m.employer and not w.employee_pct:
+        head = (f"Workplace pension first: your employer's {w.employer_pct:g}% is money you get nowhere else. You pay "
+                "nothing in: check whether paying some would bring more from your employer.")
+    elif m.employer:
         head = (f"Workplace pension first: your {w.employee_pct:g}% brings your employer's {w.employer_pct:g}%, money "
                 "you get nowhere else.")
     else:

@@ -7,7 +7,7 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from oracle.broker.projection import project, steady
+from oracle.broker.projection import FeeModel, project, steady
 from oracle.broker.wrappers import nest_fees
 from oracle.config import Config, PlanConfig, WrappersConfig
 from oracle.services.context import open_context
@@ -153,3 +153,57 @@ def test_past_the_pension_age_shows_no_rows_and_says_why(ctx):
     c = wrapper_comparison(ctx)
     assert (c.access_age, c.rows) == (55, ()) and any("draw a pension now" in n for n in c.notes)
     assert [s.wrapper for s in c.steps] == ["pension"]
+
+
+def rest_step(c):
+    return c.steps[-1]
+
+
+def test_platform_costs_are_marginal_so_a_flat_fee_does_not_flip_the_order(ctx):
+    # Gate 09 r1 #1: a flat £5 a month and a £1.50 dealing fee are paid anyway; an extra £100 adds none.
+    use(ctx, replace(BASIC, needed_before=0))
+    plain = wrapper_comparison(ctx)
+    use(ctx, replace(BASIC, needed_before=0), platform="flat", flat_fee=5.0, dealing_fee=1.5)
+    flat = wrapper_comparison(ctx)
+    assert rows(flat)["isa"].fees == 0 and rows(flat)["isa"].pot == pytest.approx(rows(plain)["isa"].pot)
+    assert [s.wrapper for s in flat.steps] == [s.wrapper for s in plain.steps]
+    assert any("marginal" in n for n in flat.notes)
+
+
+def test_a_capped_percentage_is_charged_up_to_its_cap(ctx):
+    use(ctx, replace(BASIC, needed_before=0), percent_fee=0.25, percent_cap=45.0, dealing_fee=1.5)
+    isa = rows(wrapper_comparison(ctx))["isa"]
+    months = 27 * 12
+    expected = project(steady(0.05, months, date(2026, 10, 3)), [PER] * months, FeeModel(percent=0.0025, cap=45.0))
+    assert isa.fees == pytest.approx(expected[-1].fees) and isa.pot == pytest.approx(expected[-1].value)
+
+
+def test_a_sacrifice_step_puts_in_what_the_2029_ni_cap_allows_and_warns(ctx):
+    # Gate 09 r1 #2: 5% of qualifying earnings uses £1,188 of the £2,000; £812 a year of NI room is left.
+    use(ctx, replace(BASIC, sacrifice=True, needed_before=0))
+    c = wrapper_comparison(ctx)
+    step = rest_step(c)
+    assert step.wrapper == "pension" and step.monthly == 500
+    room = (2_000 - (30_000 - 6_240) * 0.05) / 12
+    assert step.into == pytest.approx((500 + 0.08 * room) / 0.8)
+    assert "£694" in step.text and "2029" in step.text
+    assert any("£2,000" in n and "2029" in n for n in c.notes)
+
+
+def test_a_higher_rate_step_says_what_leaves_take_home_and_what_comes_back(ctx):
+    use(ctx, replace(BASIC, salary=60_000, needed_before=0))
+    text = rest_step(wrapper_comparison(ctx)).text
+    assert "you pay £667" in text and "£833 in" in text and "£167" in text and "Self Assessment" in text
+
+
+def test_no_own_contribution_does_not_say_your_0_percent(ctx):
+    use(ctx, replace(BASIC, employee_pct=0))
+    text = wrapper_comparison(ctx).steps[0].text
+    assert "your 0%" not in text and "employer's 3%" in text
+
+
+def test_lisa_age_boundary_and_protected_pension_age_are_said(ctx):
+    use(ctx, replace(BASIC, lisa=True, born=1986))
+    assert any("may" in n and "already" in n for n in wrapper_comparison(ctx).notes)
+    use(ctx, replace(BASIC, born=1972))
+    assert any("6 April 1971" in n for n in wrapper_comparison(ctx).notes)

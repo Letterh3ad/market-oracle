@@ -88,3 +88,17 @@ def test_the_lisa_switch_saves_at_once_and_save_sends_the_numbers():
     assert url == "/api/plan/wrappers" and values["salary"] == 30000 and values["born"] == 1996
     assert values["needed_before"] == -1 and values["sacrifice"] is True and values["on_salary"] is False
     assert values["retire_tax"] == 20
+
+
+def test_compare_keeps_unsaved_edits_and_a_bad_number_is_not_sent():
+    kept, sent, text = run("""
+        section.start(); await settle();
+        labelled(node, "Salary (GBP a year)").value = "41000";
+        button(node, "Compare").fire("click"); await settle();
+        const kept = labelled(node, "Salary (GBP a year)").value;
+        labelled(node, "Employer %").value = "abc";
+        button(node, "Save").fire("click"); await settle();
+        console.log(JSON.stringify([kept, sent, node.textContent]));
+    """)
+    assert kept == "41000" and sent == []
+    assert "Employer % must be a number" in text and "Saved." not in text

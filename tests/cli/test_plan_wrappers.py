@@ -36,3 +36,9 @@ def test_wrappers_refuses_bad_values_cleanly(tmp_path, capsys):
     assert "employee_pct" in capsys.readouterr().err
     assert main(["--config", str(cfg), "plan", "wrappers", "--growth", "90"]) != 0
     assert "growth" in capsys.readouterr().err
+
+
+def test_growth_errors_speak_the_flags_percent(tmp_path, capsys):
+    assert main(["--config", str(config(tmp_path, "")), "plan", "wrappers", "--growth", "90"]) != 0
+    err = capsys.readouterr().err
+    assert "--growth" in err and "%" in err and "0.05" not in err

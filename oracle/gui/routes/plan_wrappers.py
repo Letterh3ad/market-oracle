@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, StrictBool, StrictFloat, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictFloat, StrictInt
 
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
@@ -18,6 +18,8 @@ Number = StrictFloat | StrictInt | None
 
 
 class Wrappers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lisa: StrictBool | None = None
     salary: Number = None
     employee_pct: Number = None

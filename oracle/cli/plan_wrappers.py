@@ -7,8 +7,9 @@ import argparse
 import textwrap
 
 from oracle.services.context import AppContext
+from oracle.services.errors import InvalidQuery
 from oracle.services.fees_service import ASSUMED_GROWTH
-from oracle.services.wrappers_service import PER, WrapperComparison, check_growth, save_wrappers, wrapper_comparison
+from oracle.services.wrappers_service import PER, WrapperComparison, save_wrappers, wrapper_comparison
 
 COMMANDS = {"salary": "oracle plan wrappers --salary GBP --employee-pct PCT --employer-pct PCT",
             "born": "oracle plan wrappers --born YEAR", "needed": "oracle plan wrappers --needed-before GBP",
@@ -48,7 +49,8 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 def run_wrappers(ctx: AppContext, args: argparse.Namespace) -> int:
     values = {key: getattr(args, key) for key, _, _ in SETTERS if getattr(args, key) is not None}
-    check_growth(args.growth / 100)
+    if not -50 < args.growth < 50:
+        raise InvalidQuery(f"--growth is % a year after fund costs, from -50 to 50 (5 is 5%), got {args.growth:g}")
     if values:
         save_wrappers(ctx, values)
         print(f"Saved [wrappers] {', '.join(values)}.")

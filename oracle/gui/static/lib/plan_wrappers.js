@@ -80,44 +80,50 @@ function wrappersSection() {
     for (const [key] of SWITCHES) boxes[key].checked = s[key];
   }
 
-  async function load() {
+  // The form is refilled from the saved numbers only on the first load and after a save, so Compare keeps edits.
+  async function load(refill = false) {
     const mine = ++loads;
     try {
       const c = await api(`/api/plan/wrappers?growth=${encodeURIComponent(growth.value || "5")}`);
       if (mine !== loads) return;
-      fill(c.settings);
+      if (refill) fill(c.settings);
       body.replaceChildren(...result(c));
     } catch (err) {
       if (mine === loads) say(`Could not compare: ${err.message}`);
     }
   }
 
-  async function save(values, done) {
+  async function save(values, done, refill = true) {
     try {
       await sendJson("/api/plan/wrappers", values, "PUT");
       say(done, false);
-      await load();
+      await load(refill);
     } catch (err) {
       say(err.message);
     }
   }
 
   lisa.addEventListener("change", () => save({ lisa: !!lisa.checked },
-    lisa.checked ? "Lifetime ISA shown." : "Lifetime ISA hidden."));
+    lisa.checked ? "Lifetime ISA shown." : "Lifetime ISA hidden.", false));
 
   const saveButton = el("button", { type: "button", onclick: async () => {
-    saveButton.disabled = true;
     const values = {};
-    for (const [key] of NUMBERS) {
-      const raw = inputs[key].value.trim();
+    for (const [key, label] of NUMBERS) {
+      const raw = String(inputs[key].value ?? "").trim();
       if (raw === "") {
         if (key === "needed_before") values[key] = -1;
         else if (key === "salary" || key === "born") values[key] = 0;
         continue;
       }
-      values[key] = key === "born" ? Math.trunc(Number(raw)) : Number(raw);
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        say(`${label} must be a number, got "${raw}". Nothing saved.`);
+        return;
+      }
+      values[key] = key === "born" ? Math.trunc(n) : n;
     }
     for (const [key] of SWITCHES) values[key] = !!boxes[key].checked;
+    saveButton.disabled = true;
     await save(values, "Saved.");
     saveButton.disabled = false;
   } }, "Save");
@@ -137,7 +143,7 @@ function wrappersSection() {
   function start() {
     if (started) return Promise.resolve();
     started = true;
-    return load();
+    return load(true);
   }
 
   return { node, start, reload: load };

@@ -1159,7 +1159,8 @@ def check_wrappers(raw: object) -> WrappersConfig:
         **{key: (number(getattr(w, key), 0, 100), "a % from 0 to 100") for key in (
             "employee_pct", "employer_pct", "pension_fee", "pension_charge")},
         "retire_tax": (number(w.retire_tax, 0, 45), "a % from 0 to 45"),
-        "born": (w.born == 0 or _whole(w.born, 1900, 2100), "a year of birth, or 0 for not entered"),
+        "born": (w.born == 0 or _whole(w.born, 1900, date.today().year - 16),
+                 "a year of birth at least 16 years ago, or 0 for not entered"),
         "needed_before": (number(w.needed_before, 0, 1e9) or w.needed_before == -1, "£ a month from 0, or -1 for not answered"),
     }
     for key, (ok, text) in checks.items():

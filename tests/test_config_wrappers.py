@@ -16,7 +16,8 @@ def test_wrappers_take_the_users_numbers_and_refuse_bad_ones(tmp_path):
     w = load_config(path, cwd=tmp_path)[0].wrappers
     assert (w.lisa, w.salary, w.employee_pct, w.employer_pct, w.born, w.needed_before, w.sacrifice) == (
         True, 32000, 5, 3, 1995, 150, True)
-    for line in ('lisa = "yes"', "salary = -1", "employee_pct = 101", "born = 1800", "born = 1995.5",
+    for line in ('lisa = "yes"', "salary = -1", "employee_pct = 101", "born = 1800", "born = 1995.5", "born = 2100",
+                 "born = 2015",
                  "needed_before = -2", "retire_tax = 46", "pension_charge = true", "other = 1"):
         path.write_text(f"[wrappers]\n{line}\n", encoding="utf-8")
         with pytest.raises(ConfigError, match="wrappers"):

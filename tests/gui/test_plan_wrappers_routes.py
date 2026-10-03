@@ -29,3 +29,8 @@ async def test_bad_values_are_a_clean_400(client, ctx):
     assert ctx.config.wrappers.employee_pct == 0
     r = await client.get("/api/plan/wrappers", params={"growth": 90})
     assert r.status_code == 400 and "growth" in r.json()["error"]
+
+
+async def test_unknown_keys_are_refused_not_dropped(client, ctx):
+    r = await client.put("/api/plan/wrappers", json={"salary": 30000, "pot": 1})
+    assert r.status_code == 400 and "pot" in r.text and ctx.config.wrappers.salary == 0

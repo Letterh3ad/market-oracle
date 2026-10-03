@@ -3369,3 +3369,8 @@ tick's lock and its banner); explaining every flag (rejected: hundreds of model 
 - Growth is the fee calculator's assumed 5% (changeable), not history: the comparison is about wrappers, not funds.
 - CLI `oracle plan wrappers` with a flag per `[wrappers]` key (saves then shows; `--lisa on|off`); GUI card "Where the next pound goes" on the Plan tab (form + Save, a Lifetime ISA checkbox that saves at once, growth + Compare). Routes `GET`/`PUT /api/plan/wrappers` in their own module.
 **Alternatives:** Keys under `[plan]` (would fall under 08's cool-off and collide with 08's edits); an age setting (stale each birthday); comparing totals at different ages (LISA's earlier money looked better than it is); historical growth series (adds fund choice noise to a wrapper question); modelling the 60% taper zone and band crossing (more inputs, rare for this user; noted instead).
+
+## 2026-10-03 - boring-plan 09 gate r1: marginal platform cost, sacrifice at the 2029 cap
+**Context:** Gate 09 r1 found the £100 ISA/LISA rows paid the whole flat fee and a dealing fee per buy, which flipped the order on a flat platform; and the sacrifice step used pre-2029 NI room.
+**Decision:** The ISA and LISA rows charge only what an extra £100 adds: the percentage fee (up to its cap) and FX; the flat fee and the monthly buy's dealing fee are paid anyway. The extra-pension step's `into` is its value once the 2029 NI cap applies, with today's figure beside it, and a note when the user's own sacrifice plus the step passes £2,000 a year. Relief-at-source steps say what leaves pay and what Self Assessment returns.
+**Alternatives:** Full account fees on each row (wrong basis, flips the order); today's NI room (overstates for most of the horizon).
