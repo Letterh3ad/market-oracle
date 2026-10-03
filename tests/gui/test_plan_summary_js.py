@@ -62,19 +62,21 @@ def test_the_card_shows_each_line_with_its_reason_and_what_is_missing():
     assert fund == "" and options == ["Default (All-world)", "All-world", "Developed world", "S&P 500"]
 
 
-def test_save_sends_the_pick_and_monthly_then_reloads():
-    sent, asked = run("""
+def test_save_sends_only_the_edited_fields_then_reloads():
+    sent, asked, note = run("""
         section.start(); await settle();
         labelled(node, "Fund").value = "sp500";
         labelled(node, "Monthly (GBP)").value = "450";
         button(node, "Save").fire("click"); await settle();
-        labelled(node, "Fund").value = "";
+        labelled(node, "Monthly (GBP)").value = "300";
         button(node, "Save").fire("click"); await settle();
-        console.log(JSON.stringify([sent, asked.filter((a) => a === "GET /api/plan/summary").length]));
+        button(node, "Save").fire("click"); await settle();
+        const note = node.all((n) => (n.className ?? "").startsWith("form-note")).map((n) => n.textContent).join("");
+        console.log(JSON.stringify([sent, asked.filter((a) => a === "GET /api/plan/summary").length, note]));
     """)
     assert sent == [["/api/plan/choice", {"fund": "sp500", "monthly": 450}],
-                    ["/api/plan/choice", {"fund": "default", "monthly": 0}]]
-    assert asked == 3
+                    ["/api/plan/choice", {"monthly": 300}]], "the fund was not edited the second time"
+    assert asked == 3 and note == "Nothing changed."
 
 
 def test_a_saved_pick_is_selected_and_nothing_missing_shows_no_list():
@@ -102,6 +104,8 @@ def test_the_plan_tab_hosts_the_summary_and_the_three_cards_and_ledgers_does_not
         ANSWERS["GET /api/plan/trend"] = {{ result: null }};
         ANSWERS["GET /api/settings"] = {{ settings: [{{ section: "plan", key: "monthly", value: 300 }},
           {{ section: "plan", key: "fund", value: "sp500" }}] }};
+        ANSWERS["GET /api/plan/guardrails"] = {{ rule: "", pending: null, history: [], cool_off_days: 7 }};
+        ANSWERS["GET /api/plan/drawdowns"] = {{ status: 404, error: "run Compare funds first" }};
         ANSWERS["POST /api/jobs/plan-funds"] = {{ id: 3, kind: "plan_funds", state: "done" }};
         ANSWERS["GET /api/jobs/3"] = {{ id: 3, kind: "plan_funds", state: "done" }};
         const tab = (await import({json.dumps((STATIC_DIR / "tabs" / "plan.js").as_uri())})).default;
@@ -117,7 +121,7 @@ def test_the_plan_tab_hosts_the_summary_and_the_three_cards_and_ledgers_does_not
     """], capture_output=True, text=True, check=True)
     tab, titles, before, after, monthly, fund = json.loads(out.stdout)
     assert tab == "plan"
-    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test"]
+    assert titles == ["Your plan", "Fund comparison", "Fees and contributions", "Trend overlay test", "Guardrails"]
     assert before == 1 and after == 2
     assert monthly == ["", "300", "300"] and fund[1:] == ["sp500"]
     app = (STATIC_DIR / "app.js").read_text(encoding="utf-8")

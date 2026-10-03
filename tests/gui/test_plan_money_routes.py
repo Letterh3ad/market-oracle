@@ -69,9 +69,9 @@ async def test_a_refused_platform_value_saves_nothing(client, ctx):
 
 async def test_the_summary_lists_each_line_and_what_is_missing(client):
     body = (await client.get("/api/plan/summary")).json()
-    assert [line["name"] for line in body["lines"]] == ["fund", "wrapper", "platform", "monthly", "overlay"]
+    assert [line["name"] for line in body["lines"]] == ["fund", "wrapper", "platform", "monthly", "overlay", "rule"]
     assert body["fund"] == "all_world" and body["picked"] is False and body["overlay"] is False
-    assert [m["step"] for m in body["missing"]] == ["funds", "platform", "monthly", "trend"]
+    assert [m["step"] for m in body["missing"]] == ["funds", "platform", "monthly", "trend", "rule"]
     assert ["sp500", "S&P 500"] in body["funds"]
 
 
@@ -83,5 +83,6 @@ async def test_the_choice_saves_fund_and_monthly_only_and_refuses_an_unknown_fun
     r = await client.put("/api/plan/choice", json={"fund": "gold"})
     assert r.status_code == 400 and "gold" in r.json()["error"]
     r = await client.put("/api/plan/choice", json={"fund": "default"})
-    assert r.status_code == 200 and ctx.config.plan.fund == "" and ctx.config.plan.monthly == 400
+    assert r.status_code == 200 and r.json()["pending"]["changes"] == {"fund": ["sp500", ""]}
+    assert ctx.config.plan.fund == "sp500" and ctx.config.plan.monthly == 400, "a set fund changes after 7 days"
     assert (await client.put("/api/plan/choice", json={"monthly": "lots"})).status_code in (400, 422)

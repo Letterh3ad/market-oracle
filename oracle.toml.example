@@ -172,6 +172,7 @@ explain_model = ""         # the model profile that explains ("" the research sl
 
 # Your investing platform, for the Plan fee and contribution tests (`oracle plan fees`). Rates only:
 # amounts are entered per run. No named-platform presets: copy your platform's own price list.
+# Changing a value already set waits 7 days (Plan tab, Guardrails; `oracle plan pending`).
 [plan]
 platform = "percentage"    # which fee you pay: "percentage" or "flat"
 percent_fee = 0.0          # the percentage platform's fee, % a year (0.25 is 0.25%)
@@ -181,6 +182,7 @@ dealing_fee = 0.0          # GBP per buy or sell (0 for free regular investing)
 fx_fee = 0.0               # % of each buy taken for currency conversion (0 for a GBP fund)
 fund = ""                  # the fund you hold: all_world, developed, sp500 or uk_mix; "" is the numbers' pick
 monthly = 0.0              # GBP paid in each month; 0 is not set yet
+rule = ""                  # your no-sell rule in your own words; "" is not written yet
 
 # regime-v2's rotation, set before any backtest (never fitted to one). Weights are [regime]'s.
 [regime_v2]

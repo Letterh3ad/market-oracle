@@ -8,6 +8,7 @@ import textwrap
 from oracle.services.context import AppContext
 from oracle.services.contributions_service import FUND, SECOND, ContributionTests, contribution_tests
 from oracle.services.fees_service import ASSUMED_GROWTH, FeeDrag, fee_drag
+from oracle.services.guardrails_service import settle
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -39,6 +40,7 @@ def register(sub: argparse._SubParsersAction) -> None:
 
 
 def run_fees(ctx: AppContext, args: argparse.Namespace) -> int:
+    settle(ctx)
     print_fees(fee_drag(ctx, args.monthly, args.years, args.growth / 100, args.start))
     return 0
 
@@ -61,6 +63,7 @@ def print_fees(d: FeeDrag) -> None:
 
 
 def run_contributions(ctx: AppContext, args: argparse.Namespace) -> int:
+    settle(ctx)
     second = None if args.second.lower() == "none" else args.second
     print_contributions(contribution_tests(ctx, args.monthly, args.lump, args.years, growth=args.fund, second=second,
                                            weight=args.weight / 100, band=args.band / 100,

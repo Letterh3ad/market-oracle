@@ -13,25 +13,27 @@ from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext, worker_context
 from oracle.services.contributions_service import FUND, SECOND, ContributionTests, contribution_tests
 from oracle.services.fees_service import ASSUMED_GROWTH, fee_drag
-from oracle.services.plan_service import plan_summary, save_plan
-from oracle.services.settings_service import set_plan
+from oracle.gui.routes.guardrails import change_shape
+from oracle.services.guardrails_service import change_plan, settle
+from oracle.services.plan_service import plan_summary
 
 router = APIRouter(prefix="/api/plan")
 
 
 class Platform(BaseModel):
-    platform: StrictStr
-    percent_fee: StrictFloat | StrictInt
-    percent_cap: StrictFloat | StrictInt
-    flat_fee: StrictFloat | StrictInt
-    dealing_fee: StrictFloat | StrictInt
-    fx_fee: StrictFloat | StrictInt
+    platform: StrictStr | None = None
+    percent_fee: StrictFloat | StrictInt | None = None
+    percent_cap: StrictFloat | StrictInt | None = None
+    flat_fee: StrictFloat | StrictInt | None = None
+    dealing_fee: StrictFloat | StrictInt | None = None
+    fx_fee: StrictFloat | StrictInt | None = None
 
 
 @router.put("/platform")
 async def put_platform(body: Platform, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """All six [plan] keys in one write: saved together or not at all."""
-    return asdict(set_plan(ctx, body.model_dump()))
+    """The platform keys given (the form sends only those edited), checked together; saved at once on a
+    blank platform, else pending 7 days."""
+    return change_shape(change_plan(ctx, body.model_dump(exclude_none=True)))
 
 
 class Choice(BaseModel):
@@ -41,13 +43,15 @@ class Choice(BaseModel):
 
 @router.put("/choice")
 async def put_choice(body: Choice, ctx: AppContext = Depends(get_ctx)) -> dict:
-    """The fund held ("default" the numbers' pick) and the monthly amount; a key left out keeps its value."""
-    return asdict(save_plan(ctx, body.model_dump(exclude_none=True)))
+    """The fund held ("default" the numbers' pick) and the monthly amount; a key left out keeps its value.
+    A change to a set value waits 7 days."""
+    return change_shape(change_plan(ctx, body.model_dump(exclude_none=True)))
 
 
 @router.get("/summary")
 async def summary(ctx: AppContext = Depends(get_ctx)) -> dict:
     """"Your plan", on a thread: the kept results come from the research database (its own connection)."""
+    settle(ctx)
     return asdict(await asyncio.to_thread(plan_summary, ctx))
 
 
@@ -55,6 +59,7 @@ async def summary(ctx: AppContext = Depends(get_ctx)) -> dict:
 async def fees(monthly: float, years: int = 25, growth: float = ASSUMED_GROWTH * 100, start: float = 0.0,
                ctx: AppContext = Depends(get_ctx)) -> dict:
     """`growth` in % a year."""
+    settle(ctx)
     return asdict(fee_drag(ctx, monthly, years, growth / 100, start))
 
 
@@ -65,6 +70,7 @@ async def contributions(monthly: float, lump: float | None = None, years: int = 
                         ctx: AppContext = Depends(get_ctx)) -> dict:
     """Percent inputs (`weight`, `band`, `cash`, `cash_rate`) as the CLI takes them; `second` "none"
     skips the mix."""
+    settle(ctx)
     other = None if second.strip().lower() in ("", "none") else second.strip().lower()
 
     def read() -> ContributionTests:

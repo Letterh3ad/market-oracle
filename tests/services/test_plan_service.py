@@ -11,7 +11,7 @@ from oracle.services import plan_service
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
 from oracle.services.fund_compare_service import FundComparison, FundRow
-from oracle.services.plan_service import default_pick, plan_summary, save_plan
+from oracle.services.plan_service import check_choice, default_pick, plan_summary
 from oracle.services.settings_service import set_plan
 from oracle.services.trend_service import TrendLine, TrendTest, TrendWindow
 from tests.fakes.clock import FakeClock
@@ -87,7 +87,7 @@ def test_nothing_run_or_set_lists_what_is_missing_instead_of_failing(ctx, monkey
     s = plan_summary(ctx)
     got = lines(s)
     assert s.fund == "all_world" and not s.picked and s.monthly == 0 and s.overlay is False
-    assert [m.step for m in s.missing] == ["funds", "platform", "monthly", "trend"]
+    assert [m.step for m in s.missing] == ["funds", "platform", "monthly", "trend", "rule"]
     assert "Compare funds" in s.missing[0].text
     assert not got["fund"].known and not got["overlay"].known and got["wrapper"].known
     assert got["overlay"].value.startswith("No")
@@ -119,27 +119,18 @@ def test_platform_and_monthly_with_fees_set_give_the_crossover_and_the_allowance
     ctx.config = replace(ctx.config, plan=PlanConfig(percent_fee=0.25, flat_fee=4.99, monthly=500.0))
     s = plan_summary(ctx)
     got = lines(s)
-    assert s.missing == () and s.monthly == 500.0
+    assert [m.step for m in s.missing] == ["rule"] and s.monthly == 500.0
     assert "£23,952" in got["platform"].reason and "year 4" in got["platform"].reason
     assert got["monthly"].value == "£500 a month"
     assert "£6,000 a year of the £20,000" in got["wrapper"].reason
 
 
-def test_save_plan_checks_the_fund_and_saves_only_the_given_keys(ctx):
-    set_plan(ctx, {"platform": "flat", "percent_fee": 0.25, "percent_cap": 0, "flat_fee": 4.99,
-                   "dealing_fee": 0, "fx_fee": 0})
-    save_plan(ctx, {"fund": "sp500", "monthly": 250})
-    assert ctx.config.plan.fund == "sp500" and ctx.config.plan.monthly == 250
-    assert ctx.config.plan.flat_fee == 4.99 and ctx.config.plan.platform == "flat"
-    save_plan(ctx, {"fund": "default"})
-    assert ctx.config.plan.fund == "" and ctx.config.plan.monthly == 250
-    with pytest.raises(InvalidQuery, match="gold"):
-        save_plan(ctx, {"fund": "gold"})
-    with pytest.raises(InvalidQuery, match="monthly"):
-        save_plan(ctx, {"monthly": -1})
-    with pytest.raises(InvalidQuery, match="uk"):
-        save_plan(ctx, {"fund": "uk"})
-    assert ctx.config.plan.fund == "" and ctx.config.plan.monthly == 250
+def test_check_choice_checks_the_fund_and_trims_the_rule():
+    assert check_choice({"fund": " SP500 ", "rule": "  Hold. "}) == {"fund": "sp500", "rule": "Hold."}
+    assert check_choice({"fund": "default"}) == {"fund": ""}
+    for bad in ("gold", "uk"):
+        with pytest.raises(InvalidQuery, match=bad):
+            check_choice({"fund": bad})
 
 
 def test_set_plan_with_some_keys_keeps_the_rest_in_memory(ctx):

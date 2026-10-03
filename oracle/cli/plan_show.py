@@ -5,12 +5,15 @@ from __future__ import annotations
 import argparse
 import textwrap
 
+from oracle.cli.plan_guard import print_result
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
-from oracle.services.plan_service import PICKABLE, PlanSummary, plan_summary, save_plan
+from oracle.services.guardrails_service import change_plan, settle
+from oracle.services.plan_service import PICKABLE, PlanSummary, plan_summary
 
 COMMANDS = {"funds": "oracle plan funds", "trend": "oracle plan trend", "platform": "oracle plan set --percent-fee PCT, or --platform flat --flat-fee GBP",
-            "monthly": "oracle plan set --monthly GBP", "fund": "oracle plan set --fund NAME"}
+            "monthly": "oracle plan set --monthly GBP", "fund": "oracle plan set --fund NAME",
+            "rule": 'oracle plan rule --set "TEXT"'}
 SETTERS = (("fund", str, f"the fund you hold: {', '.join(PICKABLE)}, or default for the numbers' pick"),
            ("monthly", float, "GBP paid in each month"),
            ("platform", str, "which fee you pay: percentage or flat"),
@@ -27,13 +30,15 @@ def register(sub: argparse._SubParsersAction) -> None:
                                               "fund comparison and trend test and the [plan] settings")
     show.set_defaults(handler=run_show)
     s = sub.add_parser("set", description="save [plan] settings in one checked write; keys not given keep their "
-                                          "values")
+                                          "values. A change to a value already set waits 7 days (oracle plan "
+                                          "pending)")
     for key, kind, text in SETTERS:
         s.add_argument(f"--{key.replace('_', '-')}", dest=key, type=kind, help=text)
     s.set_defaults(handler=run_set)
 
 
 def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
+    settle(ctx)
     print_summary(plan_summary(ctx))
     return 0
 
@@ -55,7 +60,6 @@ def run_set(ctx: AppContext, args: argparse.Namespace) -> int:
     if not values:
         raise InvalidQuery("nothing to set: give at least one of " + ", ".join(
             f"--{k.replace('_', '-')}" for k, _, _ in SETTERS))
-    save_plan(ctx, values)
-    print(f"Saved [plan] {', '.join(values)}.")
+    print_result(change_plan(ctx, values))
     print_summary(plan_summary(ctx))
     return 0

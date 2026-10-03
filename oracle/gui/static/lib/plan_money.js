@@ -5,6 +5,7 @@ import { linesChart } from "./chart.js";
 import { table } from "./compare.js";
 import { el } from "./dom.js";
 import { money, pct } from "./fmt.js";
+import { savedText } from "./guardrails.js";
 import { sendJson } from "./ui.js";
 
 const PLATFORM = [
@@ -122,13 +123,20 @@ function planMoneySection({ changed } = {}) {
       }
       return [...field(key, label, value(key) ?? 0, { type: "number", step: "any", min: "0" }), key];
     });
+    const read = (input, key) => (key === "platform" ? input.value : Number(input.value));
+    // Only edited fields are sent: a field sent at its saved value would be no change, never an undo.
+    let saved = Object.fromEntries(fields.map(([, input, key]) => [key, read(input, key)]));
     const save = el("button", { type: "button", onclick: async () => {
       save.disabled = true;
       try {
-        const body = Object.fromEntries(fields.map(([, input, key]) => [key, key === "platform" ? input.value
-          : Number(input.value)]));
-        await sendJson("/api/plan/platform", body, "PUT");
-        say("Platform saved.", false);
+        const body = Object.fromEntries(fields.map(([, input, key]) => [key, read(input, key)])
+          .filter(([key, v]) => v !== saved[key]));
+        if (!Object.keys(body).length) {
+          say("Platform: nothing changed.", false);
+          return;
+        }
+        say(`Platform: ${savedText(await sendJson("/api/plan/platform", body, "PUT"))}`, false);
+        saved = { ...saved, ...body };
         changed?.();
       } catch (err) {
         say(err.message);

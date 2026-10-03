@@ -14,7 +14,7 @@ from pathlib import Path
 from tomlkit.exceptions import TOMLKitError
 
 from oracle.config import (
-    BLANK_OFF, DEFAULT_CONFIG_NAME, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, PlanConfig, ScheduleConfig, Setting,
+    BLANK_OFF, DEFAULT_CONFIG_NAME, PLAN_PARTS, DEFAULT_PROFILE, LAYA_DEVICES, LLM_PROFILE_KEYS, EXAMPLE_PATH, SLOTS_TABLE, PEERS_RANGE, AutomationConfig, ConfigError, PlanConfig, ScheduleConfig, Setting,
     check_ai_account, check_peers, check_plan, check_schedule, check_schedule_time, example_meanings, key_env_var, load_config,
     setting_list, with_settings,
 )
@@ -156,6 +156,9 @@ def set_setting(ctx: AppContext, section: str, key: str, value: object) -> dict:
     raw = _read_raw(_config_path(ctx))
     if not any((s.section, s.key) == (section, key) for s in setting_list(tuple(raw.get("sources", {})))):
         raise InvalidQuery(f"no setting [{section}] {key}")
+    if section == "plan" and any(key in part for part in PLAN_PARTS):
+        raise InvalidQuery(f"[plan] {key} is part of the real-money plan, where a change to a set value waits 7 days: "
+                           "change it on the Plan tab (or plan set)")
     if section == "schedule":
         _check_schedule_write(ctx, {key: value})
     _save(ctx, section, {key: value})
