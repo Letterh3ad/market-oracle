@@ -17,7 +17,7 @@ from oracle.analysts.lab import DSR_BAR, deflated_sharpe, moments
 from oracle.broker.projection import NO_FEES
 from oracle.broker.strategy_backtest import Decide, StrategyRun, simulate
 from oracle.broker.trend_overlay import Session, figures, month_end_decisions
-from oracle.broker.uk_costs import STAMP_DUTY, Listing, UkCosts, listing_of
+from oracle.broker.uk_costs import SIDES, STAMP_DUTY, Listing, TradeCost, UkCosts, listing_of, trade_cost
 from oracle.services import trend_service
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery, NoPrices
@@ -31,7 +31,7 @@ from oracle.store.signal_tests import SignalTestRepo
 
 __all__ = ["BENCHMARK", "CONFIRM_START", "KEY_PREFIX", "POT", "STRATEGIES", "TRAIN_END", "TRAIN_START", "CheckRow",
            "CostView", "Strategy", "StrategyLine", "StrategyTest", "StrategyWindow", "TrendCheck", "check_strategy",
-           "cost_view", "keep_strategy_test", "run_strategy", "strategy_tests", "trend_check", "user_costs"]
+           "cost_view", "keep_strategy_test", "price_trade", "run_strategy", "strategy_tests", "trend_check", "user_costs"]
 
 KEY_PREFIX = STRATEGY_PREFIX
 """A kept result's name in the signal tests table: the prefix and the registration's key."""
@@ -103,6 +103,19 @@ def cost_view(ctx: AppContext) -> CostView:
         notes.append("No platform fees are set: enter your platform's prices in Settings, [plan].")
     return CostView(p.platform, p.percent_fee, p.percent_cap, p.flat_fee, p.dealing_fee, p.fx_fee, c.stamp_duty,
                     tuple(c.half_spreads.items()), c.default_half_spread, POT, tuple(notes))
+
+
+def price_trade(ctx: AppContext, value: float, side: str = "buy", currency: str = "GBP", uk_shares: bool = False,
+                band: str | None = None) -> TradeCost:
+    """What one trade of `value` GBP costs under the user's cost model."""
+    if side not in SIDES:
+        raise InvalidQuery(f"side {side!r}: buy or sell")
+    if value < 0:
+        raise InvalidQuery("a trade's value is 0 or more")
+    if band and band not in user_costs(ctx).half_spreads:
+        raise InvalidQuery(f"band {band!r}: one of {', '.join(user_costs(ctx).half_spreads)}, or none")
+    return trade_cost(user_costs(ctx), Listing("", currency.strip().upper() or "GBP", uk_shares, band or None), side,
+                      value)
 
 
 @dataclass(frozen=True)

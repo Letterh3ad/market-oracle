@@ -26,7 +26,8 @@ function scoreTable(board, pick) {
     el("td", { class: "small" }, r.kind),
     el("td", { class: "small" }, r.registered_on, r.legacy ? el("div", { class: "dim" }, "before the lab") : null),
     el("td", { class: "num" }, r.horizon == null ? "" : String(r.horizon)),
-    el("td", { class: "num" }, value(r), r.measure ? el("div", { class: "small dim" }, r.measure) : null),
+    el("td", { class: "num" }, value(r), r.measure ? el("div", { class: "small dim" }, r.measure) : null,
+      r.dsr == null ? null : el("div", { class: "small dim" }, `deflated Sharpe ${r.dsr.toFixed(3)}`)),
     el("td", { class: "num" }, num(r.t, 2)),
     el("td", { class: "small" }, r.bar),
     el("td", { class: `small ${tone(r.verdict)}`, "data-verdict": "" }, r.verdict,
@@ -82,7 +83,8 @@ function scoreboardSection() {
     } }, "Drop");
     const rows = [["Registered", r.registered_on], ["Type", r.kind], ["Horizons", r.horizons.join(", ") || "none"],
       ["Rule", r.rule], ["Universe", r.universe], ["Expected", `${r.expected_sign}, ${r.expected_size} (${r.source})`],
-      ["Power", r.power], ["Costs", r.costs], ["Bar", r.bar_text], ["Pass rule", r.bar_rule],
+      ["Power", r.power], ["Costs", r.costs], ["Variants tried", r.kind === "strategy" ? String(r.variants) : null],
+      ["Bar", r.bar_text], ["Pass rule", r.bar_rule],
       ["Kill stage", r.kill_stage], ["Parent", r.parent], ["Different because", r.different_because],
       ["Commit", r.commit_hash], ["Note", r.note]].filter(([, v]) => v);
     detail.replaceChildren(el("div", { class: "card", "data-registration": key },
@@ -102,11 +104,13 @@ function scoreboardSection() {
   const sign = el("select", { "aria-label": "Expected sign" },
     ...["positive", "negative"].map((k) => el("option", { value: k }, k)));
   const horizons = el("input", { size: 10, "aria-label": "Horizons (trading days, comma separated)" });
+  const variants = el("input", { size: 4, value: "1", "aria-label": "Variants tried (a strategy's deflated Sharpe)" });
   const save = el("button", { type: "button", onclick: async () => {
     const text = (n) => inputs[n].value.trim();
     const body = { ...Object.fromEntries(FIELDS.map(([n]) => [n, text(n)])), kind: kind.value,
       expected_sign: sign.value, parent: text("parent") || null, different_because: text("different_because") || null,
-      horizons: horizons.value.split(",").map((h) => h.trim()).filter(Boolean).map(Number) };
+      horizons: horizons.value.split(",").map((h) => h.trim()).filter(Boolean).map(Number),
+      variants: Number(variants.value || 1) };
     try {
       const r = await sendJson("/api/lab/tests", body);
       say(`Registered ${r.key}: ${r.bar_rule}. Commit it to DECISIONS before any data run.`, false);
@@ -115,8 +119,10 @@ function scoreboardSection() {
   } }, "Register");
   const form = el("details", null, el("summary", null, "Register a test (the pre-registration template)"),
     el("p", { class: "small dim" }, "Its bar is frozen on save. Up to 2 horizons for a signal or event (each counts "
-      + "toward N); a strategy has none. No data run until its DECISIONS entry is committed and recorded here."),
-    el("div", { class: "row small" }, "Type ", kind, " expected sign ", sign, " horizons ", horizons),
+      + "toward N); a strategy has none and counts every version tried before it in its deflated Sharpe. No data run "
+      + "until its DECISIONS entry is committed and recorded here."),
+    el("div", { class: "row small" }, "Type ", kind, " expected sign ", sign, " horizons ", horizons,
+      " variants tried (strategy) ", variants),
     ...FIELDS.map(([name, label]) => el("div", { class: "row small" }, el("label", null, `${label} `, inputs[name]))),
     save);
 

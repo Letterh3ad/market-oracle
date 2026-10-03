@@ -5,7 +5,7 @@ import json
 from dataclasses import fields
 from pathlib import Path
 
-from oracle.cli import literature
+from oracle.cli import literature, strategy
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
@@ -38,6 +38,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     drop.add_argument("key")
     drop.set_defaults(handler=run_drop)
     literature.add_commands(sub)
+    strategy.add_commands(sub)
 
 
 def _num(x: float | None, fmt: str) -> str:
@@ -52,7 +53,7 @@ def print_scoreboard(b: Scoreboard) -> None:
         value = _num(r.value, "+.2%" if r.measure != "IC" else "+.4f")
         bar = r.bar if len(r.bar) <= 10 else "own rule"
         print(f"{r.key:<24}{r.kind:<9}{_num(r.horizon, 'd'):>4}  {r.measure:<23}{value:>9}{_num(r.t, '.2f'):>7}  "
-              f"{bar:<10}{_num(r.power, '.4f'):>8}  {r.verdict}")
+              f"{bar:<10}{_num(r.power, '.4f'):>8}  {r.verdict}" + (f" (DSR {r.dsr:.3f})" if r.dsr is not None else ""))
     if rules := {r.key: r.bar for r in b.rows if len(r.bar) > 10}:
         print()
         for key, rule in rules.items():
@@ -72,7 +73,8 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
     for name, value in (("registered", r.registered_on), ("horizons", ", ".join(map(str, r.horizons)) or "-"),
                         ("rule", r.rule), ("universe", r.universe),
                         ("expected", f"{r.expected_sign}, {r.expected_size} ({r.source})"), ("power", r.power),
-                        ("costs", r.costs), ("bar", bar_text(r)), ("pass rule", r.bar_rule),
+                        ("costs", r.costs), ("variants tried", r.variants if r.kind == "strategy" else None),
+                        ("bar", bar_text(r)), ("pass rule", r.bar_rule),
                         ("kill stage", r.kill_stage), ("parent", r.parent), ("different because", r.different_because),
                         ("commit", r.commit_hash or "not committed: no data run yet"), ("note", r.note)):
         if value:

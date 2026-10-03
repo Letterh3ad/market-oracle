@@ -40,3 +40,31 @@ async def test_a_commit_check_runs_git_off_the_event_loop(client, monkeypatch):
     monkeypatch.setattr("oracle.gui.routes.lab.commit_test", check)
     assert (await client.put("/api/lab/tests/momentum_12_1/commit", json={"hash": "abcdef1"})).status_code == 200
     assert threads and threads[0] is not threading.main_thread()
+
+
+async def test_a_strategy_registers_with_its_variants_tried(client):
+    body = {**TEMPLATE, "key": "new_strategy", "kind": "strategy", "horizons": [], "variants": 4}
+    made = (await client.post("/api/lab/tests", json=body)).json()
+    assert made["variants"] == 4 and "4 variants tried" in made["bar_rule"]
+
+
+async def test_the_cost_model_and_a_hand_trade(client):
+    model = (await client.get("/api/lab/costs")).json()
+    assert model["trade"] is None and model["model"]["stamp_duty"] == 0.005 and model["model"]["pot"] == 20000
+    uk = (await client.get("/api/lab/costs", params={"value": 10000, "uk_shares": "true"})).json()["trade"]
+    assert uk["stamp"] == 50 and uk["fx"] == 0 and uk["spread"] == 10 and uk["total"] == 60
+    sell = (await client.get("/api/lab/costs", params={"value": 10000, "uk_shares": "true", "side": "sell"})).json()
+    assert sell["trade"]["stamp"] == 0
+    bad = await client.get("/api/lab/costs", params={"value": 10, "side": "short"})
+    assert bad.status_code == 400 and "buy or sell" in bad.json()["error"]
+
+
+async def test_strategies_and_a_refused_strategy_job(client):
+    assert (await client.get("/api/lab/strategies")).json() == {"strategies": [], "kept": []}
+    refused = await client.post("/api/jobs/strategy-test", params={"key": "nope"})
+    assert refused.status_code == 400 and "no strategy code" in refused.json()["error"]
+
+
+async def test_the_trend_check_needs_a_kept_result(client):
+    r = await client.get("/api/lab/trend-check")
+    assert r.status_code in (404, 409, 400) and "nothing to reproduce" in r.json()["error"]
