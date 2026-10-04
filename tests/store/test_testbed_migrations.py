@@ -95,3 +95,18 @@ def test_meaning_search_adds_method_vectors_and_the_registrations_near_fail_keep
                         "AND near_check_note IS NULL").fetchone()[0] == registered > 0
     assert conn.execute("SELECT count(*) FROM lit_embeddings").fetchone()[0] == 0
     conn.close()
+
+
+def test_the_funnel_stages_add_the_osap_tables_and_keep_every_method(tmp_path):
+    from oracle.store.testbed_migrations import t0011_triage
+    conn = connect(tmp_path / "research.db")
+    migrate(conn, MIGRATIONS[:MIGRATIONS.index(t0011_triage)])
+    conn.execute("INSERT INTO lit_methods (ref, name, status, origin, status_by, status_at, added_at) "
+                 "VALUES ('T-01', 'Value', 'go', 'archive', 'seed', 'x', 'x')")
+    conn.commit()
+    migrate(conn, MIGRATIONS)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"osap_signals", "osap_returns", "osap_imports", "lab_osap_map", "lab_stages"} <= tables
+    assert [r[0] for r in conn.execute("SELECT ref FROM lit_methods")] == ["T-01"]
+    conn.close()

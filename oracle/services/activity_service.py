@@ -49,6 +49,7 @@ from oracle.services.insider_service import fetch_insiders
 from oracle.services.event_study_service import EVENT_TYPES, registry_key, run_and_keep_events
 from oracle.services.lab_registry import check_committed
 from oracle.services.strategy_service import check_strategy_run, run_and_keep_strategy
+from oracle.services.triage_service import check_window, fetch_osap
 from oracle.services.trend_service import KEY as TREND_KEY
 from oracle.services.trend_service import run_and_keep_trend
 from oracle.services.fund_compare_service import run_and_keep_funds
@@ -65,7 +66,7 @@ from oracle.store.replay import FAILED, PENDING, ReplayRepo
 __all__ = ["FinishedPage", "Job", "JobRunner", "PREEMPTED_BY", "RETRYABLE_STATES", "StaleQueued", "StaleResearch",
            "queue_stale_research", "retry", "retry_all", "retryable", "scheduled_run_near", "stale_research_jobs", "submit_analyse", "submit_ask",
            "nightly_data_check", "submit_backfill", "submit_backtest", "submit_cutoff_probe", "submit_data_check", "submit_discover", "submit_prices", "submit_reader", "submit_replay_prices",
-           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_insiders", "submit_event_study", "submit_plan_trend", "submit_plan_funds", "submit_strategy_test", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
+           "submit_edges", "submit_fill", "submit_industry", "submit_history", "submit_laya", "submit_laya_history", "submit_laya_test", "submit_line_step", "submit_signal_test", "submit_xbrl", "submit_insiders", "submit_event_study", "submit_plan_trend", "submit_plan_funds", "submit_strategy_test", "submit_osap_fetch", "submit_midday", "submit_rerun", "submit_research", "submit_tick", "submit_fx", "submit_merges",
            "submit_universe_refresh", "sweep_leftovers"]
 
 log = logging.getLogger(__name__)
@@ -732,6 +733,28 @@ def _retry_strategy_test(ctx: AppContext, runner: JobRunner, job) -> Job:
     return submit_strategy_test(ctx, runner, job.subject or "")
 
 
+OSAP_SUBJECT = "osap"
+
+
+def submit_osap_fetch(ctx: AppContext, runner: JobRunner) -> Job:
+    """Download Open Source Asset Pricing's pinned release files and import them into the research
+    database. Refused outside the compute window before queuing; a Cancel keeps the part downloaded,
+    and the next run resumes it."""
+    check_window(ctx)
+    stage: list[str] = []
+    stopped = threading.Event()
+
+    async def work(c: AppContext):
+        return await fetch_osap(c, say=stage.append, stop=stopped.is_set)
+
+    return runner.submit("osap_fetch", "OSAP download", work, subject=OSAP_SUBJECT, link="#research",
+                         progress=lambda: stage[-1] if stage else None, on_cancel=stopped.set)
+
+
+def _retry_osap_fetch(ctx: AppContext, runner: JobRunner, job) -> Job:
+    return submit_osap_fetch(ctx, runner)
+
+
 PLAN_FUNDS_SUBJECT = "plan_funds"
 
 
@@ -1173,7 +1196,7 @@ _RETRY: dict[str, Callable[[AppContext, JobRunner, Any], Job]] = {
     "backtest": _retry_backtest, "ask": _retry_ask, "replay_prices": _retry_replay_prices, "probe": _retry_probe,
     "history": _retry_history, "testbed": _retry_testbed, "signal_test": _retry_signal_test, "xbrl": _retry_xbrl,
     "insiders": _retry_insiders, "event_study": _retry_event_study, "plan_trend": _retry_plan_trend, "plan_funds": _retry_plan_funds,
-    "strategy_test": _retry_strategy_test,
+    "strategy_test": _retry_strategy_test, "osap_fetch": _retry_osap_fetch,
     DATA_CHECK: _retry_data_check,
     "laya": _retry_laya, "edges": _retry_edges, "industry": _retry_industry, "reader": _retry_reader,
     "laya_history": _retry_laya_history, "laya_test": _retry_laya_test,

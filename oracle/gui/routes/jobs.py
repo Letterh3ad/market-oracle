@@ -13,6 +13,7 @@ from oracle.gui.routes import shapes
 from oracle.services.activity_service import (
     JobRunner, submit_analyse, submit_ask, submit_backfill, submit_backtest, submit_cutoff_probe, submit_discover, submit_fx,
     submit_edges, submit_fill, submit_history, submit_industry, submit_laya, submit_laya_history, submit_laya_test, submit_merges, submit_midday, submit_prices, submit_reader, submit_rerun, submit_research, submit_signal_test, submit_testbed, submit_tick, submit_xbrl, submit_insiders, submit_event_study, submit_plan_trend, submit_plan_funds, submit_strategy_test, submit_universe_refresh,
+    submit_osap_fetch,
     submit_data_check,
 )
 from oracle.services.context import AppContext
@@ -229,6 +230,12 @@ async def strategy_test(key: str, ctx: AppContext = Depends(get_ctx), runner: Jo
     """A registered strategy test against index buy-and-hold after UK retail costs, kept in the
     research database."""
     return shapes.job(submit_strategy_test(ctx, runner, key))
+
+
+@router.post("/osap-fetch", status_code=202)
+async def osap_fetch(ctx: AppContext = Depends(get_ctx), runner: JobRunner = Depends(get_runner)) -> dict:
+    """Open Source Asset Pricing's release files into the research database (compute window only)."""
+    return shapes.job(submit_osap_fetch(ctx, runner))
 
 
 @router.post("/plan-funds", status_code=202)

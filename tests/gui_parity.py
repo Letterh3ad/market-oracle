@@ -234,6 +234,21 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "lab strategy": "POST /api/jobs/strategy-test",
     "lab strategy --show": "GET /api/lab/strategies",
     "lab trend-check": "GET /api/lab/trend-check",
+    # Research tab, Funnel stages card: OSAP data status, Download (a job) and Import from a folder; a method's
+    # OSAP signal, Triage (or by hand with a note) and Power; the stage table.
+    "lab osap": "GET /api/lab/osap",
+    "lab osap-fetch": "POST /api/jobs/osap-fetch",
+    "lab osap-import": "POST /api/lab/osap/import",
+    "lab map": "PUT /api/lab/methods/{ref}/osap",
+    "lab map --clear": "PUT /api/lab/methods/{ref}/osap",
+    "lab triage": "POST /api/lab/methods/{ref}/triage",
+    **{f"lab triage --{flag}": "POST /api/lab/methods/{ref}/triage" for flag in ("by-hand", "note")},
+    "lab power": "POST /api/lab/methods/{ref}/power",
+    **{f"lab power --{flag}": "POST /api/lab/methods/{ref}/power" for flag in (
+        "strategy", "horizon", "expected", "tracking-error", "source")},
+    **{f"lab {cmd} --by": Exempt("the page acts as the user; --by names the autopilot or another caller")
+       for cmd in ("map", "triage", "power")},
+    "lab table": "GET /api/lab/table",
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",
