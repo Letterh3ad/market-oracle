@@ -67,3 +67,15 @@ async def test_a_linked_method_carries_its_registry_rows(client):
     assert one["test_keys"] == ["momentum_12_1", "forward:momentum_12_1"] and one["unregistered"] == []
     assert [(t["key"], t["bar"]) for t in one["tests"]] == [("momentum_12_1", "t > 2.00"),
                                                              ("forward:momentum_12_1", "t > 2.00")]
+
+
+async def test_similar_says_which_match_was_used(client, monkeypatch):
+    from tests.fakes.embed import FakeEmbed
+
+    r = (await client.get("/api/lab/similar", params={"q": "buy stocks near their yearly high"})).json()
+    assert r["mode"] == "keyword" and "unavailable" in r["note"] and len(r["hits"]) == 5
+    monkeypatch.setattr("oracle.services.meaning_service.embedder", lambda ctx: FakeEmbed())
+    r = (await client.get("/api/lab/similar", params={"q": "buy stocks near their yearly high"})).json()
+    assert r["mode"] == "meaning" and r["hits"][0]["ref"] == "T-15"
+    assert {"ref", "name", "family", "status", "rating", "score"} == r["hits"][0].keys()
+    assert (await client.get("/api/lab/similar", params={"q": " "})).status_code == 400

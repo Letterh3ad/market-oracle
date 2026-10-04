@@ -4,10 +4,11 @@ from pathlib import Path
 import pytest
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1] / "oracle"
-FRONTENDS = ("cli", "gui")
+FRONTENDS = ("cli", "gui", "mcp")
+"""The MCP server is a front end like the others: it calls services only."""
 # An allowlist, so a package added later is off limits to frontends by default.
-FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.cli", "oracle.gui")
-SERVICES_MAY_NOT_IMPORT = ("oracle.gui", "oracle.cli")
+FRONTEND_MAY_IMPORT = ("oracle.services", "oracle.cli", "oracle.gui", "oracle.mcp")
+SERVICES_MAY_NOT_IMPORT = ("oracle.gui", "oracle.cli", "oracle.mcp")
 # Analysts are pure: data in, signals out. Loading and storing is the services' job.
 ANALYSTS_MAY_IMPORT = ("oracle.analysts", "oracle.market.bars", "oracle.market.fundamentals")
 
@@ -76,6 +77,14 @@ def test_checker_catches_a_frontend_reaching_the_store(tmp_path):
     assert frontend_violations(bad) == {"oracle.store.db"}
 
 
+def test_checker_catches_the_mcp_server_reaching_the_store_and_a_service_importing_it(tmp_path):
+    bad = tmp_path / "bad.py"
+    bad.write_text("from oracle.store.literature import LiteratureRepo\nfrom oracle.services import meaning_service\n")
+    assert frontend_violations(bad) == {"oracle.store.literature"}
+    bad.write_text("from oracle.mcp.server import Server\n")
+    assert service_violations(bad) == {"oracle.mcp.server"}
+
+
 def test_checker_catches_a_service_importing_the_gui(tmp_path):
     bad = tmp_path / "bad.py"
     bad.write_text("import oracle.gui.app\n")
@@ -83,7 +92,7 @@ def test_checker_catches_a_service_importing_the_gui(tmp_path):
 
 
 def test_there_are_modules_to_check():
-    assert _modules("cli") and _modules("services") and _modules("analysts")
+    assert _modules("cli") and _modules("mcp") and _modules("services") and _modules("analysts")
 
 
 def test_checker_catches_a_frontend_reaching_config_directly(tmp_path):

@@ -104,3 +104,21 @@ def title_score(query: str, title: str) -> float:
     soft = 5 * recall * precision / (4 * precision + recall) if recall + precision else 0.0
     whole = SequenceMatcher(None, " ".join(q), " ".join(t)).ratio()
     return round(max(soft, whole), 3)
+
+
+KEYWORD_STOP = STOP | frozenset("its their his her it as or be into over than then that this these those when each "
+                                "not no".split())
+
+
+@lru_cache(maxsize=4096)
+def _keywords(text: str) -> frozenset[str]:
+    return frozenset(w[:-1] if len(w) > 3 and w.endswith("s") and not w.endswith("ss") else w
+                     for w in normal_title(text).split() if w not in KEYWORD_STOP)
+
+
+def keyword_score(query: str, text: str) -> float:
+    """0 to 1: the content words two texts share (Dice), plurals folded; meaning search's fallback."""
+    q, t = _keywords(query), _keywords(text)
+    if not q or not t:
+        return 0.0
+    return round(2 * len(q & t) / (len(q) + len(t)), 3)

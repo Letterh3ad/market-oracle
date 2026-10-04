@@ -21,7 +21,8 @@ REG = {"key": "new_signal", "label": "A new signal", "kind": "signal", "register
        "source": "a paper", "power": "0.01", "costs": "none", "bar": 3.0233, "bar_inclusive": True,
        "bar_rule": "confirm IC above 0, t >= 3.02", "kill_stage": "confirm", "parent": None,
        "different_because": None, "commit_hash": None, "legacy": False, "result_key": "new_signal", "note": "",
-       "bar_text": "t >= 3.02"}
+       "bar_text": "t >= 3.02", "near_check": "keyword", "near_check_note": "keyword match: Ollama is down",
+       "near_check_text": "ran on keywords only: keyword match: Ollama is down"}
 
 
 def run(body: str):
@@ -68,6 +69,7 @@ def test_a_registration_opens_and_its_commit_is_recorded():
     """)
     assert "GET /api/lab/tests/new_signal" in asked_text and "PUT /api/lab/tests/new_signal/commit" in asked_text
     assert "the rule" in asked_text and "Pass rule" in asked_text and "committed: its data runs may start" in asked_text
+    assert "Near-FAIL check" in asked_text and "ran on keywords only: keyword match: Ollama is down" in asked_text
     assert sent == [{"hash": "abcdef1"}]
 
 
@@ -81,6 +83,7 @@ def test_the_form_registers_a_test_from_the_template():
         console.log(JSON.stringify([node.textContent, bodies]));
     """)
     assert "Registered new_signal" in text and "Commit it to DECISIONS" in text
+    assert "near-FAIL check ran on keywords only" in text
     assert sent[0]["key"] == "new_signal" and sent[0]["horizons"] == [20, 60] and sent[0]["kind"] == "signal"
     assert sent[0]["parent"] is None and sent[0]["expected_sign"] == "positive" and sent[0]["variants"] == 1
 

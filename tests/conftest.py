@@ -49,6 +49,15 @@ def _no_real_tilt_model(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_real_embeddings(monkeypatch):
+    """Meaning search would ask a local Ollama that may be running: every test gets a model that is
+    down (the keyword fallback), unless it passes or patches in a FakeEmbed."""
+    from tests.fakes.embed import FakeEmbed
+
+    monkeypatch.setattr("oracle.services.meaning_service.embedder", lambda ctx: FakeEmbed(down=True))
+
+
+@pytest.fixture(autouse=True)
 def _tick_industry_idle(monkeypatch):
     """A tick's industry stage would search Google News for every watched company and load Laya:
     in tests it researches nothing, unless a test puts `industry_research_service.research_industry` back."""

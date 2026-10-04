@@ -209,9 +209,11 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "lab commit": "PUT /api/lab/tests/{key}/commit",
     "lab drop": "DELETE /api/lab/tests/{key}",
     # Research tab, Literature index card: the lookup box, the method list and its status filter, a
-    # method's details and its Go / Drop / Dig deeper buttons, "Record a source" and "Search log".
+    # method's details and its Go / Drop / Dig deeper buttons, "Record a source" and "Search log", and
+    # the "Find similar" box (meaning search).
     # The page acts as the user; --by names another caller (the autopilot).
     "lab lookup": "GET /api/lab/lookup",
+    "lab similar": "GET /api/lab/similar",
     "lab methods": "GET /api/lab/methods",
     "lab methods --status": "GET /api/lab/methods",
     "lab method": "GET /api/lab/methods/{ref}",

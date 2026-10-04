@@ -99,3 +99,18 @@ def test_method_shows_its_registry_bar_and_verdict(tmp_path, capsys):
     assert "  test event:2.02 h20: not run (bar t > 2.00)" in out and "test event:insider_cluster h20" in out
     assert main(["--config", config(tmp_path), "lab", "methods", "--status", "fail"]) == 0
     assert "[test event:2.02, event:2.01, event:insider_cluster]" in capsys.readouterr().out
+
+
+def test_similar_prints_the_top_5_with_score_status_and_how_it_matched(tmp_path, capsys, monkeypatch):
+    from tests.fakes.embed import FakeEmbed
+
+    cfg = config(tmp_path)
+    assert main(["--config", cfg, "lab", "similar", "buy stocks near their yearly high"]) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines()[0].startswith("Similar to 'buy stocks near their yearly high': keyword match: meaning search "
+                                          "is unavailable")
+    monkeypatch.setattr("oracle.services.meaning_service.embedder", lambda ctx: FakeEmbed())
+    assert main(["--config", cfg, "lab", "similar", "buy stocks near their yearly high"]) == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert "meaning match (fake-embed embeddings, cosine)" in lines[0]
+    assert len(lines) == 6 and lines[1].split()[:2] == ["T-15", "new"] and "52-week-high proximity" in lines[1]

@@ -62,6 +62,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 
 | Model | License | Use |
 |---|---|---|
+| [nomic-embed-text](https://ollama.com/library/nomic-embed-text) (Nomic Embed v1.5, 137M, 768 dimensions), pulled into the local Ollama store, not redistributed | Apache-2.0 (Ollama library licence and the nomic-ai/nomic-embed-text-v1.5 model card) | meaning search over the literature index's method definitions (`oracle/services/meaning_service.py`); checked 2026-10-04 |
 | [convaiinnovations/laya-multilingual](https://huggingface.co/convaiinnovations/laya-multilingual) at commit e4e9ddf2 (mmBERT-base, 322M), downloaded once into the Hugging Face cache, not redistributed | Apache-2.0 (model card and Hub metadata); its base, jhu-clsp/mmBERT-base, is MIT | Laya headline scores (`oracle/research/laya.py`); checked 2026-09-30 |
 
 ## Services
@@ -81,6 +82,7 @@ Called over HTTP, not redistributed.
 
 | Idea | From | License | Where |
 |---|---|---|---|
+| Model Context Protocol: newline-delimited JSON-RPC 2.0 over stdio, `initialize`, `tools/list`, `tools/call` | [modelcontextprotocol.io specification](https://modelcontextprotocol.io/specification) (2025-06-18) | MIT (the specification repository) | `oracle/mcp/server.py`; written from the spec, no SDK (the `mcp` package) and no code copied |
 | Research roles: fundamental, technical and news analysts, a bull/bear debate, a risk check | TradingAgents (TauricResearch) | Apache-2.0 | `oracle/research/roles.py`; structure only, prompts written fresh, no text copied |
 
 ## Test fixtures

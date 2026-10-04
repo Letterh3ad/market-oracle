@@ -11,7 +11,7 @@ from pydantic import BaseModel, StrictInt, StrictStr
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
-from oracle.services.lab_service import bar_text, scoreboard
+from oracle.services.lab_service import bar_text, near_check_text, scoreboard
 from oracle.services.strategy_service import STRATEGIES, cost_view, price_trade, strategy_tests, trend_check
 
 router = APIRouter(prefix="/api/lab")
@@ -25,7 +25,7 @@ async def get_scoreboard(ctx: AppContext = Depends(get_ctx)) -> dict:
 @router.get("/tests/{key}")
 async def get_test(key: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     r = registration(ctx, key)
-    return {**asdict(r), "bar_text": bar_text(r)}
+    return {**asdict(r), "bar_text": bar_text(r), "near_check_text": near_check_text(r)}
 
 
 class TemplateBody(BaseModel):
@@ -49,7 +49,9 @@ class TemplateBody(BaseModel):
 @router.post("/tests")
 async def post_test(body: TemplateBody, ctx: AppContext = Depends(get_ctx)) -> dict:
     data = body.model_dump()
-    return asdict(register_test(ctx, Template(**{**data, "horizons": tuple(data["horizons"])})))
+    # On a thread: the near-FAIL check may wait on Ollama's embeddings.
+    t = Template(**{**data, "horizons": tuple(data["horizons"])})
+    return asdict(await asyncio.to_thread(register_test, ctx, t))
 
 
 class CommitBody(BaseModel):

@@ -22,6 +22,7 @@ async def test_register_show_commit_and_drop(client):
     assert made.status_code == 200 and made.json()["bar"] == 3.0233 and made.json()["commit_hash"] is None
     shown = (await client.get("/api/lab/tests/new_signal")).json()
     assert shown["bar_text"] == "t >= 3.02" and shown["rule"] == "the rule"
+    assert shown["near_check"] == "keyword" and shown["near_check_text"].startswith("ran on keywords only")
     bad = await client.put("/api/lab/tests/new_signal/commit", json={"hash": "not a hash"})
     assert bad.status_code == 400 and "commit hash" in bad.json()["error"]
     assert (await client.post("/api/lab/tests", json={**TEMPLATE, "horizons": [5, 20, 60]})).status_code == 400

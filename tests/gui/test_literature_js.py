@@ -26,6 +26,9 @@ HIT = {"ref": "T-15", "name": "52-week-high proximity", "family": "A", "status":
        "matched": "name"}
 LOOKUP = {"query": "52 week high", "key": None, "sources": [{"source": SOURCE, "score": 0.88}], "methods": [HIT],
           "note": "fuzzy match on titles, names and refs"}
+SIMILAR = {"query": "buy stocks near their yearly high", "mode": "keyword",
+           "note": "keyword match: meaning search is unavailable (Ollama is not reachable)",
+           "hits": [{k: v for k, v in HIT.items() if k != "matched"}]}
 SEARCH = {"id": 3, "query": "decay", "place": "SSRN", "at": "2026-10-03T12:00:00+00:00", "by": "autopilot",
           "note": "one hit", "found": [SOURCE]}
 METHODS = {"methods": [{k: v for k, v in METHOD.items() if k not in ("sources", "marks")}],
@@ -51,6 +54,7 @@ def run(body: str):
         ANSWERS["GET /api/lab/methods"] = {json.dumps(METHODS)};
         ANSWERS["GET /api/lab/searches"] = {{ searches: [{json.dumps(SEARCH)}] }};
         ANSWERS["GET /api/lab/lookup"] = {json.dumps(LOOKUP)};
+        ANSWERS["GET /api/lab/similar"] = {json.dumps(SIMILAR)};
         ANSWERS["GET /api/lab/methods/T-15"] = {json.dumps(METHOD)};
         ANSWERS["POST /api/lab/methods/T-15/mark"] = {json.dumps(MARKED)};
         ANSWERS["POST /api/lab/sources"] = {{ source: {json.dumps(SOURCE)}, created: true,
@@ -193,3 +197,18 @@ def test_a_linked_method_shows_its_registry_rows_with_bar_and_verdict():
     """)
     assert "Registry tests" in text and "momentum_12_1 h20: FAIL (bar t > 2.00; IC +0.0080, t 0.50)" in text
     assert "gone: not in the registry" in text
+
+
+def test_find_similar_shows_the_nearest_methods_and_which_match_was_used():
+    text, asked_ = run("""
+        section.start(); await settle();
+        const box = labelled(node, "Find similar");
+        box.value = "buy stocks near their yearly high";
+        button(node, "Find similar").fire("click"); await settle();
+        const after = node.textContent;
+        for (const fn of box.listeners.keydown ?? []) fn({ key: "Enter", target: box });
+        await settle();
+        console.log(JSON.stringify([after, asked]));
+    """)
+    assert asked_.count("GET /api/lab/similar?q=buy%20stocks%20near%20their%20yearly%20high") == 2
+    assert "keyword match: meaning search is unavailable" in text and "0.91" in text and "52-week-high proximity" in text
