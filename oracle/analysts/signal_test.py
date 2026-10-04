@@ -9,7 +9,7 @@ import math
 from array import array
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from oracle.analysts.breaks import SPLIT_RATIOS
 from oracle.analysts.predictive import (
@@ -17,7 +17,8 @@ from oracle.analysts.predictive import (
 )
 from oracle.market.bars import Bar
 
-__all__ = ["INSIDE", "unseen_text", "MIN_SECTOR", "Panel", "SegmentRow", "Signal", "WindowResult", "daily_ics", "excess",
+__all__ = ["INSIDE", "unseen_text", "MIN_SECTOR", "Book", "Panel", "SegmentRow", "Signal", "WindowResult", "break_even",
+           "book_trading", "daily_ics", "excess", "top_books",
            "overall", "power", "reversal_1m", "momentum_12_1", "window_result"]
 
 MIN_SECTOR = 3
@@ -177,6 +178,58 @@ def daily_ics(p: Panel, score: Score, h: int, first: int = 1, last: int | None =
     return out
 
 
+TOP_SHARE = 0.2
+Book = tuple[float, frozenset[str], date]
+"""(the top fifth's mean h-day sector-excess return, its names, exit day)."""
+
+
+def top_books(p: Panel, score: Score, h: int, first: int = 1, last: int | None = None) -> dict[date, Book]:
+    """The equal-weight book of the top fifth by score (at least one name), held h days, on every
+    h-th decision day index (1, 1 + h, ...) from `first` to before `last`, over the same names as
+    that day's IC."""
+    out: dict[date, Book] = {}
+    for i in range(max(first, 1), min(len(p.days) - h, len(p.days) if last is None else last)):
+        if (i - 1) % h:
+            continue
+        names = sorted(p.members[i])
+        rets = {s: r for s in names if (r := p.forward(s, i, h)) is not None}
+        if len(rets) < MIN_NAMES:
+            continue
+        ex = excess(rets, p.sectors)
+        scores = score(p, i, names)
+        both = [s for s in names if s in ex and s in scores]
+        if len(both) < MIN_NAMES:
+            continue
+        top = sorted(both, key=lambda s: (-scores[s], s))[:max(1, int(len(both) * TOP_SHARE))]
+        out[p.days[i]] = (sum(ex[s] for s in top) / len(top), frozenset(top), p.days[i + h])
+    return out
+
+
+def _turnover(a: frozenset[str], b: frozenset[str]) -> float:
+    """One-way: the share of an equal-weight book `a` sold to hold `b`."""
+    return sum(abs((s in a) / len(a) - (s in b) / len(b)) for s in a | b) / 2
+
+
+def break_even(gross: Sequence[float], turnover: Sequence[float]) -> float | None:
+    """The one-way cost per trade, as a share of the value traded, that takes the mean gross edge
+    per book to zero: each book sells and buys its turnover. None without a gross edge."""
+    g, t = mean(gross), mean(turnover)
+    return g / (2 * t) if g is not None and t and g > 0 else None
+
+
+def book_trading(books: Mapping[date, Book], start: date, end: date) -> tuple[float | None, float | None]:
+    """The books decided from `start` with their exit by `end`: mean one-way turnover per book (each
+    from the book before it, inside the window or not) and the break-even cost."""
+    ordered = sorted(books.items())
+    gross, turns = [], []
+    for k, (d, (g, names, exit_day)) in enumerate(ordered):
+        if start <= d and exit_day <= end:
+            gross.append(g)
+            if k:
+                turns.append(_turnover(ordered[k - 1][1][1], names))
+    return _r(mean(turns)), _r(break_even(gross, turns), 6)
+
+
 def power(names: float, days: int, h: int, bar: float = T_BAR) -> float | None:
     """The smallest mean IC whose t reaches `bar`, with `names` per day over `days` IC days: a
     day's IC spreads 1/sqrt(names - 1) by chance, and h-day windows overlap, so `days` / h of them
@@ -222,6 +275,10 @@ class WindowResult:
     passed: bool
     positive: int
     counted: int
+    turnover: float | None = None
+    """Mean one-way turnover per h-day rebalance of the top-fifth book; None in results kept before it."""
+    break_even: float | None = None
+    """The one-way cost per trade (share of value) that takes that book's sector-excess edge to zero."""
 
     @property
     def unseen(self) -> bool:
@@ -240,11 +297,12 @@ def unseen_text(needed: float) -> str:
 
 def window_result(window: str, ics: Mapping[date, DayIC], spans: Sequence[tuple[date, date]], h: int,
                   missing_share: float | None, cutoff: date | None = None, bar: float = T_BAR,
-                  inclusive: bool = False) -> WindowResult:
+                  inclusive: bool = False, books: Mapping[date, Book] | None = None) -> WindowResult:
     """One window's result from the daily ICs: a day counts in its segment only when its exit day
     is inside the window too (nothing in it reads past its end). With `cutoff`, only later days
     count: a segment ending on or before it is labelled INSIDE, one across it is trimmed. `bar`
-    is the t the verdict needs (`inclusive`: at it passes), and the t the power figures assume."""
+    is the t the verdict needs (`inclusive`: at it passes), and the t the power figures assume. `books`
+    (top_books) give the turnover and break-even cost of the window's top-fifth book."""
     end = spans[-1][1] if spans else None
     rows, counted_days = [], []
     for s, e in spans:
@@ -266,10 +324,14 @@ def window_result(window: str, ics: Mapping[date, DayIC], spans: Sequence[tuple[
     v = verdict(ic, t, [SegmentIC(r.start, r.end, r.ic, r.t, r.days, r.counted, r.why) for r in rows], bar, inclusive)
     names = mean([ics[d][1] for d in counted_days])
     observed = bar * abs(ic / t) if ic is not None and t else None
+    turnover, cost = (None, None)
+    if books and spans:
+        first = spans[0][0] if cutoff is None else max(spans[0][0], cutoff + timedelta(1))
+        turnover, cost = book_trading(books, first, end)
     return WindowResult(window, spans[0][0] if spans else date.min, end or date.min, h, _r(ic), _r(t), len(vals),
                         _r(names, 1), round(len(vals) / h, 1),
                         _r(power(names, len(vals), h, bar)) if names else None, _r(observed), missing_share,
-                        tuple(rows), v.label, v.passed, v.positive, v.counted)
+                        tuple(rows), v.label, v.passed, v.positive, v.counted, turnover, cost)
 
 
 def overall(labels: Sequence[str]) -> str:

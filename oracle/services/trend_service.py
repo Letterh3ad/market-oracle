@@ -112,7 +112,7 @@ def trend_sessions(r: AppContext, series: TrendSeries = SERIES) -> list[Session]
     return [Session(b.date, b.open, b.close) for b in BarRepo(r.conn).history(series.symbol)]
 
 
-def _cash_yield(r: AppContext) -> dict[date, float] | None:
+def cash_yield(r: AppContext) -> dict[date, float] | None:
     rows = BarRepo(r.conn).history(TBILL)
     return {b.date: b.close for b in rows} or None
 
@@ -160,7 +160,7 @@ def run_trend(ctx: AppContext, series: TrendSeries = SERIES) -> TrendTest:
     with research_context(ctx) as r:
         require_committed(r, [KEY])
         sessions = [s for s in trend_sessions(r, series) if s.day < today]
-        cash = _cash_yield(r)
+        cash = cash_yield(r)
     if not any(s.day >= CONFIRM_START for s in sessions) or not any(s.day <= CHOOSE_END for s in sessions):
         raise NoPrices(f"no stored {series.symbol} history from 1988 to after 2008: update the trend series first")
     kw = {"cost": COSTS.slippage, "cash_yield": cash}

@@ -224,6 +224,14 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     **{f"lab search-log --{flag}": "POST /api/lab/searches" for flag in ("where", "found", "note")},
     **{f"lab {cmd} --by": Exempt("the page acts as the user; --by names the autopilot or another caller")
        for cmd in ("record", "search-log", "mark")},
+    # Research tab, Strategy tests card: the cost model and its trade calculator, each strategy's Run and kept
+    # result, and the trend overlay check.
+    **{key: "GET /api/lab/costs" for key in (
+        "lab costs", *(f"lab costs --{flag}" for flag in ("value", "sell", "currency", "uk-shares", "band")))},
+    "lab strategies": "GET /api/lab/strategies",
+    "lab strategy": "POST /api/jobs/strategy-test",
+    "lab strategy --show": "GET /api/lab/strategies",
+    "lab trend-check": "GET /api/lab/trend-check",
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",

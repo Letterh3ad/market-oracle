@@ -35,7 +35,8 @@ def test_test_prints_both_windows_power_missing_share_and_the_verdict(tmp_path, 
     assert seen["name"] == "reversal_1m"
     assert "window   period" in out and "obs.power" in out and "missing" in out
     assert "train    2010-01-01 2019-12-31   5" in out and "(reported only)" in out
-    assert "confirm  2020-01-01 2021-12-31   5" in out and "0.0%     4+/4  PASS" in out
+    assert "confirm  2020-01-01 2021-12-31   5" in out and "4+/4  PASS" in out
+    assert "turnover  b/even" in out and "b/even: the one-way cost per trade" in out
     assert "2010-01-01 to 2010-06-30  IC        -  t      -     0 days  0 IC days (needs 20)" in out
     assert "Verdict (confirm): PASS" in out and "survivorship" in out
 

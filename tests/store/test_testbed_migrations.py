@@ -65,10 +65,22 @@ def test_a_research_db_with_the_registry_gains_the_literature_index_and_keeps_it
     conn.commit()
     registered = conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0]
     migrate(conn, MIGRATIONS)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 12
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
     assert conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0] == registered > 0
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"lit_sources", "lit_source_ids", "lit_methods", "lit_method_sources", "lit_marks", "lit_searches",
             "lit_search_sources"} <= tables
     assert [tuple(r) for r in conn.execute("SELECT signal FROM signal_tests")] == [("sue",)]
+    conn.close()
+
+
+def test_a_research_db_with_the_literature_index_gains_variants_and_keeps_every_registration_at_one(tmp_path):
+    from oracle.store.testbed_migrations import t0009_lab_variants
+    assert MIGRATIONS.index(t0009_lab_variants) == 12
+    conn = connect(tmp_path / "research.db")
+    migrate(conn, MIGRATIONS[:12])
+    keys = {r[0] for r in conn.execute("SELECT key FROM lab_tests")}
+    migrate(conn, MIGRATIONS)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS) == 13
+    assert dict(conn.execute("SELECT key, variants FROM lab_tests").fetchall()) == dict.fromkeys(keys, 1)
     conn.close()

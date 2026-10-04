@@ -82,15 +82,28 @@ def test_the_form_registers_a_test_from_the_template():
     """)
     assert "Registered new_signal" in text and "Commit it to DECISIONS" in text
     assert sent[0]["key"] == "new_signal" and sent[0]["horizons"] == [20, 60] and sent[0]["kind"] == "signal"
-    assert sent[0]["parent"] is None and sent[0]["expected_sign"] == "positive"
+    assert sent[0]["parent"] is None and sent[0]["expected_sign"] == "positive" and sent[0]["variants"] == 1
 
 
 def test_the_research_tab_renders_its_section_list():
     text = run(f"""
+        ANSWERS["GET /api/lab/strategies"] = {{ strategies: [], kept: [] }};
         const tab = (await import({json.dumps((STATIC_DIR / "tabs" / "research.js").as_uri())})).default;
         const pane = document.createElement("div");
         await tab.render(pane); await settle();
         console.log(JSON.stringify([tab.id, tab.label, pane.textContent]));
     """)
     assert text[:2] == ["research", "Research"] and "Scoreboard" in text[2] and "12-1 momentum" in text[2]
-    assert text[2].index("Scoreboard") < text[2].index("Literature index")
+    assert text[2].index("Scoreboard") < text[2].index("Strategy tests") < text[2].index("Literature index")
+
+
+def test_a_strategy_row_shows_its_deflated_sharpe():
+    text = run("""
+        ANSWERS["GET /api/lab/scoreboard"] = { rows: [{ key: "s1", label: "A strategy", kind: "strategy",
+          registered_on: "2026-10-04", horizon: null, measure: "CAGR over the index after costs", value: 0.0123,
+          t: null, bar: "beats the index after UK retail costs", verdict: "PASS", power: null, legacy: false,
+          commit_hash: "a", run_at: "x", note: "", dsr: 0.9712 }], n: 20, next_bar: 3.04 };
+        await section.start(); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """)
+    assert "+1.23%" in text and "deflated Sharpe 0.971" in text

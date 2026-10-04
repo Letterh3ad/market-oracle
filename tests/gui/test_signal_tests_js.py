@@ -48,7 +48,8 @@ SIGNALS = {"signals": [
     {"name": "momentum_12_1", "label": "12-1 momentum", "horizons": [20], "model": None, "result": {
         "signal": "momentum_12_1", "label": "12-1 momentum", "horizons": [20], "model": None, "cutoff": None,
         "train": [window("train", "2010-01-01", "2019-12-31", 0.0123, 1.4, 0.0081, 0.2345, "FAIL", 11, 18)],
-        "confirm": [window("confirm", "2020-01-01", "2026-09-30", 0.004, 0.3, 0.0102, 0.0512, "FAIL", 6, 13, UNSEEN)],
+        "confirm": [{**window("confirm", "2020-01-01", "2026-09-30", 0.004, 0.3, 0.0102, 0.0512, "FAIL", 6, 13, UNSEEN),
+                     "turnover": 0.412, "break_even": 0.00123}],
         "train_verdict": "FAIL", "verdict": "FAIL", "verdict_text": UNSEEN, "passed": False, "train_only": False, "first_day": "2010-01-04",
         "last_day": "2026-09-30", "tickers": 848, "snapshot": "fja05680/sp500 at a2430f2, last change 2026-08-18",
         "run_at": "2026-10-01T12:00:00+00:00", "caveat": "train is survivorship-weighted", "id": 3},
@@ -166,6 +167,7 @@ def test_each_signal_shows_power_missing_share_train_confirm_and_verdict():
     """)
     assert "momentum_12_1" in text and "0.0210 / 0.0210" in text and "formula 0.0081 / 0.0102" in text
     assert "23.4% / 5.1%" in text
+    assert "41.2% a rebalance, break-even 0.12% a trade" in text, "confirm turnover and break-even cost"
     assert "IC +0.0123, t 1.40, 11+ of 18 segments: FAIL" in text
     assert f"IC +0.0040, t 0.30, 6+ of 13 segments: {UNSEEN}" in text and text.count(UNSEEN) == 2
     assert "reversal_1m" in text and "Not run yet." in text

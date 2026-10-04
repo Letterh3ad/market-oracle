@@ -91,6 +91,9 @@ async def test_an_injected_future_return_signal_passes_and_a_null_one_fails(ctx)
     assert t.segments[0].why == "0 IC days (needs 20)"
     bad = await run_signal_test(ctx, "null", registry=REGISTRY)
     assert bad.verdict == "FAIL" and not bad.passed and abs(bad.confirm[0].ic) < 0.05
+    assert 0.6 < bad.confirm[0].turnover <= 1 and 0.6 < c.turnover <= 1, "a new top fifth each week"
+    assert c.break_even > 0.005, "foreseeing the week's winners pays well over any retail cost"
+    assert bad.confirm[0].break_even is None or bad.confirm[0].break_even < c.break_even
 
 
 async def test_a_model_read_signal_counts_only_after_its_training_cutoff(ctx, monkeypatch):

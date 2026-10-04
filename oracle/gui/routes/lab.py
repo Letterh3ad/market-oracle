@@ -12,6 +12,7 @@ from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
 from oracle.services.lab_service import bar_text, scoreboard
+from oracle.services.strategy_service import STRATEGIES, cost_view, price_trade, strategy_tests, trend_check
 
 router = APIRouter(prefix="/api/lab")
 
@@ -42,6 +43,7 @@ class TemplateBody(BaseModel):
     kill_stage: StrictStr
     parent: StrictStr | None = None
     different_because: StrictStr | None = None
+    variants: StrictInt = 1
 
 
 @router.post("/tests")
@@ -63,3 +65,27 @@ async def put_commit(key: str, body: CommitBody, ctx: AppContext = Depends(get_c
 async def delete_test(key: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     drop_test(ctx, key)
     return {"dropped": key}
+
+
+@router.get("/strategies")
+async def get_strategies(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """Strategy tests with code, each with its newest kept result (or None)."""
+    kept = await asyncio.to_thread(strategy_tests, ctx)
+    return {"strategies": [{"key": s.name, "label": s.label, "result": asdict(kept[s.name]) if s.name in kept else None}
+                           for s in STRATEGIES.values()],
+            "kept": [asdict(t) for k, t in kept.items() if k not in STRATEGIES]}
+
+
+@router.get("/costs")
+async def get_costs(value: float | None = None, side: str = "buy", currency: str = "GBP", uk_shares: bool = False,
+                    band: str | None = None, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The UK retail cost model from [plan]; with `value`, what one trade of it costs."""
+    trade = None if value is None else price_trade(ctx, value, side, currency, uk_shares, band)
+    return {"model": asdict(cost_view(ctx)),
+            "trade": None if trade is None else {"value": value, "side": side, **asdict(trade), "total": trade.total}}
+
+
+@router.get("/trend-check")
+async def get_trend_check(ctx: AppContext = Depends(get_ctx)) -> dict:
+    """The kept trend overlay result reproduced through the strategy engine (never judged again)."""
+    return asdict(await asyncio.to_thread(trend_check, ctx))

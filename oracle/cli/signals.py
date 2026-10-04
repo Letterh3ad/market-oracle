@@ -59,12 +59,13 @@ def print_test(t: SignalTest) -> None:
     if t.cutoff:
         print(f"Model-read: only days after the training cutoff {t.cutoff} count")
     print(f"{'window':<8} {'period':<23} {'h':>3} {'IC':>8} {'t':>6} {'days':>5} {'names':>6} {'eff.days':>8} "
-          f"{'power':>7} {'obs.power':>9} {'missing':>8} {'counted':>8}  verdict")
+          f"{'power':>7} {'obs.power':>9} {'missing':>8} {'turnover':>8} {'b/even':>7} {'counted':>8}  verdict")
     for w in (*t.train, *t.confirm):
         note = " (reported only)" if w.window == "train" else ""
         print(f"{w.window:<8} {w.start} {w.end} {w.horizon:>3} {_num(w.ic, '+.4f'):>8} {_num(w.t, '.2f'):>6} "
               f"{w.days:>5} {_num(w.names, '.0f'):>6} {w.effective_days:>8.0f} {_num(w.power, '.4f'):>7} "
-              f"{_num(w.observed_power, '.4f'):>9} {_num(w.missing_share, '.1%'):>8} "
+              f"{_num(w.observed_power, '.4f'):>9} {_num(w.missing_share, '.1%'):>8} {_num(w.turnover, '.1%'):>8} "
+              f"{_num(w.break_even, '.2%'):>7} "
               f"{f'{w.positive}+/{w.counted}':>8}  {w.verdict_text}{note}")
     for w in (*t.train, *t.confirm):
         print(f"{w.window} segments, {w.horizon}-day horizon:")
@@ -73,6 +74,8 @@ def print_test(t: SignalTest) -> None:
                   f"{'counted' if s.counted else s.why}")
     print("Power is the formula's (names, effective days, horizon); obs.power is the window's own spread, the "
           f"smallest IC it could see at its bar, t {t.bar:.2f}")
+    print("turnover: share of the top fifth's equal-weight book replaced each horizon; b/even: the one-way cost per "
+          "trade that takes its sector-excess edge to zero (- when it has none)")
     print("Train only: confirm not computed, no verdict" if t.train_only else f"Verdict (confirm): {t.verdict_text}")
     print(f"Caveat: {t.caveat}")
 
