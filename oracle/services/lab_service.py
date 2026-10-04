@@ -49,6 +49,14 @@ class Scoreboard:
     """The t a one-horizon test registered now would need."""
 
 
+def near_check_text(reg: Registration) -> str | None:
+    """How the near-FAIL check ran; None for a registration from before the check existed."""
+    if reg.near_check is None:
+        return None
+    how = "keywords only" if reg.near_check == "keyword" else "meaning"
+    return f"ran on {how}: {reg.near_check_note}" if reg.near_check_note else f"ran on {how}"
+
+
 def bar_text(reg: Registration) -> str:
     if reg.bar is None:
         return reg.bar_rule

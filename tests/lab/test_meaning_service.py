@@ -72,15 +72,19 @@ def test_an_empty_query_is_refused(ctx):
 
 
 def test_a_near_duplicate_of_a_failed_method_is_flagged_and_others_are_not(ctx):
-    near = meaning.near_fail(ctx, "own the market over its 200-day average, cash otherwise", embed=FakeEmbed())
+    check = meaning.near_fail(ctx, "own the market over its 200-day average, cash otherwise", embed=FakeEmbed())
+    near = check.hit
     assert near is not None and near.ref == "T-62" and near.mode == "meaning" and near.score >= meaning.NEAR["meaning"]
     assert near.label.startswith("T-62 Trend overlay (10-month MA) (meaning ")
+    assert check.mode == "meaning" and "fake-embed" in check.note
     # T-15 is as near in meaning but untested, so nothing is flagged.
-    assert meaning.near_fail(ctx, YEARLY, embed=FakeEmbed()) is None
+    clear = meaning.near_fail(ctx, YEARLY, embed=FakeEmbed())
+    assert clear.hit is None and clear.mode == "meaning"
 
 
-def test_the_keyword_fallback_flags_only_a_close_wording_of_a_fail(ctx):
+def test_the_keyword_fallback_flags_only_a_close_wording_of_a_fail_and_says_it_ran_on_keywords(ctx):
     down = FakeEmbed(down=True)
-    near = meaning.near_fail(ctx, "Hold the index above its 10-month MA, cash below", embed=down)
-    assert near is not None and near.ref == "T-62" and near.mode == "keyword"
-    assert meaning.near_fail(ctx, "own the market over its 200-day average, cash otherwise", embed=down) is None
+    check = meaning.near_fail(ctx, "Hold the index above its 10-month MA, cash below", embed=down)
+    assert check.hit is not None and check.hit.ref == "T-62" and check.hit.mode == "keyword"
+    missed = meaning.near_fail(ctx, "own the market over its 200-day average, cash otherwise", embed=down)
+    assert missed.hit is None and missed.mode == "keyword" and "not reachable" in missed.note

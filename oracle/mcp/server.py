@@ -5,6 +5,8 @@ like the CLI and the GUI: every tool is one service call."""
 from __future__ import annotations
 
 import json
+import sys
+import traceback
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
 from typing import BinaryIO
@@ -18,7 +20,7 @@ VERSION = "1"
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 BY = "claude"
 """Who a record or search log made through the server is by, unless the call names another (autopilot)."""
-PARSE_ERROR, INVALID_REQUEST, NO_METHOD, INVALID_PARAMS = -32700, -32600, -32601, -32602
+PARSE_ERROR, INVALID_REQUEST, NO_METHOD, INVALID_PARAMS, INTERNAL = -32700, -32600, -32601, -32602, -32603
 
 _TEXT = {"type": "string"}
 _LIST = {"type": "array", "items": {"type": "string"}}
@@ -69,6 +71,22 @@ TOOLS = (
 _BY_NAME = {t.name: t for t in TOOLS}
 
 
+def _fits(schema: dict, value: object) -> bool:
+    if "enum" in schema:
+        return value in schema["enum"]
+    if schema["type"] == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if schema["type"] == "array":
+        return isinstance(value, list) and all(_fits(schema["items"], v) for v in value)
+    return isinstance(value, str)
+
+
+def _kind(schema: dict) -> str:
+    if "enum" in schema:
+        return f"one of {', '.join(schema['enum'])}"
+    return {"integer": "a whole number", "array": "a list of strings"}.get(schema["type"], "a string")
+
+
 def _plain(value: object) -> object:
     return asdict(value) if is_dataclass(value) else value
 
@@ -88,13 +106,26 @@ class Server:
             return _error(None, PARSE_ERROR, f"not JSON: {exc}")
         if not isinstance(message, dict):
             return _error(None, INVALID_REQUEST, "a request is a JSON object")
-        return self.handle(message)
+        try:
+            return self.handle(message)
+        except Exception as exc:
+            # One bad call must not end the session; stdout is JSON-RPC only, so the trace goes to stderr.
+            traceback.print_exc(file=sys.stderr)
+            if "id" not in message:
+                return None
+            return _error(message["id"], INTERNAL, f"internal error: {type(exc).__name__}: {exc}")
 
     def handle(self, message: dict) -> dict | None:
         """The reply to one request; None for a notification (no id), which gets none."""
-        rid, method, params = message.get("id"), message.get("method"), message.get("params") or {}
+        rid, method, params = message.get("id"), message.get("method"), message.get("params")
         if "id" not in message:
             return None
+        if not isinstance(method, str):
+            return _error(rid, INVALID_REQUEST, "a request names its method")
+        if params is None:
+            params = {}
+        if not isinstance(params, dict):
+            return _error(rid, INVALID_PARAMS, "params is a JSON object")
         if method == "initialize":
             asked = params.get("protocolVersion")
             return _result(rid, {"protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
@@ -105,10 +136,15 @@ class Server:
         if method == "tools/list":
             return _result(rid, {"tools": [t.spec() for t in TOOLS]})
         if method == "tools/call":
-            tool = _BY_NAME.get(params.get("name"))
+            name, arguments = params.get("name"), params.get("arguments")
+            tool = _BY_NAME.get(name) if isinstance(name, str) else None
             if tool is None:
-                return _error(rid, INVALID_PARAMS, f"no tool {params.get('name')!r}; tools: {', '.join(_BY_NAME)}")
-            return _result(rid, self._call(tool, params.get("arguments") or {}))
+                return _error(rid, INVALID_PARAMS, f"no tool {name!r}; tools: {', '.join(_BY_NAME)}")
+            if arguments is None:
+                arguments = {}
+            if not isinstance(arguments, dict):
+                return _error(rid, INVALID_PARAMS, "arguments is a JSON object")
+            return _result(rid, self._call(tool, arguments))
         return _error(rid, NO_METHOD, f"method {method!r} is not served")
 
     def _call(self, tool: Tool, arguments: dict) -> dict:
@@ -117,6 +153,8 @@ class Server:
         if unknown or missing:
             return _text(f"{tool.name} takes {', '.join(tool.properties)}"
                          + (f"; {', '.join(missing)} required" if missing else ""), error=True)
+        if wrong := [k for k, v in arguments.items() if not _fits(tool.properties[k], v)]:
+            return _text(f"{tool.name}: " + "; ".join(f"{k} is {_kind(tool.properties[k])}" for k in wrong), error=True)
         try:
             return _text(json.dumps(_plain(tool.call(self.ctx, **arguments)), ensure_ascii=False))
         except ServiceError as exc:

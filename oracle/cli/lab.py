@@ -9,7 +9,7 @@ from oracle.cli import literature
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
-from oracle.services.lab_service import Scoreboard, bar_text, scoreboard
+from oracle.services.lab_service import Scoreboard, bar_text, near_check_text, scoreboard
 
 TEMPLATE_FIELDS = tuple(f.name for f in fields(Template))
 
@@ -74,6 +74,7 @@ def run_show(ctx: AppContext, args: argparse.Namespace) -> int:
                         ("expected", f"{r.expected_sign}, {r.expected_size} ({r.source})"), ("power", r.power),
                         ("costs", r.costs), ("bar", bar_text(r)), ("pass rule", r.bar_rule),
                         ("kill stage", r.kill_stage), ("parent", r.parent), ("near a FAIL", r.near_fail),
+                        ("near-FAIL check", near_check_text(r)),
                         ("different because", r.different_because), ("commit", r.commit_hash or "not committed: no data run yet"), ("note", r.note)):
         if value:
             print(f"  {name}: {value}")
@@ -94,6 +95,8 @@ def run_register(ctx: AppContext, args: argparse.Namespace) -> int:
         raise InvalidQuery(f"the template needs {', '.join(TEMPLATE_FIELDS[:12])}") from exc
     r = register_test(ctx, t)
     print(f"Registered {r.key} on {r.registered_on}: {r.bar_rule}")
+    if r.near_check == "keyword":
+        print(f"The near-FAIL check ran on keywords only ({r.near_check_note}): it misses most paraphrases of a FAIL.")
     print("Commit the entry to DECISIONS (naming the key in backticks), then: oracle lab commit "
           f"{r.key} <hash>")
     return 0

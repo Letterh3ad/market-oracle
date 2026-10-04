@@ -39,6 +39,9 @@ class Registration:
     note: str = ""
     near_fail: str | None = None
     """The FAILed literature method its rule was near at registration, with the score (research-lab 04)."""
+    near_check: str | None = None
+    """How that check ran: meaning or keyword (Ollama down); None before research-lab 04."""
+    near_check_note: str | None = None
 
     @property
     def hypotheses(self) -> int:

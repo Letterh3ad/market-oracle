@@ -11,7 +11,7 @@ from pydantic import BaseModel, StrictInt, StrictStr
 from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
-from oracle.services.lab_service import bar_text, scoreboard
+from oracle.services.lab_service import bar_text, near_check_text, scoreboard
 
 router = APIRouter(prefix="/api/lab")
 
@@ -24,7 +24,7 @@ async def get_scoreboard(ctx: AppContext = Depends(get_ctx)) -> dict:
 @router.get("/tests/{key}")
 async def get_test(key: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     r = registration(ctx, key)
-    return {**asdict(r), "bar_text": bar_text(r)}
+    return {**asdict(r), "bar_text": bar_text(r), "near_check_text": near_check_text(r)}
 
 
 class TemplateBody(BaseModel):

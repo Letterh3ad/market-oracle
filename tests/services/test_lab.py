@@ -14,7 +14,7 @@ from oracle.services.event_study_service import run_event_study
 from oracle.services.lab_registry import (
     Template, commit_test, drop_test, hypotheses, register_test, registration, registrations,
 )
-from oracle.services.lab_service import scoreboard
+from oracle.services.lab_service import near_check_text, scoreboard
 from oracle.services.laya_test_service import (
     DEFAULT_LIST, MODEL_TAG, TEST_START, HorizonResult, LayaTest, keep_laya_test,
 )
@@ -287,4 +287,13 @@ def test_a_registration_near_a_failed_method_needs_a_different_because(ctx, monk
     reg = register_test(ctx, replace(near, different_because="weekly checks, not month-end"))
     assert reg.near_fail.startswith("T-62 Trend overlay (10-month MA) (meaning ")
     assert registration(ctx, "over_200d").near_fail == reg.near_fail
+    assert reg.near_check == "meaning" and near_check_text(registration(ctx, "over_200d")).startswith("ran on meaning")
     assert register_test(ctx, template("plain")).near_fail is None
+
+
+def test_a_registration_records_that_its_near_fail_check_ran_on_keywords_only(ctx):
+    reg = register_test(ctx, template("plain"))
+    kept = registration(ctx, "plain")
+    assert reg.near_fail is None and kept.near_check == "keyword" and "not reachable" in kept.near_check_note
+    assert near_check_text(kept).startswith("ran on keywords only")
+    assert near_check_text(registration(ctx, "momentum_12_1")) is None

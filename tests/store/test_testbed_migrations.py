@@ -80,6 +80,7 @@ def test_meaning_search_adds_method_vectors_and_the_registrations_near_fail_keep
     migrate(conn, MIGRATIONS[:MIGRATIONS.index(t0009_meaning)])
     registered = conn.execute("SELECT count(*) FROM lab_tests").fetchone()[0]
     migrate(conn, MIGRATIONS)
-    assert conn.execute("SELECT count(*) FROM lab_tests WHERE near_fail IS NULL").fetchone()[0] == registered > 0
+    assert conn.execute("SELECT count(*) FROM lab_tests WHERE near_fail IS NULL AND near_check IS NULL "
+                        "AND near_check_note IS NULL").fetchone()[0] == registered > 0
     assert conn.execute("SELECT count(*) FROM lit_embeddings").fetchone()[0] == 0
     conn.close()

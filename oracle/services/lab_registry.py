@@ -116,7 +116,8 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
     from oracle.services.meaning_service import near_fail
 
     # Outside the write transaction: the meaning check may call Ollama and store method vectors.
-    near = near_fail(ctx, f"{t.label}. {t.rule}")
+    check = near_fail(ctx, f"{t.label}. {t.rule}")
+    near = check.hit
     if near is not None and not (t.different_because or "").strip():
         raise InvalidQuery(f"the rule is near {near.label}, which FAILed: a FAIL is never re-tested with tweaks; "
                            "say how this one differs (different because), or drop it")
@@ -136,7 +137,8 @@ def register_test(ctx: AppContext, t: Template, today: str | None = None) -> Reg
             t.key, t.label.strip(), t.kind, today or ctx.clock.utcnow().date().isoformat(), tuple(t.horizons),
             t.rule.strip(), t.universe.strip(), t.expected_sign, t.expected_size.strip(), t.source.strip(),
             t.power.strip(), t.costs.strip(), bar, True, rule, t.kill_stage.strip(), t.parent or None,
-            (t.different_because or "").strip() or None, None, False, t.key, near_fail=near.label if near else None)
+            (t.different_because or "").strip() or None, None, False, t.key, near_fail=near.label if near else None,
+            near_check=check.mode, near_check_note=check.note)
         repo.add(reg)
         return reg
 

@@ -117,3 +117,67 @@ def test_the_server_answers_a_real_session_over_stdio(tmp_path):
     similar = json.loads(replies[3]["result"]["content"][0]["text"])
     assert similar["mode"] == "keyword" and "127.0.0.1:9" in similar["note"]
     assert json.loads(replies[4]["result"]["content"][0]["text"])["method"]["ref"] == "M-001"
+
+
+def test_arguments_of_the_wrong_type_are_a_tool_error_never_a_crash(server):
+    bad, message = call(server, "similar", text=5)
+    assert bad and "text" in message and "string" in message
+    bad, message = call(server, "search_log", query="q", where="SSRN", found="arXiv:2601.99999")
+    assert bad and "found" in message and "list" in message
+    bad, message = call(server, "search_log", query="q", where="SSRN", found=["ok", 3])
+    assert bad and "found" in message
+    bad, message = call(server, "record", title="T", year="2020")
+    assert bad and "year" in message
+    bad, message = call(server, "record", title="T", year=True)
+    assert bad and "year" in message
+    bad, message = call(server, "record", title="T", quality="superb")
+    assert bad and "quality" in message
+
+
+def test_params_or_arguments_that_are_not_objects_are_invalid_params(server):
+    for params in (["x"], "x", 5):
+        reply = server.handle({"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": params})
+        assert reply["id"] == 6 and reply["error"]["code"] == -32602
+    reply = server.handle({"jsonrpc": "2.0", "id": 7, "method": "initialize", "params": ["x"]})
+    assert reply["error"]["code"] == -32602
+    reply = server.handle({"jsonrpc": "2.0", "id": 8, "method": "tools/call",
+                           "params": {"name": "similar", "arguments": ["x"]}})
+    assert reply["error"]["code"] == -32602
+    reply = server.handle({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": ["similar"]}})
+    assert reply["error"]["code"] == -32602
+
+
+def test_a_request_without_a_method_is_an_invalid_request(server):
+    assert server.handle({"jsonrpc": "2.0", "id": 5})["error"]["code"] == -32600
+    assert server.handle({"jsonrpc": "2.0", "id": 5, "method": 7})["error"]["code"] == -32600
+
+
+def test_an_unexpected_failure_is_an_internal_error_and_the_server_goes_on(server, monkeypatch):
+    def boom(ctx, text):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr("oracle.services.meaning_service.similar", boom)
+    reply = server.handle_line(json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                           "params": {"name": "similar", "arguments": {"text": "x"}}}).encode())
+    assert reply["id"] == 3 and reply["error"]["code"] == -32603 and "disk on fire" in reply["error"]["message"]
+    assert server.handle_line(b'{"jsonrpc": "2.0", "id": 4, "method": "ping"}')["result"] == {}
+
+
+def test_serve_survives_bad_lines_and_answers_the_next(server, monkeypatch):
+    import io
+
+    from oracle.mcp.server import serve
+
+    def boom(ctx, text):
+        raise RuntimeError("disk on fire")
+    monkeypatch.setattr("oracle.services.meaning_service.similar", boom)
+    lines = [{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "similar", "arguments": {"text": 5}}},
+             {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": ["x"]},
+             {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "similar", "arguments": {"text": "x"}}},
+             {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "similar", "arguments": {"text": "x"}}},
+             {"jsonrpc": "2.0", "id": 4, "method": "ping"}]
+    out = io.BytesIO()
+    serve(server.ctx, io.BytesIO("".join(json.dumps(m) + "\n" for m in lines).encode()), out)
+    replies = [json.loads(line) for line in out.getvalue().decode().splitlines()]
+    assert [r["id"] for r in replies] == [1, 2, 3, 4]
+    assert replies[0]["result"]["isError"] and replies[1]["error"]["code"] == -32602
+    assert replies[2]["error"]["code"] == -32603 and replies[3]["result"] == {}

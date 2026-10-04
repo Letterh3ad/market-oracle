@@ -23,7 +23,7 @@ from oracle.store.db import to_utc_iso
 from oracle.store.embeddings import EmbeddingRepo
 from oracle.store.literature import LiteratureRepo, MethodRow
 
-__all__ = ["EMBED_MODEL", "NEAR", "Embedder", "NearFail", "Similar", "SimilarHit", "embedder", "near_fail", "similar"]
+__all__ = ["EMBED_MODEL", "NEAR", "Embedder", "NearCheck", "NearFail", "Similar", "SimilarHit", "embedder", "near_fail", "similar"]
 
 EMBED_MODEL = "nomic-embed-text"
 EMBED_TIMEOUT_S = 120.0
@@ -72,6 +72,14 @@ class NearFail:
     @property
     def label(self) -> str:
         return f"{self.ref} {self.name} ({self.mode} {self.score:.2f})"
+
+
+@dataclass(frozen=True)
+class NearCheck:
+    mode: str
+    """meaning or keyword: a keyword check is uncalibrated on rule text and misses most paraphrases."""
+    note: str
+    hit: NearFail | None
 
 
 def method_text(m: MethodRow) -> str:
@@ -131,12 +139,13 @@ def similar(ctx: AppContext, text: str, limit: int = NEAREST, embed: Embedder | 
                                               for m, s in scored[:limit]])
 
 
-def near_fail(ctx: AppContext, text: str, embed: Embedder | None = None) -> NearFail | None:
-    """The FAILed method nearest to `text` when it scores at the near-duplicate threshold or above. The
-    rule is embedded as a document like the methods: a query's cosines run lower (0.55 to 0.78 live)."""
-    mode, _, scored = _scored(ctx, text, embed, as_query=False)
+def near_fail(ctx: AppContext, text: str, embed: Embedder | None = None) -> NearCheck:
+    """How the near-FAIL check ran, and the FAILed method nearest to `text` when it scores at the
+    near-duplicate threshold or above. The rule is embedded as a document like the methods: a query's
+    cosines run lower (0.55 to 0.78 live)."""
+    mode, note, scored = _scored(ctx, text, embed, as_query=False)
     fails = sorted(((m, s) for m, s in scored if m.status == "fail"), key=lambda p: -p[1])
     if not fails or fails[0][1] < NEAR[mode]:
-        return None
+        return NearCheck(mode, note, None)
     m, s = fails[0]
-    return NearFail(m.ref, m.name, round(s, 3), mode)
+    return NearCheck(mode, note, NearFail(m.ref, m.name, round(s, 3), mode))

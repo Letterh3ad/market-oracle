@@ -84,6 +84,7 @@ function scoreboardSection() {
       ["Rule", r.rule], ["Universe", r.universe], ["Expected", `${r.expected_sign}, ${r.expected_size} (${r.source})`],
       ["Power", r.power], ["Costs", r.costs], ["Bar", r.bar_text], ["Pass rule", r.bar_rule],
       ["Kill stage", r.kill_stage], ["Parent", r.parent], ["Near a FAIL", r.near_fail],
+      ["Near-FAIL check", r.near_check_text],
       ["Different because", r.different_because], ["Commit", r.commit_hash], ["Note", r.note]].filter(([, v]) => v);
     detail.replaceChildren(el("div", { class: "card", "data-registration": key },
       el("h3", null, `${r.label} (${r.key})`),
@@ -109,7 +110,9 @@ function scoreboardSection() {
       horizons: horizons.value.split(",").map((h) => h.trim()).filter(Boolean).map(Number) };
     try {
       const r = await sendJson("/api/lab/tests", body);
-      say(`Registered ${r.key}: ${r.bar_rule}. Commit it to DECISIONS before any data run.`, false);
+      const keywords = r.near_check === "keyword"
+        ? " The near-FAIL check ran on keywords only (Ollama down): it misses most paraphrases of a FAIL." : "";
+      say(`Registered ${r.key}: ${r.bar_rule}. Commit it to DECISIONS before any data run.${keywords}`, false);
       await Promise.all([load(), show(r.key)]);
     } catch (err) { say(err.message); }
   } }, "Register");
