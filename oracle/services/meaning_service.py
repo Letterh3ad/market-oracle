@@ -28,7 +28,7 @@ __all__ = ["EMBED_MODEL", "NEAR", "Embedder", "NearFail", "Similar", "SimilarHit
 EMBED_MODEL = "nomic-embed-text"
 EMBED_TIMEOUT_S = 120.0
 """A cold load plus the whole index in batches; a query alone takes well under a second."""
-NEAR = {"meaning": 0.85, "keyword": 0.6}
+NEAR = {"meaning": 0.75, "keyword": 0.6}
 """The score at which a FAILed method counts as a near-duplicate, by how it was scored."""
 
 
@@ -105,7 +105,8 @@ def _vectors(ctx: AppContext, conn, rows: list[MethodRow], embed: Embedder) -> d
     return {m.id: stored[m.id][1] for m in rows}
 
 
-def _scored(ctx: AppContext, text: str, embed: Embedder | None) -> tuple[str, str, list[tuple[MethodRow, float]]]:
+def _scored(ctx: AppContext, text: str, embed: Embedder | None,
+            as_query: bool = True) -> tuple[str, str, list[tuple[MethodRow, float]]]:
     text = text.strip()
     if not text:
         raise InvalidQuery("describe the method to find, e.g. buy stocks near their yearly high")
@@ -114,7 +115,7 @@ def _scored(ctx: AppContext, text: str, embed: Embedder | None) -> tuple[str, st
         rows = LiteratureRepo(r.conn).methods()
         try:
             vectors = _vectors(ctx, r.conn, rows, embed)
-            [q] = embed.embed([text], query=True)
+            [q] = embed.embed([text], query=as_query)
         except ModelError as exc:
             return ("keyword", f"keyword match: meaning search is unavailable ({exc})",
                     [(m, keyword_score(text, method_text(m))) for m in rows])
@@ -131,8 +132,9 @@ def similar(ctx: AppContext, text: str, limit: int = NEAREST, embed: Embedder | 
 
 
 def near_fail(ctx: AppContext, text: str, embed: Embedder | None = None) -> NearFail | None:
-    """The FAILed method nearest to `text` when it scores at the near-duplicate threshold or above."""
-    mode, _, scored = _scored(ctx, text, embed)
+    """The FAILed method nearest to `text` when it scores at the near-duplicate threshold or above. The
+    rule is embedded as a document like the methods: a query's cosines run lower (0.55 to 0.78 live)."""
+    mode, _, scored = _scored(ctx, text, embed, as_query=False)
     fails = sorted(((m, s) for m, s in scored if m.status == "fail"), key=lambda p: -p[1])
     if not fails or fails[0][1] < NEAR[mode]:
         return None

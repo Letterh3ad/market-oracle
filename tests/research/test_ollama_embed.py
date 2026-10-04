@@ -55,3 +55,15 @@ def test_ollama_down_or_the_model_missing_is_a_model_error_saying_what_to_do():
 def test_a_reply_without_one_vector_per_text_is_a_model_error(reply):
     with pytest.raises(ModelError, match="no usable embeddings"):
         embedder(lambda r: httpx.Response(200, json=reply)).embed(["x"])
+
+
+def test_localhost_is_asked_over_ipv4():
+    hosts = []
+
+    def handler(request):
+        hosts.append(request.url.host)
+        return httpx.Response(200, json={"embeddings": [[1.0]]})
+
+    embedder(handler).embed(["x"])
+    OllamaEmbed("m", "http://gpu-box:11434", 5.0, transport=httpx.MockTransport(handler)).embed(["x"])
+    assert hosts == ["127.0.0.1", "gpu-box"]

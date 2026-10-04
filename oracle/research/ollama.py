@@ -5,6 +5,7 @@ budget to share."""
 from __future__ import annotations
 
 import json
+import re
 
 import httpx
 
@@ -70,7 +71,9 @@ class OllamaEmbed:
     def __init__(self, model: str, base_url: str, timeout_s: float,
                  transport: httpx.BaseTransport | None = None) -> None:
         self.model = model
-        self._base = base_url.rstrip("/")
+        # On Windows "localhost" tries ::1 first and Ollama listens on IPv4 only: about 2 s lost per
+        # call (measured 3.2 s vs 0.05 s), which a search box feels.
+        self._base = re.sub(r"^(https?://)localhost(?=[:/]|$)", r"\g<1>127.0.0.1", base_url.rstrip("/"))
         self._timeout = timeout_s
         self._transport = transport
 
