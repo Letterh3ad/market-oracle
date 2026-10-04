@@ -55,6 +55,10 @@ DEFAULT_SOURCES: dict[str, SourceConfig] = {
     "wikipedia": SourceConfig(rate_per_second=0.2),
     # Raw files on GitHub other than FinanceDatabase's (the S&P 500 membership history).
     "github": SourceConfig(rate_per_second=0.5),
+    # Open-access lookups for the literature index: a few calls per paper. Semantic Scholar's keyless
+    # pool is shared by everyone and answers bursts with 429s, hence the slow pace.
+    "unpaywall": SourceConfig(rate_per_second=1.0, max_retries=1),
+    "semantic_scholar": SourceConfig(rate_per_second=0.3, max_retries=1),
 }
 PATH_KEYS = ("db_path", "research_db_path")
 
@@ -554,6 +558,10 @@ class ResearchConfig:
     """Name and email for SEC's User-Agent rule; sent to sec.gov only. Unset, EDGAR is skipped."""
     read_articles: int = 12
     """Articles a run reads and notes after its searches, beyond those already noted."""
+    open_access_email: str | None = None
+    """The email Unpaywall asks callers for; sent to api.unpaywall.org only. Unset, Unpaywall is skipped."""
+    inbox: str = ".scratch/research-lab/inbox"
+    """The folder of PDFs the user drops for the literature index, relative to oracle.toml's folder."""
 
 
 READ_ARTICLES_RANGE = (1, 30)
@@ -1497,7 +1505,14 @@ def _research(raw: object) -> ResearchConfig:
     if not _whole(read, *READ_ARTICLES_RANGE):
         raise ConfigError("research.read_articles must be a whole number from {} to {}, got {!r}".format(
             *READ_ARTICLES_RANGE, read))
-    return ResearchConfig(contact=contact.strip() if contact else None, read_articles=read)
+    email = raw.get("open_access_email")
+    if email is not None and not (isinstance(email, str) and re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email.strip())):
+        raise ConfigError(f"research.open_access_email must be an email address, got {email!r}")
+    inbox = raw.get("inbox", ResearchConfig.inbox)
+    if not _text(inbox):
+        raise ConfigError(f"research.inbox must be a folder path, got {inbox!r}")
+    return ResearchConfig(contact=contact.strip() if contact else None, read_articles=read,
+                          open_access_email=email.strip() if email else None, inbox=inbox.strip())
 
 
 def _keys(raw: object) -> Keys:

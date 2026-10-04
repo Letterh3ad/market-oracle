@@ -95,3 +95,16 @@ def test_meaning_search_adds_method_vectors_and_the_registrations_near_fail_keep
                         "AND near_check_note IS NULL").fetchone()[0] == registered > 0
     assert conn.execute("SELECT count(*) FROM lit_embeddings").fetchone()[0] == 0
     conn.close()
+
+
+def test_full_texts_add_their_tables_to_a_seeded_index(tmp_path):
+    from oracle.store.testbed_migrations import t0012_full_texts
+    conn = connect(tmp_path / "research.db")
+    migrate(conn, MIGRATIONS[:MIGRATIONS.index(t0012_full_texts)])
+    conn.execute("INSERT INTO lit_sources (title, quality, added_at, added_by) VALUES ('P', 'abstract-only', 'x', 'u')")
+    conn.commit()
+    migrate(conn, MIGRATIONS)
+    assert conn.execute("SELECT count(*) FROM lit_sources").fetchone()[0] == 1
+    assert conn.execute("SELECT count(*) FROM lit_full_texts").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM lit_wanted").fetchone()[0] == 0
+    conn.close()

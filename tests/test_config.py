@@ -200,6 +200,20 @@ def test_a_contact_for_sec_is_unset_by_default_and_must_hold_an_email(tmp_path):
             load_config(path, cwd=tmp_path)
 
 
+def test_the_open_access_email_is_unset_by_default_and_the_inbox_has_a_default_folder(tmp_path):
+    research = load_config(None, cwd=tmp_path)[0].research
+    assert research.open_access_email is None and research.inbox == ".scratch/research-lab/inbox"
+    path = tmp_path / "oracle.toml"
+    path.write_text('[research]\nopen_access_email = " jo@example.com "\ninbox = "papers"\n', encoding="utf-8")
+    research = load_config(path, cwd=tmp_path)[0].research
+    assert (research.open_access_email, research.inbox) == ("jo@example.com", "papers")
+    for line in ('open_access_email = "Jo"', 'open_access_email = "Jo jo@example.com"', "open_access_email = 5",
+                 'inbox = ""', "inbox = 3"):
+        path.write_text(f"[research]\n{line}\n", encoding="utf-8")
+        with pytest.raises(ConfigError, match="research"):
+            load_config(path, cwd=tmp_path)
+
+
 def test_claude_can_be_chosen_with_its_own_model_setting(tmp_path):
     assert load_config(None, cwd=tmp_path)[0].llm.claude_model == "claude-opus-5"
     path = tmp_path / "oracle.toml"

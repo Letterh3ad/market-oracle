@@ -234,6 +234,16 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     "lab strategy": "POST /api/jobs/strategy-test",
     "lab strategy --show": "GET /api/lab/strategies",
     "lab trend-check": "GET /api/lab/trend-check",
+    # Research tab, Papers card: Fetch open copy (and each row's Fetch again), Add to papers I'd like with its
+    # note, a row's Remove, Scan inbox, and the papers I'd like table.
+    "lab fetch": "POST /api/lab/papers/fetch",
+    "lab wanted": "GET /api/lab/papers/wanted",
+    "lab want": "POST /api/lab/papers/wanted",
+    "lab want --note": "POST /api/lab/papers/wanted",
+    "lab unwant": "DELETE /api/lab/papers/wanted",
+    "lab inbox": "POST /api/lab/papers/inbox",
+    **{f"lab {cmd} --by": Exempt("the page acts as the user; --by names the autopilot or another caller")
+       for cmd in ("fetch", "want", "inbox")},
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",
