@@ -42,9 +42,10 @@ def print_costs(v: CostView) -> None:
 
 
 def run_costs(ctx: AppContext, args: argparse.Namespace) -> int:
+    c = None if args.value is None else price_trade(ctx, args.value, "sell" if args.sell else "buy", args.currency,
+                                                    args.uk_shares, args.band)
     print_costs(cost_view(ctx))
-    if args.value is not None:
-        c = price_trade(ctx, args.value, "sell" if args.sell else "buy", args.currency, args.uk_shares, args.band)
+    if c is not None:
         print(f"A {'sell' if args.sell else 'buy'} of £{args.value:,.2f}: dealing £{c.dealing:.2f}, spread "
               f"£{c.spread:.2f}, stamp duty £{c.stamp:.2f}, FX £{c.fx:.2f}; total £{c.total:.2f}")
     return 0

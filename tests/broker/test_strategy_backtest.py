@@ -113,3 +113,45 @@ def test_the_trend_overlay_through_the_engine_matches_its_own_simulator(cash_yie
     assert want.switches > 20 and len(run.trades) == want.switches
     assert [v for _, v in run.equity] == pytest.approx([v for _, v in want.equity], rel=2e-5), \
         "a buy's cost is taken on the value bought, not the cash: c squared per switch apart"
+
+
+def test_a_target_for_a_symbol_closed_on_the_fill_day_fills_at_its_next_session():
+    """A UK bank holiday: the US calendar trades on DAYS[1], London does not."""
+    us = {"B": series(DAYS, [100.0] * 5)}
+    uk = {"A.L": {d: s for d, s in series(DAYS, [100.0] * 5).items() if d != DAYS[1]}}
+    half = {"A.L": 0.5, "B": 0.5}
+    run = simulate(DAYS, {**us, **uk}, {"A.L": UK, "B": US}, lambda d: half if d == DAYS[0] else None, DAYS[0],
+                   DAYS[-1], FREE, 1000.0)
+    assert [(t.day, t.symbol, t.side) for t in run.trades] == [(DAYS[1], "B", "buy"), (DAYS[2], "A.L", "buy")]
+    assert run.trades[1].value == pytest.approx(500)
+
+
+def test_a_new_target_replaces_one_still_waiting_for_a_session():
+    uk = {"A.L": {d: s for d, s in series(DAYS, [100.0] * 5).items() if d != DAYS[1]}}
+    targets = {DAYS[0]: {"A.L": 1.0}, DAYS[1]: {"A.L": 0.25}}
+    run = simulate(DAYS, uk, {"A.L": UK}, targets.get, DAYS[0], DAYS[-1], FREE, 1000.0)
+    assert [(t.day, t.symbol, t.side, round(t.value)) for t in run.trades] == [(DAYS[2], "A.L", "buy", 250)]
+
+
+def test_the_trend_checks_costs_reproduce_the_overlay_exactly():
+    """The overlay takes a buy's cost out of the value; the check's costs make the engine do the same."""
+    from oracle.services.strategy_service import overlay_costs
+    rng = random.Random(7)
+    days = weekdays(date(1990, 1, 1), 3000)
+    closes, opens, c = [], [], 100.0
+    for _ in days:
+        o = c * (1 + rng.gauss(0, 0.004))
+        c = o * (1 + rng.gauss(0.0003, 0.01))
+        opens.append(o)
+        closes.append(c)
+    sessions = [Session(d, o, x) for d, o, x in zip(days, opens, closes)]
+    start, end = days[400], days[-1]
+    want = overlay(sessions, start, end, 0.001)
+    calls = dict(month_end_decisions(sessions))
+    first_call = next((calls[s.day] for s in reversed(sessions[:400]) if s.day in calls), None)
+    costs, listing = overlay_costs("X", 0.001)
+    run = simulate(days, {"X": {s.day: s for s in sessions}}, {"X": listing},
+                   lambda d: None if calls.get(d) is None else {"X": 1.0 if calls[d] else 0.0}, start, end, costs,
+                   1.0, initial={"X": 0.0 if first_call is False else 1.0})
+    assert want.switches > 20 and len(run.trades) == want.switches
+    assert [v for _, v in run.equity] == pytest.approx([v for _, v in want.equity], rel=1e-12, abs=0)

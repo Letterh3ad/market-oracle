@@ -57,3 +57,7 @@ def test_a_symbols_listing_reads_its_suffix():
     assert listing_of("BARC.L") == Listing("BARC.L", "GBP", True, None)
     assert listing_of("AAPL", band="Mega Cap") == Listing("AAPL", "USD", False, "Mega Cap")
     assert listing_of("^SP500TR").uk_shares is False
+
+
+def test_a_london_fund_is_gbp_without_stamp_duty():
+    assert listing_of("VUAG.L", fund=True) == Listing("VUAG.L", "GBP", False, None)

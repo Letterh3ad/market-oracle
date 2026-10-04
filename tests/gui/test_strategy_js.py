@@ -11,7 +11,8 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page
 MODEL = {"platform": "flat", "percent_fee": 0.25, "percent_cap": 0, "flat_fee": 9.99, "dealing_fee": 5.0, "fx_fee": 0.5,
          "stamp_duty": 0.005, "half_spreads": [["Mega Cap", 0.001], ["Small Cap", 0.005]], "default_half_spread": 0.001,
          "pot": 20000, "notes": ["Stamp duty 0.5% on buys of UK shares only (UK-listed ETFs are exempt)."]}
-TRADE = {"dealing": 5.0, "spread": 10.0, "stamp": 50.0, "fx": 0.0, "total": 65.0, "value": 10000, "side": "buy"}
+TRADE = {"value": 10000.0, "side": "buy", "dealing": 5.0, "spread": 10.0, "stamp": 50.0, "fx": 0.0, "total": 65.0}
+"""The route's shape: test_a_trade_priced_by_the_real_route_shows feeds the real one."""
 
 
 def line(name, label, cagr):
@@ -36,10 +37,10 @@ CHECK = {"recorded_verdict": "FAIL", "run_at": "2026-10-02T12:00:00+00:00", "las
                   {"window": "confirm", "measure": "switches", "recorded": 17, "reproduced": 17, "matches": True}]}
 
 
-def run(body: str):
+def run(body: str, costs=None):
     script = f"""
         {PRELUDE}
-        ANSWERS["GET /api/lab/costs"] = {json.dumps({"model": MODEL, "trade": TRADE})};
+        ANSWERS["GET /api/lab/costs"] = {json.dumps(costs or {"model": MODEL, "trade": TRADE})};
         ANSWERS["GET /api/lab/strategies"] = {json.dumps({"strategies": [{"key": "s1", "label": "S", "result": RESULT}],
                                                           "kept": []})};
         ANSWERS["POST /api/jobs/strategy-test"] = {{ id: 21, kind: "strategy_test", state: "queued" }};
@@ -90,3 +91,14 @@ def test_the_trend_overlay_check_compares_recorded_and_reproduced():
     """)
     assert "verdict FAIL as recorded. Reproduced within rounding." in text
     assert "+8.0100%" not in text and "8.0100%" in text and "8.0110%" in text and "17" in text
+
+
+async def test_a_trade_priced_by_the_real_route_shows(client):
+    real = (await client.get("/api/lab/costs", params={"value": 10000, "uk_shares": "true", "band": "Small Cap"})).json()
+    assert set(real["trade"]) == set(TRADE), "the mock above has the route's shape"
+    text = run("""
+        await section.start(); await settle();
+        button(node, "Price trade").fire("click"); await settle();
+        console.log(JSON.stringify(node.textContent));
+    """, real)
+    assert "A buy of £10,000.00: dealing £0.00, spread £50.00, stamp duty £50.00, FX £0.00; total £100.00." in text

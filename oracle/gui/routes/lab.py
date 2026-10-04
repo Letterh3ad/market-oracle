@@ -81,7 +81,8 @@ async def get_costs(value: float | None = None, side: str = "buy", currency: str
                     band: str | None = None, ctx: AppContext = Depends(get_ctx)) -> dict:
     """The UK retail cost model from [plan]; with `value`, what one trade of it costs."""
     trade = None if value is None else price_trade(ctx, value, side, currency, uk_shares, band)
-    return {"model": asdict(cost_view(ctx)), "trade": None if trade is None else {**asdict(trade), "total": trade.total}}
+    return {"model": asdict(cost_view(ctx)),
+            "trade": None if trade is None else {"value": value, "side": side, **asdict(trade), "total": trade.total}}
 
 
 @router.get("/trend-check")

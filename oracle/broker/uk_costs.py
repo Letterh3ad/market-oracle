@@ -27,10 +27,11 @@ class Listing:
     """A MARKET_CAP_BANDS name, or None (the default spread)."""
 
 
-def listing_of(symbol: str, band: str | None = None) -> Listing:
-    """A London (.L) symbol is GBP and UK shares; anything else is taken as USD."""
+def listing_of(symbol: str, band: str | None = None, fund: bool = False) -> Listing:
+    """A London (.L) symbol is GBP, and UK shares unless it is a `fund` (an ETF or investment
+    fund: no stamp duty); anything else is taken as USD."""
     uk = symbol.endswith(".L")
-    return Listing(symbol, "GBP" if uk else "USD", uk, band)
+    return Listing(symbol, "GBP" if uk else "USD", uk and not fund, band)
 
 
 @dataclass(frozen=True)

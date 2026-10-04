@@ -17,7 +17,7 @@ from oracle.services.lab_registry import Template, register_test
 from oracle.services.lab_service import scoreboard
 from oracle.services.signal_test_service import signal_tests
 from oracle.services.strategy_service import (
-    BENCHMARK, POT, Strategy, cost_view, run_and_keep_strategy, run_strategy, strategy_tests, trend_check,
+    BENCHMARK, MATCH, POT, Strategy, cost_view, price_trade, run_and_keep_strategy, run_strategy, strategy_tests, trend_check,
 )
 from oracle.services.trend_service import run_and_keep_trend, trend_tests
 from oracle.services.testbed_service import research_context
@@ -162,7 +162,9 @@ async def test_the_trend_overlay_reproduces_through_the_engine_and_is_never_judg
                                                            for m in ("return", "CAGR", "worst fall", "switches")}
     confirm = {r.measure: r for r in check.rows if r.window == "confirm"}
     assert confirm["switches"].recorded == kept.confirm.switches > 0
-    assert confirm["CAGR"].reproduced == pytest.approx(kept.confirm.trend.cagr, abs=1e-4)
+    assert MATCH <= 1e-9, "within float rounding"
+    for r in check.rows:
+        assert abs(r.reproduced - r.recorded) <= MATCH, r
     assert trend_tests(ctx) == kept and scoreboard(ctx) == before, "nothing kept, nothing re-judged"
 
 
@@ -175,6 +177,34 @@ async def test_a_reproduction_off_by_more_than_rounding_says_so(env, monkeypatch
     check = trend_check(ctx)
     assert not check.matches
     assert [(r.window, r.measure) for r in check.rows if not r.matches] == [("confirm", "CAGR")]
+
+
+def test_a_london_etf_pays_no_stamp_duty_but_a_london_share_does(ctx):
+    w = walks(1)
+    seed(ctx, {BENCHMARK: w[BENCHMARK], "VUAG.L": w["AAA"], "BARC.L": w["AAA"]})
+    registry = {"etf": Strategy("etf", "Hold VUAG", ("VUAG.L",), hold("VUAG.L"), funds=frozenset({"VUAG.L"})),
+                "share": Strategy("share", "Hold BARC", ("BARC.L",), hold("BARC.L"))}
+    for key in registry:
+        registered_strategy(ctx, key)
+    etf, share = (run_strategy(ctx, k, registry).confirm.strategy for k in ("etf", "share"))
+    assert etf.stamp == 0 and etf.fx == 0 and etf.trades == 1
+    assert share.stamp == pytest.approx((POT - 5) / (1 + 0.001 + 0.005) * 0.005) and share.fx == 0
+    assert any("VUAG.L" in n and "fund" in n for n in run_strategy(ctx, "etf", registry).notes)
+
+
+def test_a_strategy_trading_the_benchmark_pays_what_the_index_pays(ctx):
+    seed(ctx, walks(1))
+    registered_strategy(ctx, "hold_index")
+    t = run_strategy(ctx, "hold_index", {"hold_index": Strategy("hold_index", "Hold it", (BENCHMARK,), hold(BENCHMARK))})
+    s, i = t.confirm.strategy, t.confirm.index
+    assert s.fx == 0 and s.stamp == 0
+    assert (s.ret, s.dealing, s.spread) == pytest.approx((i.ret, i.dealing, i.spread))
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, -1.0])
+def test_a_trade_value_must_be_a_finite_number_not_below_zero(ctx, value):
+    with pytest.raises(InvalidQuery, match="a number"):
+        price_trade(ctx, value)
 
 
 def test_the_cost_view_reads_the_plan(ctx):

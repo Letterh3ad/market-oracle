@@ -43,6 +43,14 @@ def test_costs_print_the_model_and_price_a_hand_trade(tmp_path, capsys):
     assert "stamp duty £0.00" in capsys.readouterr().out
 
 
+def test_costs_refuse_a_value_that_is_not_a_number(tmp_path, capsys):
+    cfg = config(tmp_path)
+    for bad in ("nan", "inf", "-inf"):
+        assert main(["--config", str(cfg), "lab", "costs", f"--value={bad}"]) != 0
+        out, err = capsys.readouterr()
+        assert "£nan" not in out and "£inf" not in out and "a number" in err
+
+
 def test_strategies_strategy_and_trend_check_without_anything_kept(tmp_path, capsys):
     cfg = config(tmp_path)
     assert main(["--config", str(cfg), "lab", "strategies"]) == 0

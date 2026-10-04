@@ -9,6 +9,7 @@ judged again) through the same engine as a check on it."""
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date
@@ -31,7 +32,7 @@ from oracle.store.signal_tests import SignalTestRepo
 
 __all__ = ["BENCHMARK", "CONFIRM_START", "KEY_PREFIX", "POT", "STRATEGIES", "TRAIN_END", "TRAIN_START", "CheckRow",
            "CostView", "Strategy", "StrategyLine", "StrategyTest", "StrategyWindow", "TrendCheck", "check_strategy",
-           "cost_view", "keep_strategy_test", "price_trade", "run_strategy", "strategy_tests", "trend_check", "user_costs"]
+           "cost_view", "keep_strategy_test", "overlay_costs", "price_trade", "run_strategy", "strategy_tests", "trend_check", "user_costs"]
 
 KEY_PREFIX = STRATEGY_PREFIX
 """A kept result's name in the signal tests table: the prefix and the registration's key."""
@@ -41,8 +42,8 @@ BENCHMARK = "^SP500TR"
 POT = 20_000.0
 """The pot a strategy test trades, GBP: one year's ISA allowance. Fixed so a dealing fee weighs the
 same in every test."""
-MATCH = 1e-4
-"""How close a reproduced trend overlay figure must be to the kept one: 0.01 of a percentage point."""
+MATCH = 1e-9
+"""How close a reproduced trend overlay figure must be to the kept one: float rounding."""
 INDEX_NOTE = ("The index is bought once at the first open and held as a GBP-traded fund (no stamp duty, no FX fee); "
               "it pays the same platform fee.")
 
@@ -58,10 +59,22 @@ class Strategy:
     benchmark: str = BENCHMARK
     bands: Mapping[str, str] = field(default_factory=dict)
     """Size band per symbol for its spread; none is the default spread."""
+    funds: frozenset[str] = frozenset()
+    """Symbols that are ETFs or investment funds: no stamp duty, though London-listed."""
+
+    def listing(self, symbol: str) -> Listing:
+        """The benchmark trades as the index line holds it, so a timing rule on it pays the same costs."""
+        if symbol == self.benchmark:
+            return index_listing(symbol)
+        return listing_of(symbol, self.bands.get(symbol), symbol in self.funds)
 
 
 STRATEGIES: dict[str, Strategy] = {}
 """Strategy tests with code. Each runs only once its registration is committed."""
+
+
+def index_listing(symbol: str) -> Listing:
+    return Listing(symbol, "GBP", False, None)
 
 
 def check_strategy(key: str, registry: dict[str, Strategy] | None = None) -> Strategy:
@@ -110,8 +123,8 @@ def price_trade(ctx: AppContext, value: float, side: str = "buy", currency: str 
     """What one trade of `value` GBP costs under the user's cost model."""
     if side not in SIDES:
         raise InvalidQuery(f"side {side!r}: buy or sell")
-    if value < 0:
-        raise InvalidQuery("a trade's value is 0 or more")
+    if not math.isfinite(value) or value < 0:
+        raise InvalidQuery("a trade's value is a number, 0 or more")
     if band and band not in user_costs(ctx).half_spreads:
         raise InvalidQuery(f"band {band!r}: one of {', '.join(user_costs(ctx).half_spreads)}, or none")
     return trade_cost(user_costs(ctx), Listing("", currency.strip().upper() or "GBP", uk_shares, band or None), side,
@@ -216,14 +229,13 @@ FREE = UkCosts(NO_FEES, half_spreads={}, default_half_spread=0.0, stamp_duty=0.0
 
 def _window(name: str, s: Strategy, prices: dict[str, dict[date, Session]], days: list[date], start: date, end: date,
             costs: UkCosts, variants: int, judged: bool) -> StrategyWindow:
-    listings = {sym: listing_of(sym, s.bands.get(sym)) for sym in s.symbols}
-    index_listing = {s.benchmark: Listing(s.benchmark, "GBP", False, None)}
+    listings = {sym: s.listing(sym) for sym in s.symbols}
     decide = s.rule(prices)
     hold = {s.benchmark: 1.0}
 
     def runs(c: UkCosts) -> tuple[StrategyRun, StrategyRun]:
         rule = simulate(days, prices, listings, decide, start, end, c, POT)
-        index = simulate(days, {s.benchmark: prices[s.benchmark]}, index_listing, lambda d: hold, start, end, c, POT)
+        index = simulate(days, {s.benchmark: prices[s.benchmark]}, {s.benchmark: index_listing(s.benchmark)}, lambda d: hold, start, end, c, POT)
         return rule, index
 
     (net, index), (gross, index_gross) = runs(costs), runs(FREE)
@@ -259,6 +271,9 @@ def run_strategy(ctx: AppContext, key: str, registry: dict[str, Strategy] | None
              "the registration.", "Cash earns nothing."]
     if confirm.gross_excess > 0 >= confirm.excess:
         notes.append("Works only before costs: beats the index gross, not after costs (a FAIL).")
+    funds = sorted(set(s.symbols) & s.funds)
+    if funds:
+        notes.append(f"Traded as funds (ETFs, no stamp duty): {', '.join(funds)}.")
     missing = sorted(sym for sym in s.symbols if not prices.get(sym))
     if missing:
         notes.append(f"No stored prices for {', '.join(missing)}: never traded.")
@@ -335,21 +350,31 @@ class TrendCheck:
     note: str
 
 
-def _overlay_run(sessions: list[Session], start: date, end: date, cash: Mapping[date, float] | None) -> StrategyRun:
+def overlay_costs(symbol: str, cost: float) -> tuple[UkCosts, Listing]:
+    """The trend overlay's registered cost per switch as the engine's costs. The overlay takes a
+    buy's cost out of the value (value * (1 - cost)); the engine adds it on top (spend / (1 + rate)),
+    so a buy here costs cost / (1 - cost) of the value: the half spread plus the rest as a buy-only
+    stamp duty. A sell costs `cost` either way."""
+    return (UkCosts(NO_FEES, half_spreads={}, default_half_spread=cost, stamp_duty=cost * cost / (1 - cost)),
+            Listing(symbol, "GBP", True, None))
+
+
+def _overlay_run(sessions: list[Session], start: date, end: date, cost: float,
+                 cash: Mapping[date, float] | None) -> StrategyRun:
     calls = dict(month_end_decisions(sessions))
     before = [s for s in sessions if s.day < start]
     first = next((calls[s.day] for s in reversed(before) if s.day in calls), None)
     sym = trend_service.SERIES.symbol
-    costs = UkCosts(NO_FEES, stamp_duty=0.0)
-    return simulate([s.day for s in sessions], {sym: {s.day: s for s in sessions}}, {sym: listing_of(sym)},
+    costs, listing = overlay_costs(sym, cost)
+    return simulate([s.day for s in sessions], {sym: {s.day: s for s in sessions}}, {sym: listing},
                     lambda d: None if calls.get(d) is None else {sym: 1.0 if calls[d] else 0.0}, start, end, costs,
                     1.0, initial={sym: 0.0 if first is False else 1.0}, cash_yield=cash)
 
 
 def trend_check(ctx: AppContext) -> TrendCheck:
     """Re-runs the kept trend overlay's rule, over the same stored days, through the strategy
-    engine with its registered cost (0.1% of the value per switch, no fees) and compares the
-    figures. Nothing is judged or kept: the overlay's verdict stands as recorded."""
+    engine with the cost it was kept with (0.1% of the value per switch, charged as the overlay
+    charged it; no fees) and compares the figures. Nothing is judged or kept: the overlay's verdict stands as recorded."""
     kept = trend_service.trend_tests(ctx)
     if kept is None:
         raise NoPrices("no trend overlay result is kept: nothing to reproduce")
@@ -361,7 +386,7 @@ def trend_check(ctx: AppContext) -> TrendCheck:
             (kept.choose, trend_service.CHOOSE_START, trend_service.CHOOSE_END,
              [s for s in sessions if s.day <= trend_service.CHOOSE_END]),
             (kept.confirm, trend_service.CONFIRM_START, kept.last_day, sessions)):
-        run = _overlay_run(pool, start, end, cash)
+        run = _overlay_run(pool, start, end, kept.cost, cash)
         f = figures(run.equity)
         rows += [_row(w.window, "return", w.trend.ret, f.ret), _row(w.window, "CAGR", w.trend.cagr, f.cagr),
                  _row(w.window, "worst fall", w.trend.max_fall, f.max_fall),

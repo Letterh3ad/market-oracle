@@ -64,9 +64,10 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
     """The rule over the calendar `days` from `start` to `end`, from `pot` in cash (or held as
     `initial` at the first close, at no cost). A target fills at each symbol's open (its close when
     the open is missing), sells first, then buys from the cash they leave, each buy's costs paid
-    out of the money it commits. A symbol without a session that day keeps its holding. Cash earns
-    `cash_yield` (annual percent by day, the latest known at the previous close) on days it trades
-    nothing, as the trend overlay's own simulator does."""
+    out of the money it commits. A symbol without a session that day (a London bank holiday on a
+    US calendar) keeps its holding and fills its target at its next session, unless a newer target
+    comes first. Cash earns `cash_yield` (annual percent by day, the latest known at the previous
+    close) on days it trades nothing, as the trend overlay's own simulator does."""
     window = [d for d in days if start <= d <= end]
     if not window:
         return StrategyRun([], (), 0.0)
@@ -91,12 +92,20 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
     month_ends = {a for a, b in zip(days, days[1:]) if (a.year, a.month) != (b.year, b.month)}
     trades: list[Trade] = []
     platform = 0.0
-    target = decide(first) if len(window) > 1 else None
+    pending: dict[str, float] = {}
+    """Target weight per symbol not yet filled."""
+
+    def aim(target: Weights | None) -> None:
+        if target is not None:
+            pending.clear()
+            pending.update({s: target.get(s, 0.0) for s in set(target) | set(shares)})
+
+    aim(decide(first) if len(window) > 1 else None)
     equity = [(first, cash + sum(n * last[s] for s, n in shares.items()))]
     for prev, d in zip(window, window[1:]):
         before = len(trades)
-        if target is not None:
-            cash = _fill(d, target, prices, listings, costs, shares, cash, last, trades)
+        if pending:
+            cash = _fill(d, pending, prices, listings, costs, shares, cash, last, trades)
         if yields and len(trades) == before:
             cash *= 1 + _cash(yields, prev)
         value = cash + sum(n * (close(s, d) or 0.0) for s, n in shares.items())
@@ -111,20 +120,22 @@ def simulate(days: Sequence[date], prices: Mapping[str, Mapping[date, Session]],
                 platform += fee
                 value -= fee
         equity.append((d, value))
-        target = decide(d) if d != window[-1] else None
+        if d != window[-1]:
+            aim(decide(d))
     return StrategyRun(equity, tuple(trades), platform)
 
 
-def _fill(d: date, target: Weights, prices, listings, costs: UkCosts, shares: dict[str, float], cash: float,
-          last: dict[str, float], trades: list[Trade]) -> float:
+def _fill(d: date, pending: dict[str, float], prices, listings, costs: UkCosts, shares: dict[str, float],
+          cash: float, last: dict[str, float], trades: list[Trade]) -> float:
+    """Trades each pending symbol with a session on `d` towards its weight and drops it from `pending`."""
     fills = {}
-    for s in set(target) | set(shares):
+    for s in set(pending) | set(shares):
         bar = prices.get(s, {}).get(d)
         if bar is not None and bar.close > 0:
             fills[s] = bar.open if bar.open and bar.open > 0 else bar.close
     held = {s: n * fills.get(s, last.get(s, 0.0)) for s, n in shares.items()}
     pot = cash + sum(held.values())
-    wants = {s: target.get(s, 0.0) * pot - held.get(s, 0.0) for s in fills}
+    wants = {s: pending.pop(s) * pot - held.get(s, 0.0) for s in fills if s in pending}
     for s, want in sorted(wants.items()):
         sell = min(-want, held.get(s, 0.0))
         if sell <= _DUST * pot:

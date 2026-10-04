@@ -3444,3 +3444,13 @@ tick's lock and its banner); explaining every flag (rejected: hundreds of model 
 - Signal tests: per window, the equal-weight top fifth by score (at least one name) over the IC's names, rebalanced every h days from day index 1 (no overlap). Turnover is one-way against the book before (inside the window or not); the break-even one-way cost per trade is the mean gross sector-excess per book over twice the mean turnover, none without a gross edge; the sector side is taken as free (an index holder owns it). Kept results from before show none.
 - Trend overlay: reproduced (`oracle lab trend-check`, the card's Check) by running its rule through the engine with its registered cost (half spread 0.1% a switch, no fees, the first state free, cash earning ^IRX on trade-free days as its simulator does) over the kept result's days, matched within 0.01 of a point on return, CAGR and worst fall, switches exact. Nothing is kept, judged or registered.
 **Alternatives:** DSR on the strategy's own returns (passes index-like rules); a spread table of its own (two tables to keep in step); the pot from `[plan] monthly` (0 until set, and not a pot); a long-short break-even (retail ISAs cannot short); FX only on buys as the plan projection charges (a sell converts back too); registering the trend overlay as a strategy test (forbidden: it FAILed).
+
+## 2026-10-04 - Strategy test fixes after gate 02 round 1
+**Context:** The gate found UK-listed ETFs paying stamp duty, a timing rule on the benchmark costed as a USD listing, targets dropped on London holidays, and the trend check only within 1e-4.
+**Decision:**
+- A Strategy names its `funds` (ETFs, investment funds): a London fund pays no stamp duty; the result's notes list them. Explicit per strategy, not guessed from the symbol.
+- A strategy trading its own benchmark trades it as the index line holds it (GBP fund, no stamp, no FX).
+- A target for a symbol with no session on the fill day waits for that symbol's next session; a newer target replaces it. Other symbols fill as before.
+- The trend check charges the overlay's own convention (a buy's cost out of the value) by giving buys cost / (1 - cost) of the value, the extra as buy-only stamp duty in the check's cost model; the engine keeps cost on top of the value bought. Match is now float rounding (1e-9): the live copy reproduces to 5e-14. It uses the cost the kept result recorded.
+- `/api/lab/costs` echoes the trade's value and side; a trade value must be finite.
+**Alternatives:** A symbol list of known ETFs (goes stale); switching the engine to cost-inside (wrong for real buys, where stamp and spread are on the consideration); keeping the 1e-4 tolerance (the gap grows with each kept run).
