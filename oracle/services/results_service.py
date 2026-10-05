@@ -18,7 +18,7 @@ from oracle.store.literature import LiteratureRepo, MethodRow
 from oracle.store.triage import StageRow, TriageRepo
 
 __all__ = ["DEATHS", "JSON_VERSION", "STAGES", "VERDICTS", "Note", "ResultRow", "ResultsTable", "SourceTag",
-           "TestLine", "TestResult", "results_table", "table_json"]
+           "TestLine", "TestResult", "TestedUnder", "results_table", "table_json"]
 
 JSON_VERSION = 1
 FUNNEL = ("literature", "power", "build", "train", "confirm")
@@ -89,6 +89,15 @@ class TestResult:
 
 
 @dataclass(frozen=True)
+class TestedUnder:
+    """A test of this method an earlier method shows, with where it got to there."""
+    key: str
+    ref: str
+    stage: str
+    verdict: str
+
+
+@dataclass(frozen=True)
 class ResultRow:
     ref: str | None
     """The index method, whose notes are its marks; None for a test no method names."""
@@ -118,6 +127,8 @@ class ResultRow:
     """The stage it stopped at, when the verdict is a death."""
     notes: tuple[Note, ...]
     """Newest first."""
+    tested_under: tuple[TestedUnder, ...] = ()
+    """shared_tests with the method each shows under, so a reader does not take this one as untested."""
 
 
 @dataclass(frozen=True)
@@ -162,16 +173,20 @@ def _test(key: str, rows: list[ScoreRow]) -> TestResult:
                       first.note, _combined([_word(x.verdict) for x in lines]), lines)
 
 
+def _test_stage(tests: tuple[TestResult, ...]) -> str:
+    lines = [x for t in tests for x in t.lines]
+    return ("confirm" if any(x.confirm is not None for x in lines)
+            else "train" if any(x.train is not None for x in lines) else "build")
+
+
 def _stage(status: str, stages: dict[str, StageRow], tests: tuple[TestResult, ...]) -> str:
     reached = ["candidate", _STATUS_STAGE.get(status, "candidate")]
     if "triage" in stages:
         reached.append("literature")
     if "power" in stages:
         reached.append("power")
-    lines = [x for t in tests for x in t.lines]
-    if lines:
-        reached.append("confirm" if any(x.confirm is not None for x in lines)
-                       else "train" if any(x.train is not None for x in lines) else "build")
+    if tests:
+        reached.append(_test_stage(tests))
     best = max(reached, key=STAGES.index)
     if best == "candidate" and status in ("fail", "not-testable", "pass", "promising"):
         return UNRECORDED
@@ -196,24 +211,25 @@ def _entry(s: StageRow | None) -> StageEntry | None:
 def _row(ref: str | None, name: str, family: str, status: str, origin: str, rating: int | None,
          sources: tuple[SourceTag, ...], evidence: str, result: str, osap: str | None, stages: dict[str, StageRow],
          tests: tuple[TestResult, ...], shared: tuple[str, ...], missing: tuple[str, ...],
-         notes: tuple[Note, ...]) -> ResultRow:
+         notes: tuple[Note, ...], tested_under: tuple[TestedUnder, ...] = ()) -> ResultRow:
     verdict = _verdict(status, stages, tests)
     stage = _stage(status, stages, tests)
     quality = min((s.quality for s in sources), key=QUALITIES.index, default=None)
     return ResultRow(ref, name, family, status, origin, rating, quality, sources, evidence, result, osap,
                      _entry(stages.get("triage")), _entry(stages.get("power")), tests, shared, missing, stage, verdict,
-                     stage if verdict in DEATHS else None, notes)
+                     stage if verdict in DEATHS else None, notes, tested_under)
 
 
 def _method_row(repo: LiteratureRepo, m: MethodRow, osap: str | None, stages: dict[str, StageRow],
-                tests: dict[str, TestResult], shown: set[str]) -> ResultRow:
+                tests: dict[str, TestResult], shown: dict[str, str]) -> ResultRow:
     mine = tuple(tests[k] for k in m.test_keys if k in tests and k not in shown)
     shared = tuple(k for k in m.test_keys if k in tests and k in shown)
-    shown.update(t.key for t in mine)
+    under = tuple(TestedUnder(k, shown[k], _test_stage((tests[k],)), tests[k].verdict) for k in shared)
+    shown.update((t.key, m.ref) for t in mine)
     sources = tuple(SourceTag(s.id, s.title, s.authors, s.year, s.quality, s.url) for s in repo.method_sources(m.id))
     notes = tuple(Note(k.mark, k.by, k.at, k.note) for k in repo.marks(m.id))
     return _row(m.ref, m.name, m.family, m.status, m.origin, m.rating, sources, m.evidence, m.result, osap, stages,
-                mine, shared, tuple(k for k in m.test_keys if k not in tests), notes)
+                mine, shared, tuple(k for k in m.test_keys if k not in tests), notes, under)
 
 
 def _check(name: str, value: str | None, allowed: tuple[str, ...]) -> None:
@@ -244,7 +260,7 @@ def results_table(ctx: AppContext, family: str | None = None, stage: str | None 
         newest: dict[int, dict[str, StageRow]] = {}
         for s in tri.stages():
             newest.setdefault(s.method_id, {})[s.stage] = s
-        shown: set[str] = set()
+        shown: dict[str, str] = {}
         methods = lit.methods()
         rows = [_method_row(lit, m, mapped.get(m.id), newest.get(m.id, {}), tests, shown) for m in methods]
     rows += [_row(None, t.label, "", "", "", None, (), "", "", None, {}, (t,), (), (), ())

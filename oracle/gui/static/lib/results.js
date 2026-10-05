@@ -54,15 +54,16 @@ function methodRows(r, links) {
   const lead = [
     el("td", null, r.name, el("div", { class: "small mono dim" }, r.ref ?? "a test no method names"),
       r.family ? el("div", { class: "small dim" }, r.family) : null, notes, " ", pick,
-      ...r.notes.filter((n) => n.note).map((n) => el("div", { class: "small", "data-note": "" },
-        `${n.at.slice(0, 10)} ${n.mark} by ${n.by}: ${n.note}`))),
+      ...r.notes.map((n) => el("div", { class: "small", "data-note": "" },
+        `${n.at.slice(0, 10)} ${n.mark} by ${n.by}${n.note ? `: ${n.note}` : ""}`))),
     sourcesCell(r), evidenceCell(r),
     el("td", { class: "small", "data-stage-reached": "" }, r.stage,
       r.osap ? el("div", { class: "dim mono" }, `OSAP ${r.osap}`) : null),
     stageCell(r.triage), stageCell(r.power)];
   const tail = el("td", { class: `small ${verdictTone(r.verdict)}`, "data-verdict": r.verdict }, r.verdict,
     r.died_at ? el("div", { class: "dim" }, `stopped at ${r.died_at}`) : null,
-    ...r.shared_tests.map((k) => el("div", { class: "dim" }, `${k}: shown under an earlier method`)),
+    ...r.tested_under.map((u) => el("div", { class: "dim", "data-tested-under": u.ref },
+      `${u.key}: tested under ${u.ref} (${u.stage}, ${u.verdict})`)),
     ...r.missing_tests.map((k) => el("div", { class: "dim" }, `${k}: not in the registry`)));
   for (const cell of [...lead, tail]) cell.setAttribute("rowspan", span);
   if (!lines.length) {
@@ -77,7 +78,8 @@ function methodRows(r, links) {
       el("div", { class: tone(line.verdict), "data-line-verdict": "" }, line.verdict)),
     el("td", { class: "num" }, figure(line.measure, line.train)),
     el("td", { class: "num" }, figure(line.measure, line.confirm)),
-    el("td", { class: "num" }, line.t == null ? "" : line.t.toFixed(2)),
+    el("td", { class: "num" }, line.t == null ? "" : line.t.toFixed(2),
+      line.power == null ? null : el("div", { class: "small dim" }, `power ${line.power.toFixed(4)}`)),
     el("td", { class: "small" }, t.bar),
     el("td", { class: "small" }, tradingText(line)),
     ...(i === 0 ? [tail] : [])));
@@ -118,8 +120,9 @@ function resultsSection(links = {}) {
     el("p", { class: "dim small" }, "Every method in the literature index and every registered test, once each. Stage "
       + "is the furthest the method reached (candidate: not yet in the funnel; unrecorded: a verdict from before the "
       + "funnel recorded where it stopped). A test line shows train and confirm (IC, mean excess or CAGR over the "
-      + "index), t against the bar it was registered with, and the turnover and break-even cost. Notes opens the "
-      + "method in the literature index; Registration opens the test's pre-registration on the scoreboard. "
+      + "index), t against the bar it was registered with, the power (the smallest IC the confirm window could "
+      + "see), and the turnover and break-even cost. Notes opens the method in the literature index; Registration "
+      + "opens the test's pre-registration on the scoreboard. "
       + "oracle lab table --json gives the same table."),
     el("div", { class: "row small" }, family, " ", stage, " ", verdict), counts, note, body);
   return { node, start: load };

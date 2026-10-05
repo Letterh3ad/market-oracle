@@ -109,6 +109,7 @@ def test_a_test_two_methods_name_shows_once_under_the_first(built):
     rows = {r.ref: r for r in results.results_table(built).rows if r.ref}
     assert [t.key for t in rows["X-01"].tests][0] == "momentum_12_1"
     assert rows["M-002"].tests == () and rows["M-002"].shared_tests == ("momentum_12_1",)
+    assert rows["M-002"].tested_under == (results.TestedUnder("momentum_12_1", "X-01", "confirm", "fail"),)
 
 
 def test_the_json_is_stable(built):

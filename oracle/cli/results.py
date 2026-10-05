@@ -68,8 +68,8 @@ def _print_row(r: ResultRow) -> None:
         print(f"  test {t.key} ({t.kind}, bar {t.bar}): {t.verdict}; registration: oracle lab show {t.key}")
         for x in t.lines:
             print(_line(x))
-    for k in r.shared_tests:
-        print(f"  test {k}: shown under an earlier method")
+    for u in r.tested_under:
+        print(f"  test {u.key}: tested under {u.ref} ({u.stage}, {u.verdict})")
     for k in r.missing_tests:
         print(f"  test {k}: not in the registry")
     for n in r.notes:

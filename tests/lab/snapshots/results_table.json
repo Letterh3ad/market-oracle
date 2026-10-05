@@ -51,7 +51,8 @@
           "at": "2026-10-04T12:00:00+00:00",
           "note": "worth a look"
         }
-      ]
+      ],
+      "tested_under": []
     },
     {
       "ref": "T-13",
@@ -93,7 +94,8 @@
       "stage": "literature",
       "verdict": "fail",
       "died_at": "literature",
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "T-07",
@@ -144,7 +146,8 @@
       "stage": "power",
       "verdict": "could-not-see",
       "died_at": "power",
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "T-08",
@@ -184,7 +187,8 @@
       "stage": "power",
       "verdict": "open",
       "died_at": null,
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "X-01",
@@ -259,7 +263,8 @@
       "stage": "confirm",
       "verdict": "fail",
       "died_at": "confirm",
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "X-11",
@@ -281,7 +286,8 @@
       "stage": "unrecorded",
       "verdict": "fail",
       "died_at": "unrecorded",
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "A-02",
@@ -303,7 +309,8 @@
       "stage": "candidate",
       "verdict": "dropped",
       "died_at": null,
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": "M-001",
@@ -354,7 +361,8 @@
       "stage": "build",
       "verdict": "open",
       "died_at": null,
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": null,
@@ -416,7 +424,8 @@
       "stage": "confirm",
       "verdict": "pass",
       "died_at": null,
-      "notes": []
+      "notes": [],
+      "tested_under": []
     },
     {
       "ref": null,
@@ -465,7 +474,8 @@
       "stage": "confirm",
       "verdict": "fail",
       "died_at": "confirm",
-      "notes": []
+      "notes": [],
+      "tested_under": []
     }
   ],
   "deaths": {

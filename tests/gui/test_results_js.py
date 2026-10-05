@@ -86,3 +86,16 @@ def test_notes_registration_and_pick_open_the_other_cards(table):
 def test_a_failed_load_says_so():
     text = run({"status": 500, "error": "boom"}, "console.log(JSON.stringify(node.textContent));")
     assert "Could not load the results table: boom" in text
+
+
+def test_power_every_mark_and_a_test_shown_under_an_earlier_method_are_visible(table):
+    rows = {r["ref"] or r["tests"][0]["key"]: r for r in table["rows"]}
+    rows["X-01"]["tests"][0]["lines"][0]["verdict"] = "FAIL"
+    rows["A-01"]["notes"].append({"mark": "dig", "by": "user", "at": "2026-10-03T09:00:00+00:00", "note": ""})
+    rows["A-02"]["shared_tests"] = ["momentum_12_1"]
+    rows["A-02"]["tested_under"] = [{"key": "momentum_12_1", "ref": "X-01", "stage": "confirm", "verdict": "fail"}]
+    text = run(table, "console.log(JSON.stringify(node.textContent));")
+    assert "power 0.0158" in text and "0.0158" not in rows["X-01"]["tests"][0]["lines"][0]["verdict"]
+    assert "2026-10-03 dig by user" in text and "2026-10-04 go by user: worth a look" in text
+    assert "momentum_12_1: tested under X-01 (confirm, fail)" in text
+    assert "shown under an earlier method" not in text

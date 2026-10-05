@@ -6,6 +6,8 @@ from oracle.cli.main import main
 from oracle.config import Config
 from oracle.services import results_service as results
 from oracle.services.context import open_context
+from oracle.services.literature_service import open_index
+from oracle.store.literature import LiteratureRepo
 from tests.cli.test_testbed import config
 from tests.fakes.results import build
 
@@ -37,6 +39,16 @@ def test_the_table_prints_every_column(tmp_path, capsys, monkeypatch):
     assert "-        confirm     pass           -              Results day" in out
     assert "  test gone_key: not in the registry" in out
     assert "notes: oracle lab method REF" in out
+
+
+def test_a_test_shown_under_an_earlier_method_points_there(tmp_path, capsys, monkeypatch):
+    cmd, _ = _built(tmp_path, monkeypatch)
+    with open_context(Config(db_path=tmp_path / "o.db", research_db_path=tmp_path / "r.db"), None) as c:
+        with open_index(c) as r:
+            LiteratureRepo(r.conn).add_method("M-002", "Momentum again", "new", "added", "2026-10-04", "user",
+                                              test_keys=("momentum_12_1",))
+    assert main(cmd) == 0
+    assert "  test momentum_12_1: tested under X-01 (confirm, fail)" in capsys.readouterr().out
 
 
 def test_the_filters_narrow_the_rows(tmp_path, capsys, monkeypatch):

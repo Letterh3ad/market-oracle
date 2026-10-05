@@ -12,7 +12,7 @@ from oracle.services.context import AppContext
 from oracle.services.lab_registry import hypotheses, registrations
 from oracle.store.lab import Registration
 
-__all__ = ["ScoreRow", "Scoreboard", "bar_text", "scoreboard"]
+__all__ = ["ScoreRow", "Scoreboard", "bar_text", "scoreboard", "trend_turnover"]
 
 NOT_RUN = "not run"
 UNCOMMITTED = "not committed: no data run yet"
@@ -107,7 +107,15 @@ def _trend_rows(reg: Registration, t) -> list[dict]:
         return []
     c = t.confirm
     return [dict(horizon=None, measure="CAGR over buy and hold", value=c.trend.cagr - c.held.cagr, t=None,
-                 verdict=t.verdict, power=None, run_at=t.run_at, train=t.choose.trend.cagr - t.choose.held.cagr)]
+                 verdict=t.verdict, power=None, run_at=t.run_at, train=t.choose.trend.cagr - t.choose.held.cagr,
+                 turnover=trend_turnover(c))]
+
+
+def trend_turnover(w) -> float | None:
+    """Yearly one-way, as the strategy backtest counts it: each switch moves the whole pot one way,
+    which is half of a round trip."""
+    years = (w.end - w.start).days / 365.25
+    return w.switches * 0.5 / years if years > 0 else None
 
 
 def _strategy_rows(reg: Registration, t) -> list[dict]:
