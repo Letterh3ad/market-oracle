@@ -1,4 +1,5 @@
-"""The Research tab's scoreboard and test registry (research-lab 01) and results table (research-lab 06)."""
+"""The Research tab's scoreboard and test registry (research-lab 01), results table (research-lab 06) and weekly
+page (research-lab 08)."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from oracle.services.lab_registry import Template, commit_test, drop_test, regis
 from oracle.services.lab_service import bar_text, near_check_text, scoreboard
 from oracle.services.results_service import results_table, table_json
 from oracle.services.strategy_service import STRATEGIES, cost_view, price_trade, strategy_tests, trend_check
+from oracle.services.weekly_page_service import CAPABILITIES, default_path, last_page, make_page
 
 router = APIRouter(prefix="/api/lab")
 
@@ -29,6 +31,23 @@ async def get_table(family: str | None = None, stage: str | None = None, verdict
     """`oracle lab table --json`. The scoreboard inside it reads the live database, so it stays on the
     loop thread like /scoreboard."""
     return table_json(results_table(ctx, family, stage, verdict))
+
+
+@router.get("/page")
+async def get_page(ctx: AppContext = Depends(get_ctx)) -> dict:
+    last = await asyncio.to_thread(last_page, ctx)
+    return {"last": None if last is None else asdict(last), "default": str(default_path(ctx)),
+            "capabilities": CAPABILITIES}
+
+
+class PageBody(BaseModel):
+    questions: list[StrictStr] = []
+
+
+@router.post("/page")
+async def post_page(body: PageBody, ctx: AppContext = Depends(get_ctx)) -> dict:
+    """`oracle lab page`. On the loop thread: the results table inside it reads the live database."""
+    return asdict(make_page(ctx, body.questions))
 
 
 @router.get("/tests/{key}")

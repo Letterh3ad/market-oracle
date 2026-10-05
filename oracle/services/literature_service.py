@@ -11,7 +11,7 @@ import re
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime
 
 from oracle.lab import load_seed
 from oracle.lab.matching import link_for, normal_title, source_key, title_score
@@ -310,8 +310,10 @@ def _by(by: str) -> str:
     return by
 
 
-def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "", tests: bool = True) -> MethodDetail:
-    """go, drop or dig (deeper): the method's new status, with who and when, kept in its mark history."""
+def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "", tests: bool = True,
+         at: datetime | None = None) -> MethodDetail:
+    """go, drop or dig (deeper): the method's new status, with who and when, kept in its mark history. `at`
+    is when it was decided, for a mark made elsewhere (the weekly page); now by default."""
     if how not in MARKS:
         raise InvalidQuery(f"a mark is go, drop or dig, got {how!r}")
     by = _by(by)
@@ -325,7 +327,7 @@ def mark(ctx: AppContext, ref: str, how: str, by: str = "user", note: str = "", 
         if m.status == "duplicate-of" and how != "drop":
             raise InvalidQuery(f"{m.ref} is a near-duplicate of a tested method: only drop marks it; "
                                "registration asks for a 'different because' note")
-        repo.set_status(m.id, how, MARKS[how], by, to_utc_iso(ctx.clock.utcnow()), note.strip())
+        repo.set_status(m.id, how, MARKS[how], by, to_utc_iso(at or ctx.clock.utcnow()), note.strip())
         done = _detail(repo, _known(repo, ref))
     return with_tests(ctx, done) if tests else done
 

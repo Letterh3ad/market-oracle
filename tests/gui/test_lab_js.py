@@ -97,7 +97,8 @@ def test_the_research_tab_renders_its_section_list():
         console.log(JSON.stringify([tab.id, tab.label, pane.textContent]));
     """)
     assert text[:2] == ["research", "Research"] and "Scoreboard" in text[2] and "12-1 momentum" in text[2]
-    order = ["Scoreboard", "Results table", "Strategy tests", "Funnel stages", "Literature index", "Papers"]
+    order = ["Scoreboard", "Results table", "Strategy tests", "Funnel stages", "Literature index", "Papers",
+             "Weekly page"]
     assert [text[2].index(h) for h in order] == sorted(text[2].index(h) for h in order)
 
 

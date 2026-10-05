@@ -263,6 +263,13 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
     # Research tab, Results card: the table, its family, stage and verdict pickers; the card shows what the JSON holds.
     **{key: "GET /api/lab/table" for key in (
         "lab table", *(f"lab table --{flag}" for flag in ("family", "stage", "verdict", "json")))},
+    # Research tab, Weekly page card: "Build weekly page" with its open questions box; GET /api/lab/page shows the
+    # last build's time and path.
+    "lab page": "POST /api/lab/page",
+    "lab page --question": "POST /api/lab/page",
+    "lab page --out": Exempt("the card writes the default path beside oracle.toml; --out is for a copy elsewhere"),
+    "lab apply-marks": Exempt("the research cycle's step reading the published page's database; every mark also has "
+                              "the literature card's go / drop / dig buttons (POST /api/lab/methods/{ref}/mark)"),
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",

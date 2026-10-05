@@ -120,3 +120,8 @@ def test_service_errors_carry_one_message_for_every_frontend():
     from oracle.services.errors import ServiceError
 
     assert not hasattr(ServiceError, "in_gui")
+
+
+def test_the_weekly_page_generator_is_pure():
+    """research-lab 08: table JSON in, HTML out; the service gathers the data."""
+    assert {n for n in _imports(SOURCE_ROOT / "lab" / "weekly_page.py") if _under(n, ("oracle",))} == set()
