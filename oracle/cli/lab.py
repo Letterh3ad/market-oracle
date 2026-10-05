@@ -5,7 +5,7 @@ import json
 from dataclasses import fields
 from pathlib import Path
 
-from oracle.cli import literature, strategy
+from oracle.cli import literature, strategy, triage
 from oracle.services.context import AppContext
 from oracle.services.errors import InvalidQuery
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
@@ -39,6 +39,7 @@ def register(parser: argparse.ArgumentParser) -> None:
     drop.set_defaults(handler=run_drop)
     literature.add_commands(sub)
     strategy.add_commands(sub)
+    triage.add_commands(sub)
 
 
 def _num(x: float | None, fmt: str) -> str:

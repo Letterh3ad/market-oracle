@@ -168,7 +168,7 @@ _RESULTS = {"prices": _prices, "analyse": _analysed, "tick": _tick_queue, "unive
             "industry": lambda r: {**asdict(r), "summary": r.summary},
             "laya_history": lambda r: {**asdict(r), "summary": r.summary, "ms_per_pair": r.ms_per_pair},
             "laya_test": lambda r: laya_test(r), "signal_test": lambda r: signal_test(r),
-            "data_check": lambda r: data_check(r)}
+            "data_check": lambda r: data_check(r), "osap_fetch": lambda r: {"imports": [asdict(i) for i in r]}}
 
 
 def data_check(run: DataCheckRun | None) -> dict | None:
