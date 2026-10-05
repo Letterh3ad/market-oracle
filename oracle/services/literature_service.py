@@ -22,6 +22,7 @@ from oracle.services.testbed_service import research_context
 from oracle.store.db import to_utc_iso, transaction
 from oracle.store.literature import LiteratureRepo, MarkRow, MethodRow, SourceRow
 from oracle.store.meta import MetaRepo
+from oracle.store.papers import PapersRepo
 
 __all__ = ["MARKS", "QUALITIES", "STATUSES", "Lookup", "Method", "MethodDetail", "MethodHit", "Recorded", "Search",
            "Source", "SourceHit", "log_search", "lookup", "mark", "method", "methods", "open_index", "record", "searches",
@@ -59,6 +60,9 @@ class Source:
     keys: tuple[str, ...]
     methods: tuple[str, ...]
     """Refs of the methods it yielded."""
+    full_text_via: str | None = None
+    """Where its full text came from (unpaywall, semantic-scholar or inbox); None while only its abstract is known."""
+    full_text_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,8 +189,9 @@ def _seed(conn, at: str) -> None:
 
 
 def _source(repo: LiteratureRepo, s: SourceRow) -> Source:
+    via, at = PapersRepo(repo.conn).origin(s.id) or (None, None)
     return Source(s.id, s.title, s.authors, s.year, s.quality, s.url, s.read_on, s.note, s.added_at, s.added_by,
-                  s.also_titled, tuple(repo.keys(s.id)), tuple(m.ref for m in repo.source_methods(s.id)))
+                  s.also_titled, tuple(repo.keys(s.id)), tuple(m.ref for m in repo.source_methods(s.id)), via, at)
 
 
 def _method(m: MethodRow, refs: dict[int, str]) -> Method:

@@ -24,7 +24,9 @@ MARKED = {**METHOD, "status": "go", "status_by": "user", "status_at": "2026-10-0
                      "at": "2026-10-03T12:00:00+00:00", "note": "cheap"}]}
 HIT = {"ref": "T-15", "name": "52-week-high proximity", "family": "A", "status": "new", "rating": 3, "score": 0.91,
        "matched": "name"}
-LOOKUP = {"query": "52 week high", "key": None, "sources": [{"source": SOURCE, "score": 0.88}], "methods": [HIT],
+HELD_SOURCE = {**SOURCE, "id": 8, "full_text_via": "unpaywall", "full_text_at": "2026-10-04T09:00:00+00:00"}
+LOOKUP = {"query": "52 week high", "key": None, "sources": [{"source": SOURCE, "score": 0.88},
+                                                            {"source": HELD_SOURCE, "score": 0.5}], "methods": [HIT],
           "note": "fuzzy match on titles, names and refs"}
 SIMILAR = {"query": "buy stocks near their yearly high", "mode": "keyword",
            "note": "keyword match: meaning search is unavailable (Ollama is not reachable)",
@@ -91,6 +93,7 @@ def test_lookup_shows_sources_and_nearest_methods_and_opens_one():
     """)
     assert "GET /api/lab/lookup?q=52%20week%20high" in asked_ and "GET /api/lab/methods/T-15" in asked_
     assert "0.88 " in text and "0.91" in text and "fuzzy match" in text
+    assert text.split("|")[0].count("full text from") == 1 and "full text from unpaywall, 2026-10-04" in text
     assert "Rule: stocks near their 52-week high keep rising." in text and "status new (by seed" in text
     assert "Archive: Untested (raw 12-1 Tried-FAIL t 0.50)" in text
 

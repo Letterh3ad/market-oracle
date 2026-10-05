@@ -12,6 +12,9 @@ pytestmark = pytest.mark.skipif(NODE is None, reason="needs node to run the page
 
 WANTED = {"source": SOURCE, "reason": "Unpaywall: closed (no open copy); Semantic Scholar: no open copy",
           "note": "library", "at": "2026-10-04T09:00:00+00:00", "by": "autopilot"}
+HELD = {"source": {**SOURCE, "full_text_via": "inbox", "full_text_at": "2026-10-04T09:00:00+00:00"},
+        "full_text": {"via": "inbox", "url": None, "licence": "", "version": "", "file": "C:/lab/inbox/done/jt.pdf",
+                      "pages": 12, "chars": 50000, "at": "2026-10-04T09:00:00+00:00", "by": "user"}}
 COPY = {"url": "https://example.org/p.pdf", "via": "unpaywall", "licence": "cc-by", "version": "publishedVersion"}
 
 
@@ -21,6 +24,8 @@ def run(body: str):
         {STATUS_FIELD}
         {SENT}
         ANSWERS["GET /api/lab/papers/wanted"] = {{ wanted: [{json.dumps(WANTED)}], inbox: "C:/lab/inbox" }};
+        ANSWERS["GET /api/lab/papers/texts"] = {{ texts: [{json.dumps(HELD)}] }};
+        ANSWERS["GET /api/lab/papers/text"] = {{ ...{json.dumps(HELD)}, text: "Line one of the kept text" }};
         ANSWERS["POST /api/lab/papers/fetch"] = {{ source: {json.dumps(SOURCE)}, copy: {json.dumps(COPY)}, pages: 31,
           chars: 90000, wanted: false, note: "unpaywall: read https://example.org/p.pdf" }};
         ANSWERS["POST /api/lab/papers/wanted"] = {json.dumps(WANTED)};
@@ -45,7 +50,8 @@ def test_the_card_lists_papers_i_would_like_and_the_inbox_folder():
         console.log(JSON.stringify([node.textContent, asked]));
     """)
     assert "#7 52-Week High" in text and "Unpaywall: closed" in text and "note: library" in text
-    assert "2026-10-04 by autopilot" in text and "C:/lab/inbox" in text and asked_ == ["GET /api/lab/papers/wanted"]
+    assert "2026-10-04 by autopilot" in text and "C:/lab/inbox" in text
+    assert sorted(asked_) == ["GET /api/lab/papers/texts", "GET /api/lab/papers/wanted"]
 
 
 def test_fetch_want_remove_and_scan_send_their_requests():
@@ -75,3 +81,15 @@ def test_fetch_again_from_a_row_names_the_source_by_number():
         console.log(JSON.stringify(sent));
     """)
     assert sent_ == [["/api/lab/papers/fetch", {"source": "#7"}]]
+
+
+def test_the_full_texts_are_listed_and_one_can_be_read():
+    before, after, asked_ = run("""
+        section.start(); await settle();
+        const before = node.textContent;
+        button(node, "Read").fire("click"); await settle();
+        console.log(JSON.stringify([before, node.textContent, asked]));
+    """)
+    assert "Full texts" in before and "from inbox, 2026-10-04 by user" in before and "12 pages" in before
+    assert "Line one of the kept text" not in before
+    assert "GET /api/lab/papers/text?source=%237" in asked_ and "Line one of the kept text" in after

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from urllib.parse import urljoin
 
@@ -79,20 +80,26 @@ async def read_page(client: RateLimitedClient, url: str, contact: str | None,
     """A web page as plain text, through the rate gate. Redirects are followed here, one hop
     at a time: each target is checked like the first, so a public page cannot bounce the
     reader into this machine or the LAN, and the SEC contact goes to sec.gov alone."""
-    for _ in range(MAX_REDIRECTS + 1):
-        resp = await _get(client, url, contact, max_bytes)
-        if resp.status_code not in REDIRECTS:
-            break
-        if not resp.headers.get("location"):
-            raise ToolError(f"the page answered HTTP {resp.status_code} without saying where to go")
-        url = urljoin(url, resp.headers["location"])
-    else:
-        raise ToolError(f"the page redirected more than {MAX_REDIRECTS} times")
+    url, resp = await follow(url, lambda u: _get(client, u, contact, max_bytes))
     kind = resp.headers.get("content-type", "").split(";")[0].strip().lower()
     if kind not in READABLE:
         raise ToolError(f"not a web page ({kind or 'unknown type'})")
     title, text = page_text(resp.text) if kind != "text/plain" else ("", resp.text.strip())
     return Page(url, title, text, resp.extensions.get("oracle_truncated", False))
+
+
+async def follow(url: str, get: Callable[[str], Awaitable[httpx.Response]],
+                 what: str = "the page") -> tuple[str, httpx.Response]:
+    """Redirects followed one hop at a time: `get` sends one request without following and checks each target
+    as it checks the first. The final URL and its answer."""
+    for _ in range(MAX_REDIRECTS + 1):
+        resp = await get(url)
+        if resp.status_code not in REDIRECTS:
+            return url, resp
+        if not resp.headers.get("location"):
+            raise ToolError(f"{what} answered HTTP {resp.status_code} without saying where to go")
+        url = urljoin(url, resp.headers["location"])
+    raise ToolError(f"{what} redirected more than {MAX_REDIRECTS} times")
 
 
 async def _get(client: RateLimitedClient, url: str, contact: str | None, max_bytes: int) -> httpx.Response:

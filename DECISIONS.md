@@ -3482,3 +3482,13 @@ tick's lock and its banner); explaining every flag (rejected: hundreds of model 
 - No fetch-all yet: lookups are a few calls per paper and run any time; a bulk pass over every source is left for a resumable compute-window job when the autopilot needs it.
 - CLI `oracle lab fetch | wanted | want | unwant | inbox`; API under `/api/lab/papers`; Research tab "Papers" card (Fetch open copy, Add to papers I'd like with a note, each row's Fetch again and Remove, Scan inbox).
 **Alternatives:** Reusing `[research] contact` for Unpaywall (sends the SEC contact somewhere the user did not agree to); Semantic Scholar first (its open-access flag includes copies of unclear licence); pdfminer.six (heavier, MIT) or PyMuPDF (AGPL); keeping every downloaded PDF (text is what the lab reads); matching by title only above an exact normalised match (misses wrapped and re-typeset titles).
+
+## 2026-10-05 - Research-lab 07 gate round 1: safe copy downloads, cited ids, visible full texts
+**Context:** Gate 07 round 1 found the copy download followed redirects unchecked, a citing paper could replace a source's full text, and nothing showed which sources had a full text.
+**Decision:**
+- Copy downloads walk redirects one hop at a time through the page reader's walker (`research_tools.web.follow`, at most 5 hops); every hop is checked for a shadow library, a non-http(s) or local address and a private DNS answer. doi.org links work; the final URL is the one kept.
+- Inbox: an id in the file name or the title field settles a match. An id found only in the first two pages must also have a title score of at least 0.6 (an unrelated paper scores about 0.4), else the file stays with a note naming the source it cites. A scan that replaces a full text says so.
+- A lookup that did not answer (unreachable, 429, 5xx) leaves the paper off papers I'd like; only an answer of "no copy" from every place asked puts it there. A source with a full text cannot be wanted.
+- Full-text status is on every source (`full_text_via`, `full_text_at`): shown in the CLI source listing and the literature card. `oracle lab text [source]` lists the full texts or prints one; the Papers card has a Full texts table with Read.
+- AES-encrypted PDFs need the optional `cryptography` package; it is not added, the note names the cause and the fix (save an unencrypted copy).
+**Alternatives:** httpx's own redirect following with an event hook (checks after the request is sent); refusing every page-text id (loses re-typeset titles); adding `pypdf[crypto]` (a compiled dependency for a rare case).

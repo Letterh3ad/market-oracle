@@ -13,8 +13,8 @@ from urllib.parse import urlsplit
 
 from oracle.lab.matching import source_key
 
-SHADOW = re.compile(r"(^|\.)(sci-?hub|libgen|library\.lol|annas-archive|z-lib|zlibrary|1lib|b-ok|booksc|"
-                    r"singlelogin|libstc)(\.|$)", re.I)
+SHADOW = re.compile(r"(^|\.)(sci-?hub|libgen|gen\.lib\.rus\.ec|library\.lol|annas-archive|z-?lib(rary)?|1lib|b-ok|"
+                    r"booksc|singlelogin|libstc)(\.|$)", re.I)
 """Hosts of shadow libraries: never fetched (spec decision 4)."""
 _IDS = re.compile(r"10\.\d{4,9}/[^\s\"<>]+|arxiv\.org/(?:abs|pdf)/\d{4}\.\d{4,5}|arxiv:?\s*\d{4}\.\d{4,5}|"
                   r"ssrn\.com/\S*?abstract(?:_id)?=\d{4,}", re.I)
@@ -91,22 +91,31 @@ def _distinct(copies) -> list[Copy]:
 def pdf_text(data: bytes) -> PdfText:
     if data.lstrip()[:5] != b"%PDF-":
         raise NotAPdf("not a PDF (a sign-in page or a landing page?)")
-    from pypdf import PdfReader
-    from pypdf.errors import PyPdfError
+    import pypdf
+    from pypdf.errors import DependencyError, FileNotDecryptedError, PyPdfError
 
     logging.getLogger("pypdf").setLevel(logging.ERROR)
     try:
-        reader = PdfReader(io.BytesIO(data))
+        reader = pypdf.PdfReader(io.BytesIO(data))
         pages = tuple(_page(p) for p in reader.pages)
         title = (reader.metadata.title if reader.metadata else None) or None
+    except DependencyError as exc:
+        raise NotAPdf(f"it is encrypted (AES), which needs the optional cryptography package ({exc}): save an "
+                      "unencrypted copy (print to PDF) and drop that instead") from exc
+    except FileNotDecryptedError as exc:
+        raise NotAPdf("it is password-protected: save an unprotected copy and drop that instead") from exc
     except (PyPdfError, ValueError, KeyError, TypeError) as exc:
         raise NotAPdf(f"the PDF cannot be read: {exc}") from exc
     return PdfText(pages, title.strip() if isinstance(title, str) and title.strip() else None)
 
 
 def _page(page) -> str:
+    from pypdf.errors import DependencyError
+
     try:
         return page.extract_text() or ""
+    except DependencyError:
+        raise
     except Exception:  # noqa: BLE001 - pypdf raises many kinds on one odd page; the rest still count
         return ""
 
@@ -115,10 +124,22 @@ def ids_in(text: str) -> list[str]:
     """Source keys named in `text`, in order, once each."""
     out: list[str] = []
     for m in _IDS.finditer(text):
-        key = source_key(m[0])
+        key = source_key(_balanced(m[0]))
         if key and key not in out:
             out.append(key)
     return out
+
+
+def _balanced(found: str) -> str:
+    """An id in brackets without the closing bracket; a DOI's own brackets, as in S0304-405X(97)00004-X, stay."""
+    while True:
+        found = found.rstrip(".,;:")
+        if found.endswith(")") and found.count(")") > found.count("("):
+            found = found[:-1]
+        elif found.endswith("]") and found.count("]") > found.count("["):
+            found = found[:-1]
+        else:
+            return found
 
 
 def title_candidates(pdf: PdfText, filename: str) -> list[str]:

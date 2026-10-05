@@ -44,9 +44,10 @@ class FakeSemanticScholar:
 
 
 class FakeFiles:
-    """Any URL to bytes, by full URL; hosts are taken from the URLs given."""
+    """Any URL to bytes, by full URL; hosts are taken from the URLs given. An int answers that status, a str
+    redirects there."""
 
-    def __init__(self, files: dict[str, bytes | int]) -> None:
+    def __init__(self, files: dict[str, bytes | int | str]) -> None:
         self.files = files
         self.hosts = tuple({httpx.URL(u).host for u in files})
 
@@ -54,6 +55,8 @@ class FakeFiles:
         body = self.files.get(str(request.url))
         if body is None:
             return httpx.Response(404)
+        if isinstance(body, str):
+            return httpx.Response(302, headers={"location": body})
         if isinstance(body, int):
             return httpx.Response(body, text="<html>Sign in</html>")
         return httpx.Response(200, content=body, headers={"content-type": "application/pdf"})

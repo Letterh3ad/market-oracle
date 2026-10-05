@@ -35,3 +35,14 @@ async def test_want_unwant_and_scan_from_the_page(client, tmp_path):
     scan = (await client.post("/api/lab/papers/inbox")).json()
     (one,) = scan["results"]
     assert one["file"] == "jt.pdf" and one["source"]["title"] == JT_TITLE and one["matched"].startswith("title ")
+
+
+async def test_the_full_texts_and_one_text_from_the_page(client):
+    await client.post("/api/lab/papers/fetch", json={"source": f"doi:{GKX}"})
+    (held,) = (await client.get("/api/lab/papers/texts")).json()["texts"]
+    assert held["full_text"]["via"] == "unpaywall" and held["source"]["full_text_via"] == "unpaywall"
+    r = (await client.get("/api/lab/papers/text", params={"source": f"doi:{GKX}"})).json()
+    assert r["source"]["id"] == held["source"]["id"] and "Line 59 of the body text" in r["text"]
+    await client.post("/api/lab/sources", json={"id": JT, "title": JT_TITLE})
+    missing = await client.get("/api/lab/papers/text", params={"source": JT})
+    assert missing.status_code == 400 and "has no full text" in missing.json()["error"]

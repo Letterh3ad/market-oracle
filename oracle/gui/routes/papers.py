@@ -42,9 +42,20 @@ async def unwant(source: str, ctx: AppContext = Depends(get_ctx)) -> dict:
     return {"removed": source}
 
 
+@router.get("/texts")
+async def texts(ctx: AppContext = Depends(get_ctx)) -> dict:
+    return {"texts": [asdict(h) for h in await asyncio.to_thread(papers.texts, ctx)]}
+
+
+@router.get("/text")
+async def text(source: str, ctx: AppContext = Depends(get_ctx)) -> dict:
+    return asdict(await asyncio.to_thread(papers.text, ctx, source))
+
+
 @router.post("/fetch")
 async def fetch(body: SourceRef, ctx: AppContext = Depends(get_ctx)) -> dict:
-    # On the event loop: the gate's pacing uses the live database connection, which belongs to this thread.
+    # On the event loop: the gate's pacing uses the live database connection, which belongs to this thread. The
+    # service parses the PDF in a worker thread.
     return asdict(await papers.fetch(ctx, body.source, USER))
 
 

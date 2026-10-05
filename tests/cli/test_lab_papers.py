@@ -44,7 +44,29 @@ def test_want_unwant_and_the_inbox(tmp_path, capsys):
     assert "jt.pdf: #" in out and JT_TITLE in out and f"by id doi:{JT}" in out
     assert main(["--config", cfg, "lab", "wanted"]) == 0
     assert "0 papers wanted" in capsys.readouterr().out
-    assert main(["--config", cfg, "lab", "want", JT]) == 0
-    assert main(["--config", cfg, "lab", "unwant", JT]) == 0
+    assert main(["--config", cfg, "lab", "want", JT]) != 0
+    assert "already has its full text" in capsys.readouterr().err
     assert main(["--config", cfg, "lab", "unwant", JT]) != 0
     assert "not on the list" in capsys.readouterr().err
+
+
+def test_text_lists_the_full_texts_and_prints_one(tmp_path, capsys):
+    cfg = config(tmp_path, email=False)
+    assert main(["--config", cfg, "lab", "record", JT, "--title", JT_TITLE]) == 0
+    assert main(["--config", cfg, "lab", "record", GKX, "--title", "Empirical Asset Pricing via Machine Learning"]) == 0
+    inbox = tmp_path / ".scratch" / "research-lab" / "inbox"
+    inbox.mkdir(parents=True)
+    (inbox / "jt.pdf").write_bytes(paper(JT_TITLE, JT))
+    assert main(["--config", cfg, "lab", "inbox"]) == 0
+    capsys.readouterr()
+    assert main(["--config", cfg, "lab", "text"]) == 0
+    out = capsys.readouterr().out
+    assert JT_TITLE in out and "from inbox" in out and "2 pages" in out and "1 full text" in out
+    assert "Empirical Asset Pricing" not in out
+    assert main(["--config", cfg, "lab", "text", JT]) == 0
+    out = capsys.readouterr().out
+    assert JT_TITLE in out and "from inbox" in out and "Line 59 of the body text" in out
+    assert main(["--config", cfg, "lab", "lookup", JT]) == 0
+    assert "full text: from inbox" in capsys.readouterr().out
+    assert main(["--config", cfg, "lab", "text", GKX]) != 0
+    assert "has no full text" in capsys.readouterr().err

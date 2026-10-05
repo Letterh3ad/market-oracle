@@ -7,7 +7,7 @@ import argparse
 import asyncio
 
 from oracle.services.context import AppContext
-from oracle.services.papers_service import fetch, scan_inbox, unwant, want, wanted
+from oracle.services.papers_service import fetch, scan_inbox, text, texts, unwant, want, wanted
 
 _BY = "who does it (default user; the autopilot passes autopilot)"
 _SOURCE = "the source: DOI, SSRN, arXiv or NBER id, its URL, or its number (#12)"
@@ -34,6 +34,11 @@ def add_commands(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("unwant", description="take a source off papers I'd like")
     p.add_argument("source", help=_SOURCE)
     p.set_defaults(handler=run_unwant)
+
+    p = sub.add_parser("text", description="the sources with a full text (where from, when, pages); with a source, "
+                                           "its kept text")
+    p.add_argument("source", nargs="?", help=_SOURCE)
+    p.set_defaults(handler=run_text)
 
     p = sub.add_parser("inbox", description="read the PDFs dropped in the inbox folder ([research] inbox), match "
                                             "each to its source by DOI or title, keep its text and move it to done/")
@@ -77,6 +82,28 @@ def run_want(ctx: AppContext, args: argparse.Namespace) -> int:
 def run_unwant(ctx: AppContext, args: argparse.Namespace) -> int:
     unwant(ctx, args.source)
     print(f"Off the list: {args.source}")
+    return 0
+
+
+def _origin(f) -> str:
+    return f"from {f.via}, {f.at[:10]} by {f.by}, {f.pages} pages" + (f", {f.licence}" if f.licence else "")
+
+
+def run_text(ctx: AppContext, args: argparse.Namespace) -> int:
+    if args.source is None:
+        rows = texts(ctx)
+        for h in rows:
+            print(_name(h.source))
+            print(f"  {_origin(h.full_text)}")
+        print(f"{len(rows)} full text{'' if len(rows) == 1 else 's'}")
+        return 0
+    kept = text(ctx, args.source)
+    print(_name(kept.source))
+    print(f"  {_origin(kept.full_text)}")
+    if kept.full_text.url:
+        print(f"  {kept.full_text.url}")
+    print()
+    print(kept.text)
     return 0
 
 

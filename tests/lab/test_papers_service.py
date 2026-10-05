@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 
+import httpx
 import pytest
 
 from oracle.config import Config, ResearchConfig
@@ -53,7 +54,7 @@ async def test_an_open_copy_from_unpaywall_is_read_and_kept(tmp_path):
         assert got.pages == 2 and got.chars > 1000 and not got.wanted
         assert got.source.title == "Empirical Asset Pricing via Machine Learning"
         held = papers.full_text(ctx, f"doi:{GKX}")
-        assert held.via == "unpaywall" and "Line 59 of the body text" in papers.text(ctx, f"doi:{GKX}")
+        assert held.via == "unpaywall" and "Line 59 of the body text" in papers.text(ctx, f"doi:{GKX}").text
         assert papers.wanted(ctx) == []
         again = await papers.fetch(ctx, GKX)
         assert again.copy is None and not again.wanted and again.note.startswith("already full-text (from unpaywall")
@@ -136,7 +137,7 @@ def test_the_inbox_matches_a_dropped_pdf_by_doi_and_by_title(tmp_path):
         papers.want(ctx, JT)
         inbox = papers.inbox_folder(ctx)
         assert inbox == tmp_path / ".scratch" / "research-lab" / "inbox"
-        drop(inbox, "download (3).pdf", paper("Some header line", JT))
+        drop(inbox, "download (3).pdf", paper("Returns to Buying Winners and Selling Losers", JT))
         drop(inbox, "scan.pdf", paper("Construction and Application of Computerised Risk Assessment Model for "
                                       "Supply Chain Finance under Technology Empowerment"))
         drop(inbox, "unrelated.pdf", paper("A Theory of Cheese Futures"))
@@ -146,7 +147,7 @@ def test_the_inbox_matches_a_dropped_pdf_by_doi_and_by_title(tmp_path):
         by_file = {r.file: r for r in scan.results}
         assert set(by_file) == {"download (3).pdf", "scan.pdf", "unrelated.pdf", "broken.pdf"}
         jt = by_file["download (3).pdf"]
-        assert jt.source.title == JT_TITLE and jt.matched == f"id doi:{JT}" and jt.pages == 2
+        assert jt.source.title == JT_TITLE and jt.matched == f"id doi:{JT} (title 1.00)" and jt.pages == 2
         pone = by_file["scan.pdf"]
         assert pone.source.title == PONE_TITLE and pone.matched.startswith("title ")
         assert by_file["unrelated.pdf"].source is None and "no recorded source" in by_file["unrelated.pdf"].note
@@ -174,3 +175,164 @@ def test_the_inbox_folder_is_a_setting_relative_to_the_config_file(tmp_path):
         ctx.config = replace(ctx.config, research=ResearchConfig(inbox=str(tmp_path / "abs")))
         assert papers.inbox_folder(ctx) == tmp_path / "abs"
         assert papers.scan_inbox(ctx).results == [] and (tmp_path / "abs").is_dir()
+
+
+OWN = "10.9999/own.1"
+OWN_TITLE = "Momentum in Imaginary Markets"
+REPO = "https://repo.example.org/a.pdf"
+
+
+class Down:
+    """A host that answers one status to everything."""
+
+    def __init__(self, host: str, status: int) -> None:
+        self.hosts = (host,)
+        self.status = status
+
+    def handle(self, request):
+        return httpx.Response(self.status, headers={"retry-after": "1"})
+
+
+def open_at(url: str, files: dict) -> FakeWeb:
+    return FakeWeb(FakeUnpaywall({OWN: {"oa_status": "green", "best_oa_location": {
+        "url_for_pdf": url, "license": "cc-by", "version": "acceptedVersion"}, "oa_locations": []}}),
+        FakeSemanticScholar({}), FakeFiles(files))
+
+
+async def fetch_own(tmp_path, fake: FakeWeb):
+    with context(tmp_path, fake) as ctx:
+        lab.record(ctx, f"doi:{OWN}", title=OWN_TITLE, quality="peer-reviewed")
+        return await papers.fetch(ctx, OWN), papers.full_text(ctx, OWN)
+
+
+@pytest.mark.parametrize("target, why", [("https://sci-hub.se/x.pdf", "a shadow library"),
+                                         ("https://z-library.sk/x.pdf", "a shadow library"),
+                                         ("http://127.0.0.1:8740/api/x.pdf", "local"),
+                                         ("ftp://repo.example.org/x.pdf", "http")])
+async def test_a_copy_that_redirects_somewhere_refused_is_never_requested_there(tmp_path, target, why):
+    fake = open_at(REPO, {REPO: target, target: paper(OWN_TITLE, OWN)})
+    got, held = await fetch_own(tmp_path, fake)
+    assert got.copy is None and got.wanted and held is None
+    assert f"redirected to {target}" in got.note and why in got.note
+    assert [str(r.url) for r in fake.requests if r.url.host not in ("api.unpaywall.org", "api.semanticscholar.org")
+            ] == [REPO]
+
+
+async def test_a_copy_at_a_private_address_is_refused_before_any_request(tmp_path):
+    private = "http://192.168.1.10/a.pdf"
+    fake = open_at(private, {private: paper(OWN_TITLE, OWN)})
+    got, held = await fetch_own(tmp_path, fake)
+    assert got.copy is None and held is None and f"{private}: refused" in got.note
+    assert fake.requests_to("192.168.1.10") == []
+
+
+async def test_a_doi_org_copy_is_followed_to_the_publisher_and_the_final_url_kept(tmp_path):
+    doi_link, final = f"https://doi.org/{OWN}", "https://publisher.example.com/pdf/own.pdf"
+    fake = open_at(doi_link, {doi_link: "https://publisher.example.com/landing",
+                              "https://publisher.example.com/landing": "/pdf/own.pdf", final: paper(OWN_TITLE, OWN)})
+    got, held = await fetch_own(tmp_path, fake)
+    assert got.copy.url == final and held.url == final
+    assert f"read {final} (redirected from {doi_link})" in got.note
+
+
+async def test_a_redirect_loop_and_an_oversized_copy_are_given_up(tmp_path, monkeypatch):
+    loop = {f"https://repo.example.org/{n}.pdf": f"https://repo.example.org/{n + 1}.pdf" for n in range(10)}
+    got, _ = await fetch_own(tmp_path / "loop", open_at("https://repo.example.org/0.pdf", loop))
+    assert got.copy is None and "redirected more than 5 times" in got.note
+    monkeypatch.setattr(papers, "PDF_BYTES", 2000)
+    got, held = await fetch_own(tmp_path / "big", open_at(REPO, {REPO: paper(OWN_TITLE, OWN)}))
+    assert got.copy is None and held is None and f"{REPO}: over" in got.note
+
+
+@pytest.mark.parametrize("status", [503, 429])
+async def test_a_lookup_that_did_not_answer_does_not_put_the_paper_on_the_wanted_list(tmp_path, status):
+    fake = FakeWeb(Down("api.unpaywall.org", status), Down("api.semanticscholar.org", status))
+    got, _ = await fetch_own(tmp_path, fake)
+    assert got.copy is None and not got.wanted
+    assert "try again later" in got.note
+    with context(tmp_path, fake) as ctx:
+        assert papers.wanted(ctx) == []
+
+
+async def test_a_landing_page_only_is_said_plainly(tmp_path):
+    fake = FakeWeb(FakeUnpaywall({OWN: {"oa_status": "green", "best_oa_location": {
+        "url": "https://repo.example.org/record/1", "url_for_pdf": None}, "oa_locations": []}}), FakeSemanticScholar({}))
+    got, _ = await fetch_own(tmp_path, fake)
+    assert "Unpaywall: green (its open copy is a landing page only)" in got.note and got.wanted
+
+
+async def test_a_source_with_its_full_text_cannot_be_wanted(tmp_path):
+    fake = web({GKX_PDF: paper("Empirical Asset Pricing via Machine Learning", GKX)})
+    with context(tmp_path, fake) as ctx:
+        await papers.fetch(ctx, GKX)
+        with pytest.raises(InvalidQuery, match="already has its full text"):
+            papers.want(ctx, GKX)
+
+
+def test_a_paper_citing_a_recorded_doi_is_not_taken_for_it(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        record_jt_and_pone(ctx)
+        inbox = papers.inbox_folder(ctx)
+        drop(inbox, "jt.pdf", paper(JT_TITLE, JT))
+        (kept,) = papers.scan_inbox(ctx).results
+        assert kept.source.title == JT_TITLE
+        before = papers.text(ctx, JT).text
+        drop(inbox, "new_bond_paper.pdf", make_pdf([["Credit Spreads and Sovereign Defaults in Emerging Markets",
+                                                      "C. Author", "Abstract", "We study bonds."],
+                                                     ["As in Jegadeesh and Titman (1993), doi:" + JT + "."]]))
+        (cited,) = papers.scan_inbox(ctx).results
+        assert cited.source is None and f"#{kept.source.id}" in cited.note and "rename it to its DOI" in cited.note
+        assert papers.text(ctx, JT).text == before and (inbox / "new_bond_paper.pdf").exists()
+
+
+def test_an_id_in_the_text_is_taken_when_the_title_roughly_agrees(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        record_jt_and_pone(ctx)
+        drop(papers.inbox_folder(ctx), "scan.pdf", paper("Retums to Buyirg Wimners and Seling Losrs", JT))
+        (r,) = papers.scan_inbox(ctx).results
+        assert r.source.title == JT_TITLE and r.matched.startswith(f"id doi:{JT} (title 0.")
+
+
+def test_replacing_a_full_text_says_so(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        record_jt_and_pone(ctx)
+        inbox = papers.inbox_folder(ctx)
+        drop(inbox, "a.pdf", paper(JT_TITLE, JT))
+        papers.scan_inbox(ctx)
+        drop(inbox, "10.1111_j.1540-6261.1993.tb04702.x.pdf", paper("Untitled scan"))
+        (r,) = papers.scan_inbox(ctx).results
+        assert "replaces its earlier full text (from inbox, 2026-10-04)" in r.note
+
+
+def test_a_full_text_shows_on_its_source_and_can_be_read(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        record_jt_and_pone(ctx)
+        drop(papers.inbox_folder(ctx), "jt.pdf", paper(JT_TITLE, JT))
+        papers.scan_inbox(ctx)
+        by_title = {s.title: s for s in lab.sources(ctx)}
+        jt, pone = by_title[JT_TITLE], by_title[PONE_TITLE]
+        assert (jt.full_text_via, jt.full_text_at[:10]) == ("inbox", "2026-10-04")
+        assert pone.full_text_via is None and pone.full_text_at is None
+        (held,) = papers.texts(ctx)
+        assert held.source.id == jt.id and held.full_text.via == "inbox" and held.full_text.pages == 2
+        read = papers.text(ctx, f"#{jt.id}")
+        assert read.source.id == jt.id and read.full_text.via == "inbox" and "Line 59 of the body text" in read.text
+        with pytest.raises(InvalidQuery, match="has no full text"):
+            papers.text(ctx, PONE)
+
+
+async def test_a_downloaded_pdf_is_parsed_off_the_event_loop(tmp_path, monkeypatch):
+    import threading
+
+    threads = []
+    real = papers.pdf_text
+
+    def spy(data):
+        threads.append(threading.current_thread())
+        return real(data)
+
+    monkeypatch.setattr(papers, "pdf_text", spy)
+    fake = web({GKX_PDF: paper("Empirical Asset Pricing via Machine Learning", GKX)})
+    with context(tmp_path, fake) as ctx:
+        assert (await papers.fetch(ctx, GKX)).copy is not None
+    assert threads and threads[0] is not threading.current_thread()

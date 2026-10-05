@@ -38,7 +38,9 @@ def test_semantic_scholar_gold_copy_is_taken_and_a_closed_one_refused():
 
 
 @pytest.mark.parametrize("url", ["https://sci-hub.se/10.1/x", "http://libgen.rs/book.pdf", "https://annas-archive.org/md5/1",
-                                 "https://z-lib.io/x", "https://www.library.lol/main/1"])
+                                 "https://z-lib.io/x", "https://www.library.lol/main/1", "https://z-library.sk/book/1",
+                                 "https://Z-Library.se./x", "http://gen.lib.rus.ec/scimag/x", "https://zlibrary.to/x",
+                                 "https://sci-hub.ru/x", "https://libgen.li/x"])
 def test_shadow_libraries_are_refused_even_when_an_api_names_them(url):
     assert is_shadow(url)
     body = {"oa_locations": [{"url_for_pdf": url, "license": None, "version": "publishedVersion"}]}
@@ -84,3 +86,24 @@ def test_title_candidates_come_from_metadata_name_and_first_lines():
     found = title_candidates(t, "jegadeesh titman 1993.pdf")
     assert "Returns to Buying Winners" in found and "jegadeesh titman 1993" in found
     assert "Returns to Buying Winners A. Author and B. Author" in found
+
+
+def test_a_doi_in_brackets_loses_the_closing_bracket_but_a_doi_with_its_own_keeps_it():
+    assert ids_in("as shown (doi:10.2307/2672906).") == ["doi:10.2307/2672906"]
+    assert ids_in("[https://doi.org/10.2307/2672906]") == ["doi:10.2307/2672906"]
+    assert ids_in("see 10.1016/S0304-405X(97)00004-X.") == ["doi:10.1016/s0304-405x(97)00004-x"]
+
+
+def test_an_aes_encrypted_pdf_names_the_missing_package(monkeypatch):
+    import pypdf
+    from pypdf.errors import DependencyError
+
+    def aes(*args, **kwargs):
+        raise DependencyError("cryptography>=3.1 is required for AES algorithm")
+
+    monkeypatch.setattr(pypdf.PageObject, "extract_text", aes)
+    with pytest.raises(NotAPdf, match="encrypted.*cryptography"):
+        pdf_text(make_pdf([["x"]]))
+    monkeypatch.setattr(pypdf, "PdfReader", aes)
+    with pytest.raises(NotAPdf, match="encrypted.*cryptography"):
+        pdf_text(make_pdf([["x"]]))

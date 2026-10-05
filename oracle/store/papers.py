@@ -52,6 +52,11 @@ class PapersRepo:
         r = self._conn.execute(f"SELECT {_FULL} FROM lit_full_texts WHERE source_id = ?", (source_id,)).fetchone()
         return None if r is None else FullTextRow(*r)
 
+    def origin(self, source_id: int) -> tuple[str, str] | None:
+        """Where a source's full text came from and when, without measuring the text."""
+        r = self._conn.execute("SELECT via, at FROM lit_full_texts WHERE source_id = ?", (source_id,)).fetchone()
+        return None if r is None else (r[0], r[1])
+
     def text(self, source_id: int) -> str | None:
         r = self._conn.execute("SELECT text FROM lit_full_texts WHERE source_id = ?", (source_id,)).fetchone()
         return None if r is None else r[0]
