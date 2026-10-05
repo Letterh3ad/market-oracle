@@ -28,7 +28,8 @@ def test_import_map_triage_power_and_the_table(tmp_path, capsys, monkeypatch):
     assert "T-07 power: STOP (power -> not-testable): could not see" in out and "names-and-days formula" in out
     assert main([*cfg, "lab", "table"]) == 0
     out = capsys.readouterr().out
-    assert "T-13    fail          Mom12m        stop" in out and "T-07    not-testable  GP            pass    stop" in out
+    assert "T-13     literature  fail" in out and "  OSAP Mom12m; triage stop: OSAP Mom12m" in out
+    assert "T-07     power       could-not-see" in out and "  power stop: could not see" in out
 
 
 def test_triage_by_hand_needs_a_note(tmp_path, capsys):

@@ -243,6 +243,9 @@ async def test_the_scoreboard_shows_old_verdicts_as_kept_with_their_own_bar_and_
     assert (rev.value, rev.t, rev.verdict, rev.power) == (old.confirm[0].ic, old.confirm[0].t,
                                                           old.confirm[0].verdict_text, old.confirm[0].observed_power)
     assert rev.bar == "t > 2.00" and rev.legacy and rev.measure == "IC" and rev.run_at == old.run_at
+    assert (rev.train, rev.turnover, rev.break_even) == (old.train[0].ic, old.confirm[0].turnover,
+                                                         old.confirm[0].break_even)
+    assert rev.turnover is not None
     assert rows[("momentum_12_1", 20)].verdict == "not run"
     assert rows[("draft", 5)].verdict.startswith("not committed") and rows[("draft", 5)].bar == f"t >= {draft.bar:.2f}"
     assert rows[("trend_overlay", None)].bar.startswith("worst fall")

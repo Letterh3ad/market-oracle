@@ -248,7 +248,9 @@ MANIFEST: dict[str, str | Exempt | Pending] = {
         "strategy", "horizon", "expected", "tracking-error", "source")},
     **{f"lab {cmd} --by": Exempt("the page acts as the user; --by names the autopilot or another caller")
        for cmd in ("map", "triage", "power")},
-    "lab table": "GET /api/lab/table",
+    # Research tab, Results card: the table, its family, stage and verdict pickers; the card shows what the JSON holds.
+    **{key: "GET /api/lab/table" for key in (
+        "lab table", *(f"lab table --{flag}" for flag in ("family", "stage", "verdict", "json")))},
     # Plan tab. Every Plan action has a CLI twin too (test_every_plan_action_has_a_cli_twin).
     # Your plan card: the summary, and its fund picker and monthly amount.
     "plan show": "GET /api/plan/summary",

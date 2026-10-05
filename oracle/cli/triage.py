@@ -1,4 +1,4 @@
-"""`oracle lab osap|osap-fetch|osap-import|map|triage|power|table`: the funnel's triage and power
+"""`oracle lab osap|osap-fetch|osap-import|map|triage|power`: the funnel's triage and power
 stages on Open Source Asset Pricing (research-lab 05)."""
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pathlib import Path
 
 from oracle.services.context import AppContext
 from oracle.services.triage_service import (
-    TRIAGE_T, StageEntry, fetch_osap, import_osap, map_method, osap_status, run_power, run_triage, stage_table,
+    TRIAGE_T, StageEntry, fetch_osap, import_osap, map_method, osap_status, run_power, run_triage,
 )
 
 _BY = "who runs it (default user), e.g. autopilot"
@@ -49,8 +49,6 @@ def add_commands(sub) -> None:
     p.add_argument("--source", default="", help="where the expected size comes from")
     p.add_argument("--by", default="user", help=_BY)
     p.set_defaults(handler=run_power_cmd)
-    sub.add_parser("table", description="every method with an OSAP signal or a stage run: its newest triage and "
-                                        "power results").set_defaults(handler=run_table)
 
 
 def run_osap(ctx: AppContext, args: argparse.Namespace) -> int:
@@ -113,19 +111,4 @@ def run_power_cmd(ctx: AppContext, args: argparse.Namespace) -> int:
     e = run_power(ctx, args.ref, "strategy" if args.strategy else "signal", args.horizon, args.expected,
                   args.tracking_error, source=args.source, by=args.by)
     print_entry(args.ref, e)
-    return 0
-
-
-def run_table(ctx: AppContext, args: argparse.Namespace) -> int:
-    rows = stage_table(ctx)
-    if not rows:
-        print("No method has an OSAP signal or a stage run yet.")
-        return 0
-    print(f"{'method':<8}{'status':<14}{'OSAP':<14}{'triage':<8}{'power':<8}name")
-    for r in rows:
-        print(f"{r.ref:<8}{r.status:<14}{r.signal or '-':<14}{r.triage.outcome if r.triage else '-':<8}"
-              f"{r.power.outcome if r.power else '-':<8}{r.name}")
-        for e in (r.triage, r.power):
-            if e:
-                print(f"    {e.stage}: {e.summary}")
     return 0

@@ -1,4 +1,4 @@
-"""The Research tab's scoreboard and test registry (research-lab 01)."""
+"""The Research tab's scoreboard and test registry (research-lab 01) and results table (research-lab 06)."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from oracle.gui.deps import get_ctx
 from oracle.services.context import AppContext
 from oracle.services.lab_registry import Template, commit_test, drop_test, register_test, registration
 from oracle.services.lab_service import bar_text, near_check_text, scoreboard
+from oracle.services.results_service import results_table, table_json
 from oracle.services.strategy_service import STRATEGIES, cost_view, price_trade, strategy_tests, trend_check
 
 router = APIRouter(prefix="/api/lab")
@@ -20,6 +21,14 @@ router = APIRouter(prefix="/api/lab")
 @router.get("/scoreboard")
 async def get_scoreboard(ctx: AppContext = Depends(get_ctx)) -> dict:
     return asdict(scoreboard(ctx))
+
+
+@router.get("/table")
+async def get_table(family: str | None = None, stage: str | None = None, verdict: str | None = None,
+                    ctx: AppContext = Depends(get_ctx)) -> dict:
+    """`oracle lab table --json`. The scoreboard inside it reads the live database, so it stays on the
+    loop thread like /scoreboard."""
+    return table_json(results_table(ctx, family, stage, verdict))
 
 
 @router.get("/tests/{key}")

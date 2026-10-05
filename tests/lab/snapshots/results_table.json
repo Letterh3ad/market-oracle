@@ -1,0 +1,516 @@
+{
+  "version": 1,
+  "as_of": "2026-10-04T12:00:00+00:00",
+  "filters": {
+    "family": null,
+    "stage": null,
+    "verdict": null
+  },
+  "rows": [
+    {
+      "ref": "A-01",
+      "name": "LLM headline sentiment",
+      "family": "1. LLM and NLP on text",
+      "status": "go",
+      "origin": "archive",
+      "rating": 3,
+      "quality": "replicated",
+      "sources": [
+        {
+          "id": 1,
+          "title": "Returns to buying winners",
+          "authors": "Jegadeesh and Titman",
+          "year": 1993,
+          "quality": "replicated",
+          "url": "https://doi.org/10.1111/j.1540-6261.1993.tb04702.x"
+        },
+        {
+          "id": 2,
+          "title": "A blog on headlines",
+          "authors": "",
+          "year": null,
+          "quality": "practitioner",
+          "url": "https://example.com/post"
+        }
+      ],
+      "evidence": "GPT scores predict next-day returns.",
+      "result": "",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "candidate",
+      "verdict": "open",
+      "died_at": null,
+      "notes": [
+        {
+          "mark": "go",
+          "by": "user",
+          "at": "2026-10-04T12:00:00+00:00",
+          "note": "worth a look"
+        }
+      ]
+    },
+    {
+      "ref": "T-13",
+      "name": "Residual momentum",
+      "family": "A. Cross-sectional stock anomalies",
+      "status": "fail",
+      "origin": "archive",
+      "rating": null,
+      "quality": "replicated",
+      "sources": [
+        {
+          "id": 1,
+          "title": "Returns to buying winners",
+          "authors": "Jegadeesh and Titman",
+          "year": 1993,
+          "quality": "replicated",
+          "url": "https://doi.org/10.1111/j.1540-6261.1993.tb04702.x"
+        }
+      ],
+      "evidence": "",
+      "result": "",
+      "osap": "Mom12m",
+      "triage": {
+        "stage": "triage",
+        "outcome": "stop",
+        "summary": "OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00",
+        "detail": {
+          "signal": "Mom12m"
+        },
+        "status_from": "go",
+        "status_to": "fail",
+        "by": "user",
+        "at": "2026-10-04T12:00:00+00:00"
+      },
+      "power": null,
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "literature",
+      "verdict": "fail",
+      "died_at": "literature",
+      "notes": []
+    },
+    {
+      "ref": "T-07",
+      "name": "Gross profitability",
+      "family": "A. Cross-sectional stock anomalies",
+      "status": "not-testable",
+      "origin": "archive",
+      "rating": null,
+      "quality": "working-paper",
+      "sources": [
+        {
+          "id": 3,
+          "title": "Profitability",
+          "authors": "Novy-Marx",
+          "year": 2013,
+          "quality": "working-paper",
+          "url": null
+        }
+      ],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": {
+        "stage": "triage",
+        "outcome": "pass",
+        "summary": "OSAP GP: survives",
+        "detail": {},
+        "status_from": "go",
+        "status_to": "power",
+        "by": "user",
+        "at": "2026-10-04T12:00:00+00:00"
+      },
+      "power": {
+        "stage": "power",
+        "outcome": "stop",
+        "summary": "could not see: expected IC 0.0050 at 20 d",
+        "detail": {
+          "expected_ic": 0.005
+        },
+        "status_from": "power",
+        "status_to": "not-testable",
+        "by": "user",
+        "at": "2026-10-04T12:00:00+00:00"
+      },
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "power",
+      "verdict": "could-not-see",
+      "died_at": "power",
+      "notes": []
+    },
+    {
+      "ref": "T-08",
+      "name": "Asset growth",
+      "family": "A. Cross-sectional stock anomalies",
+      "status": "power",
+      "origin": "archive",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": {
+        "stage": "triage",
+        "outcome": "pass",
+        "summary": "OSAP AssetGrowth: survives",
+        "detail": {},
+        "status_from": "go",
+        "status_to": "power",
+        "by": "user",
+        "at": "2026-10-04T12:00:00+00:00"
+      },
+      "power": {
+        "stage": "power",
+        "outcome": "pass",
+        "summary": "expected IC 0.0300 at 20 d",
+        "detail": {},
+        "status_from": "power",
+        "status_to": "power",
+        "by": "user",
+        "at": "2026-10-04T12:00:00+00:00"
+      },
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "power",
+      "verdict": "open",
+      "died_at": null,
+      "notes": []
+    },
+    {
+      "ref": "X-01",
+      "name": "Momentum 12-1 (h20)",
+      "family": "Already tested (signal)",
+      "status": "fail",
+      "origin": "tested",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "IC +0.008 t 0.50, could not see",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [
+        {
+          "key": "momentum_12_1",
+          "label": "Momentum 12-1",
+          "kind": "signal",
+          "registered_on": "2026-09-20",
+          "bar": "t > 2.00",
+          "legacy": true,
+          "commit_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "note": "",
+          "verdict": "fail",
+          "lines": [
+            {
+              "horizon": 20,
+              "measure": "IC",
+              "train": 0.0123,
+              "confirm": 0.0071,
+              "t": 0.45,
+              "power": 0.0158,
+              "turnover": 0.31,
+              "break_even": 0.0042,
+              "dsr": null,
+              "verdict": "FAIL (could not see an IC this small: needed 0.0158)",
+              "run_at": "2026-10-01T09:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "key": "forward:momentum_12_1",
+          "label": "Momentum 12-1 forward",
+          "kind": "signal",
+          "registered_on": "2026-09-20",
+          "bar": "t > 2.00",
+          "legacy": true,
+          "commit_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "note": "",
+          "verdict": "open",
+          "lines": [
+            {
+              "horizon": 20,
+              "measure": "",
+              "train": null,
+              "confirm": null,
+              "t": null,
+              "power": null,
+              "turnover": null,
+              "break_even": null,
+              "dsr": null,
+              "verdict": "not run",
+              "run_at": null
+            }
+          ]
+        }
+      ],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "confirm",
+      "verdict": "fail",
+      "died_at": "confirm",
+      "notes": []
+    },
+    {
+      "ref": "X-11",
+      "name": "4B LLM regime tilt",
+      "family": "Already tested (strategy)",
+      "status": "fail",
+      "origin": "tested",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "noise",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "unrecorded",
+      "verdict": "fail",
+      "died_at": "unrecorded",
+      "notes": []
+    },
+    {
+      "ref": "A-02",
+      "name": "Earnings call tone",
+      "family": "1. LLM and NLP on text",
+      "status": "dropped",
+      "origin": "archive",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "candidate",
+      "verdict": "dropped",
+      "died_at": null,
+      "notes": []
+    },
+    {
+      "ref": "M-001",
+      "name": "A new signal",
+      "family": "A. Cross-sectional stock anomalies",
+      "status": "built",
+      "origin": "archive",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [
+        {
+          "key": "new_sig",
+          "label": "A new signal",
+          "kind": "signal",
+          "registered_on": "2026-09-20",
+          "bar": "t >= 3.02",
+          "legacy": false,
+          "commit_hash": null,
+          "note": "",
+          "verdict": "open",
+          "lines": [
+            {
+              "horizon": 20,
+              "measure": "",
+              "train": null,
+              "confirm": null,
+              "t": null,
+              "power": null,
+              "turnover": null,
+              "break_even": null,
+              "dsr": null,
+              "verdict": "not committed: no data run yet",
+              "run_at": null
+            }
+          ]
+        }
+      ],
+      "shared_tests": [],
+      "missing_tests": [
+        "gone_key"
+      ],
+      "stage": "build",
+      "verdict": "open",
+      "died_at": null,
+      "notes": []
+    },
+    {
+      "ref": null,
+      "name": "Results day",
+      "family": "",
+      "status": "",
+      "origin": "",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [
+        {
+          "key": "event:1.01",
+          "label": "Results day",
+          "kind": "event",
+          "registered_on": "2026-09-20",
+          "bar": "t > 2.00",
+          "legacy": true,
+          "commit_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "note": "",
+          "verdict": "pass",
+          "lines": [
+            {
+              "horizon": 20,
+              "measure": "mean CAR",
+              "train": 0.0032,
+              "confirm": 0.0041,
+              "t": 3.4,
+              "power": null,
+              "turnover": null,
+              "break_even": null,
+              "dsr": null,
+              "verdict": "PASS",
+              "run_at": "2026-10-01T09:00:00+00:00"
+            },
+            {
+              "horizon": 60,
+              "measure": "mean CAR",
+              "train": 0.004,
+              "confirm": 0.005,
+              "t": 2.1,
+              "power": null,
+              "turnover": null,
+              "break_even": null,
+              "dsr": null,
+              "verdict": "PASS",
+              "run_at": "2026-10-01T09:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "confirm",
+      "verdict": "pass",
+      "died_at": null,
+      "notes": []
+    },
+    {
+      "ref": null,
+      "name": "Trend overlay",
+      "family": "",
+      "status": "",
+      "origin": "",
+      "rating": null,
+      "quality": null,
+      "sources": [],
+      "evidence": "",
+      "result": "",
+      "osap": null,
+      "triage": null,
+      "power": null,
+      "tests": [
+        {
+          "key": "trend_overlay",
+          "label": "Trend overlay",
+          "kind": "strategy",
+          "registered_on": "2026-09-20",
+          "bar": "worst fall at most two thirds of buy and hold's",
+          "legacy": true,
+          "commit_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "note": "",
+          "verdict": "fail",
+          "lines": [
+            {
+              "horizon": null,
+              "measure": "CAGR over buy and hold",
+              "train": 0.004,
+              "confirm": -0.0331,
+              "t": null,
+              "power": null,
+              "turnover": 0.8,
+              "break_even": null,
+              "dsr": 0.12,
+              "verdict": "FAIL",
+              "run_at": "2026-10-01T09:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "shared_tests": [],
+      "missing_tests": [],
+      "stage": "confirm",
+      "verdict": "fail",
+      "died_at": "confirm",
+      "notes": []
+    }
+  ],
+  "deaths": {
+    "literature": 1,
+    "power": 1,
+    "build": 0,
+    "train": 0,
+    "confirm": 2,
+    "unrecorded": 1
+  },
+  "verdicts": {
+    "pass": 1,
+    "promising": 0,
+    "fail": 4,
+    "could-not-see": 1,
+    "not-testable": 0,
+    "inconclusive": 0,
+    "dropped": 1,
+    "duplicate": 0,
+    "open": 3
+  },
+  "families": [
+    "1. LLM and NLP on text",
+    "A. Cross-sectional stock anomalies",
+    "Already tested (signal)",
+    "Already tested (strategy)"
+  ],
+  "stages": [
+    "candidate",
+    "literature",
+    "power",
+    "build",
+    "train",
+    "confirm",
+    "unrecorded"
+  ],
+  "verdict_words": [
+    "pass",
+    "promising",
+    "fail",
+    "could-not-see",
+    "not-testable",
+    "inconclusive",
+    "dropped",
+    "duplicate",
+    "open"
+  ]
+}

@@ -26,8 +26,8 @@ async def test_import_map_triage_power_and_the_table(client, tmp_path, monkeypat
     assert power["outcome"] == "pass" and power["detail"]["expected_ic"] == 0.08
     table = (await client.get("/api/lab/table")).json()
     row = next(r for r in table["rows"] if r["ref"] == "T-07")
-    assert row["signal"] == "GP" and row["triage"]["outcome"] == "pass" and row["power"]["outcome"] == "pass"
-    assert table["triage_t"] == triage.TRIAGE_T
+    assert row["osap"] == "GP" and row["triage"]["outcome"] == "pass" and row["power"]["outcome"] == "pass"
+    assert (row["stage"], row["verdict"]) == ("power", "open")
 
 
 async def test_the_download_job_is_refused_outside_the_compute_window(client, monkeypatch):

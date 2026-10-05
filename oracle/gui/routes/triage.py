@@ -1,5 +1,5 @@
 """The Research tab's funnel stages (research-lab 05): OSAP's data status and import, a method's
-OSAP signal, triage and power runs, and the stage table. The download is a job
+OSAP signal, and triage and power runs (their results show in the results table). The download is a job
 (`POST /api/jobs/osap-fetch`). Runs made here are the user's."""
 
 from __future__ import annotations
@@ -64,8 +64,3 @@ class PowerBody(BaseModel):
 async def post_power(ref: str, body: PowerBody, ctx: AppContext = Depends(get_ctx)) -> dict:
     return asdict(await asyncio.to_thread(triage.run_power, ctx, ref, body.kind, body.horizon, body.expected,
                                           body.tracking_error, triage.SIGMA_CS, body.source, USER))
-
-
-@router.get("/table")
-async def get_table(ctx: AppContext = Depends(get_ctx)) -> dict:
-    return {"rows": [asdict(r) for r in await asyncio.to_thread(triage.stage_table, ctx)], "triage_t": triage.TRIAGE_T}
