@@ -65,12 +65,12 @@ def test_the_power_formula_matches_next_signals_recorded_formula_values():
     (20, 0.0086, 0.87, 0.020),   # earnings_yield confirm (issue 04)
 ])
 def test_the_detectable_ic_reproduces_next_signals_recorded_observed_power(h, ic, t, recorded):
-    found = detectable_ic([(h, ic, t)], h, bar=2.0)
+    found = detectable_ic([(h, ic / t)], h, bar=2.0)
     assert found.value == pytest.approx(recorded, abs=0.0006) and found.same_horizon == 1
 
 
 def test_the_detectable_ic_prefers_the_same_horizon_and_scales_others_by_root_h():
-    obs = [(20, 0.0079, 0.50), (20, 0.0086, 0.87), (5, 0.0036, 0.53)]
+    obs = [(20, 0.0079 / 0.50), (20, 0.0086 / 0.87), (5, 0.0036 / 0.53)]
     at20 = detectable_ic(obs, 20, bar=3.0)
     assert at20.same_horizon == 2 and at20.value == pytest.approx(3.0 * (0.0158 + 0.009885) / 2, rel=1e-3)
     at10 = detectable_ic(obs, 10, bar=2.0)
@@ -78,7 +78,7 @@ def test_the_detectable_ic_prefers_the_same_horizon_and_scales_others_by_root_h(
     se = sorted([0.0158 * math.sqrt(10 / 20), 0.009885 * math.sqrt(10 / 20), 0.003600 / 0.53 * math.sqrt(10 / 5)])
     assert at10.value == pytest.approx(2.0 * se[1], rel=1e-3)
     assert detectable_ic([], 20, bar=2.0) is None
-    assert detectable_ic([(20, 0.01, 0.0), (20, None, None)], 20, bar=2.0) is None
+    assert detectable_ic([(20, 0.0)], 20, bar=2.0) is None
 
 
 def test_a_strategy_sees_an_excess_of_z_tracking_errors_over_root_years():

@@ -87,11 +87,11 @@ def ic_from_spread(monthly_pct: float, quantile: float, h: int, sigma: float = S
     return monthly_pct / 100 / (sigma * gap) * math.sqrt(h / MONTH_DAYS)
 
 
-def detectable_ic(observed: Iterable[tuple[int, float | None, float | None]], h: int, bar: float) -> Detectable | None:
+def detectable_ic(observed: Iterable[tuple[int, float]], h: int, bar: float) -> Detectable | None:
     """The smallest IC the testbed sees at t `bar` and horizon `h`, from kept confirm windows'
-    (horizon, IC, t): each one's own standard error |IC / t| (cross-name correlation included, which
+    (horizon, standard error of the IC): each one's own error (cross-name correlation included, which
     the names-and-days formula leaves out), scaled by root h from its horizon, median, times the bar."""
-    usable = [(oh, abs(ic / t)) for oh, ic, t in observed if ic is not None and t]
+    usable = [(oh, se) for oh, se in observed if se > 0]
     if not usable:
         return None
     same = [se for oh, se in usable if oh == h]

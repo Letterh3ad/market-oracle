@@ -234,13 +234,24 @@ async def fetch_osap(ctx: AppContext, say: Callable[[str], None] = lambda _: Non
     return import_osap(ctx, folder)
 
 
+def _complete(part: Path, content_range: str | None) -> bool:
+    """A 416 means the part starts past the end: finished only if its size is the file's total
+    ("bytes */TOTAL"); a stale or oversized part must not become the file."""
+    total = (content_range or "").rpartition("/")[2]
+    return total.isdigit() and part.stat().st_size == int(total)
+
+
 async def _download(client: httpx.AsyncClient, f: OsapFile, folder: Path, say, stop) -> None:
     part = folder / (f.name + ".part")
     have = part.stat().st_size if part.exists() else 0
     headers = {"Range": f"bytes={have}-"} if have else {}
     async with client.stream("GET", DOWNLOAD.format(f.drive_id), headers=headers) as resp:
         if resp.status_code == 416:
-            part.replace(folder / f.name)
+            if _complete(part, resp.headers.get("content-range")):
+                part.replace(folder / f.name)
+            else:
+                part.unlink()
+                await _download(client, f, folder, say, stop)
             return
         resp.raise_for_status()
         if "text/html" in resp.headers.get("content-type", ""):
@@ -357,9 +368,11 @@ def _record(ctx: AppContext, repo: TriageRepo, m: MethodRow, stage: str, outcome
     return StageEntry(stage, outcome, summary, detail, m.status, status_to, by, at)
 
 
-def observed_windows(ctx: AppContext) -> list[tuple[int, float | None, float | None, float | None, int]]:
-    """Every kept signal test's confirm windows: (horizon, IC, t, names, IC days)."""
-    return [(w.horizon, w.ic, w.t, w.names, w.days) for t in signal_tests(ctx).values() for w in t.confirm]
+def observed_windows(ctx: AppContext) -> list[tuple[int, float, float | None, int]]:
+    """Every kept signal test's confirm windows: (horizon, IC standard error, names, IC days). The error
+    is the stored observed power over the bar that test froze, not rebuilt from the rounded IC and t."""
+    return [(w.horizon, w.observed_power / t.bar, w.names, w.days)
+            for t in signal_tests(ctx).values() for w in t.confirm if w.observed_power]
 
 
 def run_power(ctx: AppContext, ref: str, kind: str = "signal", horizon: int = 20, expected: float | None = None,
@@ -405,11 +418,11 @@ def _signal_power(detail: dict, observed, h: int, expected: float | None, post: 
                                    f"cross-sectional spread {sigma:.0%} a month")
     else:
         detail["expected_from"] = "given"
-    seen = detectable_ic([(oh, ic, t) for oh, ic, t, _, _ in observed], h, bar)
+    seen = detectable_ic([(oh, se) for oh, se, _, _ in observed], h, bar)
     if seen is None:
         raise InvalidQuery("no kept signal test to read the testbed's power from: run one first")
-    sized = [(n, d) for oh, _, _, n, d in observed if oh == h and n and d] or \
-        [(n, d) for _, _, _, n, d in observed if n and d]
+    sized = [(n, d) for oh, _, n, d in observed if oh == h and n and d] or \
+        [(n, d) for _, _, n, d in observed if n and d]
     formula = formula_power(median(n for n, _ in sized), int(median(d for _, d in sized)), h, bar) if sized else None
     detail.update(horizon=h, expected_ic=expected, detectable_ic=seen.value, bar=bar, windows=seen.used,
                   same_horizon=seen.same_horizon, formula_ic=formula)

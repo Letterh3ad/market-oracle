@@ -58,7 +58,7 @@ def run_osap(ctx: AppContext, args: argparse.Namespace) -> int:
     print(f"OSAP release {s.release}: " + (", ".join(f"{n} {k}" for k, n in sorted(s.signals.items()))
                                            or "nothing imported"))
     for v in s.variants:
-        print(f"  {v.variant}: {v.signals} signals, {v.rows} months, {v.first} to {v.last}")
+        print(f"  {v.variant}: {v.signals} signals, {v.rows} signal-months, {v.first} to {v.last}")
     for i in s.imports:
         print(f"  imported {i.file} ({i.what}, {i.rows} rows) at {i.at[:16].replace('T', ' ')}")
     print(f"Files in {s.folder}: {', '.join(s.on_disk) or 'none'}")

@@ -16,9 +16,32 @@ function statusText(s) {
     + `${s.window_open ? "open now" : `opens ${s.next_window}`}.`;
 }
 
+const signed = (x, digits = 2) => `${x >= 0 ? "+" : ""}${x.toFixed(digits)}`;
+
+// The same lines `oracle lab triage` and `oracle lab power` print under a stage's summary.
+function detailLines(d) {
+  const lines = [];
+  for (const [key, label] of [["original", "original portfolio"], ["large", "large caps"]]) {
+    if (!d[key]) continue;
+    const spans = d[key].spans.filter((s) => s.mean != null)
+      .map((s) => `${s.label} ${signed(s.mean)} t ${(s.t || 0).toFixed(2)} (${s.n} m)`).join("; ");
+    lines.push(`${label}: ${spans}${d[key].decay == null ? "" : `; decay ${Math.round(d[key].decay * 100)}%`}`);
+  }
+  if (d.paper && d.paper.return != null) {
+    lines.push(`paper (${d.paper.authors} ${d.paper.year}): ${signed(d.paper.return)}%/month`
+      + (d.paper.t != null ? ` t ${d.paper.t.toFixed(2)}` : ""));
+  }
+  if (d.formula_ic != null) {
+    lines.push(`names-and-days formula: ${d.formula_ic.toFixed(4)} (it leaves out cross-name correlation); `
+      + `expected from ${d.expected_from}`);
+  }
+  return lines;
+}
+
 function stageCell(e) {
   if (!e) return el("td", { class: "small dim" }, "");
   return el("td", { class: `small ${outcomeTone(e.outcome)}`, "data-stage": e.stage }, `${e.outcome}: ${e.summary}`,
+    ...detailLines(e.detail || {}).map((line) => el("div", { class: "dim", "data-detail": "line" }, line)),
     el("div", { class: "dim" }, `${e.status_from} to ${e.status_to}, ${e.by}, ${String(e.at).slice(0, 10)}`));
 }
 

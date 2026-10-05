@@ -16,7 +16,8 @@ from tests.fakes.clock import FakeClock
 from tests.fakes.osap import write_release
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=timezone.utc)
-KEPT = [(20, 0.0079, 0.50, 480.0, 1680), (20, 0.0086, 0.87, 480.0, 1680), (5, 0.0036, 0.53, 480.0, 1680)]
+REAL_OBSERVED_WINDOWS = triage.observed_windows
+KEPT = [(20, 0.0079 / 0.50, 480.0, 1680), (20, 0.0086 / 0.87, 480.0, 1680), (5, 0.0036 / 0.53, 480.0, 1680)]
 """momentum_12_1, earnings_yield and reversal_1m's confirm windows as next-signals recorded them."""
 
 
@@ -60,8 +61,9 @@ def test_the_import_reads_the_published_figures_of_three_known_anomalies(importe
 
 
 def test_the_original_sample_reproduces_each_papers_mean_and_t(imported):
-    """The mechanics only: the series are shaped to the published numbers. The same check on the real
-    release is open until the download runs in the compute window."""
+    """Checks the mechanics, not the published numbers: the series are shaped to equal them, so this
+    proves only that the parse and split carry them through. The real release is checked after the
+    download, in the compute window."""
     for ref, signal, mean, t in (("T-13", "Mom12m", 1.31, 3.74), ("T-07", "GP", 0.31, 2.49),
                                  ("T-08", "AssetGrowth", 1.73, 8.45)):
         go(imported, ref, signal)
@@ -150,6 +152,8 @@ def _drive(served: dict[str, bytes], seen: list):
         body = served[name]
         if rng := request.headers.get("Range"):
             start = int(rng.removeprefix("bytes=").rstrip("-"))
+            if start >= len(body):
+                return httpx.Response(416, headers={"content-range": f"bytes */{len(body)}"})
             return httpx.Response(206, content=body[start:], headers={"content-type": "application/octet-stream"})
         return httpx.Response(200, content=body, headers={"content-type": "application/octet-stream"})
     return httpx.MockTransport(handler)
@@ -179,9 +183,35 @@ async def test_the_fetch_resumes_a_part_file_keeps_done_files_and_imports(ctx, t
     assert set(triage.osap_status(ctx).on_disk) == {f.name for f in triage.FILES}
 
 
+@pytest.mark.parametrize("extra, kept", [(b"", True), (b"stale", False)])
+async def test_a_416_finishes_only_a_part_of_the_expected_size(ctx, tmp_path, monkeypatch, extra, kept):
+    monkeypatch.setattr(triage, "local_now", lambda c: datetime(2026, 10, 5, 2, 0))
+    source = write_release(tmp_path / "source")
+    served = {f.name: (source / f.name).read_bytes() for f in triage.FILES}
+    folder = triage.osap_folder(ctx)
+    folder.mkdir(parents=True)
+    (folder / "SignalDoc.csv").write_bytes(served["SignalDoc.csv"])
+    (folder / "PredictorPortsFull.csv.part").write_bytes(served["PredictorPortsFull.csv"] + extra)
+    seen: list = []
+    ctx.transport = _drive(served, seen)
+    await triage.fetch_osap(ctx)
+    ranges = [r for n, r in seen if n == "PredictorPortsFull.csv"]
+    assert ranges == (["bytes=%d-" % len(served["PredictorPortsFull.csv"])] if kept else
+                      ["bytes=%d-" % (len(served["PredictorPortsFull.csv"]) + 5), None])
+    assert (folder / "PredictorPortsFull.csv").read_bytes() == served["PredictorPortsFull.csv"]
+
+
 async def test_a_drive_page_instead_of_the_file_is_refused(ctx, monkeypatch):
     monkeypatch.setattr(triage, "local_now", lambda c: datetime(2026, 10, 5, 2, 0))
     ctx.transport = httpx.MockTransport(lambda r: httpx.Response(200, text="<html>quota</html>",
                                                                  headers={"content-type": "text/html"}))
     with pytest.raises(InvalidQuery, match="sent a page"):
         await triage.fetch_osap(ctx)
+
+
+def test_observed_windows_take_the_error_from_the_stored_observed_power_and_the_tests_bar(ctx, monkeypatch):
+    from types import SimpleNamespace as NS
+    window = lambda h, power: NS(horizon=h, observed_power=power, names=480.0, days=1680)
+    tests = {"a": NS(bar=3.0, confirm=[window(20, 0.0111), window(5, None)]), "b": NS(bar=2.0, confirm=[window(5, 0.02)])}
+    monkeypatch.setattr(triage, "signal_tests", lambda c: tests)
+    assert REAL_OBSERVED_WINDOWS(ctx) == [(20, pytest.approx(0.0037), 480.0, 1680), (5, pytest.approx(0.01), 480.0, 1680)]

@@ -57,6 +57,27 @@ def test_the_card_shows_the_data_and_the_stage_table():
     assert "go to fail, user, 2026-10-04" in text
 
 
+DETAILED = {**TRIAGED, "detail": {
+    "original": {"spans": [{"label": "in sample", "mean": 1.31, "t": 3.74, "n": 300},
+                           {"label": "post publication", "mean": 0.5, "t": 1.2, "n": 120},
+                           {"label": "empty", "mean": None, "t": None, "n": 0}], "decay": 0.62},
+    "large": {"spans": [{"label": "since 2000", "mean": 0.3, "t": None, "n": 300}], "decay": None},
+    "paper": {"authors": "Jegadeesh and Titman", "year": 1993, "return": 1.31, "t": 3.74},
+    "formula_ic": 0.0156, "expected_from": "given"}}
+
+
+def test_the_stage_cell_shows_the_cli_detail_lines():
+    text = run("""
+        await section.start(); await settle();
+        console.log(JSON.stringify(node.all((n) => n.attrs["data-detail"] === "line").map((n) => n.textContent)));
+    """, table={**TABLE, "rows": [{**TABLE["rows"][0], "triage": DETAILED, "power": DETAILED}]})
+    assert text[:3] == [
+        "original portfolio: in sample +1.31 t 3.74 (300 m); post publication +0.50 t 1.20 (120 m); decay 62%",
+        "large caps: since 2000 +0.30 t 0.00 (300 m)",
+        "paper (Jegadeesh and Titman 1993): +1.31%/month t 3.74"]
+    assert text[3] == ("names-and-days formula: 0.0156 (it leaves out cross-name correlation); expected from given")
+
+
 def test_pick_map_triage_and_a_refused_power_and_download():
     asked, bodies, text = run("""
         await section.start(); await settle();

@@ -17,5 +17,8 @@ models/
 /holiday_watch/config.toml
 /holiday-reports/
 
+# OSAP release download (third-party data, not redistributed)
+/osap/
+
 # Holiday watchdog output (local reports, state, fix-run logs)
 /holiday-reports/
