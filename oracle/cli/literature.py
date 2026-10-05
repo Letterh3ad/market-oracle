@@ -85,6 +85,8 @@ def print_source(s: Source, score: float | None = None) -> None:
     print(f"    {', '.join(s.keys) or 'no id'}{'  ' + s.url if s.url else ''}")
     if s.methods:
         print(f"    methods: {', '.join(s.methods)}")
+    if s.full_text_via:
+        print(f"    full text: from {s.full_text_via}, {s.full_text_at[:10]} (oracle lab text #{s.id})")
 
 
 def print_hits(hits: list[MethodHit]) -> None:

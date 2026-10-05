@@ -109,4 +109,16 @@ def test_the_funnel_stages_add_the_osap_tables_and_keep_every_method(tmp_path):
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"osap_signals", "osap_returns", "osap_imports", "lab_osap_map", "lab_stages"} <= tables
     assert [r[0] for r in conn.execute("SELECT ref FROM lit_methods")] == ["T-01"]
+
+
+def test_full_texts_add_their_tables_to_a_seeded_index(tmp_path):
+    from oracle.store.testbed_migrations import t0012_full_texts
+    conn = connect(tmp_path / "research.db")
+    migrate(conn, MIGRATIONS[:MIGRATIONS.index(t0012_full_texts)])
+    conn.execute("INSERT INTO lit_sources (title, quality, added_at, added_by) VALUES ('P', 'abstract-only', 'x', 'u')")
+    conn.commit()
+    migrate(conn, MIGRATIONS)
+    assert conn.execute("SELECT count(*) FROM lit_sources").fetchone()[0] == 1
+    assert conn.execute("SELECT count(*) FROM lit_full_texts").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM lit_wanted").fetchone()[0] == 0
     conn.close()

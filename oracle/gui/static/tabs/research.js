@@ -3,10 +3,11 @@
 import { el } from "../lib/dom.js";
 import { scoreboardSection } from "../lib/lab.js";
 import { literatureSection } from "../lib/literature.js";
+import { papersSection } from "../lib/papers.js";
 import { strategySection } from "../lib/strategy.js";
 import { funnelSection } from "../lib/triage.js";
 
-const SECTIONS = [scoreboardSection, strategySection, funnelSection, literatureSection];
+const SECTIONS = [scoreboardSection, strategySection, funnelSection, literatureSection, papersSection];
 
 function render(target) {
   const sections = SECTIONS.map((make) => make());

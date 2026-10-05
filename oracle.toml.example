@@ -297,6 +297,8 @@ claude_model = "claude-opus-5"   # the model when backend is "claude"
 [research]
 # contact = "Your Name you@example.com"   # name and email for SEC EDGAR requests
 read_articles = 12   # articles a run reads in full and notes facts from, after its searches (1 to 30)
+# open_access_email = "you@example.com"   # email Unpaywall asks for when the lab looks up open-access papers (sent there only)
+inbox = ".scratch/research-lab/inbox"   # folder of paper PDFs you drop for the lab to match and read
 
 # API keys for paid sources. ORACLE_<NAME>_KEY in the environment overrides these,
 # so keys can stay out of files. This file is gitignored; keep it that way.

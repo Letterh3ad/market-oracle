@@ -23,6 +23,7 @@ function sourceItem(s, score, open) {
     score != null ? el("span", { class: "mono" }, `${score.toFixed(2)} `) : null,
     href ? el("a", { href, target: "_blank", rel: "noopener" }, cite(s)) : cite(s),
     el("span", { class: "small dim" }, ` ${s.keys.join(", ")}`),
+    s.full_text_via ? el("span", { class: "small" }, ` full text from ${s.full_text_via}, ${s.full_text_at.slice(0, 10)}`) : null,
     s.methods.length ? el("span", { class: "small" }, " yields ",
       ...s.methods.flatMap((ref, i) => [i ? ", " : "", refButton(ref, open)])) : null);
 }

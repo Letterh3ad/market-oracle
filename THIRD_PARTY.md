@@ -39,6 +39,7 @@ Every dependency, copied file, and reimplemented idea, with its license checked 
 | typing_extensions, packaging, setuptools (via torch) | PSF-2.0, Apache-2.0 OR BSD-2-Clause, MIT | torch's own dependencies; checked 2026-09-30 |
 | NVIDIA CUDA runtime DLLs (inside the cu128 torch wheel) | NVIDIA CUDA EULA; installed locally, not redistributed | GPU scoring; checked 2026-09-30 |
 | regex, PyYAML, tqdm, sympy, mpmath, networkx, Jinja2, MarkupSafe, filelock, fsspec, typer, rich, shellingham, markdown-it-py, mdurl (via torch, transformers, huggingface_hub) | Apache-2.0 AND CNRI-Python, MIT, MPL-2.0 AND MIT, BSD, BSD, BSD-3-Clause, BSD-3-Clause, BSD-3-Clause, MIT, BSD-3-Clause, MIT, MIT, ISC, MIT, MIT | their dependencies; checked 2026-09-30 |
+| pypdf 6.19 | BSD-3-Clause (pure Python, no dependencies) | text of open-access and inbox paper PDFs for the literature index (`oracle/lab/papers.py`); checked 2026-10-04 |
 | TradingView Lightweight Charts 4.2.3 (vendored file, licence header kept) | Apache-2.0 | price chart (`oracle/gui/static/vendor/`) |
 
 ## Data
@@ -77,6 +78,9 @@ Called over HTTP, not redistributed.
 | EODHD (paid, optional) | eodhd.com terms; enabled only with the user's key | fallback daily bars, FX and fundamentals (`oracle/market/eodhd.py`, `fx.py`, `fundamentals.py`) |
 | ECB data portal (SDMX API) | ECB reuse policy: free reuse with the source cited | reference FX rates (`oracle/market/fx.py`) |
 | Frankfurter (api.frankfurter.app) | Free, open source (MIT), serves ECB data | FX backup (`oracle/market/fx.py`) |
+| Unpaywall REST API (api.unpaywall.org/v2) | Free; asks for the caller's email on every call (the user's `[research] open_access_email`, sent there only) and at most 100,000 calls a day; its data is CC0. Lists legal open-access copies only | open-access lookup by DOI for the literature index (`oracle/services/papers_service.py`); checked 2026-10-04 |
+| Semantic Scholar Graph API (api.semanticscholar.org, keyless) | Semantic Scholar API License Agreement: free, attribution to Semantic Scholar where its data is shown (the page names it as the copy's source); keyless calls share a public rate pool. Copies it marks CLOSED are never fetched | second open-access lookup (`oracle/services/papers_service.py`); checked 2026-10-04 |
+| Open-access PDF hosts named by those two (publishers, repositories, arXiv) | each copy's own licence (CC BY and the like, or the publisher's free-to-read terms); read once for its text, kept locally, not redistributed. Shadow libraries are refused by host | full texts (`oracle/services/papers_service.py`); checked 2026-10-04 |
 | ExchangeRate-API open access (open.er-api.com) | Free tier; attribution required: "Rates By Exchange Rate API" (https://www.exchangerate-api.com), shown wherever its rates are displayed | today's FX for currencies others lack (`oracle/market/fx.py`) |
 
 ## Reimplemented ideas
@@ -96,6 +100,7 @@ Called over HTTP, not redistributed.
 | `wikipedia-largest-tech-companies.html`: the 2025 table, scripts and styling stripped | Wikipedia, "List of largest technology companies by revenue" (captured 2026-09-24) | CC BY-SA 4.0 (attribution in the file) | `tests/fixtures/list_pages/` |
 | Index member pages (one per index in `oracle/universe/indexes.py`), tables only | Wikipedia articles of those names (captured 2026-09-24) | CC BY-SA 4.0 (attribution in each file) | `tests/fixtures/indexes/` |
 | `osap/SignalDoc.csv`: the header and 5 rows (AssetGrowth, GP, Mom12m, STreversal, one placebo) verbatim | Open Source Asset Pricing release 2025.10 (captured 2026-10-04) | as its Data row (no stated licence; cited); small test input only | `tests/fixtures/osap/` |
+| `unpaywall-*.json`, `s2-*.json`: Unpaywall and Semantic Scholar answers for three DOIs (Jegadeesh-Titman 1993, Gu-Kelly-Xiu 2020, a PLOS ONE paper) | api.unpaywall.org and api.semanticscholar.org (recorded 2026-10-04) | Unpaywall data CC0; Semantic Scholar API licence, small test inputs only | `tests/fixtures/open_access/` |
 | `373220.KS.json`, `BT-A.L.json`, `SPY.json`: quoteSummary answers | Yahoo Finance (captured 2026-09-24) | Yahoo terms; small test inputs only | `tests/fixtures/yahoo/` |
 
 ## Dev dependencies
