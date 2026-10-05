@@ -46,7 +46,7 @@ def test_apply_marks_reports_each_and_is_idempotent(tmp_path, capsys, monkeypatc
                      encoding="utf-8")
     assert main([*cmd, "apply-marks", str(marks)]) == 0
     out = capsys.readouterr().out
-    assert "N-01     applied     go: now go, by u_1 at 2026-10-05T07:30:00+00:00" in out
+    assert "N-01     applied     go: now go, by page:u_1 at 2026-10-05T07:30:00+00:00" in out
     assert "NOPE     unknown     no method 'NOPE' in the literature index" in out
     assert "2 marks: 1 applied, 1 unknown" in out
     assert main([*cmd, "apply-marks", str(marks)]) == 0

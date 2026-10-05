@@ -257,10 +257,14 @@ async function weeklyMarks(root, claude) {
   if (!cards.length) return;
   const say = (text) => { if (state) state.textContent = text; };
   const buttons = (card) => [...card.querySelectorAll("button[data-mark]")];
+  const controls = (card) => [...buttons(card), card.querySelector("textarea")];
   let writable = false;
+  let locked = false;
+  let ready = false;
   const lock = (why) => {
     writable = false;
-    for (const card of cards) for (const x of [...buttons(card), card.querySelector("textarea")]) x.disabled = true;
+    locked = true;
+    for (const card of cards) for (const x of controls(card)) x.disabled = true;
     say(why);
   };
   let db = null;
@@ -270,52 +274,84 @@ async function weeklyMarks(root, claude) {
   try { user = await claude.use("user"); } catch { user = null; }
   const me = user ? await user.id() : null;
   writable = !user || (await user.can("data.write")) !== false;
-  const docs = {};
+  let saved = {};
+  const local = {};
   const queue = {};
-  const show = (card) => {
-    const d = docs[card.dataset.key];
+  const shown = (key) => local[key] || saved[key];
+  const show = (card, problem) => {
+    const d = shown(card.dataset.key);
     for (const b of buttons(card)) b.setAttribute("aria-pressed", String(!!d && d.mark === b.dataset.mark));
     const ta = card.querySelector("textarea");
     if (root.activeElement !== ta) ta.value = d && typeof d.note === "string" ? d.note : "";
     const when = d && typeof d.at === "string" ? ` ${d.at.slice(0, 16).replace("T", " ")} UTC` : "";
-    card.querySelector(".saved").textContent = d
-      ? (d.mark ? `Marked ${d.mark}` : "Note saved") + when + (me && d.by === me ? " by you" : "")
-      : "Not marked yet.";
+    card.querySelector(".saved").textContent = problem || (d
+      ? (local[card.dataset.key] ? "Saving: " : "") + (d.mark ? `Marked ${d.mark}` : "Note saved") + when
+        + (me && d.by === me ? " by you" : "")
+      : "Not marked yet.");
+  };
+  const pause = () => new Promise((r) => setTimeout(r, 200 + Math.random() * 600));
+  const send = async (key, body) => {
+    try {
+      await db.collection("marks").doc(key).set(body);
+    } catch (e) {
+      if (!(e && e.code === "unavailable")) throw e;
+      await pause();
+      await db.collection("marks").doc(key).set(body);
+    }
   };
   const write = (card, change) => {
     const key = card.dataset.key;
-    const prev = docs[key] || {};
-    const body = { id: key, mark: prev.mark || "", note: prev.note || "", ...change, by: me,
-      at: new Date().toISOString() };
-    docs[key] = body;
+    const prev = shown(key) || {};
+    const at = new Date().toISOString();
+    const mark = change.mark !== undefined ? change.mark : prev.mark || "";
+    const body = { id: key, mark, note: prev.note || "", ...change, by: me, at,
+      mark_at: mark !== (prev.mark || "") ? at : prev.mark_at || "" };
+    local[key] = body;
     show(card);
-    queue[key] = (queue[key] || Promise.resolve()).then(() => db.collection("marks").doc(key).set(body)).then(
-      () => say("Saved. The next research cycle applies the marks; steer.md overrides any mark."),
+    queue[key] = (queue[key] || Promise.resolve()).then(() => send(key, body)).then(
+      () => {
+        if (local[key] === body) { delete local[key]; saved[key] = body; }
+        show(card);
+        say("Saved. The next research cycle applies the marks; steer.md overrides any mark.");
+      },
       (e) => {
-        if (e && (e.code === "invalid_argument" || e.code === "revoked")) lock("Read-only: this page could not save your mark.");
-        else if (e && e.code === "quota_exceeded") say("Not saved: the page's database is full.");
-        else say("Not saved: the page's database did not answer; try again.");
+        if (local[key] === body) delete local[key];
+        const code = e && e.code;
+        const why = code === "quota_exceeded" ? "the page's database is full"
+          : code === "invalid_argument" || code === "revoked" ? "this page cannot save marks for you"
+            : "the page's database did not answer; try again";
+        show(card, `Not saved: ${why}.`);
+        if (code === "invalid_argument" || code === "revoked") lock("Read-only: this page could not save your mark.");
+        else say(`Not saved: ${why}.`);
       });
     return queue[key];
   };
   for (const card of cards) {
     const ta = card.querySelector("textarea");
     for (const b of buttons(card)) {
-      b.addEventListener("click", () => { if (writable) write(card, { mark: b.dataset.mark }); });
-      b.disabled = !writable;
+      b.addEventListener("click", () => { if (writable && ready) write(card, { mark: b.dataset.mark }); });
     }
     ta.addEventListener("change", () => {
-      if (writable && ta.value !== ((docs[card.dataset.key] || {}).note || "")) write(card, { note: ta.value });
+      const before = (shown(card.dataset.key) || {}).note || "";
+      if (writable && ready && ta.value !== before) write(card, { note: ta.value });
     });
-    ta.disabled = !writable;
     show(card);
   }
-  say(writable ? "Pick go, drop or dig deeper; a note saves when you leave its box."
-    : "Read-only for you: your sharing level cannot save marks.");
+  say(writable ? "Loading saved marks..." : "Read-only for you: your sharing level cannot save marks.");
   db.collection("marks").onSnapshot((snap) => {
-    for (const d of snap.docs) if (d.exists) docs[d.id] = d.data();
+    saved = {};
+    for (const d of snap.docs) if (d.exists) saved[d.id] = d.data();
     for (const card of cards) show(card);
-  }, () => say("Saved marks could not be loaded; reload the page to try again."));
+    if (!ready && !locked) {
+      ready = true;
+      for (const card of cards) for (const x of controls(card)) x.disabled = !writable;
+      if (writable) say("Pick go, drop or dig deeper; a note saves when you leave its box.");
+    }
+  }, (e) => {
+    const dead = e && (e.code === "revoked" || e.code === "invalid_argument");
+    if (dead) lock("Read-only: saved marks are not available here.");
+    else say("Saved marks could not be loaded; reload the page to try again.");
+  });
 }
 weeklyMarks(document, window.claude);
 """

@@ -25,7 +25,7 @@ def add_commands(sub) -> None:
 
     p = sub.add_parser("apply-marks", description="apply the page's marks to the literature index with who and when: "
                                                   f"a JSON list of the {COLLECTION} documents, each {{id, mark, "
-                                                  "note, by, at}}; a mark already applied at the same time is "
+                                                  "note, by, at, mark_at}}; a mark already applied at its mark_at is "
                                                   "skipped, unknown methods are reported")
     p.add_argument("file", type=Path)
     p.set_defaults(handler=run_apply_marks)

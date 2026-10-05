@@ -25,7 +25,7 @@ PAGE_PATH = Path(".scratch/research-lab/weekly/page.html")
 """Beside oracle.toml, like the inbox: the same place whichever session builds it."""
 META_KEY = "lab_weekly_page"
 PAGE_BY = "page"
-"""Who a mark is logged as when the page gave no usable viewer id."""
+"""Who a page mark is logged as: `page:<viewer id>`, or `page` alone without a usable id."""
 BY_CHARS = 40
 OUTCOMES = ("applied", "already", "superseded", "no-mark", "unknown", "refused")
 
@@ -97,18 +97,21 @@ def _when(at: object) -> datetime | None:
 
 
 def _who(by: object, note: str) -> tuple[str, str]:
-    """A viewer id fits the mark log's who unless it is long; then the log says page and the note keeps it."""
+    """`page:<viewer id>`, so a page mark is never logged as the user or the autopilot; a viewer id too long
+    for the mark log's who is logged as `page` and kept in the note."""
     by = by.strip() if isinstance(by, str) else ""
     if not by:
         return PAGE_BY, note
-    if len(by) > BY_CHARS:
+    if len(PAGE_BY) + 1 + len(by) > BY_CHARS:
         return PAGE_BY, f"{note} (page viewer {by})".strip()
-    return by, note
+    return f"{PAGE_BY}:{by}", note
 
 
 def _one(ctx: AppContext, doc: dict, at: datetime) -> MarkApplied:
-    key, how = doc["id"].strip(), doc.get("mark") or ""
+    key, how = doc["id"].strip(), doc.get("mark")
     note = doc.get("note") if isinstance(doc.get("note"), str) else ""
+    if how is not None and not isinstance(how, str):
+        return MarkApplied(key, "refused", f"a mark is go, drop or dig, got {how!r}")
     if not how:
         return MarkApplied(key, "no-mark", "a note with no mark: nothing to apply")
     if how not in MARKS:
@@ -131,17 +134,20 @@ def _one(ctx: AppContext, doc: dict, at: datetime) -> MarkApplied:
 
 
 def apply_marks(ctx: AppContext, docs: object) -> list[MarkApplied]:
-    """Each page mark, oldest first, through the mark service. Idempotent: a mark the index already holds at
-    the same time is skipped, as is one an index mark made later overrides. Nothing is refused silently."""
+    """Each page mark, oldest first by `mark_at` (when its mark last changed; a note edit moves only `at`),
+    through the mark service. Idempotent: a mark the index already holds at that time is skipped, as is one an
+    index mark made later overrides. Nothing is refused silently."""
     if not isinstance(docs, list):
-        raise InvalidQuery("marks are a JSON list of {id, mark, note, by, at}, as the page's database holds them")
+        raise InvalidQuery("marks are a JSON list of {id, mark, note, by, at, mark_at}, as the page's database "
+                           "holds them")
     out: list[MarkApplied] = []
     good: list[tuple[datetime, dict]] = []
     for i, d in enumerate(docs):
         if not isinstance(d, dict) or not isinstance(d.get("id"), str) or not d["id"].strip():
             out.append(MarkApplied(f"#{i + 1}", "refused", "not a mark: needs an id (the method ref)"))
-        elif (at := _when(d.get("at"))) is None:
-            out.append(MarkApplied(d["id"], "refused", f"needs an ISO time with a zone in at, got {d.get('at')!r}"))
+        elif (at := _when(d.get("mark_at") or d.get("at"))) is None:
+            out.append(MarkApplied(d["id"], "refused", "needs an ISO time with a zone in mark_at, got "
+                                                       f"{d.get('mark_at') or d.get('at')!r}"))
         else:
             good.append((at, d))
     good.sort(key=lambda x: x[0])
