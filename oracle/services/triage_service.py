@@ -33,11 +33,10 @@ from oracle.services.signal_test_service import signal_tests
 from oracle.store.db import to_utc_iso
 from oracle.store.lab import LabTestRepo
 from oracle.store.literature import LiteratureRepo, MethodRow
-from oracle.store.triage import ImportRow, OsapSignal, StageRow, TriageRepo, VariantCount
+from oracle.store.triage import ImportRow, OsapSignal, TriageRepo, VariantCount
 
-__all__ = ["FILES", "RELEASE", "TRIAGE_T", "OsapFile", "OsapStatus", "StageEntry", "TableRow", "check_window", "fetch_osap",
-           "import_osap", "map_method", "observed_windows", "osap_folder", "osap_status", "run_power", "run_triage",
-           "stage_table"]
+__all__ = ["FILES", "RELEASE", "TRIAGE_T", "OsapFile", "OsapStatus", "StageEntry", "check_window", "fetch_osap",
+           "import_osap", "map_method", "observed_windows", "osap_folder", "osap_status", "run_power", "run_triage"]
 
 RELEASE = "2025.10"
 """The OSAP data release the pinned files belong to (openassetpricing.com, version 2.0.0)."""
@@ -97,19 +96,6 @@ class StageEntry:
     status_to: str
     by: str
     at: str
-
-
-@dataclass(frozen=True)
-class TableRow:
-    ref: str
-    name: str
-    family: str
-    status: str
-    signal: str | None
-    triage: StageEntry | None
-    """The newest triage run."""
-    power: StageEntry | None
-    runs: int
 
 
 def _float(x: str | None) -> float | None:
@@ -451,27 +437,3 @@ def _strategy_power(detail: dict, expected: float | None, te: float | None, post
     if expected >= seen:
         return "pass", f"expected excess {expected:.2%} a year; the confirm window sees {seen:.2%}"
     return "stop", f"could not see: expected excess {expected:.2%} a year, the confirm window sees {seen:.2%}"
-
-
-def _entry(s: StageRow) -> StageEntry:
-    return StageEntry(s.stage, s.outcome, s.summary, s.detail, s.status_from, s.status_to, s.by, s.at)
-
-
-def stage_table(ctx: AppContext) -> list[TableRow]:
-    """Every method with an OSAP signal or a stage run: its newest triage and power runs."""
-    with open_index(ctx) as r:
-        repo = TriageRepo(r.conn)
-        mapped, runs = repo.mapped(), repo.stages()
-        by_method: dict[int, list[StageRow]] = {}
-        for s in runs:
-            by_method.setdefault(s.method_id, []).append(s)
-        out = []
-        for m in LiteratureRepo(r.conn).methods():
-            if m.id not in mapped and m.id not in by_method:
-                continue
-            mine = by_method.get(m.id, [])
-            last = {s.stage: s for s in mine}
-            out.append(TableRow(m.ref, m.name, m.family, m.status, mapped.get(m.id),
-                                _entry(last["triage"]) if "triage" in last else None,
-                                _entry(last["power"]) if "power" in last else None, len(mine)))
-        return out

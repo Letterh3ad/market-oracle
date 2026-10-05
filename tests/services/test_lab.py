@@ -3,6 +3,7 @@ Bonferroni bar frozen at registration, the commit gate on data runs, and the sco
 
 import subprocess
 from dataclasses import replace
+from types import SimpleNamespace
 from datetime import date
 
 import pytest
@@ -14,7 +15,7 @@ from oracle.services.event_study_service import run_event_study
 from oracle.services.lab_registry import (
     Template, commit_test, drop_test, hypotheses, register_test, registration, registrations,
 )
-from oracle.services.lab_service import near_check_text, scoreboard
+from oracle.services.lab_service import near_check_text, scoreboard, trend_turnover
 from oracle.services.laya_test_service import (
     DEFAULT_LIST, MODEL_TAG, TEST_START, HorizonResult, LayaTest, keep_laya_test,
 )
@@ -243,6 +244,9 @@ async def test_the_scoreboard_shows_old_verdicts_as_kept_with_their_own_bar_and_
     assert (rev.value, rev.t, rev.verdict, rev.power) == (old.confirm[0].ic, old.confirm[0].t,
                                                           old.confirm[0].verdict_text, old.confirm[0].observed_power)
     assert rev.bar == "t > 2.00" and rev.legacy and rev.measure == "IC" and rev.run_at == old.run_at
+    assert (rev.train, rev.turnover, rev.break_even) == (old.train[0].ic, old.confirm[0].turnover,
+                                                         old.confirm[0].break_even)
+    assert rev.turnover is not None
     assert rows[("momentum_12_1", 20)].verdict == "not run"
     assert rows[("draft", 5)].verdict.startswith("not committed") and rows[("draft", 5)].bar == f"t >= {draft.bar:.2f}"
     assert rows[("trend_overlay", None)].bar.startswith("worst fall")
@@ -315,3 +319,9 @@ def test_a_registration_records_that_its_near_fail_check_ran_on_keywords_only(ct
     assert reg.near_fail is None and kept.near_check == "keyword" and "not reachable" in kept.near_check_note
     assert near_check_text(kept).startswith("ran on keywords only")
     assert near_check_text(registration(ctx, "momentum_12_1")) is None
+
+
+def test_trend_turnover_counts_each_switch_as_half_a_round_trip_a_year():
+    ten_years = SimpleNamespace(start=date(2010, 1, 1), end=date(2020, 1, 1), switches=6)
+    assert trend_turnover(ten_years) == pytest.approx(6 * 0.5 / ((date(2020, 1, 1) - date(2010, 1, 1)).days / 365.25))
+    assert trend_turnover(SimpleNamespace(start=date(2010, 1, 1), end=date(2010, 1, 1), switches=0)) is None

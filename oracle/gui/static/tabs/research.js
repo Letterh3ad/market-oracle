@@ -1,16 +1,27 @@
-// The research lab (research-lab spec 17): the scoreboard first, the strategy tests, the funnel stages, then the
-// literature index; later panels (results table, papers) append to SECTIONS.
+// The research lab (research-lab spec 17): the scoreboard, the results table, the strategy tests, the funnel stages,
+// the literature index, then the papers card. The results table links to a method's notes (literature) and a test's
+// registration (scoreboard); a funnel run reloads it.
 import { el } from "../lib/dom.js";
 import { scoreboardSection } from "../lib/lab.js";
 import { literatureSection } from "../lib/literature.js";
 import { papersSection } from "../lib/papers.js";
+import { resultsSection } from "../lib/results.js";
 import { strategySection } from "../lib/strategy.js";
 import { funnelSection } from "../lib/triage.js";
 
-const SECTIONS = [scoreboardSection, strategySection, funnelSection, literatureSection, papersSection];
+const reveal = (section) => section.node.scrollIntoView?.({ behavior: "smooth" });
 
 function render(target) {
-  const sections = SECTIONS.map((make) => make());
+  const board = scoreboardSection();
+  const literature = literatureSection();
+  const holder = {};
+  const funnel = funnelSection({ changed: () => holder.results.start() });
+  holder.results = resultsSection({
+    openMethod: async (ref) => { await literature.open(ref); reveal(literature); },
+    openTest: async (key) => { await board.show(key); reveal(board); },
+    pick: (ref) => { funnel.pick(ref); reveal(funnel); },
+  });
+  const sections = [board, holder.results, strategySection(), funnel, literature, papersSection()];
   target.replaceChildren(el("div", null, ...sections.map((s) => s.node)));
   return Promise.all(sections.map((s) => s.start()));
 }

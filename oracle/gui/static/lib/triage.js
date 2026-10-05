@@ -1,7 +1,7 @@
 // The Research tab's funnel stages (research-lab 05): Open Source Asset Pricing's data (Download in the compute
-// window, Import from a folder), a method's OSAP signal, Triage (stage 1) and Power (stage 2), and the stage table.
+// window, Import from a folder), a method's OSAP signal, Triage (stage 1) and Power (stage 2). Their results show in
+// the results table (results.js), which `changed` reloads and whose Pick fills the method here.
 import { api } from "./api.js";
-import { table } from "./compare.js";
 import { el } from "./dom.js";
 import { followJob, sendJson } from "./ui.js";
 
@@ -45,25 +45,17 @@ function stageCell(e) {
     el("div", { class: "dim" }, `${e.status_from} to ${e.status_to}, ${e.by}, ${String(e.at).slice(0, 10)}`));
 }
 
-function funnelSection() {
+function funnelSection({ changed = async () => {} } = {}) {
   const note = el("div", { class: "form-note" });
   const say = (text, bad = true) => { note.className = bad ? "form-note down" : "form-note"; note.replaceChildren(text); };
   const status = el("p", { class: "small" });
-  const body = el("div");
 
   async function load() {
     try {
-      const [s, t] = await Promise.all([api("/api/lab/osap"), api("/api/lab/table")]);
-      status.replaceChildren(statusText(s));
-      body.replaceChildren(table([["Method"], ["Status"], ["OSAP"], ["Triage"], ["Power"]],
-        t.rows.map((r) => el("tr", { "data-method": r.ref },
-          el("td", null, r.name, " ", el("button", { type: "button", class: "small", onclick: () => { ref.value = r.ref; } },
-            "Pick"), el("div", { class: "small mono dim" }, r.ref)),
-          el("td", { class: "small" }, r.status), el("td", { class: "small mono" }, r.signal ?? ""),
-          stageCell(r.triage), stageCell(r.power))),
-        "No method has an OSAP signal or a stage run yet."));
-    } catch (err) { say(`Could not load the funnel stages: ${err.message}`); }
+      status.replaceChildren(statusText(await api("/api/lab/osap")));
+    } catch (err) { say(`Could not load the OSAP status: ${err.message}`); }
   }
+  const reload = () => Promise.all([load(), changed()]);
 
   const download = el("button", { type: "button", onclick: async () => {
     download.disabled = true;
@@ -72,14 +64,14 @@ function funnelSection() {
       say("The OSAP download is queued; follow it on the Activity tab.", false);
       await followJob(job, () => {});
       say("OSAP downloaded and imported.", false);
-    } catch (err) { say(err.message); } finally { download.disabled = false; await load(); }
+    } catch (err) { say(err.message); } finally { download.disabled = false; await reload(); }
   } }, "Download OSAP");
   const folder = el("input", { size: 40, "aria-label": "Folder holding OSAP's files" });
   const importer = el("button", { type: "button", onclick: async () => {
     try {
       const done = await sendJson("/api/lab/osap/import", { folder: folder.value.trim() });
       say(`Imported ${done.imports.map((i) => `${i.file} (${i.rows} rows)`).join(", ")}.`, false);
-      await load();
+      await reload();
     } catch (err) { say(err.message); }
   } }, "Import");
 
@@ -91,7 +83,7 @@ function funnelSection() {
     try {
       const msg = await call(r);
       say(msg, false);
-      await load();
+      await reload();
     } catch (err) { say(err.message); }
   } }, label);
   const map = run("Set OSAP signal", async (r) => {
@@ -127,8 +119,8 @@ function funnelSection() {
     el("div", { class: "row small" }, byHand, " note ", why, " ", triage),
     el("div", { class: "row small" }, kind, " horizon ", horizon, " expected ", expected, " tracking error ", te,
       " source ", source, " ", power),
-    note, body);
-  return { node, start: load };
+    note);
+  return { node, start: load, pick: (r) => { ref.value = r; } };
 }
 
-export { funnelSection };
+export { funnelSection, stageCell };

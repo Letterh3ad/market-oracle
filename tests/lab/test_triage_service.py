@@ -12,6 +12,7 @@ from oracle.services import literature_service as lab
 from oracle.services import triage_service as triage
 from oracle.services.context import open_context
 from oracle.services.errors import InvalidQuery
+from oracle.services.results_service import results_table
 from tests.fakes.clock import FakeClock
 from tests.fakes.osap import write_release
 
@@ -105,9 +106,9 @@ def test_a_large_enough_expected_ic_passes_power_and_stays_ready_to_build(import
     triage.run_triage(imported, "T-07")
     done = triage.run_power(imported, "T-07", expected=0.08, source="a paper's IC")
     assert (done.outcome, done.status_to) == ("pass", "power") and done.detail["expected_from"] == "given"
-    rows = {r.ref: r for r in triage.stage_table(imported)}
+    rows = {r.ref: r for r in results_table(imported).rows}
     assert rows["T-07"].triage.outcome == "pass" and rows["T-07"].power.outcome == "pass"
-    assert rows["T-07"].signal == "GP" and rows["T-07"].runs == 2
+    assert rows["T-07"].osap == "GP" and (rows["T-07"].stage, rows["T-07"].verdict) == ("power", "open")
 
 
 def test_a_strategy_needs_its_tracking_error_and_is_judged_on_excess(imported):

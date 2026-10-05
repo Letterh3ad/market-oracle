@@ -135,7 +135,7 @@ function scoreboardSection() {
       + "judged and power (the smallest IC its confirm window could see at that bar). The test runs themselves stay "
       + "on the Ledgers tab's Signal tests card."),
     head, note, body, detail, form);
-  return { node, start: load };
+  return { node, start: load, show };
 }
 
 export { scoreboardSection, tone, value };

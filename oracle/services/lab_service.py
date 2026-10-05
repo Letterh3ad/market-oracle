@@ -12,7 +12,7 @@ from oracle.services.context import AppContext
 from oracle.services.lab_registry import hypotheses, registrations
 from oracle.store.lab import Registration
 
-__all__ = ["ScoreRow", "Scoreboard", "bar_text", "scoreboard"]
+__all__ = ["ScoreRow", "Scoreboard", "bar_text", "scoreboard", "trend_turnover"]
 
 NOT_RUN = "not run"
 UNCOMMITTED = "not committed: no data run yet"
@@ -40,6 +40,12 @@ class ScoreRow:
     note: str
     dsr: float | None = None
     """A strategy's deflated Sharpe probability of its daily excess over the index on confirm."""
+    train: float | None = None
+    """The same measure on train (a trend overlay's choose window)."""
+    turnover: float | None = None
+    """A signal's one-way turnover per rebalance of its top-fifth book; a strategy's yearly one-way turnover."""
+    break_even: float | None = None
+    """The one-way cost per trade that takes a signal's top-fifth edge to zero."""
 
 
 @dataclass(frozen=True)
@@ -70,8 +76,10 @@ def _signal_rows(reg: Registration, kept: dict) -> list[dict]:
     if t is None:
         return []
     by_h = {w.horizon: w for w in t.confirm}
+    train = {w.horizon: w.ic for w in t.train}
     return [dict(horizon=h, measure="IC", value=w.ic, t=w.t, verdict=w.verdict_text, power=w.observed_power,
-                 run_at=t.run_at) for h in reg.horizons if (w := by_h.get(h))]
+                 run_at=t.run_at, train=train.get(h), turnover=w.turnover, break_even=w.break_even)
+            for h in reg.horizons if (w := by_h.get(h))]
 
 
 def _event_rows(reg: Registration, study) -> list[dict]:
@@ -80,8 +88,9 @@ def _event_rows(reg: Registration, study) -> list[dict]:
     if kind is None:
         return []
     by_h = {r.horizon: r for r in kind.confirm}
+    train = {r.horizon: r.mean for r in kind.train}
     return [dict(horizon=h, measure="mean CAR", value=r.mean, t=r.t, verdict=kind.verdict, power=None,
-                 run_at=study.run_at) for h in reg.horizons if (r := by_h.get(h))]
+                 run_at=study.run_at, train=train.get(h)) for h in reg.horizons if (r := by_h.get(h))]
 
 
 def _laya_rows(ctx: AppContext, reg: Registration) -> list[dict]:
@@ -98,7 +107,15 @@ def _trend_rows(reg: Registration, t) -> list[dict]:
         return []
     c = t.confirm
     return [dict(horizon=None, measure="CAGR over buy and hold", value=c.trend.cagr - c.held.cagr, t=None,
-                 verdict=t.verdict, power=None, run_at=t.run_at)]
+                 verdict=t.verdict, power=None, run_at=t.run_at, train=t.choose.trend.cagr - t.choose.held.cagr,
+                 turnover=trend_turnover(c))]
+
+
+def trend_turnover(w) -> float | None:
+    """Yearly one-way, as the strategy backtest counts it: each switch moves the whole pot one way,
+    which is half of a round trip."""
+    years = (w.end - w.start).days / 365.25
+    return w.switches * 0.5 / years if years > 0 else None
 
 
 def _strategy_rows(reg: Registration, t) -> list[dict]:
@@ -106,7 +123,7 @@ def _strategy_rows(reg: Registration, t) -> list[dict]:
         return []
     c = t.confirm
     return [dict(horizon=None, measure="CAGR over the index after costs", value=c.excess, t=None, verdict=t.verdict,
-                 power=None, run_at=t.run_at, dsr=c.dsr)]
+                 power=None, run_at=t.run_at, dsr=c.dsr, train=t.train.excess, turnover=c.strategy.turnover)]
 
 
 def scoreboard(ctx: AppContext) -> Scoreboard:
@@ -134,7 +151,8 @@ def scoreboard(ctx: AppContext) -> Scoreboard:
         rows += [ScoreRow(reg.key, reg.label, reg.kind, reg.registered_on, measure=f["measure"], horizon=f["horizon"],
                           value=f["value"], t=f["t"], bar=bar_text(reg), verdict=f["verdict"], power=f["power"],
                           legacy=reg.legacy, commit_hash=reg.commit_hash, run_at=f["run_at"], note=reg.note,
-                          dsr=f.get("dsr"))
+                          dsr=f.get("dsr"), train=f.get("train"), turnover=f.get("turnover"),
+                          break_even=f.get("break_even"))
                  for f in found]
     n = hypotheses(regs)
     return Scoreboard(tuple(rows), n, bonferroni_bar(n + 1))

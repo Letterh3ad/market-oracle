@@ -1,5 +1,5 @@
 """The Research tab's funnel stages card (research-lab 05), run in node against mocked routes; the
-last test feeds it the real routes' answers."""
+last test feeds it the real routes' answers. Its runs show in the results table (test_results_js)."""
 
 import json
 import subprocess
@@ -20,11 +20,9 @@ STATUS = {"release": "2025.10", "signals": {"Predictor": 212, "Placebo": 114},
           "window": "the compute window (weekdays 01:00-18:00, weekends 01:00-08:00, local time)"}
 TRIAGED = {"stage": "triage", "outcome": "stop", "summary": "OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00",
            "detail": {}, "status_from": "go", "status_to": "fail", "by": "user", "at": "2026-10-04T12:00:00+00:00"}
-TABLE = {"rows": [{"ref": "T-13", "name": "Residual momentum", "family": "A", "status": "fail", "signal": "Mom12m",
-                   "triage": TRIAGED, "power": None, "runs": 1}], "triage_t": 1.5}
 
 
-def run(body: str, status=None, table=None):
+def run(body: str, status=None):
     script = f"""
         {PRELUDE}
         const bodies = [];
@@ -32,13 +30,13 @@ def run(body: str, status=None, table=None):
         globalThis.fetch = async (url, options) => {{ if (options?.body) bodies.push(JSON.parse(options.body));
           return inner(url, options); }};
         ANSWERS["GET /api/lab/osap"] = {json.dumps(status or STATUS)};
-        ANSWERS["GET /api/lab/table"] = {json.dumps(table or TABLE)};
         ANSWERS["POST /api/lab/methods/T-13/triage"] = {json.dumps(TRIAGED)};
         ANSWERS["PUT /api/lab/methods/T-13/osap"] = {{ ref: "T-13", signal: "Mom12m" }};
         ANSWERS["POST /api/lab/methods/T-13/power"] = {{ status: 400, error: "T-13 is fail: power takes a method that passed triage" }};
         ANSWERS["POST /api/jobs/osap-fetch"] = {{ status: 400, error: "bulk downloads run only in the compute window" }};
-        const {{ funnelSection }} = await import({json.dumps((STATIC_DIR / "lib" / "triage.js").as_uri())});
-        const section = funnelSection();
+        const {{ funnelSection, stageCell }} = await import({json.dumps((STATIC_DIR / "lib" / "triage.js").as_uri())});
+        const changes = [];
+        const section = funnelSection({{ changed: async () => changes.push("changed") }});
         const node = section.node;
         {body}
     """
@@ -46,15 +44,15 @@ def run(body: str, status=None, table=None):
     return json.loads(out.stdout)
 
 
-def test_the_card_shows_the_data_and_the_stage_table():
+def test_the_card_shows_the_data_and_a_stage_cell_its_run():
     text = run("""
         await section.start(); await settle();
-        console.log(JSON.stringify(node.textContent));
-    """)
-    assert "OSAP release 2025.10: 212 Predictor, 114 Placebo. large caps: 212 signals, 1926-07 to 2024-12." in text
-    assert "opens Mon 2026-10-05 01:00" in text
-    assert "Residual momentum" in text and "stop: OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00" in text
-    assert "go to fail, user, 2026-10-04" in text
+        console.log(JSON.stringify([node.textContent, stageCell(%s).textContent]));
+    """ % json.dumps(TRIAGED))
+    assert "OSAP release 2025.10: 212 Predictor, 114 Placebo. large caps: 212 signals, 1926-07 to 2024-12." in text[0]
+    assert "opens Mon 2026-10-05 01:00" in text[0]
+    assert "stop: OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00" in text[1]
+    assert "go to fail, user, 2026-10-04" in text[1]
 
 
 DETAILED = {**TRIAGED, "detail": {
@@ -68,9 +66,8 @@ DETAILED = {**TRIAGED, "detail": {
 
 def test_the_stage_cell_shows_the_cli_detail_lines():
     text = run("""
-        await section.start(); await settle();
-        console.log(JSON.stringify(node.all((n) => n.attrs["data-detail"] === "line").map((n) => n.textContent)));
-    """, table={**TABLE, "rows": [{**TABLE["rows"][0], "triage": DETAILED, "power": DETAILED}]})
+        console.log(JSON.stringify(stageCell(%s).all((n) => n.attrs["data-detail"] === "line").map((n) => n.textContent)));
+    """ % json.dumps(DETAILED))
     assert text[:3] == [
         "original portfolio: in sample +1.31 t 3.74 (300 m); post publication +0.50 t 1.20 (120 m); decay 62%",
         "large caps: since 2000 +0.30 t 0.00 (300 m)",
@@ -79,9 +76,9 @@ def test_the_stage_cell_shows_the_cli_detail_lines():
 
 
 def test_pick_map_triage_and_a_refused_power_and_download():
-    asked, bodies, text = run("""
+    asked, bodies, text, changes = run("""
         await section.start(); await settle();
-        button(node, "Pick").fire("click");
+        section.pick("T-13");
         labelled(node, "OSAP signal (acronym)").value = "Mom12m";
         asked.length = 0;
         button(node, "Set OSAP signal").fire("click"); await settle();
@@ -92,7 +89,7 @@ def test_pick_map_triage_and_a_refused_power_and_download():
         button(node, "Check power").fire("click"); await settle();
         const refused = node.textContent;
         button(node, "Download OSAP").fire("click"); await settle();
-        console.log(JSON.stringify([asked, bodies, [after, refused, node.textContent]]));
+        console.log(JSON.stringify([asked, bodies, [after, refused, node.textContent], changes]));
     """)
     assert asked[:2] == ["PUT /api/lab/methods/T-13/osap", "GET /api/lab/osap"]
     assert "POST /api/lab/methods/T-13/triage" in asked and "POST /api/jobs/osap-fetch" in asked
@@ -102,6 +99,7 @@ def test_pick_map_triage_and_a_refused_power_and_download():
     assert "triage stop: OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00 (go to fail)." in after
     assert "power takes a method that passed triage" in refused
     assert "bulk downloads run only in the compute window" in last
+    assert changes == ["changed"] * 3, "the map, the triage and the download reload the results table"
 
 
 async def test_the_card_reads_the_real_routes(client, tmp_path, monkeypatch):
@@ -111,9 +109,10 @@ async def test_the_card_reads_the_real_routes(client, tmp_path, monkeypatch):
     await client.post("/api/lab/methods/T-13/mark", json={"how": "go"})
     await client.post("/api/lab/methods/T-13/triage", json={})
     status, table = (await client.get("/api/lab/osap")).json(), (await client.get("/api/lab/table")).json()
+    row = next(r for r in table["rows"] if r["ref"] == "T-13")
     text = run("""
         await section.start(); await settle();
-        console.log(JSON.stringify(node.textContent));
-    """, status, table)
+        console.log(JSON.stringify(node.textContent + stageCell(%s).textContent));
+    """ % json.dumps(row["triage"]), status)
     assert "OSAP release 2025.10: 1 Placebo, 4 Predictor. large caps: 3 signals, 1990-01 to 2024-12" in text
     assert "stop: OSAP Mom12m: large caps since 2000 +0.30%/month t 1.00 over 300 months" in text

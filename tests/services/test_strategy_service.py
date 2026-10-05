@@ -148,6 +148,8 @@ def test_a_kept_result_loads_back_shows_on_the_scoreboard_and_is_no_signal_test(
     row = next(r for r in scoreboard(ctx).rows if r.key == "hold_aaa")
     assert row.verdict == "PASS" and row.value == pytest.approx(kept.confirm.excess)
     assert row.measure == "CAGR over the index after costs" and row.dsr == pytest.approx(kept.confirm.dsr)
+    assert row.train == pytest.approx(kept.train.excess) and row.turnover == pytest.approx(kept.confirm.strategy.turnover)
+    assert row.break_even is None
 
 
 async def test_the_trend_overlay_reproduces_through_the_engine_and_is_never_judged_again(env):
@@ -156,6 +158,8 @@ async def test_the_trend_overlay_reproduces_through_the_engine_and_is_never_judg
         trend_check(ctx)
     kept = await run_and_keep_trend(ctx)
     before = scoreboard(ctx)
+    row = next(r for r in before.rows if r.key == "trend_overlay")
+    assert row.train == pytest.approx(kept.choose.trend.cagr - kept.choose.held.cagr)
     check = trend_check(ctx)
     assert check.matches and check.recorded_verdict == kept.verdict and check.last_day == kept.last_day
     assert {(r.window, r.measure) for r in check.rows} == {(w, m) for w in ("choose", "confirm")

@@ -97,7 +97,8 @@ def test_the_research_tab_renders_its_section_list():
         console.log(JSON.stringify([tab.id, tab.label, pane.textContent]));
     """)
     assert text[:2] == ["research", "Research"] and "Scoreboard" in text[2] and "12-1 momentum" in text[2]
-    assert text[2].index("Scoreboard") < text[2].index("Strategy tests") < text[2].index("Literature index")
+    order = ["Scoreboard", "Results table", "Strategy tests", "Funnel stages", "Literature index", "Papers"]
+    assert [text[2].index(h) for h in order] == sorted(text[2].index(h) for h in order)
 
 
 def test_a_strategy_row_shows_its_deflated_sharpe():
