@@ -360,15 +360,19 @@ def _ingest(ctx, lit: LiteratureRepo, papers: PapersRepo, rows: list[SourceRow],
         return name, None, "", 0, 0, f"cannot be read: {exc}"
     if not pdf.text.strip():
         return name, None, "", len(pdf.pages), 0, "has no text layer (a scanned image?): it cannot be read without OCR"
-    found, how = _match(lit, rows, pdf, name)
+    found, how, from_page_text = _match(lit, rows, pdf, name)
     if found is None:
         return name, None, "", len(pdf.pages), len(pdf.text), how
+    earlier = papers.full_text(found.id)
+    if from_page_text and earlier is not None:
+        return (name, None, "", len(pdf.pages), len(pdf.text),
+                f"names #{found.id} only in its text and #{found.id} already has a full text ({_origin(earlier)}), so "
+                "it is left; rename it to the DOI to replace that text")
     done = folder / DONE
     done.mkdir(exist_ok=True)
     target = done / name
     if target.exists():
         target = done / f"{path.stem}-{ctx.clock.utcnow():%Y%m%d%H%M%S}{path.suffix}"
-    earlier = papers.full_text(found.id)
     papers.keep_text(found.id, pdf.text, "inbox", None, "", "", str(target), len(pdf.pages),
                      to_utc_iso(ctx.clock.utcnow()), by)
     note = f"kept as the full text of #{found.id}"
@@ -381,9 +385,12 @@ def _ingest(ctx, lit: LiteratureRepo, papers: PapersRepo, rows: list[SourceRow],
     return name, found.id, how, len(pdf.pages), len(pdf.text), note
 
 
-def _match(lit: LiteratureRepo, rows: list[SourceRow], pdf: PdfText, name: str) -> tuple[SourceRow | None, str]:
+def _match(lit: LiteratureRepo, rows: list[SourceRow], pdf: PdfText,
+           name: str) -> tuple[SourceRow | None, str, bool]:
     """An id in the file name or the title field settles it. One found only in the first two pages may be one the
-    paper cites, so its title must roughly agree too. Else by title alone. An id naming two recorded sources is
+    paper cites, so its title must roughly agree too, and beat every other recorded source's (a follow-up paper
+    titled like the one it cites is recorded in its own right). The flag says the id came from page text. Else by
+    title alone. An id naming two recorded sources is
     settled by title among them."""
     candidates = title_candidates(pdf, name)
 
@@ -393,20 +400,23 @@ def _match(lit: LiteratureRepo, rows: list[SourceRow], pdf: PdfText, name: str) 
 
     named = _recorded(lit, "\n".join((_ID_IN_NAME.sub(r"\1/", Path(name).stem), pdf.title or "")))
     if len(named) == 1:
-        return named[0][0], f"id {named[0][1]}"
+        return named[0][0], f"id {named[0][1]}", False
     if named:
-        return _by_title(scored([s for s, _ in named]))
+        return (*_by_title(scored([s for s, _ in named])), False)
     cited = _recorded(lit, "\n".join(pdf.pages[:2]))
     keys = {s.id: key for s, key in cited}
     found = scored([s for s, _ in cited])
-    if found and found[0][0] >= ID_TITLE_FLOOR and (len(found) == 1 or found[0][0] - found[1][0] >= TITLE_MARGIN):
-        return found[0][1], f"id {keys[found[0][1].id]} (title {found[0][0]:.2f})"
-    s, how = _by_title(scored(rows))
+    overall = scored(rows)
+    if found and found[0][0] >= ID_TITLE_FLOOR:
+        rivals = [score for score, s in overall if s.id != found[0][1].id]
+        if not rivals or found[0][0] - max(rivals) >= TITLE_MARGIN:
+            return found[0][1], f"id {keys[found[0][1].id]} (title {found[0][0]:.2f})", True
+    s, how = _by_title(overall)
     if s is None and cited:
         named_ids = ", ".join(f"#{x.id}" for _, x in found)
         how = (f"it names {named_ids} in its text but its title does not match (best {found[0][0]:.2f}), so it may "
                f"only cite {'it' if len(found) == 1 else 'them'}; rename it to its DOI if it is that paper")
-    return s, how
+    return s, how, False
 
 
 def _recorded(lit: LiteratureRepo, text: str) -> list[tuple[SourceRow, str]]:

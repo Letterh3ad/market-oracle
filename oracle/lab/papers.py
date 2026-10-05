@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 from oracle.lab.matching import source_key
 
-SHADOW = re.compile(r"(^|\.)(sci-?hub|libgen|gen\.lib\.rus\.ec|library\.lol|annas-archive|z-?lib(rary)?|1lib|b-ok|"
+SHADOW = re.compile(r"(^|\.)(sci-?hub|libgen|lib\.rus\.ec|welib\.org|sci-net\.xyz|nexus\.stc|library\.lol|annas-archive|z-?lib(rary)?|1lib|b-ok|"
                     r"booksc|singlelogin|libstc)(\.|$)", re.I)
 """Hosts of shadow libraries: never fetched (spec decision 4)."""
 _IDS = re.compile(r"10\.\d{4,9}/[^\s\"<>]+|arxiv\.org/(?:abs|pdf)/\d{4}\.\d{4,5}|arxiv:?\s*\d{4}\.\d{4,5}|"

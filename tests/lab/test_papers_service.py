@@ -336,3 +336,38 @@ async def test_a_downloaded_pdf_is_parsed_off_the_event_loop(tmp_path, monkeypat
     with context(tmp_path, fake) as ctx:
         assert (await papers.fetch(ctx, GKX)).copy is not None
     assert threads and threads[0] is not threading.current_thread()
+
+
+BAB = "10.1016/j.jfineco.2013.10.005"
+BAB_TITLE = "Betting Against Beta"
+
+
+def keep_bab_text(ctx):
+    """The seeded index already records both BAB (#14) and its follow-up (#16, no DOI)."""
+    lab.record(ctx, f"doi:{BAB}", title=BAB_TITLE, quality="peer-reviewed")
+    inbox = papers.inbox_folder(ctx)
+    drop(inbox, "10.1016_j.jfineco.2013.10.005.pdf", paper(BAB_TITLE, BAB))
+    (kept,) = papers.scan_inbox(ctx).results
+    return kept
+
+
+def test_a_follow_up_paper_citing_a_recorded_doi_is_not_taken_for_the_cited_one(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        kept = keep_bab_text(ctx)
+        before = papers.text(ctx, BAB).text
+        inbox = papers.inbox_folder(ctx)
+        drop(inbox, "babab.pdf", make_pdf([["Betting Against Betting Against Beta", "Abstract"],
+                                           ["We revisit Frazzini and Pedersen, doi:" + BAB + "."]]))
+        (r,) = papers.scan_inbox(ctx).results
+        assert r.source is None or r.source.id != kept.source.id
+        assert papers.text(ctx, BAB).text == before
+
+
+def test_a_page_text_id_alone_never_replaces_a_full_text(tmp_path):
+    with context(tmp_path, web()) as ctx:
+        keep_bab_text(ctx)
+        before = papers.text(ctx, BAB).text
+        inbox = papers.inbox_folder(ctx)
+        drop(inbox, "other.pdf", make_pdf([["Betting Against Beta", "Abstract"], ["Cites doi:" + BAB + "."]]))
+        (r,) = papers.scan_inbox(ctx).results
+        assert papers.text(ctx, BAB).text == before and (inbox / "other.pdf").exists()

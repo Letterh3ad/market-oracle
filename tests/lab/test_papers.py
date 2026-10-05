@@ -107,3 +107,15 @@ def test_an_aes_encrypted_pdf_names_the_missing_package(monkeypatch):
     monkeypatch.setattr(pypdf, "PdfReader", aes)
     with pytest.raises(NotAPdf, match="encrypted.*cryptography"):
         pdf_text(make_pdf([["x"]]))
+
+
+@pytest.mark.parametrize("url", ["https://welib.org/x", "http://lib.rus.ec/b/1", "https://sci-net.xyz/10.1/x",
+                                 "https://nexus.stc/x", "https://www.WeLib.org./x"])
+def test_more_shadow_hosts_are_refused(url):
+    assert is_shadow(url)
+
+
+@pytest.mark.parametrize("url", ["https://library.example.edu/x.pdf", "https://nexus.example.org/x",
+                                 "https://rus.ec.example.org/x", "https://sci-net.example.org/x"])
+def test_lookalike_hosts_are_not_shadow(url):
+    assert not is_shadow(url)
